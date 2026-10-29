@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { chooseRelayEngine, relayEngineList, relayOpening, relayResultText, relayThreadLevel, type RelayEngine } from "./run-with-engine.ts";
+import { chooseRelayEngine, relayAccountLabel, relayEngineId, relayEngineList, relayOpening, relayResultText, relayThreadLevel, type RelayEngine } from "./run-with-engine.ts";
 
 const ENGINES: RelayEngine[] = [
   { instanceId: "claude", driverKind: "claudeAgent", displayName: "Claude", models: { default: "claude-opus", options: [{ id: "claude-opus" }, { id: "claude-sonnet" }] } },
@@ -32,6 +32,33 @@ describe("chooseRelayEngine (run_with_engine, 2026-10-28)", () => {
     expect(chooseRelayEngine({ engine: "grok", engines: ENGINES, current: { instanceId: "grok-a1b2", model: "grok-4.7" } })).toMatchObject({ ok: false });
     // another model of the same engine is a relay
     expect(chooseRelayEngine({ engine: "grok", model: "grok-4.5", engines: ENGINES, current: { instanceId: "grok-a1b2", model: "grok-4.7" } })).toMatchObject({ ok: true, model: "grok-4.5" });
+  });
+});
+
+describe("2026-10-29: a person's second Grok sign-in is an engine of its own to run_with_engine", () => {
+  const personal: RelayEngine = { instanceId: "grok-a1b2", driverKind: "grokAgent", displayName: "Grok (personal account)", models: { default: "grok-4.7", options: [{ id: "grok-4.7" }] }, account: "second", accountKind: "personal" };
+  const team: RelayEngine = { ...ENGINES[1]!, accountKind: "team" };
+  const both = [ENGINES[0]!, team, personal];
+
+  it("is named by what it is, by its label, or by its id, and the family alone stays the first sign-in", () => {
+    for (const engine of ["Grok (personal account)", "grok personal", "personal grok", "Personal Grok account", "grok-a1b2#second"]) {
+      expect(chooseRelayEngine({ engine, engines: both }), engine).toEqual({ ok: true, instanceId: "grok-a1b2", model: "grok-4.7", engineLabel: "Grok (personal account)", driverKind: "grokAgent", account: "second" });
+    }
+    for (const engine of ["grok", "Grok", "grok team", "Grok (team account)"]) {
+      expect(chooseRelayEngine({ engine, engines: both }), engine).toMatchObject({ ok: true, instanceId: "grok-a1b2", engineLabel: "Grok" });
+      expect((chooseRelayEngine({ engine, engines: both }) as { account?: string }).account).toBeUndefined();
+    }
+    expect(relayEngineList(both)).toContain('Grok (personal account) (engine "grok-a1b2#second"');
+    expect(relayEngineId(personal)).toBe("grok-a1b2#second");
+    expect(relayAccountLabel("Grok", "team")).toBe("Grok (team account)");
+    expect(relayAccountLabel("Grok", undefined)).toBe("Grok (second account)");
+  });
+
+  it("the other sign-in of the same engine and model is a relay; the same one is not", () => {
+    const current = { instanceId: "grok-a1b2", model: "grok-4.7" };
+    expect(chooseRelayEngine({ engine: "grok personal", engines: both, current })).toMatchObject({ ok: true, account: "second" });
+    expect(chooseRelayEngine({ engine: "grok", engines: both, current: { ...current, account: "second" } })).toMatchObject({ ok: true, instanceId: "grok-a1b2" });
+    expect(chooseRelayEngine({ engine: "grok personal", engines: both, current: { ...current, account: "second" } })).toMatchObject({ ok: false });
   });
 });
 

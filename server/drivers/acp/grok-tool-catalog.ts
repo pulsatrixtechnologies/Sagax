@@ -152,6 +152,9 @@ export interface GrokAccountReach {
   gateway: boolean;
   /** GROK_CLOUD_CONNECTORS ids the gateway carries */
   connectors: string[];
+  /** every connector the gateway carries, known or not, with its tool
+   * count: what Providers shows under each account (2026-10-29) */
+  groups: Array<{ id?: string; label: string; tools: number }>;
   at: number;
 }
 const REACH_MAX = 512;
@@ -160,10 +163,20 @@ const reachByHome = new Map<string, GrokAccountReach>();
 export function noteGrokAccountReach(home: string | undefined, result: unknown, at = Date.now()): void {
   const catalog = readGrokCatalog(result);
   if (!home || !catalog) return;
-  const connectors = grokGatewayConnectors(catalog).flatMap((group) => (group.id ? [group.id] : []));
+  const gatewayGroups = grokGatewayConnectors(catalog);
+  const connectors = gatewayGroups.flatMap((group) => (group.id ? [group.id] : []));
+  const groups = gatewayGroups.map((group) => ({ ...(group.id ? { id: group.id } : {}), label: group.label, tools: group.tools.length }));
   reachByHome.delete(home);
-  reachByHome.set(home, { gateway: catalog.some((server) => server.gateway), connectors, at });
+  reachByHome.set(home, { gateway: catalog.some((server) => server.gateway), connectors, groups, at });
   while (reachByHome.size > REACH_MAX) reachByHome.delete(reachByHome.keys().next().value!);
+}
+
+/** The connector names a sign-in's reach carries, as the switch and the
+ * prompts name them ("Microsoft Teams", "Outlook (Exchange)"): the catalog
+ * name for a known connector, grok.com's own for the rest. */
+export function grokReachConnectorNames(reach: Pick<GrokAccountReach, "groups"> | undefined): string[] {
+  if (!reach) return [];
+  return reach.groups.map((group) => GROK_CLOUD_CONNECTORS.find((entry) => entry.id === group.id)?.name ?? group.label);
 }
 
 export function grokAccountReach(home: string | undefined): GrokAccountReach | undefined {

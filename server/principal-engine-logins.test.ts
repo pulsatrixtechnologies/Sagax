@@ -5,12 +5,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import type { ProviderAuthenticationStatus } from "./contracts.ts";
-import { LOGIN_MARKER, loginCliFor, PrincipalEngineLogins, type LoginController } from "./principal-engine-logins.ts";
+import { grokAccountReach } from "./drivers/acp/grok-tool-catalog.ts";
+import { LOGIN_MARKER, loginCliFor, PrincipalEngineLogins, readGrokAccountIdentity, type LoginController } from "./principal-engine-logins.ts";
 
 const A = "pr_00000000-0000-4000-8000-00000000000a";
 const B = "pr_00000000-0000-4000-8000-00000000000b";
 
-function harness(options: { onClaudeLinked?: (principalId: string) => void; probeModels?: (cli: string, env: Record<string, string | undefined>) => Promise<Array<{ id: string }> | null> } = {}) {
+function harness(options: { onClaudeLinked?: (principalId: string) => void; probeModels?: (cli: string, env: Record<string, string | undefined>) => Promise<Array<{ id: string }> | null>; probeReach?: (cli: string, env: Record<string, string | undefined>) => Promise<unknown> } = {}) {
   const dataDir = mkdtempSync(join(tmpdir(), "engine-logins-"));
   const made: Array<{ driver: string; home: string; env: Record<string, string | undefined>; finish: () => Promise<void>; signedOut: boolean }> = [];
   const logins = new PrincipalEngineLogins({
@@ -35,9 +36,78 @@ function harness(options: { onClaudeLinked?: (principalId: string) => void; prob
     },
     ...(options.onClaudeLinked ? { onClaudeLinked: options.onClaudeLinked } : {}),
     ...(options.probeModels ? { probeModels: options.probeModels } : {}),
+    probeReach: options.probeReach ?? (async () => null),
   });
   return { dataDir, logins, made };
 }
+
+/** A grok login record as the CLI writes it, with no token in it. */
+function writeGrokAuth(home: string, principalType: string, email: string): void {
+  mkdirSync(join(home, ".grok"), { recursive: true });
+  writeFileSync(join(home, ".grok", "auth.json"), JSON.stringify({ "https://auth.x.ai::p-1": { principal_type: principalType, email, auth_mode: "oidc" } }));
+}
+
+describe("2026-10-29: a second Grok sign-in per person", () => {
+  it("lives in its own folder, is told apart from the first, and goes away on its own sign-out", async () => {
+    const { dataDir, logins, made } = harness();
+    expect(logins.loginDir(A, "grokAgent", "second")).toBe(join(dataDir, "principals", A, "grok-2"));
+    expect(() => logins.loginDir(A, "claudeAgent", "second")).toThrow(/one sign-in/);
+    expect(logins.signedIn(A, "claudeAgent", "second")).toBe(false);
+    await logins.start(A, "grok", "session-a", "second");
+    expect(made[0]!.home).toBe(join(dataDir, "principals", A, "grok-2"));
+    expect(made[0]!.env.GROK_HOME).toBe(join(dataDir, "principals", A, "grok-2", ".grok"));
+    await made[0]!.finish();
+    expect(logins.signedIn(A, "grokAgent", "second")).toBe(true);
+    expect(logins.signedIn(A, "grokAgent")).toBe(false);
+    // the first sign-in is its own flow and folder
+    await logins.start(A, "grok", "session-a");
+    await made[1]!.finish();
+    expect(logins.signedIn(A, "grokAgent")).toBe(true);
+    expect(made[1]!.home).toBe(join(dataDir, "principals", A, "grok"));
+    await logins.signOut(A, "grok", "session-a", "second");
+    expect(logins.signedIn(A, "grokAgent", "second")).toBe(false);
+    expect(logins.signedIn(A, "grokAgent")).toBe(true);
+    await expect(logins.start(A, "claude", "session-a", "second")).rejects.toThrow(/one sign-in/);
+  });
+
+  it("says what each sign-in is from the CLI's own login record, and clears both on Reset access", async () => {
+    const { dataDir, logins, made } = harness();
+    expect(logins.grokAccountIdentity(A)).toBeNull();
+    await logins.start(A, "grok", "session-a");
+    await made[0]!.finish();
+    await logins.start(A, "grok", "session-a", "second");
+    await made[1]!.finish();
+    writeGrokAuth(join(dataDir, "principals", A, "grok"), "Team", "ops@example.test");
+    writeGrokAuth(join(dataDir, "principals", A, "grok-2"), "User", "me@example.test");
+    expect(logins.grokAccountIdentity(A)).toEqual({ kind: "team", email: "ops@example.test" });
+    expect(logins.grokAccountIdentity(A, "second")).toEqual({ kind: "personal", email: "me@example.test" });
+    expect(readGrokAccountIdentity(join(dataDir, "nowhere.json"))).toBeNull();
+    expect(logins.expired(A, "grokAgent", "second")).toBe(false);
+    logins.markExpired(A, "grokAgent", "second");
+    expect(logins.expired(A, "grokAgent", "second")).toBe(true);
+    expect(logins.expired(A, "grokAgent")).toBe(false);
+    expect(logins.clearAll(A)).toBe(2);
+    expect(existsSync(join(dataDir, "principals", A, "grok-2"))).toBe(false);
+  });
+
+  it("reads what a sign-in brings through grok.com once it is signed in, by its folder", async () => {
+    const probed: string[] = [];
+    const { dataDir, logins, made } = harness({
+      probeReach: async (_cli, env) => { probed.push(env.GROK_HOME ?? ""); return { sessionMcpResolved: true, servers: [{ name: "managed_gateway:cursor", type: "managedGateway", session: { enabled: true, status: "ready", tools: [{ name: "cursor__user-Teams-list_5fchats___10", enabled: true }] } }] }; },
+    });
+    await logins.start(A, "grok", "session-a", "second");
+    await made[0]!.finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(probed).toEqual([join(dataDir, "principals", A, "grok-2", ".grok")]);
+    expect(grokAccountReach(join(dataDir, "principals", A, "grok-2"))?.connectors).toEqual(["microsoft-teams"]);
+    // once per sign-in per process
+    logins.warmReach(A, "grok", "second");
+    expect(probed).toHaveLength(1);
+    // not signed in: nothing probed
+    logins.warmReach(A, "grok");
+    expect(probed).toHaveLength(1);
+  });
+});
 
 describe("PrincipalEngineLogins", () => {
   it("#1533: a refused sign-in reads as expired until the person signs in again, and still pays", async () => {

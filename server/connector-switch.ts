@@ -24,6 +24,11 @@ export interface SwitchEngine {
   /** The connectors this engine reaches for this person, by name; null
    * when that is not known (never a reason to switch, either way). */
   reach: ReadonlyArray<{ connector: string }> | null;
+  /** 2026-10-29: the person's second sign-in on this engine (their other
+   * Grok account) and what it is. A personal account is preferred for a
+   * personal connector (Outlook, Teams, Gmail) when more than one reaches it. */
+  account?: "second";
+  accountKind?: "personal" | "team";
 }
 
 export interface ConnectorSwitch {
@@ -32,6 +37,15 @@ export interface ConnectorSwitch {
   effort?: EffortLevel;
   engineLabel: string;
   connector: string;
+  account?: "second";
+}
+
+/** Connectors that are a person's own (their mail, chats, calendar): the
+ * personal account wins over the team one when both have them. */
+const PERSONAL_CONNECTOR = /outlook|exchange|teams|gmail|google\s*calendar|microsoft\s*365/i;
+
+function sameSignIn(a: Pick<SwitchEngine, "instanceId" | "account">, b: Pick<SwitchEngine, "instanceId" | "account">): boolean {
+  return a.instanceId === b.instanceId && (a.account ?? null) === (b.account ?? null);
 }
 
 /** What a connector reaches, from its name (claude.ai or Grok catalog). */
@@ -78,15 +92,24 @@ export function pickConnectorSwitch(input: {
   candidates: readonly SwitchEngine[];
 }): ConnectorSwitch | null {
   const { need } = input;
-  if (!need || input.current.reach === null || reaches(input.current, need)) return null;
-  for (const engine of input.candidates) {
-    if (engine.instanceId === input.current.instanceId) continue;
+  if (!need || input.current.reach === null) return null;
+  const here = reaches(input.current, need);
+  // A personal connector the current (team) account reaches too stays here,
+  // unless the person's personal account reaches it: that one is theirs.
+  const personalWins = here !== undefined && PERSONAL_CONNECTOR.test(here) && input.current.accountKind === "team";
+  if (here && !personalWins) return null;
+  const candidates = personalWins ? input.candidates.filter((engine) => engine.accountKind === "personal") : input.candidates;
+  // among several that reach it, a personal account first for a personal connector
+  const ordered = candidates.toSorted((a, b) => Number(b.accountKind === "personal") - Number(a.accountKind === "personal"));
+  for (const engine of ordered) {
+    if (sameSignIn(engine, input.current)) continue;
     const connector = reaches(engine, need);
     if (!connector) continue;
+    if (personalWins && !PERSONAL_CONNECTOR.test(connector)) continue;
     const model = affordableModel(engine, input.base);
     if (!model) continue;
     const effort = input.base.effort && engine.effortLevels && effortAcceptedByEngine(input.base.effort, engine.effortLevels) ? input.base.effort : undefined;
-    return { instanceId: engine.instanceId, model, ...(effort ? { effort } : {}), engineLabel: engine.engineLabel, connector };
+    return { instanceId: engine.instanceId, model, ...(effort ? { effort } : {}), engineLabel: engine.engineLabel, connector, ...(engine.account ? { account: engine.account } : {}) };
   }
   return null;
 }

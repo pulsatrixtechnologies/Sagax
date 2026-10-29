@@ -244,6 +244,22 @@ export interface MyEngine {
   /** What the person's own turns on this engine run with, on their bots
    * and on the bots shared with them (server/engine-credentials.ts). */
   myTurns: "subscription" | "key" | "org-key" | "none";
+  /** 2026-10-29: Grok on an organization server: the person's two sign-ins
+   * (a personal grok.com account and a team one), what each is and the
+   * grok.com connectors it brings. The first one pays their turns; the
+   * bots reach the other one's connectors on their own. */
+  accounts?: GrokAccountView[];
+}
+
+export interface GrokAccountView {
+  slot: "primary" | "second";
+  signedIn: boolean;
+  expired?: boolean;
+  /** from the sign-in itself: a personal account (User) or a team */
+  kind?: "personal" | "team" | "unknown";
+  email?: string;
+  /** the grok.com connectors it brings, when known (probed after sign-in) */
+  connectors?: Array<{ label: string; tools: number }>;
 }
 
 /** `<issuer>/console/credentials?kind=model`, where a person sets their model keys

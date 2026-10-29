@@ -9,6 +9,7 @@ import {
   connectorPrincipalFor,
   createHarnessConnectorRoutes,
   engineConnectorsPrompt,
+  relayHint,
   accountConnectorsForTurn,
   grokCloudConnectorsForTurn,
   parseClaudeAuthStatus,
@@ -352,6 +353,26 @@ describe("2026-10-28: Full access never asks for a typed GO", () => {
     const ask = engineConnectorsPrompt({ driver: "claudeAgent", claudeAi: true, grokCloud: false });
     expect(ask).toMatch(/approval card/);
     expect(ask).toMatch(/never ask for a typed GO/);
+  });
+});
+
+describe("2026-10-29: the relay hint names the person's other engines and sign-ins", () => {
+  it("nothing known elsewhere: the generic hint; known: each engine with its connectors, the personal account first for mail and Teams", () => {
+    expect(relayHint(undefined)).toContain("call run_with_engine with that engine");
+    expect(relayHint([{ engine: "Claude", connectors: [] }])).toContain("call run_with_engine with that engine");
+    const named = relayHint([
+      { engine: "Grok (personal account)", connectors: ["Microsoft Teams", "Outlook (Exchange)"], accountKind: "personal" },
+      { engine: "Claude", connectors: ["Microsoft 365"] },
+    ]);
+    expect(named).toContain("Grok (personal account): Microsoft Teams, Outlook (Exchange); Claude: Microsoft 365");
+    expect(named).toContain("prefer the personal account");
+    expect(named).toContain("Never answer that you cannot switch engines or accounts");
+    // the prompt of a turn with no connector of its own carries it
+    const text = engineConnectorsPrompt({ driver: "codex", claudeAi: false, grokCloud: false, relay: true, elsewhere: [{ engine: "Claude", connectors: ["Microsoft 365"] }] });
+    expect(text).toContain("Claude: Microsoft 365");
+    // and so does a Grok turn on one account about the other
+    const grok = engineConnectorsPrompt({ driver: "grokAgent", claudeAi: false, grokCloud: true, relay: true, elsewhere: [{ engine: "Grok (personal account)", connectors: ["Microsoft Teams"], accountKind: "personal" }] });
+    expect(grok).toContain("Grok (personal account): Microsoft Teams");
   });
 });
 

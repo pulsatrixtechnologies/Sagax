@@ -74,6 +74,9 @@ export function createConnectorSetupProofs(options: { perThread?: number; thread
 export interface GrokReachFact {
   connectors: readonly string[];
   at: number;
+  /** 2026-10-29: the person's other Grok sign-in that carries connectors,
+   * named as run_with_engine takes it ("Grok (personal account)"). */
+  elsewhere?: { engine: string; connectors: readonly string[] };
 }
 
 interface Shared {
@@ -124,6 +127,11 @@ export function createConnectorSetupInternalRoutes(deps: Shared & {
   /** The bot's engine and whose account it runs on, for this person. */
   context(botId: string, threadId: string, principalId: string): ConnectorSetupContext | null;
   post(input: { botId: string; threadId: string; view: ConnectorSetupView; text: string }): void;
+  /** 2026-10-29: the person has no account of their own here to attach the
+   * connector to, and Claude takes a personal sign-in on this server: post
+   * the "Connect Claude" card (the sign_in access card) for them and name
+   * the engine; null when there is no such engine or they are signed in. */
+  signIn?(botId: string, threadId: string, principalId: string): { engine: string } | null;
   newId?(): string;
 }): InternalRouteHandler {
   const now = deps.now ?? Date.now;
@@ -143,12 +151,27 @@ export function createConnectorSetupInternalRoutes(deps: Shared & {
     const context = deps.context(capability.botId, capability.threadId, principalId);
     if (!context) return json(res, 409, { error: "This bot has no engine right now. Answer in words." });
     const route = chooseConnectorSetupRoute({ target, ...context, ...(parsed.data.via ? { prefer: parsed.data.via } : {}) });
-    if ("refusal" in route) return json(res, 409, { error: REFUSALS[route.refusal] });
+    if ("refusal" in route) {
+      // No account of theirs here: a Claude sign-in card when Claude takes
+      // one (its claude.ai connectors come with the sign-in), else the words.
+      const signIn = route.refusal === "no_route" || (route.refusal === "not_on_engine") ? deps.signIn?.(capability.botId, capability.threadId, principalId) : null;
+      if (signIn) {
+        return json(res, 200, { ok: true, route: "claude", label: target.label, status: "waiting", card: "sign-in",
+          note: `A "Connect ${signIn.engine}" card is in the conversation: the person has no ${signIn.engine} sign-in of their own on this server yet, and ${target.label} comes with their own ${signIn.engine} account (its claude.ai connectors). Say in one plain sentence that they connect ${signIn.engine} with that card, then add ${target.label} on claude.ai; never ask for a code or a password in chat. End this turn.` });
+      }
+      return json(res, 409, { error: REFUSALS[route.refusal] });
+    }
     // Already there: the person's Grok catalog carries it (grok's gateway).
     // No card; the bot calls it.
-    if (route.route === "grok" && target.grok && deps.grokReach?.(principalId)?.connectors.includes(target.grok)) {
+    const reach = deps.grokReach?.(principalId);
+    if (route.route === "grok" && target.grok && reach?.connectors.includes(target.grok)) {
       return json(res, 200, { ok: true, route: route.route, label: target.label, status: "connected", card: "none",
         note: `${target.label} is already connected on this person's Grok account. No card was posted. Find its tools with search_tool ("${target.label}") and call them with use_tool by their full name.` });
+    }
+    // 2026-10-29: on their other Grok account: no card, the bot hands that part there
+    if (route.route === "grok" && target.grok && reach?.elsewhere?.connectors.includes(target.grok)) {
+      return json(res, 200, { ok: true, route: route.route, label: target.label, status: "connected", card: "none",
+        note: `${target.label} is already connected on this person's other Grok account, "${reach.elsewhere.engine}". No card was posted. Call run_with_engine with engine "${reach.elsewhere.engine}" and the complete request: it runs that part on that account and gives you the result.` });
     }
     if (!isConnectorSetupUrl(route.url)) return json(res, 500, { error: "no setup page for that connector" });
     const owner = connectorSetupOwner(principalId);

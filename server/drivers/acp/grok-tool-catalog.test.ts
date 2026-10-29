@@ -5,6 +5,7 @@ import {
   grokAccountReach,
   grokCatalogFor,
   grokGatewayConnectors,
+  grokReachConnectorNames,
   noteGrokAccountReach,
   grokCatalogSection,
   readGrokCatalog,
@@ -211,8 +212,17 @@ describe("grok's managed gateway (grok.com connectors)", () => {
     noteGrokAccountReach("/data/principals/p1/grok", GATEWAY, 1_000);
     noteGrokAccountReach("/data/principals/p2/grok", { servers: [], sessionMcpResolved: true }, 2_000);
     noteGrokAccountReach(undefined, GATEWAY);
-    expect(grokAccountReach("/data/principals/p1/grok")).toEqual({ gateway: true, connectors: ["microsoft-teams", "outlook"], at: 1_000 });
-    expect(grokAccountReach("/data/principals/p2/grok")).toEqual({ gateway: false, connectors: [], at: 2_000 });
+    expect(grokAccountReach("/data/principals/p1/grok")).toMatchObject({ gateway: true, connectors: ["microsoft-teams", "outlook"], at: 1_000 });
+    expect(grokAccountReach("/data/principals/p2/grok")).toEqual({ gateway: false, connectors: [], groups: [], at: 2_000 });
     expect(grokAccountReach("/data/principals/p3/grok")).toBeUndefined();
+  });
+
+  it("2026-10-29: a sign-in's reach keeps every connector with its tool count, named as the switch and the prompts name them", () => {
+    noteGrokAccountReach("/data/principals/p1/grok-2", GATEWAY, 1_000);
+    const reach = grokAccountReach("/data/principals/p1/grok-2")!;
+    expect(reach.groups.map((group) => group.id ?? group.label)).toEqual(["microsoft-teams", "outlook", "Automations", "Docs Hub"]);
+    expect(reach.groups.every((group) => group.tools > 0)).toBe(true);
+    expect(grokReachConnectorNames(reach)).toEqual(["Microsoft Teams", "Outlook (Exchange)", "Automations", "Docs Hub"]);
+    expect(grokReachConnectorNames(undefined)).toEqual([]);
   });
 });

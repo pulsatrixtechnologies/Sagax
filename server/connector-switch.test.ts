@@ -10,6 +10,35 @@ const claude = (connectors: string[], extra: Partial<SwitchEngine> = {}): Switch
 });
 const base = { model: "grok-4.7", price: 18 };
 
+describe("2026-10-29: a person's two Grok accounts", () => {
+  const team: SwitchEngine = { ...grok, reach: [], accountKind: "team" };
+  const personal: SwitchEngine = { ...grok, engineLabel: "Grok (personal account)", reach: [{ connector: "Microsoft Teams" }, { connector: "Outlook (Exchange)" }], account: "second", accountKind: "personal" };
+
+  it("moves a request to the other sign-in of the same engine when that one has the connector", () => {
+    expect(pickConnectorSwitch({ need: { capability: "teams", hint: "Teams" }, current: team, base, candidates: [personal] }))
+      .toEqual({ instanceId: "grok", model: "grok-4.7", engineLabel: "Grok (personal account)", connector: "Microsoft Teams", account: "second" });
+    // the same sign-in again is no switch
+    expect(pickConnectorSwitch({ need: { capability: "teams", hint: "Teams" }, current: personal, base, candidates: [personal] })).toBeNull();
+  });
+
+  it("a personal connector the team account also has still goes to the personal account", () => {
+    const teamWithTeams = { ...team, reach: [{ connector: "Microsoft Teams" }] };
+    expect(pickConnectorSwitch({ need: { capability: "teams", hint: "Teams" }, current: teamWithTeams, base, candidates: [claude(["Microsoft 365"]), personal] }))
+      .toMatchObject({ engineLabel: "Grok (personal account)", account: "second" });
+    // no personal account with it: the team account keeps it
+    expect(pickConnectorSwitch({ need: { capability: "teams", hint: "Teams" }, current: teamWithTeams, base, candidates: [claude(["Microsoft 365"])] })).toBeNull();
+    // a connector that is not personal stays where it is
+    const teamWithSharePoint = { ...team, reach: [{ connector: "SharePoint" }] };
+    expect(pickConnectorSwitch({ need: { capability: "files", hint: "SharePoint" }, current: teamWithSharePoint, base, candidates: [{ ...personal, reach: [{ connector: "SharePoint" }] }] })).toBeNull();
+  });
+
+  it("among several engines that have it, the personal account comes first for a personal connector", () => {
+    const current = { ...grok, reach: [], accountKind: "team" as const };
+    expect(pickConnectorSwitch({ need: { capability: "mail", hint: "Outlook" }, current, base, candidates: [claude(["Microsoft 365"]), personal] }))
+      .toMatchObject({ engineLabel: "Grok (personal account)", connector: "Outlook (Exchange)" });
+  });
+});
+
 describe("switching a request to the engine that has its connector (Owner 2026-10-21)", () => {
   it("switches when the bot's engine lacks it and another engine of this person has it", () => {
     expect(pickConnectorSwitch({ need: { capability: "mail", hint: "Gmail" }, current: grok, base, candidates: [claude(["Gmail"])] }))

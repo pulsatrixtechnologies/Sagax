@@ -156,6 +156,12 @@ export interface AutoEngine {
   /** The bot's fast model (ModelSelection.fast) when this engine lists it,
    * custom or local rows included (they are never ranked by tier). */
   fast?: { id: string; label: string };
+  /** 2026-10-29: the payer's second sign-in on this engine (a second Grok
+   * account), offered to run_with_engine and the connector switch only:
+   * Auto never picks a sign-in. `accountKind` is what that sign-in is
+   * (a personal grok.com account, or a team one). */
+  account?: "second";
+  accountKind?: "personal" | "team";
 }
 
 export interface AutoChainEntry {

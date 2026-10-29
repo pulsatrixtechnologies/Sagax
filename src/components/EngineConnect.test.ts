@@ -217,3 +217,51 @@ describe("the device-code hint", () => {
     expect(deviceCodeHintShown({ phase: "failed", message: "Enable device-code login in your ChatGPT security settings" }, null)).toBe(false);
   });
 });
+
+describe("2026-10-29: a person's two Grok accounts on the Providers card", () => {
+  const grok = (accounts: MyEngine["accounts"]): MyEngine => engine({
+    instanceId: "grok", driver: "grokAgent", displayName: "Grok", subscription: { supported: true, signedIn: true }, myTurns: "subscription", accounts,
+  });
+
+  it("draws one row per account: what it is, its address, Connected, and the grok.com connectors it brings", () => {
+    const html = render(grok([
+      { slot: "primary", signedIn: true, kind: "team", email: "ops@example.test", connectors: [{ label: "SharePoint", tools: 12 }] },
+      { slot: "second", signedIn: true, kind: "personal", email: "me@example.test", connectors: [{ label: "Microsoft Teams", tools: 36 }, { label: "Outlook (Exchange)", tools: 29 }] },
+    ]));
+    expect(html).toContain('data-grok-account="primary"');
+    expect(html).toContain('data-account-kind="team"');
+    expect(html).toContain("Team account");
+    expect(html).toContain("ops@example.test");
+    expect(html).toContain('data-account-kind="personal"');
+    expect(html).toContain("Personal account");
+    expect(html).toContain("Through grok.com: Microsoft Teams (36), Outlook (Exchange) (29)");
+    expect(html).toContain("Through grok.com: SharePoint (12)");
+    expect(html.match(/Connected/g)?.length).toBe(2);
+    expect(html.match(/Disconnect/g)?.length).toBe(2);
+    expect(html).toContain("the personal account comes first");
+    expect(html).not.toContain('data-engine-connected');
+  });
+
+  it("a second account not connected yet offers Connect a second Grok account; one with no connector says so", () => {
+    const html = render(grok([
+      { slot: "primary", signedIn: true, kind: "personal", connectors: [] },
+      { slot: "second", signedIn: false },
+    ]));
+    expect(html).toContain("Connect a second Grok account");
+    expect(html).toContain("Second Grok account");
+    expect(html).toContain("No grok.com connector on this account yet.");
+    expect(html).toContain('data-my-engine="grok#second"');
+    expect(html.match(/Connected/g)?.length).toBe(1);
+    setLocale("fr");
+    expect(render(grok([{ slot: "primary", signedIn: false }, { slot: "second", signedIn: false }]))).toContain("Connecter un deuxième compte Grok");
+  });
+
+  it("a sign-in the provider refused since says Reconnect on its own row only", () => {
+    const html = render(grok([
+      { slot: "primary", signedIn: true, kind: "team", expired: true },
+      { slot: "second", signedIn: true, kind: "personal", connectors: [] },
+    ]));
+    expect(html).toContain("Reconnect Grok");
+    expect(html.match(/Connected/g)?.length).toBe(1);
+  });
+});
