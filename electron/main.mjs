@@ -8,7 +8,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { startCua, stopCua, registerCuaIpc, setCuaStateListener } from "./cua.mjs";
+import { startCua, stopCua, registerCuaIpc, setCuaStateListener, currentCuaConnection } from "./cua.mjs";
+import { createLocalComputerGrant } from "./local-computer-grant.mjs";
 import { createAndroidDeviceController } from "./android-device.mjs";
 import { finishSpeech, startSpeech, stopSpeech } from "./speech.mjs";
 import { openBlankTerminal } from "./terminal-launch.mjs";
@@ -737,6 +738,13 @@ app.on("second-instance", (_event, commandLine) => {
 // alternate ports until one binds AND identifies as ours (the probe checks
 // our API shape, not just a 200).
 let serverProc = null;
+// This computer's driver connection goes only to the server this app
+// launched, over its private parent port (electron/local-computer-grant.mjs).
+const localComputerGrant = createLocalComputerGrant({
+  current: () => currentCuaConnection(),
+  isCurrent: (proc) => serverSupervisor.isCurrent(proc),
+  log: (line) => slog(line),
+});
 /** Settles once the local server answers /api/health (startServerOn). */
 let localServerAnswering = Promise.resolve();
 // The loading screen, once per launch (see app.whenReady).
@@ -1952,10 +1960,12 @@ async function startServerOn(port, dataDir = runningDataDir ?? startupEnvironmen
     if (!serverSupervisor.isCurrent(proc)) return;
     syncDesktopMutationToken(proc);
     syncPhoneSecretKey(proc);
+    localComputerGrant.attach(proc);
   });
   let exited = false;
   proc.once("exit", (code) => {
     exited = true;
+    localComputerGrant.detach(proc);
     trustedApprovalMode.rejectProcess(proc);
     managedDesktopRelay.rejectProcess(proc);
     resolveServerExit();
@@ -5409,6 +5419,7 @@ async function broadcastDesktopCapabilities() {
 
 setCuaStateListener((connection) => {
   cuaReady = Promise.resolve(connection);
+  localComputerGrant.changed(connection);
   void broadcastDesktopCapabilities().catch((error) => {
     console.error("[desktop] capability broadcast failed:", error);
   });

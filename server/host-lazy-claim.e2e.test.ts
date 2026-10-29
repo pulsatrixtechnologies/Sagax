@@ -1,7 +1,7 @@
 // Issue #1650: the Auto host fallback must mount the gated CUA integration
 // without taking the exclusive computer:host seat, and a conversation pins
 // the host desktop only when a screen tool call actually claims it. Real
-// server, fake engine, a reachable CUA descriptor, and no Local VM in the
+// server, fake engine, a CUA descriptor handed over as the desktop app does, and no Local VM in the
 // inventory so Auto falls through to the host desktop.
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -13,6 +13,7 @@ import { CONTROL_BUSY, CONTROL_HANDED_BACK, CONTROL_REFUSAL_PLAIN, CONTROL_WAITE
 import { computerPersonAwayText } from "./computer-wait.ts";
 import { freePortBlock } from "./testing/ports.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { DESKTOP_PARENT_IMPORT, DESKTOP_PARENT_STDIO, handDesktopComputer } from "./testing/desktop-computer.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 /** One computer call's wait, shortened — but past the 2 s after which the
@@ -89,7 +90,7 @@ describe("lazy host claim and pin on use (issue #1650)", () => {
     const port = await freePortBlock([0, 1]);
     base = `http://127.0.0.1:${port}`;
     output = "";
-    const proc = spawn(process.execPath, ["--import", pathToFileURL(join(ROOT, "server/testing/group-local-vm-hooks.mjs")).href, join(ROOT, "server/index.ts")], {
+    const proc = spawn(process.execPath, ["--import", pathToFileURL(join(ROOT, "server/testing/group-local-vm-hooks.mjs")).href, ...DESKTOP_PARENT_IMPORT, join(ROOT, "server/index.ts")], {
       cwd: ROOT, env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
         PATH: dirname(process.execPath), ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_DATA_DIR: data,
@@ -98,7 +99,7 @@ describe("lazy host claim and pin on use (issue #1650)", () => {
         SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1), SAGAX_STATIC_DIR: ui, SAGAX_TEST_VM_STATE: stateFile,
         SAGAX_USER_DATA: join(home, "user-data"), SAGAX_COMPUTER_CALL_WAIT_MS: String(CALL_WAIT_MS),
         SAGAX_COMPUTER_CALL_ACT_WITHIN_MS: String(ACT_WITHIN_MS), ...env,
-      }, stdio: ["ignore", "pipe", "pipe"],
+      }, stdio: [...DESKTOP_PARENT_STDIO],
     });
     child = proc;
     proc.stdout!.on("data", chunk => { output += chunk; });
@@ -107,6 +108,11 @@ describe("lazy host claim and pin on use (issue #1650)", () => {
       if (proc.exitCode !== null) throw new Error(`server exited during boot:\n${output}`);
       try { return (await fetch(base + "/api/health")).ok; } catch { return false; }
     }, Boolean);
+    // The desktop app hands this computer to the server it launched.
+    await handDesktopComputer(proc, {
+      mode: "embedded", status: "ready", socketPath: join(home, "cua.sock"),
+      mcpCommand: "/fixture/cua-driver", mcpArgs: ["mcp"], mcpEnv: {},
+    });
   }
   async function stop() {
     if (!child) return;
@@ -131,10 +137,6 @@ describe("lazy host claim and pin on use (issue #1650)", () => {
     writeFileSync(join(ui, "index.html"), "<title>Host lazy claim</title>");
     writeFileSync(join(ui, "assets", "test.css"), "body{}");
     mkdirSync(join(home, "user-data"), { recursive: true });
-    writeFileSync(join(home, "user-data", "cua-connection.json"), JSON.stringify({
-      mode: "embedded", status: "ready", socketPath: join(home, "cua.sock"),
-      mcpCommand: "/fixture/cua-driver", mcpArgs: ["mcp"], mcpEnv: {},
-    }), { mode: 0o600 });
     writeFileSync(join(data, "config.json"), JSON.stringify({ instances: { claude: {
       driver: "claudeAgent", config: { cli: join(ROOT, "server/testing/fake-claude-cli.ts") },
       environment: { FAKE_CLAUDE_MODE: "slow", FAKE_CLAUDE_DUMP: dumpFile, FAKE_CLAUDE_SLOW_FINISH_GATE: finishFile },

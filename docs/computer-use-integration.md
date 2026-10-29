@@ -120,9 +120,13 @@ So the harness just adds one entry to a bot's `--mcp-config`:
 } } }
 ```
 
-Electron main writes that descriptor to
-`<userData>/cua-connection.json` (see `electron/cua.mjs`); the harness reads
-it and injects the block. The driver's own non-idempotent-action safety and
+Electron main keeps that descriptor (and its own copy in
+`<userData>/cua-connection.json`, see `electron/cua.mjs`) and hands it to the
+server it launched over that child's private parent port
+(`electron/local-computer-grant.mjs`, `server/desktop-computer.ts`), at spawn
+and on every driver change. The harness reads it only from there and injects
+the block: a server the app did not launch cannot use this computer, and the
+file grants nothing. The driver's own non-idempotent-action safety and
 the `ax → ax_fg → cgevent → cgevent_fg → cgevent_hid` delivery ladder
 (background pid-addressed input first — does not steal the user's cursor) are
 handled inside the binary; the host adds nothing.

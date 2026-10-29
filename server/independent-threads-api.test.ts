@@ -11,6 +11,7 @@ import { claudeLaunchLevel } from "./testing/claude-level.ts";
 import { launchVerificationServer, runControlOmb, type VerificationServer } from "../scripts/control-omb.ts";
 import { handleToolCall, request } from "../scripts/mcp-server.ts";
 import { readHandoffs } from "./testing/handoff-rows.ts";
+import { handDesktopComputer } from "./testing/desktop-computer.ts";
 import { memoryDate } from "./workspace.ts";
 
 // Drives a fixed Works on through the HTTP API (scripts/control-omb.ts passes
@@ -75,7 +76,7 @@ describe("independent bot tasks through the isolated control surface", () => {
   beforeEach(async () => {
     // The broker's "nobody answered" deadline fires on a marker file
     // (server/testing/approval-clock-hooks.mjs), never on its own.
-    session = await launchVerificationServer({ ...process.env, SAGAX_TEST_APPROVAL_CLOCK: "1" });
+    session = await launchVerificationServer({ ...process.env, SAGAX_TEST_APPROVAL_CLOCK: "1", SAGAX_TEST_DESKTOP_IPC: "1" });
     evidence = [{ fixture: session.info }];
     const wrapper = join(session.info.dataDir, "gated-claude.mjs");
     const fake = pathToFileURL(join(process.cwd(), "server/testing/fake-claude-cli.ts")).href;
@@ -668,14 +669,12 @@ describe("independent bot tasks through the isolated control surface", () => {
   }, 45_000);
 
   it.skipIf(process.platform !== "darwin")("claims the shared computer only on first use and keeps a sibling stop from releasing it", async () => {
-    // The fake provider only receives this inert descriptor; no UI driver is
-    // launched and the descriptor lives inside the fixture's disposable home.
-    const descriptorDir = join(session.info.dataDir, "Library", "Application Support", "Pulsa Bot");
-    mkdirSync(descriptorDir, { recursive: true });
-    writeFileSync(join(descriptorDir, "cua-connection.json"), JSON.stringify({
+    // The fake provider only receives this inert descriptor, handed over as
+    // the desktop app does; no UI driver is launched.
+    await handDesktopComputer(session.child, {
       mode: "embedded", socketPath: join(session.info.dataDir, "never-used.sock"),
       mcpCommand: join(session.info.dataDir, "never-launched-computer"), mcpArgs: ["mcp"], mcpEnv: {},
-    }));
+    });
     const created = await tool("create_bot", { name: "Computer lease fixture", instance_id: "claude", model: models[0] });
     const botId = created.bot.id;
     const taskA = created.bot.activeTaskId;
