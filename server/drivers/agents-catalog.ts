@@ -26,9 +26,9 @@ import { APPROVALS_TOOL_DEFINITIONS } from "./agents-approvals-tools.ts";
 import { phoneToolDefinition, phoneToolsFromEnv } from "./agents-phone-tools.ts";
 import { videoToolDefinition } from "./agents-video.ts";
 import { WEB_SEARCH_TOOL_DEFINITION } from "./agents-web-search-tools.ts";
-import { openApiToolDefinition, openApiToolsFromEnv } from "../openapi-tools.ts";
+import { isOpenApiTool, openApiToolDefinition, openApiToolsFromEnv } from "../openapi-tools.ts";
 import { VAULT_HTTP_TOOL } from "./agents-vault-http-tools.ts";
-import type { PhoneToolId } from "../../shared/phone-tools.ts";
+import { PHONE_TOOLS, type PhoneToolId } from "../../shared/phone-tools.ts";
 import { CLAIM_TOOL_NAMES } from "../perspicax-claims.ts";
 
 /** Which tools a turn is shown. The harness decides each of these when it
@@ -2027,6 +2027,26 @@ function catalogTools(profile: CatalogProfile) {
   ];
   if (!profile.agentApi || profile.externalRuntime) return base;
   return [...base, ...AGENT_API_TOOLS.filter((tool) => profile.chief || (tool.name !== "create_agent" && tool.name !== "delete_agent"))];
+}
+
+/** Every name Sagax's own `agents` server can list, on any turn (#1426):
+ * the catalog of the widest profile, on a call and off one, plus the
+ * person's own OpenAPI operations. A name outside it is one the model made
+ * up (`image_gen` after a native image tool was withheld): no card, no
+ * approval, it can only fail. */
+let everyAgentTool: ReadonlySet<string> | undefined;
+export function knownAgentToolName(name: string): boolean {
+  if (isOpenApiTool(name)) return true;
+  if (!everyAgentTool) {
+    const widest: CatalogProfile = {
+      externalRuntime: false, coordinating: true, ownThreadCreation: true, skillAuthoring: true, sharedComputers: true,
+      voiceNotes: true, meetings: true, singleStream: true, routeMessages: true, githubConnect: true, cloudHome: false,
+      memoryEnabled: true, groupMemory: true, chief: true, createBots: true, botId: WATCHER_OPTIONS_CARD_BOT_ID,
+      agentApi: true, perspicax: true, claims: true, phoneTools: [...PHONE_TOOLS], webSearch: true, vaultHttp: true,
+    };
+    everyAgentTool = new Set([false, true].flatMap((voiceCall) => availableTools({ ...widest, voiceCall }).map((tool) => tool.name)));
+  }
+  return everyAgentTool.has(name);
 }
 
 /** Tools of a Tailcat remote session (opened through Perspicax remote_support_*). */

@@ -400,7 +400,7 @@ import { createEmailDraftRoutes } from "./routes/email-drafts.ts";
 import { createThreadWarmRoutes } from "./routes/thread-warm.ts";
 import { createEmailSendPasses, emailSendCard, sendWithMailer } from "./email-draft-send.ts";
 import { EMAIL_SEND_REQUEST_PREFIX, emailDraftKey, emailDraftsEnabled, emailSendInstruction, emailSendSummary, mailConnectorsOf, normalizeDraftForSend, type EmailConnector, type EmailSendRequestCard } from "../shared/email-draft-send.ts";
-import { memberOwnScopeTool } from "./member-tool-scope.ts";
+import { builtinAgentToolName, memberOwnScopeTool, unknownAgentToolRefusal } from "./member-tool-scope.ts";
 import { serverApprovalWords } from "./approval-words.ts";
 import { personLanguageOf } from "./person-language.ts";
 import {
@@ -1277,7 +1277,7 @@ import { acceptOpenInvitesForEmail, createPublicInviteRoutes, createSoloOrgRoute
 import { createDirectGrantRoutes } from "./direct-grants.ts";
 import { directoryIntervalMs, PerspicaxDirectory, type ModelProvider } from "./perspicax-link.ts";
 import { duplicateNote, PerspicaxMemory } from "./perspicax-memory.ts";
-import { PERSPICAX_TOOL_NAMES } from "./drivers/agents-catalog.ts";
+import { knownAgentToolName, PERSPICAX_TOOL_NAMES } from "./drivers/agents-catalog.ts";
 import { measureContextBuckets, toolDefinitionBytes } from "./context-buckets.ts";
 import { PERSPICAX_PROTOCOL_VERSION, PERSPICAX_UNAVAILABLE_WHY, PerspicaxMcp, perspicaxUnavailableRow, type PerspicaxUnavailableReason } from "./perspicax-mcp.ts";
 import { withClaimsFlag } from "./perspicax-claims.ts";
@@ -16653,6 +16653,22 @@ bus.subscribe((event: RuntimeEvent) => {
       // environment the person's rules cover (their real computer, their
       // cloud computer while the organization turned autonomy off).
       const gateGrantBlocked = foreignDestination || (ownDestination && !ownEnvironment && !speakerEnvironmentRules && !attachmentRead);
+      // #1426: a Sagax tool that does not exist (a name the model made up,
+      // such as image_gen after a native image tool was withheld) can only
+      // fail: refused at once with words the model can act on, never a card
+      // for the person or an admin.
+      const madeUpTool = permission && asker && event.requestId && !foreignToolSpelling(event.mcpTool ?? event.tool, foreignServers)
+        ? builtinAgentToolName(event.mcpTool ?? event.tool) : null;
+      if (madeUpTool && asker && event.requestId && !knownAgentToolName(madeUpTool)) {
+        const instance = event.providerInstanceId ? registry.get(event.providerInstanceId) : registry.get(asker.modelSelection.instanceId);
+        const message = unknownAgentToolRefusal(madeUpTool);
+        void instance?.adapter.respondToRequest(event.threadId, event.requestId, { behavior: "deny", message }).catch(() => {});
+        appendDecision(DATA_DIR, {
+          threadId: event.threadId, requestId: event.requestId, botId: asker.id, botName: asker.name,
+          tool: event.tool, decision: "auto-denied", source: "unknown-tool",
+        });
+        break;
+      }
       // A confidential thread's card goes to its owner only: one they could
       // not answer (an organization admin's card, another person's machine)
       // is refused rather than shown to anyone else.

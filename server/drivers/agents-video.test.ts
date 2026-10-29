@@ -23,10 +23,10 @@ describe("make_video", () => {
     expect(callVideoTool({ prompt: "x", image: "y".repeat(501) }).isError).toBe(true);
   });
 
-  it("keeps video on an organization profile and withholds the other host tools", () => {
+  it("keeps video and images on an organization profile and withholds the host tools", () => {
     const profile = grokOrgAgentProfile(undefined, true);
-    expect(profile.tools).toEqual(expect.arrayContaining([...ENGINE_VIDEO_TOOLS]));
-    for (const name of ["run_terminal_command", "read_file", "write", "image_gen", "image_edit"]) {
+    expect(profile.tools).toEqual(expect.arrayContaining([...ENGINE_VIDEO_TOOLS, "image_gen", "image_edit"]));
+    for (const name of ["run_terminal_command", "read_file", "write"]) {
       expect(GROK_HOST_TOOL_NAMES).toContain(name);
       expect(profile.tools).not.toContain(name);
     }
