@@ -251,6 +251,7 @@ export function createSecurityKeyRoutes(deps: SecurityKeyRouteDeps): RouteHandle
 
     const item = /^\/api\/security-keys\/([A-Za-z0-9_-]{1,1400})$/.exec(path);
     if (item) {
+      if (method !== "PATCH" && method !== "DELETE") return json(res, 405, { error: "PATCH or DELETE" });
       const id = item[1]!;
       if (!deps.keys.store.credentials(me).some((credential) => credential.id === id)) return json(res, 404, { error: "no such key" });
       // #1545: a new name only, the person's own key (nothing it protects changes)
