@@ -52,7 +52,7 @@ describe("sidebar unread rows", () => {
     expect(html.indexOf("data-sidebar-unread-dot")).toBeGreaterThan(html.indexOf('data-sidebar-bot-row="loud"'));
   });
 
-  it("counts unread messages on the conversation when the lines are loaded", () => {
+  it("shows a plain dot, never a number, on an unread conversation", () => {
     fixture.state = { bots: [bot("loud", {
       unread: true,
       messages: [
@@ -62,9 +62,10 @@ describe("sidebar unread rows", () => {
       ] as Bot["messages"],
     })], groups: [], sections: [] };
     const html = render();
-    expect(html).toContain('data-unread-count="2"');
-    expect(html).toContain(">2<");
-    expect(html).not.toContain("data-sidebar-unread-dot");
+    expect(html).not.toContain("data-unread-count");
+    expect(html).not.toContain(">2<");
+    expect(html).toContain("data-sidebar-unread-dot");
+    expect(html).toMatch(/sr-only[^>]*>Unread threads</);
   });
 
   it("bolds an unread room and draws no dot", () => {

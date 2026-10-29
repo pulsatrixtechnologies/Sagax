@@ -80,6 +80,16 @@ const team: Bot[] = [
   }, "Trois avis de sécurité à lire ce matin.", minutes(320)),
 ];
 
+// ?unread=1: Iris and Lina have a reply waiting (the row's unread dot)
+if (params.get("unread") === "1") {
+  for (const name of ["iris", "lina"]) {
+    const row = team.find((entry) => entry.id === name)!;
+    row.unread = true;
+    row.messages = [message(`${name}-u`, "Peux-tu vérifier ça?", minutes(20), "user"), message(`${name}-1`, "Oui, je regarde.", minutes(10)), ...row.messages.slice(-1)];
+    row.tasks = [{ ...row.tasks![0]!, unread: true }];
+  }
+}
+
 const sharing = params.get("sharing") === "1";
 if (sharing) {
   team.length = 0;
