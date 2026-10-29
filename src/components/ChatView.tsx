@@ -1541,7 +1541,14 @@ function PinnedBanner({
  * place of the bot pill and controls, and none of the window-wide parts
  * (calls, ⌘F, the app's error and notice banners), which stay with the
  * main chat. */
-export type SideChat = { header: ReactNode; label: string };
+/** A chat drawn compact beside the main one. A split-view section passes
+ * `panel` and a header that takes the bot pill: the same pill as the main
+ * chat's, which opens this bot's panel (AppState.panelOwner). */
+export type SideChat = {
+  header: ReactNode | ((pill: ReactNode) => ReactNode);
+  label: string;
+  panel?: { open: boolean; onToggle: () => void };
+};
 
 // ── single stream (Show threads off, docs/single-stream-orchestration.md) ──
 
@@ -1890,9 +1897,12 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   // Pulsatrix Light's navy top band mirrors the sidebar's own macOS-inset
   // strip, so the two stay vertically aligned; every other skin ignores it.
   const { macInset, browser } = useMacInsetChrome();
-  const panelOpen = !remoteClient && (state.settingsOpen || state.computerOpen);
+  // A split-view section's panel (panelOwner) leaves this chat's controls.
+  const panelOpen = !remoteClient && (state.settingsOpen || state.computerOpen) && !state.panelOwner;
   // The pill toggles whichever right panel is showing, the remote one too.
-  const pillPanelOpen = state.settingsOpen || state.computerOpen;
+  // A split-view section's panel (panelOwner) is not this chat's: the pill
+  // shows it closed, and a click brings the panel back here.
+  const pillPanelOpen = (state.settingsOpen || state.computerOpen) && !state.panelOwner;
   // A shared bot on an organization server: each person's conversation is
   // their own; several people talk together in a group.
   const perspicaxOrg = usePerspicaxOrg();
@@ -2241,6 +2251,30 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   const latestPageVersion = useMemo(() => (openPage ? latestPageVersionIn(messages, openPage.pageId) : undefined), [openPage, messages]);
 
   const Root = side ? "section" : "main";
+  // The bot pill: mascot, name, chevron. The main chat's opens the panel
+  // at the right; a split-view section's opens its own (side.panel).
+  const botPill = (
+    <BotHeaderPill
+      name={bot.name}
+      panelOpen={side ? side.panel?.open === true : pillPanelOpen}
+      onToggle={side?.panel ? side.panel.onToggle : () => {
+        if (state.panelOwner) dispatch({ type: "toggleSettings", open: true, owner: null });
+        else for (const action of botPillActions(pillPanelOpen)) dispatch(action);
+      }}
+      avatar={
+        <BotAvatar
+          bot={bot}
+          primary={isViewersPrimaryBot(bot, viewerActorId(state.config))}
+          primaryRingClassName="ring-elevated"
+          state={stateForBot({ ...bot, messages })}
+          size={24}
+          motion={mascotMotion?.kind ?? "none"}
+          motionKey={mascotMotion?.nonce ?? 0}
+          animated={mascotRowAnimated(bot, state.pendingQueued, mascotMotion?.kind)}
+        />
+      }
+    />
+  );
   // My bubble (and its inline editor) in the bot's colour, whatever the
   // skin's accent (src/lib/bubble-colors.ts, botBubbleVars).
   const bubbleStyle = botBubbleVars(MAUS_COLORS[bot.color]) as React.CSSProperties;
@@ -2255,7 +2289,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
       {(macInset || browser) && <div className="content-topbar-strip" />}
       </>}
       {/* Header */}
-      {side ? side.header : <div
+      {side ? (typeof side.header === "function" ? side.header(side.panel ? botPill : null) : side.header) : <div
         {...headerDragProps}
         className={cn(
           "content-topbar",
@@ -2272,23 +2306,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
         )}
       >
         <div className="absolute left-1/2 top-1/2 flex max-w-[50%] -translate-x-1/2 -translate-y-1/2 items-center gap-2" style={headerNoDragStyle}>
-          <BotHeaderPill
-            name={bot.name}
-            panelOpen={pillPanelOpen}
-            onToggle={() => { for (const action of botPillActions(pillPanelOpen)) dispatch(action); }}
-            avatar={
-              <BotAvatar
-                bot={bot}
-                primary={isViewersPrimaryBot(bot, viewerActorId(state.config))}
-                primaryRingClassName="ring-elevated"
-                state={stateForBot({ ...bot, messages })}
-                size={24}
-                motion={mascotMotion?.kind ?? "none"}
-                motionKey={mascotMotion?.nonce ?? 0}
-                animated={mascotRowAnimated(bot, state.pendingQueued, mascotMotion?.kind)}
-              />
-            }
-          />
+          {botPill}
         </div>
         <div
           data-chathead-controls

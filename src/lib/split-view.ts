@@ -52,6 +52,30 @@ export function splitLeaves(node: SplitNode): SplitLeaf[] {
   return node.type === "leaf" ? [node] : node.children.flatMap(splitLeaves);
 }
 
+/** The window side a section's bot panel docks to (#1601 follow-up): the
+ * side nearest the section's horizontal middle, by the shares of the tree.
+ * A section left of the window's middle opens it at the left edge; one right
+ * of it, or exactly on it (the middle of three, a full-width row of a
+ * column), at the right edge, where the panel always opens. null: no such
+ * section. */
+export function splitLeafPanelSide(layout: SplitNode, leafId: string): "left" | "right" | null {
+  const walk = (node: SplitNode, from: number, to: number): number | null => {
+    if (node.type === "leaf") return node.id === leafId ? (from + to) / 2 : null;
+    let at = from;
+    for (const [index, child] of node.children.entries()) {
+      const share = node.sizes[index] ?? 0;
+      const end = node.dir === "row" ? at + (to - from) * share : to;
+      const found = walk(child, node.dir === "row" ? at : from, end);
+      if (found !== null) return found;
+      if (node.dir === "row") at = end;
+    }
+    return null;
+  };
+  const middle = walk(layout, 0, 1);
+  if (middle === null) return null;
+  return middle < 0.5 - 1e-9 ? "left" : "right";
+}
+
 /** Whether the window is split at all. */
 export function isSplit(node: SplitNode): boolean {
   return node.type === "split";
