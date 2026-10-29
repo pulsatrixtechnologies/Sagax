@@ -159,7 +159,12 @@ export function describeCron(expression: string, locale: CronLocale): string | n
     when = `${fr ? "à" : "at"} ${join(times, locale)}`;
   }
 
-  // Which days
+  return sentence(leadPhrase(dom, month, dow, locale), when);
+}
+
+/** Which days: "weekdays, in June", or "" for every day; null when it
+ * cannot be said. */
+function leadPhrase(dom: Field, month: Field, dow: Field, locale: CronLocale): string | null {
   const parts: string[] = [];
   const days = dow.star ? "" : daysPhrase(dow, locale);
   if (days === null) return null;
@@ -169,7 +174,43 @@ export function describeCron(expression: string, locale: CronLocale): string | n
     const names = month.values.map((value) => MONTH_NAMES[locale][value - 1]!);
     parts.push(locale === "fr" ? `en ${join(names, locale)}` : `in ${join(names, locale)}`);
   }
-  const lead = parts.join(locale === "fr" ? ", " : ", ");
+  return parts.join(", ");
+}
+
+function sentence(lead: string | null, when: string): string | null {
+  if (lead === null) return null;
   const text = lead ? `${lead}, ${when}` : when;
   return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** Several expressions joined by ";" that differ only in their times
+ * (2026-10-29, "15 8 * * 1-5; 30 12 * * 1-5"): "Weekdays, at 8:15 AM and
+ * 12:30 PM". Null when they differ in their days or a time is not plain. */
+export function describeCronList(expression: string, locale: CronLocale): string | null {
+  const parts = expression.split(";").map((part) => part.trim()).filter(Boolean);
+  if (parts.length < 2) return null;
+  const fields = parts.map((part) => part.split(/\s+/));
+  if (fields.some((field) => field.length !== 5)) return null;
+  const days = fields[0]!.slice(2).join(" ");
+  if (fields.some((field) => field.slice(2).join(" ") !== days)) return null;
+  const lastDay = days === "L * *";
+  if (!lastDay && /[^0-9A-Za-z*,/ -]/.test(days)) return null;
+  const times = new Map<number, string>();
+  for (const [minuteText, hourText] of fields) {
+    if (!/^\d+$/.test(minuteText!)) return null;
+    const minute = parseField(minuteText!, 0, 59);
+    const hour = parseField(hourText!, 0, 23);
+    if (!minute || !hour || hour.star || hour.step !== null) return null;
+    for (const h of hour.values) times.set(h * 60 + minute.values[0]!, clock(h, minute.values[0]!, locale, true));
+  }
+  if (times.size > 12) return null;
+  const ordered = [...times.entries()].sort((a, b) => a[0] - b[0]).map(([, text]) => text);
+  const when = `${locale === "fr" ? "à" : "at"} ${join(ordered, locale)}`;
+  if (lastDay) return sentence(locale === "fr" ? "le dernier jour du mois" : "on the last day of the month", when);
+  const [domText, monthText, dowText] = fields[0]!.slice(2) as [string, string, string];
+  const dom = parseField(domText, 1, 31);
+  const month = parseField(monthText, 1, 12, MONTH_ALIASES, 1);
+  const dow = parseField(dowText, 0, 7, DAY_ALIASES, 0);
+  if (!dom || !month || !dow || (!dom.star && !dow.star)) return null;
+  return sentence(leadPhrase(dom, month, dow, locale), when);
 }

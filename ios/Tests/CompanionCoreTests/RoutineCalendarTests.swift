@@ -80,6 +80,14 @@ final class RoutineCalendarTests: XCTestCase {
         XCTAssertEqual(sunday, [])
     }
 
+    /// 2026-10-29: several expressions joined by ";" show every time once.
+    func testSeveralCronExpressionsShowEachTimeOnce() {
+        let cron = routine("cron", .cron(expression: "15 8 * * *; 30 12 * * *; 30 12 * * *", timeZone: "America/Toronto"),
+                           nextRunAt: local(2026, 10, 5, 8, 15))
+        let monday = RoutineCalendar.day(local(2026, 10, 5), routines: [cron], runs: [], calendar: toronto)
+        XCTAssertEqual(monday.map(\.date), [local(2026, 10, 5, 8, 15), local(2026, 10, 5, 12, 30)])
+    }
+
     func testOverlapsShareColumns() {
         func item(_ id: String, _ h: Int, _ m: Int, _ duration: Int = 30) -> RoutineCalendarItem {
             RoutineCalendarItem(id: id, at: ms(local(2026, 10, 5, h, m)), durationMinutes: duration, routine: nil, run: nil)

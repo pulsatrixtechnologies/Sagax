@@ -78,7 +78,6 @@ export function scheduleSentenceFor(schedule: Pick<RoutineCronSchedule, "express
 
 const PROBLEM_KEYS = {
   noTime: "scheduleEditor.problem.noTime",
-  sameMinute: "scheduleEditor.problem.sameMinute",
   noDays: "scheduleEditor.problem.noDays",
   badTime: "scheduleEditor.problem.badTime",
 } as const;

@@ -73,6 +73,46 @@ final class RoutineEditorTests: XCTestCase {
         }
     }
 
+    /// 2026-10-29: several expressions joined by ";" run at every instant
+    /// any of them names, once per instant, in order.
+    func testSeveralCronExpressionsMergeTheirRuns() throws {
+        let from = iso("2026-10-05T00:00:00Z") // a Monday
+        let cron = try CronExpression(expression: " 30 12 * * 1-5 ;15  8 * * 1-5", timeZone: "UTC")
+        XCTAssertEqual(cron.expression, "30 12 * * 1-5; 15 8 * * 1-5")
+        XCTAssertEqual(isoList(cron.nextRuns(after: from, count: 4)), [
+            "2026-10-05T08:15:00Z", "2026-10-05T12:30:00Z", "2026-10-06T08:15:00Z", "2026-10-06T12:30:00Z",
+        ])
+        // the same instant twice runs once
+        let twice = try CronExpression(expression: "30 8 * * *; 30 8 * * *", timeZone: "UTC")
+        XCTAssertEqual(twice.expression, "30 8 * * *")
+        XCTAssertEqual(isoList(twice.nextRuns(after: from, count: 3)),
+                       ["2026-10-05T08:30:00Z", "2026-10-06T08:30:00Z", "2026-10-07T08:30:00Z"])
+        let overlap = try CronExpression(expression: "30 8,9 * * *; 30 9 * * *", timeZone: "UTC")
+        XCTAssertEqual(isoList(overlap.nextRuns(after: from, count: 3)),
+                       ["2026-10-05T08:30:00Z", "2026-10-05T09:30:00Z", "2026-10-06T08:30:00Z"])
+        // one expression stays as it was
+        XCTAssertEqual(try CronExpression(expression: "30  8 * * 1-5", timeZone: "UTC").expression, "30 8 * * 1-5")
+        XCTAssertEqual(try CronExpression.normalized(.cron(expression: "15 8 * * 1-5;30 12 * * 1-5", timeZone: "UTC"), after: from).expression,
+                       "15 8 * * 1-5; 30 12 * * 1-5")
+    }
+
+    func testSeveralCronExpressionsKeepTheServerLimits() {
+        XCTAssertThrowsError(try CronExpression(expression: "15 8 * * 1-5; 30 12 * *", timeZone: "UTC")) {
+            XCTAssertEqual($0 as? CronExpression.Failure, .fields)
+        }
+        XCTAssertThrowsError(try CronExpression(expression: " ; ", timeZone: "UTC")) {
+            XCTAssertEqual($0 as? CronExpression.Failure, .fields)
+        }
+        XCTAssertThrowsError(try CronExpression(expression: "15 8 * * *; 61 9 * * *", timeZone: "UTC")) {
+            XCTAssertEqual($0 as? CronExpression.Failure, .pattern("Invalid value for minute: 61"))
+        }
+        let twentyFour = (0..<24).map { "\($0) \($0) * * *" }.joined(separator: "; ")
+        XCTAssertNoThrow(try CronExpression(expression: twentyFour, timeZone: "UTC"))
+        XCTAssertThrowsError(try CronExpression(expression: twentyFour + "; 30 0 * * *", timeZone: "UTC")) {
+            XCTAssertEqual($0 as? CronExpression.Failure, .fields)
+        }
+    }
+
     // MARK: The schedule form
 
     func testRecurrenceIsReadFromTheSchedule() {
@@ -151,12 +191,20 @@ final class RoutineEditorTests: XCTestCase {
         XCTAssertEqual(saved.timeZone, "Europe/Paris")
     }
 
-    func testSeveralTimesMustShareTheirMinutes() {
-        var form = RoutineScheduleForm(schedule: nil, seedAt: iso("2026-10-07T13:00:00Z"), now: iso("2026-10-03T12:00:00Z"), calendar: montreal)
-        form.select(.daily)
-        form.model.times = ["08:15", "12:30"]
-        XCTAssertEqual(form.problem, .schedule(.sameMinute))
-        XCTAssertThrowsError(try form.schedule(savedAt: Date()))
+    func testEachTimeKeepsItsOwnMinutes() throws {
+        let now = iso("2026-10-03T12:00:00Z")
+        var form = RoutineScheduleForm(schedule: nil, seedAt: iso("2026-10-07T13:00:00Z"), now: now, calendar: montreal)
+        form.select(.weekdays)
+        form.model.times = ["12:30", "08:15"]
+        XCTAssertNil(form.problem)
+        let saved = try form.schedule(savedAt: now)
+        XCTAssertEqual(saved.expression, "15 8 * * 1-5; 30 12 * * 1-5")
+        // Monday 5 October, Toronto time
+        XCTAssertEqual(isoList(form.preview?.runs ?? []), ["2026-10-05T12:15:00Z", "2026-10-05T16:30:00Z", "2026-10-06T12:15:00Z"])
+        // reopened, it is the same weekdays model
+        let reopened = RoutineScheduleForm(schedule: saved, seedAt: now, now: now, calendar: montreal)
+        XCTAssertEqual(reopened.recurrence, .weekdays)
+        XCTAssertEqual(reopened.model.times, ["08:15", "12:30"])
     }
 
     func testAnAdvancedCronIsKeptUntilASimpleScheduleIsChosen() throws {

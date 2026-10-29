@@ -1,7 +1,8 @@
 // Cron schedules for routines (matrix AU12), as the desktop edits them.
 //
 // The editor's frequencies (RoutineScheduleModel, shared/schedule-model.ts)
-// write a five-field cron expression in an explicit IANA zone; the server and
+// write a five-field cron expression (or several joined by "; ", one per
+// minute of a day, 2026-10-29) in an explicit IANA zone; the server and
 // the editor's "Next runs" preview read it with croner
 // (shared/routine-schedule.ts, `mode: "5-part"`). This file is that calculator for the phone: the same
 // field syntax, the same day rule (day of month OR day of week when both are
@@ -10,11 +11,96 @@
 import Foundation
 
 public struct CronExpression: Hashable, Sendable {
+    /// Expressions one schedule may join (one per distinct minute of a day).
+    public static let maxExpressions = 24
+    /// The longest joined expression the server accepts.
+    public static let maxLength = 1024
+    /// How several expressions are written (2026-10-29: "15 8 * * 1-5; 30 12 * * 1-5").
+    public static let separator = "; "
+
+    /// Normalized: each expression's whitespace collapsed, repeats dropped,
+    /// joined by "; ".
     public let expression: String
     /// The zone as written ("UTC" stays "UTC"; Foundation would say "GMT").
     public let zoneName: String
     public let timeZone: TimeZone
+    /// One calculator per expression; the routine runs at every instant any
+    /// of them names, once per instant.
+    let patterns: [CronPattern]
 
+    public enum Failure: Error, Equatable, LocalizedError {
+        case fields
+        case zone
+        case invalidZone
+        case pattern(String)
+        case noFutureRuns
+
+        public var errorDescription: String? {
+            switch self {
+            case .fields:
+                "Cron must have five fields: minute hour day-of-month month weekday (no seconds, year, or macros); join several with \";\""
+            case .zone:
+                "Choose an IANA timezone such as America/New_York, Asia/Kolkata, or UTC"
+            case .invalidZone:
+                "Choose a valid IANA timezone such as America/New_York, Asia/Kolkata, or UTC"
+            case let .pattern(detail):
+                "Invalid cron expression: \(detail)"
+            case .noFutureRuns:
+                "This cron expression has no future runs. Choose dates that exist."
+            }
+        }
+    }
+
+    /// The expressions of a schedule (`cronExpressions`): one, or several
+    /// joined by ";", each with its whitespace collapsed.
+    public static func expressions(_ expression: String) -> [String] {
+        expression.split(separator: ";", omittingEmptySubsequences: false).map { part in
+            part.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" || $0 == "\r" }).joined(separator: " ")
+        }.filter { !$0.isEmpty }
+    }
+
+    /// Parse as `normalizeCronSchedule` does: whitespace collapsed, five
+    /// fields per expression, at most 24 expressions joined by ";", a named
+    /// zone (or UTC).
+    public init(expression raw: String, timeZone rawZone: String) throws {
+        var seen = Set<String>()
+        let parts = Self.expressions(raw).filter { seen.insert($0).inserted }
+        let expression = parts.joined(separator: Self.separator)
+        guard !parts.isEmpty, parts.count <= Self.maxExpressions, expression.count <= Self.maxLength,
+              parts.allSatisfy({ $0.split(separator: " ").count == 5 && !$0.contains("@") })
+        else { throw Failure.fields }
+        let zoneName = rawZone.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard zoneName.count <= 128,
+              zoneName == "UTC" || zoneName.range(of: #"^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)+$"#, options: .regularExpression) != nil
+        else { throw Failure.zone }
+        guard let zone = TimeZone(identifier: zoneName) else { throw Failure.invalidZone }
+        self.expression = expression
+        self.zoneName = zoneName
+        self.timeZone = zone
+        self.patterns = try parts.map { try CronPattern($0.split(separator: " ").map(String.init)) }
+    }
+
+    /// `normalizeCronSchedule`: valid and with at least one future run.
+    public static func normalized(_ schedule: RoutineSchedule, after: Date) throws -> RoutineSchedule {
+        let cron = try CronExpression(expression: schedule.expression ?? "", timeZone: schedule.timeZone ?? "")
+        guard !cron.nextRuns(after: after, count: 1).isEmpty else { throw Failure.noFutureRuns }
+        return .cron(expression: cron.expression, timeZone: cron.zoneName)
+    }
+
+    /// Strictly-future instants, in order, every expression's runs merged;
+    /// an instant two of them name runs once. Empty when the dates never exist.
+    public func nextRuns(after: Date, count: Int) -> [Date] {
+        guard count > 0 else { return [] }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = timeZone
+        if patterns.count == 1 { return patterns[0].nextRuns(after: after, count: count, calendar: calendar) }
+        let merged = Set(patterns.flatMap { $0.nextRuns(after: after, count: count, calendar: calendar) })
+        return Array(merged.sorted().prefix(count))
+    }
+}
+
+/// One five-field expression: croner's field syntax and day rule.
+struct CronPattern: Hashable, Sendable {
     let minutes: Set<Int>
     let hours: Set<Int>
     let months: Set<Int>
@@ -34,45 +120,9 @@ public struct CronExpression: Hashable, Sendable {
         let nth: Int
     }
 
-    public enum Failure: Error, Equatable, LocalizedError {
-        case fields
-        case zone
-        case invalidZone
-        case pattern(String)
-        case noFutureRuns
+    typealias Failure = CronExpression.Failure
 
-        public var errorDescription: String? {
-            switch self {
-            case .fields:
-                "Cron must have five fields: minute hour day-of-month month weekday (no seconds, year, or macros)"
-            case .zone:
-                "Choose an IANA timezone such as America/New_York, Asia/Kolkata, or UTC"
-            case .invalidZone:
-                "Choose a valid IANA timezone such as America/New_York, Asia/Kolkata, or UTC"
-            case let .pattern(detail):
-                "Invalid cron expression: \(detail)"
-            case .noFutureRuns:
-                "This cron expression has no future runs. Choose dates that exist."
-            }
-        }
-    }
-
-    /// Parse as `normalizeCronSchedule` does: whitespace collapsed, five
-    /// fields, a named zone (or UTC).
-    public init(expression raw: String, timeZone rawZone: String) throws {
-        let expression = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" }).joined(separator: " ")
-        let parts = expression.split(separator: " ").map(String.init)
-        guard expression.count <= 256, parts.count == 5, !expression.contains("@") else { throw Failure.fields }
-        let zoneName = rawZone.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard zoneName.count <= 128,
-              zoneName == "UTC" || zoneName.range(of: #"^[A-Za-z][A-Za-z0-9_+-]*(?:/[A-Za-z0-9_+-]+)+$"#, options: .regularExpression) != nil
-        else { throw Failure.zone }
-        guard let zone = TimeZone(identifier: zoneName) else { throw Failure.invalidZone }
-        self.expression = expression
-        self.zoneName = zoneName
-        self.timeZone = zone
-
+    init(_ parts: [String]) throws {
         minutes = try Self.field(parts[0], name: "minute", range: 0...59)
         hours = try Self.field(parts[1], name: "hour", range: 0...23)
         months = try Self.field(parts[3], name: "month", range: 1...12, names: Self.monthNames, offset: 1)
@@ -129,18 +179,7 @@ public struct CronExpression: Hashable, Sendable {
         self.nthWeekdays = nth
     }
 
-    /// `normalizeCronSchedule`: valid and with at least one future run.
-    public static func normalized(_ schedule: RoutineSchedule, after: Date) throws -> RoutineSchedule {
-        let cron = try CronExpression(expression: schedule.expression ?? "", timeZone: schedule.timeZone ?? "")
-        guard !cron.nextRuns(after: after, count: 1).isEmpty else { throw Failure.noFutureRuns }
-        return .cron(expression: cron.expression, timeZone: cron.zoneName)
-    }
-
-    /// Strictly-future instants, in order. Empty when the dates never exist.
-    public func nextRuns(after: Date, count: Int) -> [Date] {
-        guard count > 0 else { return [] }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = timeZone
+    func nextRuns(after: Date, count: Int, calendar: Calendar) -> [Date] {
         var runs: [Date] = []
         var day = calendar.startOfDay(for: after)
         let sortedHours = hours.sorted()

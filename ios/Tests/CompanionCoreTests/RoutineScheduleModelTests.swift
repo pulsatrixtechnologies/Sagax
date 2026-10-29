@@ -2,7 +2,7 @@ import XCTest
 @testable import CompanionCore
 
 /// The schedule as a person picks it (shared/schedule-model.ts): every
-/// frequency to cron and back, the shared-minutes rule, what fits no model.
+/// frequency to cron and back, times with their own minutes, what fits no model.
 final class RoutineScheduleModelTests: XCTestCase {
     private func cron(_ model: RoutineScheduleModel) -> String? {
         try? model.cron().get()
@@ -45,9 +45,42 @@ final class RoutineScheduleModelTests: XCTestCase {
         XCTAssertEqual(cron(RoutineScheduleModel(frequency: .days, times: ["09:00"], weekdays: [0, 1, 2, 3, 4, 5, 6])), "0 9 * * *")
     }
 
-    func testSeveralTimesShareTheirMinutes() {
-        let model = RoutineScheduleModel(frequency: .daily, times: ["08:15", "12:30"])
-        XCTAssertEqual(model.cron(), .failure(.sameMinute))
+    /// 2026-10-29: each time keeps its minutes; times sharing their minutes
+    /// share an expression, the earliest time's expression first.
+    func testTimesWithOtherMinutesBecomeSeveralExpressions() throws {
+        let cases: [(RoutineScheduleModel, String)] = [
+            (RoutineScheduleModel(frequency: .weekdays, times: ["12:30", "08:15"]), "15 8 * * 1-5; 30 12 * * 1-5"),
+            (RoutineScheduleModel(frequency: .daily, times: ["08:15", "12:30", "16:15"]), "15 8,16 * * *; 30 12 * * *"),
+            (RoutineScheduleModel(frequency: .monthly, times: ["09:00", "17:45"], monthDay: .day(15)), "0 9 15 * *; 45 17 15 * *"),
+            (RoutineScheduleModel(frequency: .monthly, times: ["06:05", "18:30"], monthDay: .last), "5 6 L * *; 30 18 L * *"),
+            (RoutineScheduleModel(frequency: .days, times: ["07:10", "19:40"], weekdays: [0, 3, 6]), "10 7 * * 0,3,6; 40 19 * * 0,3,6"),
+            (RoutineScheduleModel(frequency: .yearly, times: ["10:00", "10:30"], monthDay: .day(1), month: 7), "0 10 1 7 *; 30 10 1 7 *"),
+        ]
+        for (model, expression) in cases {
+            XCTAssertEqual(cron(model), expression)
+            let back = try XCTUnwrap(RoutineScheduleModel.from(cron: expression), expression)
+            XCTAssertEqual(back.frequency, model.frequency, expression)
+            XCTAssertEqual(back.times, RoutineScheduleModel.normalizeTimes(model.times), expression)
+            XCTAssertEqual(cron(back), expression)
+        }
+        let days = try XCTUnwrap(RoutineScheduleModel.from(cron: "10 7 * * 0,3,6;40 19 * * 0,3,6"))
+        XCTAssertEqual(days.weekdays, [0, 3, 6])
+        XCTAssertEqual(RoutineScheduleModel.from(cron: "45 17 15 * *; 0 9 15 * *")?.times, ["09:00", "17:45"])
+    }
+
+    func testSeveralExpressionsThatDifferInTheirDaysFitNoModel() {
+        for expression in ["15 8 * * 1-5; 30 12 * * *", "0 9 1 * *; 30 9 15 * *", "15 8 * * *; */15 * * * *", "30 * * * *; 45 * * * *",
+                           "15 8 * * *; 0 9 1 * 1", "15 8 * * *; 0 9 * *"] {
+            XCTAssertNil(RoutineScheduleModel.from(cron: expression), expression)
+        }
+    }
+
+    func testOneExpressionIsUnchanged() {
+        XCTAssertEqual(cron(RoutineScheduleModel(frequency: .weekdays, times: ["08:30", "12:30"])), "30 8,12 * * 1-5")
+        XCTAssertEqual(RoutineScheduleModel.from(cron: "30 8,12 * * 1-5")?.times, ["08:30", "12:30"])
+    }
+
+    func testProblems() {
         XCTAssertEqual(RoutineScheduleModel(frequency: .daily, times: []).cron(), .failure(.noTime))
         XCTAssertEqual(RoutineScheduleModel(frequency: .days, weekdays: []).cron(), .failure(.noDays))
         XCTAssertEqual(RoutineScheduleModel(frequency: .daily, times: ["25:00"]).cron(), .failure(.badTime))

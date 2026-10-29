@@ -520,6 +520,36 @@ it("names a new routine thread with the local dispatch date and time", async () 
 
 describe("cron routines use the existing persistent scheduler", () => {
   const start = Date.parse("2026-09-13T08:00:00Z");
+  const finishTurn = (h: ReturnType<typeof harness>, threadId: string) => h.manager.handleRuntimeEvent({
+    eventId: `done-${threadId}`, provider: "fake", threadId, createdAt: new Date().toISOString(), type: "turn.completed", ok: true,
+  });
+
+  it("runs each time of a day once when its minutes differ (several expressions, 2026-10-29)", async () => {
+    const h = harness(start);
+    // 8:15 and 12:30 every day, 8:15 named twice: it still runs once.
+    const routine = h.manager.create(input({ type: "cron", expression: "15 8 * * *; 30 12 * * *;15 8 * * *", timeZone: "UTC" }));
+    expect(routine.schedule).toEqual({ type: "cron", expression: "15 8 * * *; 30 12 * * *", timeZone: "UTC" });
+    const fired: string[] = [];
+    for (let index = 0; index < 4; index += 1) {
+      const due = h.manager.getRoutine(routine.id)!.nextRunAt!;
+      h.setNow(due);
+      await h.manager.tick(); await h.manager.tick();
+      fired.push(new Date(due).toISOString());
+      finishTurn(h, h.started.at(-1)!.threadId);
+    }
+    expect(fired).toEqual(["2026-09-13T08:15:00.000Z", "2026-09-13T12:30:00.000Z", "2026-09-14T08:15:00.000Z", "2026-09-14T12:30:00.000Z"]);
+    expect(h.started).toHaveLength(4);
+    expect(h.manager.listRuns().map((run) => new Date(run.scheduledFor).toISOString()).sort()).toEqual([...fired].sort());
+    // Reload keeps it as saved.
+    expect(new RoutineManager(h.options).listRoutines()[0]!.schedule).toEqual(routine.schedule);
+  });
+
+  it("keeps a routine of one expression exactly as before", () => {
+    const h = harness(start);
+    const routine = h.manager.create(input());
+    expect(routine.schedule).toEqual(monthly);
+    expect(new RoutineManager(h.options).listRoutines()[0]!.schedule).toEqual(monthly);
+  });
   const monthly = { type: "cron" as const, expression: "0 9 1 * *", timeZone: "UTC" };
   const input = (schedule = monthly) => ({ name: "Monthly report", prompt: "Write the report", botId: "maus-1", schedule });
 

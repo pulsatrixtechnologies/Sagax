@@ -691,13 +691,6 @@
         "pt-BR": { "stringUnit": { "state": "translated", "value": "Adicione pelo menos um horário." } }
       }
     },
-    "Times on the same day must share their minutes, such as 8:30, 12:30 and 4:30.": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Times on the same day must share their minutes, such as 8:30, 12:30 and 4:30." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Les heures d'une même journée doivent avoir les mêmes minutes, par exemple 8 h 30, 12 h 30 et 16 h 30." } },
-        "pt-BR": { "stringUnit": { "state": "translated", "value": "Os horários do mesmo dia precisam ter os mesmos minutos, como 8:30, 12:30 e 16:30." } }
-      }
-    },
     "Choose a valid time.": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Choose a valid time." } },

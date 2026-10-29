@@ -273,7 +273,7 @@ public struct RoutineScheduleForm: Hashable, Sendable {
     }
 
     /// "+ Add a time": the next free hour after the last one, at the same
-    /// minutes (several times a day share their minutes).
+    /// minutes as the last one (each time may then take its own minutes).
     public mutating func addTime() {
         let times = RoutineScheduleModel.normalizeTimes(model.times).compactMap(RoutineScheduleModel.parseClock)
         guard let last = times.last else {
@@ -445,7 +445,6 @@ public struct RoutineScheduleForm: Hashable, Sendable {
             case let .window(minutes): "Choose a same-day window at least \(minutes) minutes long."
             case .endDate: "Choose an end date after the first run."
             case .schedule(.noTime): "Add at least one time."
-            case .schedule(.sameMinute): "Times on the same day must share their minutes, such as 8:30, 12:30 and 4:30."
             case .schedule(.badTime): "Choose a valid time."
             case let .cron(message): message
             }

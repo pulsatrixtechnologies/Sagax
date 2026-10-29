@@ -413,7 +413,8 @@ public extension RoutineSchedule {
     }
 
     /// A cron schedule a sentence can say ("Weekdays at 8:11 AM",
-    /// "Weekdays at 12:17 PM and 4:17 PM"): one minute, one or more hours,
+    /// "Weekdays at 12:17 PM and 4:17 PM", "Weekdays at 8:15 AM and 12:30 PM"
+    /// from "15 8 * * 1-5; 30 12 * * 1-5"): one minute per expression, one or more hours,
     /// every day of the month and every month, and any day-of-week list or
     /// range. Nil for anything else (steps, day-of-month or month limits),
     /// which is shown raw.
@@ -427,23 +428,31 @@ public extension RoutineSchedule {
 
     var cronWording: CronWording? {
         guard type == .cron, let expression else { return nil }
-        let fields = expression.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
-        guard fields.count == 5,
-              let minute = Int(fields[0]), (0..<60).contains(minute),
-              fields[2] == "*" || fields[2] == "?",
-              fields[3] == "*"
+        // 2026-10-29: several expressions joined by ";" (one per minute of a
+        // day) say their times together when their days are the same.
+        let parts = expression.split(separator: ";", omittingEmptySubsequences: false)
+            .map { $0.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init) }
+            .filter { !$0.isEmpty }
+        guard let first = parts.first, first.count == 5,
+              first[2] == "*" || first[2] == "?",
+              first[3] == "*"
         else { return nil }
-        var hours: [Int] = []
-        for part in fields[1].split(separator: ",", omittingEmptySubsequences: false) {
-            guard let hour = Int(part), (0..<24).contains(hour) else { return nil }
-            hours.append(hour)
+        var minutesOfDay = Set<Int>()
+        for fields in parts {
+            guard fields.count == 5, fields[2...] == first[2...],
+                  let minute = Int(fields[0]), (0..<60).contains(minute)
+            else { return nil }
+            for part in fields[1].split(separator: ",", omittingEmptySubsequences: false) {
+                guard let hour = Int(part), (0..<24).contains(hour) else { return nil }
+                minutesOfDay.insert(hour * 60 + minute)
+            }
         }
-        guard let days = Self.cronDays(fields[4]) else { return nil }
+        guard let days = Self.cronDays(first[4]) else { return nil }
         let pattern = RoutineSchedule(type: .daily, weekdays: days).dayPattern
         let zone = timeZone.flatMap { $0.isEmpty ? nil : $0 }
         return CronWording(
             days: pattern,
-            minutesOfDay: Array(Set(hours)).sorted().map { $0 * 60 + minute },
+            minutesOfDay: minutesOfDay.sorted(),
             timeZone: zone
         )
     }

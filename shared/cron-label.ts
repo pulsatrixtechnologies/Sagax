@@ -1,4 +1,4 @@
-import { describeCron, type CronLocale } from "./cron-describe.ts";
+import { describeCron, describeCronList, type CronLocale } from "./cron-describe.ts";
 import type { RoutineCronSchedule } from "./routine-schedule.ts";
 
 const WEEKDAYS = {
@@ -32,6 +32,8 @@ export function cronScheduleLabel(schedule: RoutineCronSchedule, locale: CronLoc
  * second parser or source of scheduling truth. */
 export function cronScheduleWords(schedule: Pick<RoutineCronSchedule, "expression">, locale: CronLocale = "en"): string {
   const fr = locale === "fr";
+  // Several expressions (one per minute of a day) say their times together.
+  if (schedule.expression.includes(";")) return describeCronList(schedule.expression, locale) ?? cronCustomLabel(locale);
   const [minute, hour, day, month, weekday] = schedule.expression.trim().split(/\s+/);
   let label: string | null = null;
   if (/^\d+$/.test(minute ?? "") && Number(minute) <= 59 && hour === "*" && day === "*" && month === "*" && weekday === "*") {

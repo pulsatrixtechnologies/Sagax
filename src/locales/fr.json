@@ -11996,7 +11996,6 @@
   "scheduleEditor.advancedHelp": "Cet horaire n’entre dans aucun choix simple. Il reste tel quel ; choisissez un horaire simple pour le remplacer.",
   "scheduleEditor.simplify": "Choisir un horaire simple",
   "scheduleEditor.problem.noTime": "Ajoutez au moins une heure.",
-  "scheduleEditor.problem.sameMinute": "Les heures d’une même journée partagent leurs minutes, par exemple 8 h 30 et 12 h 30.",
   "scheduleEditor.problem.noDays": "Choisissez au moins un jour.",
   "scheduleEditor.problem.badTime": "Choisissez une heure valide.",
   "scheduleEditor.problem.zone": "Choisissez un fuseau horaire dans la liste.",

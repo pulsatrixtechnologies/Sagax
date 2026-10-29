@@ -36,4 +36,24 @@ final class CronDescribeTests: XCTestCase {
             XCTAssertNil(CronDescribe.describe(expression, language: .fr), expression)
         }
     }
+
+    /// 2026-10-29 (`describeCronList`): several expressions that differ only
+    /// in their times are one sentence.
+    func testSeveralExpressionsInBothLanguages() {
+        let table: [(String, String, String)] = [
+            ("15 8 * * 1-5; 30 12 * * 1-5", "Weekdays, at 8:15 AM and 12:30 PM", "Du lundi au vendredi, à 8 h 15 et 12 h 30"),
+            ("30 12 * * *; 15 8,16 * * *", "At 8:15 AM, 12:30 PM and 4:15 PM", "À 8 h 15, 12 h 30 et 16 h 15"),
+            ("0 9 15 * *; 45 17 15 * *", "On the 15th, at 9:00 AM and 5:45 PM", "Le 15 du mois, à 9 h 00 et 17 h 45"),
+            ("10 7 * * 0,3,6; 40 19 * * 0,3,6", "Wednesday, Saturday and Sunday, at 7:10 AM and 7:40 PM",
+             "Les mercredis, samedis et dimanches, à 7 h 10 et 19 h 40"),
+        ]
+        for (expression, en, fr) in table {
+            XCTAssertEqual(CronDescribe.describeList(expression, language: .en), en, expression)
+            XCTAssertEqual(CronDescribe.describeList(expression, language: .fr), fr, expression)
+            XCTAssertNil(CronDescribe.describe(expression, language: .en), expression)
+        }
+        for expression in ["15 8 * * 1-5", "15 8 * * 1-5; 30 12 * * *", "*/5 8 * * *; 30 12 * * *", "15 * * * *; 30 12 * * *", "0 9 1 * 1; 30 9 1 * 1"] {
+            XCTAssertNil(CronDescribe.describeList(expression, language: .en), expression)
+        }
+    }
 }

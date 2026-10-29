@@ -1249,7 +1249,6 @@ enum RoutineEditorWording {
         case let .window(minutes): String(localized: "Choose a same-day window at least \(minutes) minutes long.")
         case .endDate: String(localized: "Choose an end date after the first run.")
         case .schedule(.noTime): String(localized: "Add at least one time.")
-        case .schedule(.sameMinute): String(localized: "Times on the same day must share their minutes, such as 8:30, 12:30 and 4:30.")
         case .schedule(.badTime): String(localized: "Choose a valid time.")
         case let .cron(message): cron(message)
         }

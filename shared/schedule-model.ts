@@ -32,7 +32,7 @@ export const EVERY_MINUTES = [5, 10, 15, 20, 30] as const;
 export const EVERY_HOURS = [2, 3, 4, 6, 8, 12] as const;
 export const WORK_WEEK = [1, 2, 3, 4, 5] as const;
 
-export type ScheduleModelProblem = "noTime" | "sameMinute" | "noDays" | "badTime";
+export type ScheduleModelProblem = "noTime" | "noDays" | "badTime";
 
 const DAY_ALIASES = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 
@@ -56,9 +56,10 @@ export function normalizeTimes(times: readonly string[]): string[] {
   return [...new Set(parsed.map(({ hour, minute }) => clock(hour, minute)))].sort();
 }
 
-/** The cron expression of a model, or why it cannot be one. Several times a
- * day share their minutes (8:30, 12:30, 16:30): one expression cannot say
- * 8:15 and 12:30 without also meaning 8:30 and 12:15. */
+/** The cron expression of a model, or why it cannot be one. Times that share
+ * their minutes go in one expression ("30 8,12,16 …"); times with other
+ * minutes get one expression each, joined by "; " (2026-10-29: 8:15 and
+ * 12:30 are "15 8 …; 30 12 …", never 8:30 and 12:15 too). */
 export function scheduleModelToCron(model: ScheduleModel): { expression: string } | { problem: ScheduleModelProblem } {
   if (model.frequency === "hourly") {
     if (!Number.isInteger(model.minute) || model.minute < 0 || model.minute > 59) return { problem: "badTime" };
@@ -75,29 +76,37 @@ export function scheduleModelToCron(model: ScheduleModel): { expression: string 
   if (model.times.some((time) => !parseClock(time))) return { problem: "badTime" };
   const times = normalizeTimes(model.times).map((time) => parseClock(time)!);
   if (!times.length) return { problem: "noTime" };
-  const minute = times[0]!.minute;
-  if (times.some((time) => time.minute !== minute)) return { problem: "sameMinute" };
-  const hours = times.map((time) => time.hour).join(",");
-  const at = `${minute} ${hours}`;
+  const byMinute = new Map<number, number[]>();
+  for (const time of times) byMinute.set(time.minute, [...(byMinute.get(time.minute) ?? []), time.hour]);
+  // Earliest first: the expression of the first time of the day leads.
+  const groups = [...byMinute.entries()].sort((a, b) => Math.min(...a[1]) * 60 + a[0] - (Math.min(...b[1]) * 60 + b[0]));
+  const days = dayFields(model);
+  if ("problem" in days) return days;
+  return { expression: groups.map(([minute, hours]) => `${minute} ${hours.sort((a, b) => a - b).join(",")} ${days.fields}`).join("; ") };
+}
+
+/** The day, month and weekday fields of a timed model. */
+function dayFields(model: ScheduleModel): { fields: string } | { problem: ScheduleModelProblem } {
   switch (model.frequency) {
-    case "daily": return { expression: `${at} * * *` };
-    case "weekdays": return { expression: `${at} * * 1-5` };
+    case "daily": return { fields: "* * *" };
+    case "weekdays": return { fields: "* * 1-5" };
     case "days": {
       const days = [...new Set(model.weekdays.map((day) => day % 7))].filter((day) => day >= 0 && day <= 6).sort((a, b) => a - b);
       if (!days.length) return { problem: "noDays" };
-      if (days.length === 7) return { expression: `${at} * * *` };
-      return { expression: `${at} * * ${days.join(",")}` };
+      if (days.length === 7) return { fields: "* * *" };
+      return { fields: `* * ${days.join(",")}` };
     }
     case "monthly": {
       const day = model.monthDay === "last" ? "L" : model.monthDay;
       if (day !== "L" && !(Number.isInteger(day) && day >= 1 && day <= 31)) return { problem: "badTime" };
-      return { expression: `${at} ${day} * *` };
+      return { fields: `${day} * *` };
     }
     case "yearly": {
       const day = model.monthDay === "last" ? 31 : model.monthDay;
       if (!Number.isInteger(day) || day < 1 || day > 31 || !Number.isInteger(model.month) || model.month < 1 || model.month > 12) return { problem: "badTime" };
-      return { expression: `${at} ${day} ${model.month} *` };
+      return { fields: `${day} ${model.month} *` };
     }
+    default: return { problem: "badTime" };
   }
 }
 
@@ -120,8 +129,21 @@ function numberList(text: string, min: number, max: number, aliases: string[] = 
 }
 
 /** The model an expression is, or null when it fits no model (then the
- * editor keeps it under Advanced). */
+ * editor keeps it under Advanced). Several expressions joined by ";" are one
+ * model when they differ only in their times. */
 export function cronToScheduleModel(expression: string): ScheduleModel | null {
+  const parts = expression.split(";").map((part) => part.trim()).filter(Boolean);
+  if (parts.length <= 1) return singleCronToScheduleModel(parts[0] ?? "");
+  const models = parts.map(singleCronToScheduleModel);
+  if (models.some((model) => !model || model.frequency === "hourly" || model.frequency === "every")) return null;
+  const first = models[0]!;
+  const same = (model: ScheduleModel) => model.frequency === first.frequency && model.weekdays.join(",") === first.weekdays.join(",")
+    && model.monthDay === first.monthDay && model.month === first.month;
+  if (!(models as ScheduleModel[]).every(same)) return null;
+  return { ...first, times: normalizeTimes((models as ScheduleModel[]).flatMap((model) => model.times)) };
+}
+
+function singleCronToScheduleModel(expression: string): ScheduleModel | null {
   const fields = expression.trim().split(/\s+/);
   if (fields.length !== 5) return null;
   const [minuteText, hourText, dayText, monthText, weekdayText] = fields as [string, string, string, string, string];
