@@ -167,7 +167,7 @@ const DELETE_WORDS = WORD("supprim|efface|detrui|delete|destroy|erase");
 const ARCHIVE_WORDS = WORD("archiv|masque|hide");
 const RESTORE_WORDS = WORD("desarchiv|unarchiv|restaur|retabli|reaffiche|unhide");
 const ROUTINE_WORDS = WORD("routine|tache|automatisation|planifi|schedul|cron");
-const KEY_WORDS: Readonly<Record<string, RegExp | "value" | "model" | "effort" | "teams" | "delete" | "archive">> = {
+const KEY_WORDS: Readonly<Record<string, RegExp | "value" | "model" | "effort" | "teams" | "delete" | "archive" | "bulk">> = {
   "bot.model": "model", "bot.effort": "effort", "bot.name": "value", "bot.title": "value", "bot.description": "value",
   "bot.persona": WORD("persona|personnalite|soul|instruction|consigne|caractere|personality|ton |tone"),
   "bot.notifications": WORD("notif|alert|avis"), "bot.speakReplies": WORD("voix|voice|parle|lecture|speak|read aloud|a voix haute"),
@@ -177,6 +177,8 @@ const KEY_WORDS: Readonly<Record<string, RegExp | "value" | "model" | "effort" |
   "bot.primary": WORD("bot principal|robot principal|bot principale|primary bot|main bot|chief of staff|bras droit"),
   "routine.enabled": WORD("pause|suspend|desactiv|arret|stop|reprend|resume|reactiv|activ|enable|disable|coupe"),
   "routine.run": WORD("lance|roule|execute|run|demarre|start"), "routine.delete": "delete", "routine.name": "value",
+  // 2026-10-29: several routines at once: the words of a deletion, or of on or off
+  "routine.bulk": "bulk",
   "routine.schedule": WORD("horaire|heure|chaque|tous les|toutes les|quotidien|hebdo|schedule|daily|weekly|every|cron|minute|matin|soir|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche"),
   "routine.prompt": WORD("consigne|instruction|prompt|demande|texte"),
   "routine.create": ROUTINE_WORDS, "routine.update": ROUTINE_WORDS, "routine.pause": WORD("pause|suspend|desactiv|arret|stop|coupe|disable"),
@@ -226,6 +228,9 @@ export function askedBotChange(input: {
       return teams.every((name) => typeof name !== "string" || !name || personWrote(input.quote, name)) && (teams.length > 0 || WORD("retire|enleve|remove|aucune|none").test(said)) ? true : "the person's words (quote) do not name the team";
     }
     case "delete": return DELETE_WORDS.test(said) ? true : "the person's words (quote) do not ask to delete it";
+    case "bulk": return (value as { delete?: unknown } | null)?.delete === true
+      ? (DELETE_WORDS.test(said) ? true : "the person's words (quote) do not ask to delete them")
+      : ((KEY_WORDS["routine.enabled"] as RegExp).test(said) ? true : "the person's words (quote) do not say on or off");
     case "archive": return (value === false ? RESTORE_WORDS : ARCHIVE_WORDS).test(said) ? true : `the person's words (quote) do not ask to ${value === false ? "restore" : "archive"} it`;
     default: return want.test(said) ? true : `the person's words (quote) do not say which setting (${input.key})`;
   }
@@ -465,7 +470,7 @@ export function createSettingsActions(deps: SettingsActionDeps) {
 
     if (action === "get") {
       if (!spec.read) return text(400, `${spec.key} has no read; see it at ${spec.where}.`);
-      const read = spec.read(ids);
+      const read = spec.read(ids, args.value);
       // #1545: a preference kept for the person: their synced preferences on
       // an organization server, this computer's look on a personal server;
       // anything else lives only in the person's open app
@@ -508,8 +513,8 @@ export function createSettingsActions(deps: SettingsActionDeps) {
           }));
         }
       }
-      const shaped = read.shape && value !== undefined ? read.shape(value) : value;
-      return text(200, JSON.stringify({ key: spec.key, value: shaped === undefined ? null : shaped }).slice(0, 8000));
+      const shaped = read.shape && value !== undefined ? read.shape(value, args.value) : value;
+      return text(200, JSON.stringify({ key: spec.key, value: shaped === undefined ? null : shaped }).slice(0, read.maxChars ?? 8000));
     }
 
     if (action !== "set") return text(400, "action is list, get or set.");

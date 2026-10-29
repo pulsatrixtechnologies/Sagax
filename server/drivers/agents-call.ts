@@ -11,6 +11,7 @@
 import { readFileSync } from "node:fs";
 import { CREDENTIAL_TARGETS, isCredentialTargetId } from "../../shared/credential-request.ts";
 import { normalizeCronSchedule } from "../../shared/routine-schedule.ts";
+import { formatRoutinePage, type RoutinePage } from "../../shared/routine-listing.ts";
 import { wrapUntrusted } from "../../shared/safety-review.ts";
 
 import { PRIORITY_DOWNGRADED_NOTE, parseWakePriority } from "../priority-wake.ts";
@@ -1357,16 +1358,33 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
     }
   }
   if (name === "list_routines") {
+    // 2026-10-29: a page of short rows, or one routine in full
+    // (shared/routine-listing.ts: a bot read back 3 of its 23 routines)
     const query = new URLSearchParams({ fromBotId: BOT_ID, fromThreadId: THREAD_ID });
+    const routineId = typeof args.routine_id === "string" ? args.routine_id.trim() : "";
+    if (routineId) query.set("routineId", routineId);
+    for (const field of ["offset", "limit"] as const) {
+      if (typeof args[field] === "number" && Number.isFinite(args[field])) query.set(field, String(args[field]));
+    }
+    if (typeof args.folder === "string" && args.folder.trim()) query.set("folder", args.folder.trim());
     const r = await api(`/api/internal/routines?${query.toString()}`);
-    const routines = Array.isArray(r.routines) ? r.routines : [];
     const now = typeof r.now === "string" ? r.now : new Date().toISOString();
     const timeZone = typeof r.timeZone === "string" && r.timeZone ? r.timeZone : "local computer timezone";
-    if (!routines.length) {
-      return { text: `This bot has no routines. Current time: ${now}. Timezone: ${timeZone}.` };
+    if (routineId) {
+      return { text: `Routine ${routineId} (current time: ${now}; timezone: ${timeZone}):\n${JSON.stringify(r.routine ?? null)}` };
     }
+    const page: RoutinePage = {
+      total: typeof r.total === "number" ? r.total : Array.isArray(r.routines) ? r.routines.length : 0,
+      offset: typeof r.offset === "number" ? r.offset : 0,
+      nextOffset: typeof r.nextOffset === "number" ? r.nextOffset : null,
+      routines: Array.isArray(r.routines) ? r.routines as RoutinePage["routines"] : [],
+    };
     return {
-      text: `This bot's routines (current time: ${now}; timezone: ${timeZone}):\n${JSON.stringify(routines, null, 2)}`,
+      text: formatRoutinePage(page, {
+        now, timeZone,
+        readOne: "list_routines with routine_id gives one routine's whole instructions and last run",
+        next: "call list_routines with offset {offset}",
+      }),
     };
   }
   if (name === "run_routine") {

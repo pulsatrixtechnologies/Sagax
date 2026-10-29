@@ -318,6 +318,28 @@ before). The tabs' own filters (category pills) stay in their tab. Tests:
 `src/lib/connect-apps-search.test.ts`, `src/components/PluginsPanel.gestures.test.ts`,
 captures `scripts/capture-bots-tab.mjs`.
 
+## Every routine of a bot, several at once, and a clicked option is the person's word (2026-10-29, #1643)
+
+A bot read back 3 of its 23 routines: `list_routines` answered every routine
+whole (2,000 characters of instructions, 1,000 of last output, indented), and
+an agents result above 24,000 characters is cut to its first 16,000
+(`boundedAgentResult`). Listings are now pages of short rows
+(`shared/routine-listing.ts`: total, `nextOffset`, the instructions' first
+words, never cut), `list_routines` takes `offset` and `routine_id` (one in
+full), and `sagax_settings` `routine.list` reads any bot of the person, page
+by page, with their rights (get takes `value` {offset, limit, folder}: a
+read's argument, `SettingSpec.read(ids, arg)`). `routine.bulk` turns several
+routines of one bot on or off or deletes them in one change
+(`POST /api/routines/bulk`, server/routes/routine-bulk.ts; each row by the
+same code as its PATCH or DELETE, `patchRoutineAs` / `deleteRoutineAs`):
+one card at Ask, none at Approve for me or Full for the person's own bot.
+#1643: the option a person clicks on the bot's question card counts as their
+words for the turn (`personWordsForTurn`, the option's label and
+description, only a card they answered themselves), so `quote` works from a
+click and they never retype a line. Tests: `shared/routine-listing.test.ts`
+(23 routines), `server/routes/routine-bulk.test.ts`,
+`server/settings-actions.test.ts`, `shared/primary-request.test.ts`.
+
 ## Leave a group chat (#1480, 2026-10-28)
 
 On an organization server a person listed in a group in their own name

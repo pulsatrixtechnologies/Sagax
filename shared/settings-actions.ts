@@ -13,6 +13,7 @@
 // shared/settings-actions.test.ts fails when an entry has no doc row.
 
 import { parseBotWorkplace } from "./bot-workplace.ts";
+import { pageRoutines } from "./routine-listing.ts";
 import { DEVICE_ONLY_SETTINGS } from "./device-settings.ts";
 import { DESKTOP_APPEARANCE_KEYS } from "./desktop-appearance.ts";
 import type { SettingClass } from "./settings-actions-policy.ts";
@@ -76,7 +77,10 @@ export type SettingRead = {
   preference?: string;
   /** Shapes the value read for the bot (a default filled in, a list made
    * short). */
-  shape?: (value: unknown) => unknown;
+  shape?: (value: unknown, arg?: unknown) => unknown;
+  /** 2026-10-29: a read longer than the default 8,000 characters (a memory
+   * file), up to this many. */
+  maxChars?: number;
   /** A read the screen makes with POST (the vault's listing), never a change. */
   method?: "POST";
   /** #1545: a setting kept only in the person's open app, read there through
@@ -92,7 +96,9 @@ export interface SettingSpec {
   /** Where a person finds it, English (docs/settings-actions.md has French). */
   where: string;
   value: SettingValue;
-  read?: (ids: SettingIds) => SettingRead;
+  /** `arg` (2026-10-29): get's value, what narrows the read (a page of
+   * routines, a memory file's path). */
+  read?: (ids: SettingIds, arg?: unknown) => SettingRead;
   /** The route the screen calls, or the screen command for a preference
    * kept on the person's device, or a card the bot posts for a step only the
    * person takes (#1545: an engine's sign-in), or a setting kept only in the
@@ -417,6 +423,29 @@ add({
 add({
   key: "routine.run", family: "routine", target: "routine", value: "boolean", label: "Run now (true)", where: "Automations > routine > Run now",
   write: (ids, v) => v === true ? { method: "POST", path: `/api/routines/${enc(ids.target!)}/run` } : "value is true.",
+});
+// 2026-10-29: every routine of a bot, a page at a time (a bot read back 3 of
+// its 23 routines: shared/routine-listing.ts), and several at once
+add({
+  key: "routine.list", family: "routine", target: "bot", value: "object",
+  label: "A bot's routines, a page at a time (get; value {offset?, limit?, folder?}; nextOffset gives the next page; routine.prompt reads one whole)", where: "Bot panel > Details > Routines; Automations",
+  read: (ids, arg) => ({ path: "/api/routines", query: { botId: ids.target! }, field: "routines", shape: (v) => Array.isArray(v) ? pageRoutines(v, arg) : v }),
+  write: () => "routine.list is read only: routine.bulk turns several on or off or deletes them, routine.<setting> changes one.",
+});
+add({
+  key: "routine.bulk", family: "routine", target: "bot", value: "object",
+  label: "Several routines of a bot at once ({ids: [routine ids] or \"all\", enabled: true|false} or {ids, delete: true})", where: "Bot panel > Details > Routines; Automations",
+  // get: the same pages as routine.list, to pick the ids
+  read: (ids, arg) => ({ path: "/api/routines", query: { botId: ids.target! }, field: "routines", shape: (v) => Array.isArray(v) ? pageRoutines(v, arg) : v }),
+  write: (ids, v) => {
+    const r = (v ?? {}) as { ids?: unknown; enabled?: unknown; delete?: unknown };
+    const all = r.ids === "all";
+    if (!all && !(Array.isArray(r.ids) && r.ids.length > 0 && r.ids.every((id) => typeof id === "string" && id))) return "value.ids is a list of routine ids (routine.list) or \"all\".";
+    const action = r.delete === true ? "delete" : r.enabled === true ? "enable" : r.enabled === false ? "disable" : null;
+    if (!action) return "value is {ids, enabled: true|false} or {ids, delete: true}.";
+    return { method: "POST", path: "/api/routines/bulk", body: { botId: ids.target, action, ...(all ? { all: true } : { routineIds: r.ids }) } };
+  },
+  classes: (v) => (v as { delete?: unknown } | null)?.delete === true ? ["bulk", "delete"] : ["bulk"],
 });
 add({
   key: "routine.delete", family: "routine", target: "routine", value: "boolean", label: "Delete the routine (true)", where: "Bot panel > Details > Routines > Delete",

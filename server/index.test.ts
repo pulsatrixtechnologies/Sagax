@@ -10504,12 +10504,13 @@ describe("harness HTTP API", () => {
           authorization: `Bearer ${refreshedToken}`,
           "content-type": "application/json",
         };
+        // 2026-10-29: one routine in full by its id (a page holds short rows)
         const grounded = await fetch(
-          `${BASE}/api/internal/routines?fromBotId=${encodeURIComponent(bot.id)}&fromThreadId=${encodeURIComponent(bot.threadId)}`,
+          `${BASE}/api/internal/routines?fromBotId=${encodeURIComponent(bot.id)}&fromThreadId=${encodeURIComponent(bot.threadId)}&routineId=${encodeURIComponent(routineId)}`,
           { headers: refreshedHeaders },
         );
         const groundedBody = z.object({
-          routines: z.array(z.object({
+          routine: z.object({
             id: z.string(),
             latestRun: z.object({
               status: z.string(),
@@ -10520,9 +10521,10 @@ describe("harness HTTP API", () => {
               error: z.string().nullable(),
               executionThreadId: z.string().nullable(),
             }).nullable(),
-          }).passthrough()),
+          }).passthrough(),
         }).parse(await grounded.json());
-        expect(groundedBody.routines.find((routine) => routine.id === routineId)?.latestRun).toMatchObject({
+        expect(groundedBody.routine.id).toBe(routineId);
+        expect(groundedBody.routine.latestRun).toMatchObject({
           status: "failed",
           startedAt: expect.any(String),
           finishedAt: expect.any(String),
@@ -10602,19 +10604,29 @@ describe("harness HTTP API", () => {
         authorization: `Bearer ${finalToken}`,
         "content-type": "application/json",
       };
-      const listed = await fetch(
+      // the page lists it, short; its id reads it in full (2026-10-29)
+      const page = await fetch(
         `${BASE}/api/internal/routines?fromBotId=${encodeURIComponent(bot.id)}&fromThreadId=${encodeURIComponent(bot.threadId)}`,
+        { headers: finalHeaders },
+      );
+      expect(page.status).toBe(200);
+      const pageBody = z.object({ total: z.number(), routines: z.array(z.object({ id: z.string(), instructions: z.string() }).passthrough()) }).parse(await page.json());
+      const legacyRow = pageBody.routines.find((routine) => routine.id === legacyRoutineId)!;
+      expect(legacyRow.instructions).not.toContain(fakeSecret);
+      expect(legacyRow.name).not.toContain(fakeNameSecret);
+      const listed = await fetch(
+        `${BASE}/api/internal/routines?fromBotId=${encodeURIComponent(bot.id)}&fromThreadId=${encodeURIComponent(bot.threadId)}&routineId=${encodeURIComponent(legacyRoutineId)}`,
         { headers: finalHeaders },
       );
       expect(listed.status).toBe(200);
       const listedBody = z.object({
-        routines: z.array(z.object({
+        routine: z.object({
           id: z.string(),
           instructions: z.string(),
           instructionsTruncated: z.boolean(),
-        }).passthrough()),
+        }).passthrough(),
       }).parse(await listed.json());
-      const legacyResult = listedBody.routines.find((routine) => routine.id === legacyRoutineId)!;
+      const legacyResult = listedBody.routine;
       expect(legacyResult.continuity).toBe(true);
       expect(legacyResult.instructions).not.toContain(fakeSecret);
       expect(legacyResult.name).not.toContain(fakeNameSecret);

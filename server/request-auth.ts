@@ -797,6 +797,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // same rights as changing a routine of that bot, so a member arranges
   // their own bot's folders without an admin (2026-10-28)
   { methods: ["POST"], path: /^\/api\/routines\/folders$/ },
+  // Several routines of one bot on, off or deleted at once (server/routine-bulk.ts,
+  // 2026-10-29): each one with the same rights as its own PATCH or DELETE
+  { methods: ["POST"], path: /^\/api\/routines\/bulk$/ },
   // "Only when I'm here" (routes/routine-away.ts): the page's beat, the
   // person's own state, and dismissing their report (the route checks whose)
   // "Create a Team Bot from this conversation" (routes/team-bot-from-thread.ts):

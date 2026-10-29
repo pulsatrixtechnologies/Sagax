@@ -751,3 +751,67 @@ describe("sagax_settings: secrets and purchases, by reference (#1545, 2026-10-28
     }
   });
 });
+
+describe("sagax_settings: a bot's routines, every one and several at once (2026-10-29)", () => {
+  const routines = Array.from({ length: 23 }, (_, index) => ({ id: `r${index + 1}`, name: `Routine ${index + 1}`, prompt: "Read the queue and summarize it. ".repeat(80), enabled: true, schedule: { type: "daily", time: "09:00" }, nextRunAt: 1_800_000_000_000 }));
+
+  it("regression: reads back all 23 routines of a bot, page by page, with the person's rights", async () => {
+    const h = harness({ answer: { routines } });
+    const seen: string[] = [];
+    let offset: number | null = 0;
+    while (offset !== null) {
+      const read = await h.call({ action: "get", key: "routine.list", target: "b2", value: { offset } });
+      expect(read.status).toBe(200);
+      const parsed = JSON.parse(String(read.body.text)) as { value: { total: number; nextOffset: number | null; routines: Array<{ id: string }> } };
+      expect(parsed.value.total).toBe(23);
+      seen.push(...parsed.value.routines.map((row) => row.id));
+      offset = parsed.value.nextOffset;
+    }
+    expect(seen).toEqual(routines.map((routine) => routine.id));
+    expect(h.planned[0]).toMatchObject({ method: "GET", path: "/api/routines" });
+  });
+
+  it("turns several routines off, on, or deletes them in one change by the bulk route", async () => {
+    const h = harness({ mode: "full" });
+    await h.call({ action: "set", key: "routine.bulk", target: "b2", value: { ids: ["r1", "r2"], enabled: false } });
+    await h.call({ action: "set", key: "routine.bulk", target: "b2", value: { ids: "all", delete: true } });
+    expect(h.planned).toMatchObject([
+      { effect: "run", method: "POST", path: "/api/routines/bulk", body: { botId: "b2", action: "disable", routineIds: ["r1", "r2"] } },
+      { effect: "run", method: "POST", path: "/api/routines/bulk", body: { botId: "b2", action: "delete", all: true } },
+    ]);
+    expect(h.audits).toHaveLength(2);
+    expect((await h.call({ action: "set", key: "routine.bulk", value: { ids: [] , enabled: true } })).body.error).toMatch(/routine ids/);
+    expect((await h.call({ action: "set", key: "routine.bulk", value: { ids: "all" } })).body.error).toMatch(/enabled/);
+  });
+
+  it("matrix: admin and member, Ask, Approve for me and Full; one card for the whole change at Ask; someone else's bot keeps its card", async () => {
+    for (const role of ["admin", "member"] as const) {
+      for (const mode of ["ask", "auto", "full"] as const) {
+        for (const value of [{ ids: ["r1", "r2"], enabled: false }, { ids: "all", enabled: true }, { ids: "all", delete: true }]) {
+          // a member without the right to run that bot's routines: the route's own refusal
+          const h = harness({ mode, ...(role === "member" ? { routeStatus: (method: string) => method === "POST" ? 403 : 200 } : {}) });
+          const result = await h.call({ action: "set", key: "routine.bulk", target: "b2", value });
+          expect(h.planned, `${role} ${mode}`).toHaveLength(1);
+          const expected = mode === "ask" ? "hold" : "run";
+          expect(h.planned[0]!.effect, `${role} ${mode} ${JSON.stringify(value)}`).toBe(expected);
+          if (expected === "run") expect(result.status).toBe(role === "member" ? 403 : 200);
+        }
+        const theirs = harness({ mode });
+        expect((await theirs.call({ action: "set", key: "routine.bulk", target: "theirs", value: { ids: "all", delete: true } })).body.text).toContain("Approval needed.");
+      }
+    }
+  });
+
+  it("#1643: the person's chosen option, passed as quote, deletes them at once from their Primary Bot, even at Ask", async () => {
+    const primary = { botId: "b1", botName: "Scout", messageId: "m2" };
+    const h = harness({ mode: "ask", targetName: (kind, id) => kind === "bot" && id === "b2" ? "Ember" : undefined,
+      personAsked: () => ({ message: "A. Tout supprimer\nSupprimer les 41 anciennes routines d'Ember", primary }) });
+    const done = await h.call({ action: "set", key: "routine.bulk", target: "b2", value: { ids: "all", delete: true }, quote: "Supprimer les 41 anciennes routines d'Ember" });
+    expect(String(done.body.text)).toMatch(/^Done/);
+    expect(h.planned[0]).toMatchObject({ effect: "run", path: "/api/routines/bulk", primary });
+    // words that do not say delete keep the card
+    const other = harness({ mode: "ask", targetName: () => "Ember", personAsked: () => ({ message: "Garde les routines d'Ember", primary }) });
+    await other.call({ action: "set", key: "routine.bulk", target: "b2", value: { ids: "all", delete: true }, quote: "Garde les routines d'Ember" });
+    expect(other.planned[0]!.effect).toBe("hold");
+  });
+});
