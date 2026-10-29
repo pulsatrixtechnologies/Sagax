@@ -1887,5 +1887,7 @@
   "mascot.shape.shield": "Schild",
   "mascot.shape.bubble": "Blase",
   "chat.exchange.empty": "Noch keine Nachrichten mit {name}.",
-  "chat.exchange.loadError": "Diese Unterhaltung konnte nicht geladen werden."
+  "chat.exchange.loadError": "Diese Unterhaltung konnte nicht geladen werden.",
+  "remoteSession.screenExpand": "Bildschirm vergrößern",
+  "remoteSession.screenShrink": "Bildschirm verkleinern"
 }

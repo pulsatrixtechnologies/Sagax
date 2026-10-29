@@ -11,12 +11,14 @@
 // keyboard while control is held. The Computer tab is never opened for a
 // remote session anymore.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Maximize2, Minimize2 } from "lucide-react";
 
 import { publicText, type RemoteSessionView } from "../../../shared/remote-session";
-import { ComputerScreen, type ScreenControls } from "@/components/computer/ComputerScreen";
+import { ComputerScreen, REVEALED_CONTROL, type ScreenControls } from "@/components/computer/ComputerScreen";
 import { SandboxDesktopModal } from "@/components/computer/SandboxDesktopModal";
 import { TakeControlPill } from "@/components/SandboxDesktopView";
 import type { ScreenState } from "@/lib/desktop-local-vm";
+import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { controlSupportedOs } from "@/lib/remote-control-os";
 import { clearRemoteSessionLocal } from "@/lib/remote-session-focus";
@@ -28,6 +30,12 @@ import { useRemoteControl } from "./use-remote-control";
 export const SCREEN_POLL_MS = 4000;
 /** How long a first Stop waits for the second. */
 export const STOP_CONFIRM_MS = 5000;
+
+/** The chat card's width (#1499): a compact screen by default, the whole
+ * chat column once the person enlarges it. Take control opens the window. */
+export function remoteScreenWidth(expanded: boolean): string {
+  return expanded ? "w-full" : "w-full max-w-md";
+}
 
 /** The name under the screen: the computer's name, else its support code. */
 export function remoteScreenCaption(view: RemoteSessionView): string {
@@ -190,6 +198,7 @@ export function RemoteTakeover({ botId, view, state, controls, onClose }: {
 export function RemoteScreenCard({ botId, view }: { botId: string; view: RemoteSessionView }) {
   const [paused, setPaused] = useState(false);
   const [takeover, setTakeover] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const connected = view.state === "connected";
   // one picture source at a time: the window streams while it is open
   const { shot, missed } = useScreenPoll(botId, view.id, connected && !paused && !takeover);
@@ -207,10 +216,21 @@ export function RemoteScreenCard({ botId, view }: { botId: string; view: RemoteS
     <>
       <img data-remote-session-shot="" src={shot} alt={caption} className="h-full w-full object-contain" draggable={false} />
       {controllable && state === "running" && <TakeControlPill onClick={() => setTakeover(true)} />}
+      <button
+        type="button"
+        data-remote-screen-size={expanded ? "expanded" : "compact"}
+        aria-label={expanded ? t("remoteSession.screenShrink") : t("remoteSession.screenExpand")}
+        title={expanded ? t("remoteSession.screenShrink") : t("remoteSession.screenExpand")}
+        aria-pressed={expanded}
+        onClick={() => setExpanded((value) => !value)}
+        className={cn("absolute right-2 top-2 flex size-8 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/75", REVEALED_CONTROL)}
+      >
+        {expanded ? <Minimize2 size={14} aria-hidden="true" /> : <Maximize2 size={14} aria-hidden="true" />}
+      </button>
     </>
   ) : undefined;
   return (
-    <div data-remote-screen-card="" data-remote-screen-state={state}>
+    <div data-remote-screen-card="" data-remote-screen-state={state} className={remoteScreenWidth(expanded)}>
       <ComputerScreen
         source="remote"
         state={state}

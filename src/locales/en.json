@@ -9921,6 +9921,8 @@
   "remoteSession.headless": "Server without a desktop: shell only",
   "remoteSession.screenDenied": "macOS refuses the screenshot. On that Mac, allow Screen Recording for the Terminal that runs the session (System Settings, Privacy & Security, Screen Recording).",
   "remoteSession.screenFailed": "The screen did not answer. Sagax tries again.",
+  "remoteSession.screenExpand": "Enlarge the screen",
+  "remoteSession.screenShrink": "Shrink the screen",
   "remoteSession.screenLoading": "Connecting to the screen…",
   "remoteSession.screenOsUnknown": "OS unknown: the screen shows once the OS is known.",
   "remoteSession.confirmStop": "Press Stop again to end the session.",

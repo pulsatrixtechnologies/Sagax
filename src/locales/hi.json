@@ -1859,5 +1859,7 @@
   "mascot.shape.shield": "ढाल",
   "mascot.shape.bubble": "बुलबुला",
   "chat.exchange.empty": "{name} के साथ अभी तक कोई संदेश नहीं।",
-  "chat.exchange.loadError": "यह बातचीत लोड नहीं हो सकी।"
+  "chat.exchange.loadError": "यह बातचीत लोड नहीं हो सकी।",
+  "remoteSession.screenExpand": "स्क्रीन बड़ी करें",
+  "remoteSession.screenShrink": "स्क्रीन छोटी करें"
 }

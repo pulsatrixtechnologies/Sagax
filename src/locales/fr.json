@@ -9921,6 +9921,8 @@
   "remoteSession.headless": "Serveur sans interface : shell seulement",
   "remoteSession.screenDenied": "macOS refuse la capture. Sur ce Mac, autorisez l'enregistrement de l'écran pour le Terminal qui fait tourner la session (Réglages Système, Confidentialité et sécurité, Enregistrement de l'écran).",
   "remoteSession.screenFailed": "L'écran n'a pas répondu. Sagax réessaie.",
+  "remoteSession.screenExpand": "Agrandir l'écran",
+  "remoteSession.screenShrink": "Réduire l'écran",
   "remoteSession.screenLoading": "Connexion à l'écran…",
   "remoteSession.screenOsUnknown": "OS inconnu : l'écran s'affiche une fois l'OS connu.",
   "remoteSession.confirmStop": "Appuyez encore sur Arrêter pour fermer la session.",

@@ -2628,5 +2628,7 @@
   "mascot.shape.shield": "Escudo",
   "mascot.shape.bubble": "Bolha",
   "chat.exchange.empty": "Ainda não há mensagens com {name}.",
-  "chat.exchange.loadError": "Não foi possível carregar esta conversa."
+  "chat.exchange.loadError": "Não foi possível carregar esta conversa.",
+  "remoteSession.screenExpand": "Ampliar a tela",
+  "remoteSession.screenShrink": "Reduzir a tela"
 }
