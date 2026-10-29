@@ -31,6 +31,23 @@ afterEach(() => {
 });
 
 describe("the conversation's ... menu", () => {
+  it("offers Split right and Split down when the conversation can open in a section (#1504)", () => {
+    const onSplit = vi.fn();
+    const container = render({ onSplit });
+    expect(open(container)).toEqual(["Copy as Markdown", "Download as .md", "Split right", "Split down"]);
+    flushSync(() => container.querySelector<HTMLButtonElement>('[data-conversation-split="bottom"]')!.click());
+    expect(onSplit).toHaveBeenCalledWith("bottom");
+    expect(container.querySelector("[data-conversation-menu]")!.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("offers Split even before the first message", () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    flushSync(() => root!.render(createElement(ExportTranscriptMenu, { title: "Scout", messages: [], onSplit: vi.fn() })));
+    expect(open(container)).toEqual(["Split right", "Split down"]);
+  });
+
   it("is one round button named More options, not a Share icon", () => {
     const container = render();
     const button = container.querySelector<HTMLButtonElement>("[data-conversation-menu]")!;

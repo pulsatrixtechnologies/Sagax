@@ -45,6 +45,7 @@ import { groupNudgeTarget } from "@/lib/group-nudge";
 import { continuesRun, personDisplayName, personInitials, roomAuthor, runCorners } from "@/lib/room-authors";
 import { botIdOfParticipant, messageParticipant, seenRows, type ThreadReads } from "@/lib/read-receipts";
 import { useReportRead, useThreadReads } from "@/lib/read-receipts-feed";
+import { splitBesideMain } from "@/lib/split-view";
 import { SeenByRow, SEEN_AVATAR_SIZE, type SeenFace } from "./SeenBy";
 import { ReactionChips } from "./Reactions";
 import { myReactions, reactionSelfIds, useToggleReaction } from "@/lib/reactions";
@@ -55,7 +56,7 @@ import { defaultResponderName, effectiveDefaultResponder, groupResponseHint, jev
 import { openSettings } from "@/lib/settings-link";
 import { ChatMarkdown } from "./ChatMarkdown";
 import { VideoPlayerWidget } from "./video/VideoPlayerWidget";
-import { FailedTurnRow, MessageBoundary } from "./ChatView";
+import { FailedTurnRow, MessageBoundary, type SideChat } from "./ChatView";
 import { MESSAGE_ROW, MessageActions, messageActionClass } from "./MessageActions";
 import { personModerationMenu, useBotMessageMenu, userMessageMenu, type PinAction } from "./message-menu";
 import { blockPerson, isBlockedId, personLineAuthor, unblockPerson, useBlockedPeople } from "@/lib/moderation";
@@ -1169,7 +1170,10 @@ async function loadRemoteActor(): Promise<{ id: string; role: "owner" | "admin" 
   }
 }
 
-export function GroupView({ group: stored }: { group: Group }) {
+/** A group in a section of the split view (#1504) passes `pane`: its own
+ * header in place of the group's, and none of the window-wide parts (calls,
+ * ⌘F, the app's banners, the group panel), which stay with the main chat. */
+export function GroupView({ group: stored, pane }: { group: Group; pane?: SideChat }) {
   "use memo";
   const roomShowThreads = useShowThreads();
   // A direct conversation between two people (server/people-dms.ts) runs on
@@ -1205,7 +1209,7 @@ export function GroupView({ group: stored }: { group: Group }) {
   // Inline roster pickers (#1240, #1260): People, Bots, or both under Manage members.
   const [rosterPick, setRosterPick] = useState<null | "people" | "bots" | "both">(null);
   // The group panel shares the bot panel's slot: one open flag in the store.
-  const panelOpen = state.settingsOpen && !group.dm;
+  const panelOpen = !pane && state.settingsOpen && !group.dm;
   // Organization server: a group's people come from the Perspicax directory
   // (by principal id) and read by their names.
   const perspicaxOrg = usePerspicaxOrg();
@@ -1221,6 +1225,7 @@ export function GroupView({ group: stored }: { group: Group }) {
   };
   useEffect(() => setFindOpen(false), [group.threadId]);
   useEffect(() => {
+    if (pane) return;
     const onFind = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
@@ -1229,7 +1234,7 @@ export function GroupView({ group: stored }: { group: Group }) {
     };
     window.addEventListener("keydown", onFind);
     return () => window.removeEventListener("keydown", onFind);
-  }, []);
+  }, [pane]);
 
   // Every bot in the room, someone else's included (its public profile).
   const members = useMemo(() => groupMemberBots(group, state.bots), [group, state.bots]);
@@ -1449,22 +1454,23 @@ export function GroupView({ group: stored }: { group: Group }) {
     );
   });
 
+  const Root = pane ? "section" : "main";
   return (
     // data-room-view: a navigation into or out of a room never animates
     // (src/lib/view-transitions.ts), it opens in place like a 1:1.
     // data-room-bubble: my bubble keeps the skin's accent, or the brand's when
     // the skin's is a neutral (src/styles/skin-bubble.css, roomBubbleColors).
-    <main data-room-view="" data-room-bubble="" className="app-glow relative flex h-full min-w-0 flex-1 bg-app">
+    <Root data-room-view="" data-room-bubble="" className="app-glow relative flex h-full min-w-0 flex-1 bg-app" aria-label={pane?.label} data-side-chat={pane ? "" : undefined}>
       <ExchangeColumnProvider node={exchangeColumnNode}>
       <div ref={exchangeColumnRef} className="relative isolate flex min-w-0 flex-1 flex-col">
-      <GroupCallOverlay group={group} members={members} />
+      {!pane && <GroupCallOverlay group={group} members={members} />}
       <LeaveGroupDialog groupId={leaving ? group.id : null} onClose={() => setLeaving(false)} />
 
-      {(macInset || browser) && <div className="content-topbar-strip" />}
+      {!pane && (macInset || browser) && <div className="content-topbar-strip" />}
       {/* Header: laid out like a bot chat's. The centered chip (stacked
           member faces + name) opens the group panel; the right-hand
           controls move into the panel's top bar while it is open. */}
-      <div
+      {pane ? pane.header : <div
         {...headerDragProps}
         className={cn(
           "content-topbar",
@@ -1523,19 +1529,20 @@ export function GroupView({ group: stored }: { group: Group }) {
             messages={group.messages}
             isGroup
             {...(mayLeave ? { onLeave: () => setLeaving(true) } : {})}
+            onSplit={(edge) => splitBesideMain(roomShowThreads && !group.dm ? { kind: "group", groupId: group.id, threadId: group.threadId } : { kind: "group", groupId: group.id }, edge)}
           />}
           {!group.dm && <GroupTaskPicker group={group} />}
           {stored.peopleDm && <PersonThreadPicker group={stored} />}
           {group.dm && memberMauses}
           {/* A group's pill opens its panel: no second button for it. */}
         </div>
-      </div>
+      </div>}
 
       <div className="content-card-body flex min-h-0 flex-1 flex-col">
-      <ThreadReturnLink ownerId={group.id} threadId={group.threadId} />
+      {!pane && <ThreadReturnLink ownerId={group.id} threadId={group.threadId} />}
       {findOpen && <ChatFindBar threadId={group.threadId} onClose={() => setFindOpen(false)} />}
-      <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />
-      <ChatNotice notice={state.notice} />
+      {!pane && <ChatErrorBanner message={state.error} onDismiss={() => dispatch({ type: "error", message: null })} />}
+      {!pane && <ChatNotice notice={state.notice} />}
       <TransientNotice messages={group.messages} settled={(m) => routineAutoPauseSettled(m, state.routines)} render={(m, close) => {
         if (m.kind === "access" && m.access) return (
           <AccessCard
@@ -1554,8 +1561,8 @@ export function GroupView({ group: stored }: { group: Group }) {
           : undefined;
         return <RoutineRunCard message={m} onResume={onResume} onOpen={target ? () => { close(); openNotificationTarget(dispatch, target, state, roomShowThreads); } : undefined} />;
       }} />
-      <ChatStaleBanner />
-      {!remoteClient && <><GroupCostNotice group={group} /><WeeklyLimitNotice /></>}
+      {!pane && <ChatStaleBanner />}
+      {!remoteClient && <><GroupCostNotice group={group} />{!pane && <WeeklyLimitNotice />}</>}
 
       {/* An Auto room answers like lead mode while the decision model is off: say so, once. */}
       {!group.dm && !remoteClient && state.config && group.defaultResponder.kind === "auto" && !jevRoomRoutingOn(state.config) && (
@@ -1885,6 +1892,6 @@ export function GroupView({ group: stored }: { group: Group }) {
           }
         />
       )}
-    </main>
+    </Root>
   );
 }

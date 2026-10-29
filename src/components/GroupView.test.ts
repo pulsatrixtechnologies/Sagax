@@ -93,6 +93,23 @@ describe("room header", () => {
     createdAt: 1, setupCompletedAt: 1, messages: [],
   };
 
+  it("in a section of the split view, wears the section's header and none of the window-wide parts (#1504)", () => {
+    vi.stubGlobal("window", { ogb: undefined });
+    let markup: string;
+    try {
+      const header = createElement("div", { "data-test-pane-header": "" }, "Pane header");
+      markup = renderToStaticMarkup(createElement(StoreProvider, null, createElement(GroupView, { group: room, pane: { header, label: "Section: Launch planning" } })));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(markup).toMatch(/^<section[^>]*aria-label="Section: Launch planning"/);
+    expect(markup).toContain("data-test-pane-header");
+    expect(markup).not.toContain("@container/chathead");
+    expect(markup).not.toContain("data-conversation-menu");
+    // its own composer
+    expect(markup).toContain("data-composer-actions");
+  });
+
   it("names the room in the centred header pill", () => {
     // Sagax keeps its centred room header (the bot panel shell); upstream's
     // wrapping two-line header is not used.

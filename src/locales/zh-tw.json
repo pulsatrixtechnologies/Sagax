@@ -3711,5 +3711,13 @@
   "access.signInRequested": "{bot} 請你登入 {engine}。由你自己登入；機器人永遠看不到你的登入資訊。",
   "appearance.playMove": "播放動作",
   "appearance.randomize": "隨機",
-  "appearance.tabs": "自訂"
+  "appearance.tabs": "自訂",
+  "splitView.splitRight": "向右分割",
+  "splitView.splitDown": "向下分割",
+  "splitView.resize": "調整區段大小",
+  "splitView.close": "關閉此區段",
+  "splitView.openInMain": "在主要對話中開啟",
+  "splitView.aria": "區段：{name}",
+  "splitView.gone": "此對話已無法使用。",
+  "splitView.loading": "正在載入對話"
 }

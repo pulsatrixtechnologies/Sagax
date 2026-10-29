@@ -24,6 +24,35 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Split view: several conversations in one window (#1504, 2026-10-28)
+
+- `src/lib/split-view.ts` (layout tree, pure edits, stored copy) and
+  `src/components/SplitWorkspace.tsx` (rendering, drop marker, handles).
+  App.tsx wraps the main view in `SplitWorkspace`; not split, it renders
+  the main view alone. The tree's leaves are sections; one is always the
+  main chat (`MAIN_LEAF_ID`, driven by the sidebar selection, never closes).
+  A split lays its children in a row or a column with shares (`sizes`).
+- Making a section: drag a bot, a group or a thread row of the sidebar
+  (payload `application/x-sagax-split`, every row is draggable now) onto
+  the conversation area. Near the window's edge (36 px): a section along
+  that whole edge. Near a section's edge: a section beside that one. A
+  section's middle: it shows the dragged one instead (the main chat's
+  middle opens it there). Or Split right / Split down in the "..." menu
+  (`ExportTranscriptMenu` `onSplit`): the conversation beside the main chat.
+- A bot section is `ChatView` with `side`, a group section `GroupView`
+  with `pane` (own header, no calls, no ⌘F, no window banners, no group
+  panel), each over its own copy of the thread (`useSideTranscript`), with
+  its own composer. Without a threadId it follows the conversation's open
+  thread; a thread row (or Split with threads shown) pins one. On screen in
+  a section marks it read; the main selection is untouched. Header: Open in
+  the main conversation, Close. The handle between two sections resizes
+  them (pointer or arrow keys, at least 12 % each).
+- The layout is this device's (`sagax.splitView.layout.v1`, try/catch, a
+  damaged copy opens whole), not a synced preference: it depends on the
+  screen. Below md only the main chat shows; the layout stays.
+- Tests: `src/lib/split-view.test.ts`, `SplitWorkspace.test.ts`,
+  `ExportTranscriptMenu.test.ts`, `GroupView.test.ts` (pane case).
+  Captures: `docs/screenshots/split-view/`.
 ## Web work stays out of sight; this computer's screen is announced (2026-10-28)
 
 A bot on Auto, asked for "the latest video of" someone, opened Chrome on the

@@ -2637,5 +2637,13 @@
   "access.signInRequested": "{bot} pede que você entre em {engine}. Você mesmo entra; o bot nunca vê o seu login.",
   "appearance.playMove": "Tocar um movimento",
   "appearance.randomize": "Aleatório",
-  "appearance.tabs": "Personalizar"
+  "appearance.tabs": "Personalizar",
+  "splitView.splitRight": "Dividir à direita",
+  "splitView.splitDown": "Dividir para baixo",
+  "splitView.resize": "Redimensionar as seções",
+  "splitView.close": "Fechar esta seção",
+  "splitView.openInMain": "Abrir na conversa principal",
+  "splitView.aria": "Seção: {name}",
+  "splitView.gone": "Esta conversa não está mais disponível.",
+  "splitView.loading": "Carregando a conversa"
 }

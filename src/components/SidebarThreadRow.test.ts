@@ -442,10 +442,12 @@ describe("orderedSidebarThreads", () => {
 });
 
 describe("filing a chat by dragging", () => {
-  it("makes the row draggable when it can move into a folder", () => {
+  it("makes every row draggable (into the split view, #1504), and a folder drag only when it can move", () => {
     const props = { task: { threadId: "t", title: "Notes" }, ownerId: "b", current: false, onSelect: vi.fn(), onRename: vi.fn(), onDelete: vi.fn(), locale: "en" };
-    expect(renderToStaticMarkup(createElement(SidebarThreadRow, props))).not.toContain('draggable="true"');
-    expect(renderToStaticMarkup(createElement(SidebarThreadRow, { ...props, onMove: vi.fn() }))).toContain('draggable="true"');
+    const fixed = renderToStaticMarkup(createElement(SidebarThreadRow, props));
+    expect(fixed).toContain('draggable="true"');
+    expect(fixed).not.toContain("data-sidebar-thread-drag");
+    expect(renderToStaticMarkup(createElement(SidebarThreadRow, { ...props, onMove: vi.fn() }))).toContain("data-sidebar-thread-drag");
   });
 });
 

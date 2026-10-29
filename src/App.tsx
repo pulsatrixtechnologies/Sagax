@@ -15,6 +15,7 @@ import { initAnalytics } from "@/lib/analytics";
 import { Sidebar } from "@/components/Sidebar";
 import { ChatView } from "@/components/ChatView";
 import { GroupView } from "@/components/GroupView";
+import { SplitWorkspace } from "@/components/SplitWorkspace";
 import { PersonPanel } from "@/components/PersonPanel";
 import { SideThreadPanel } from "@/components/SideThreadPanel";
 import { ComposeToPicker } from "@/components/ComposeToPicker";
@@ -491,7 +492,9 @@ function Shell() {
       {/* nothing answers this person on an organization server: say so above
           the conversation, with the way back to the first-run step */}
       {org && (group || bot) && !calendarFillsMain && !mainIsTeamMap && !mainIsCode && !mainIsApprovals && !mainIsRemoteSessions && !mainIsAchievements && <OrgEngineNotice />}
-      {composeOpen && (group || bot) ? (
+      {/* The split view (#1504): the main view below is one section; others
+          show more conversations beside it (src/lib/split-view.ts). */}
+      <SplitWorkspace main={composeOpen && (group || bot) ? (
         group ? <GroupView key={`${group.id}:${uiLocale}`} group={group} /> : bot ? <ChatView key={uiLocale} bot={bot} /> : null
       ) : calendarFillsMain ? (
         <RoutinesPage fill onBack={closeCalendar} onOpenRoom={openCalendarRoom} />
@@ -554,7 +557,7 @@ function Shell() {
           )}
         </main>
         )
-      )}
+      )} />
       {composeOpen && <ComposeToPicker key={composeGroup ? "group" : "browse"} startInGroup={composeGroup} onClose={() => setComposeOpen(false)} />}
       </div>
       {/* A bot thread opened beside the main chat (Open beside, or

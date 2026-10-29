@@ -131,7 +131,9 @@ describe("navigate", () => {
 
   it("a room's column carries the marker the rule reads", () => {
     const group = readFileSync(new URL("../components/GroupView.tsx", import.meta.url), "utf8");
-    expect(group).toMatch(/<main data-room-view=""(?: data-[\w-]+="")* className="app-glow relative flex h-full/);
+    // <main> in the window, <section> in a section of the split view (#1504)
+    expect(group).toContain('const Root = pane ? "section" : "main";');
+    expect(group).toMatch(/<Root data-room-view=""(?: data-[\w-]+="")* className="app-glow relative flex h-full/);
   });
 
   it("the in-app reduced-motion switch stops every animation and smooth scroll, as the system setting does", () => {

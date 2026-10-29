@@ -1880,5 +1880,13 @@
   "access.signInRequested": "{bot} te pide que inicies sesión en {engine}. Inicias sesión tú mismo; el bot nunca ve tu inicio de sesión.",
   "appearance.playMove": "Reproducir un movimiento",
   "appearance.randomize": "Aleatorio",
-  "appearance.tabs": "Personalizar"
+  "appearance.tabs": "Personalizar",
+  "splitView.splitRight": "Dividir a la derecha",
+  "splitView.splitDown": "Dividir hacia abajo",
+  "splitView.resize": "Cambiar el tamaño de las secciones",
+  "splitView.close": "Cerrar esta sección",
+  "splitView.openInMain": "Abrir en la conversación principal",
+  "splitView.aria": "Sección: {name}",
+  "splitView.gone": "Esta conversación ya no está disponible.",
+  "splitView.loading": "Cargando la conversación"
 }

@@ -1898,5 +1898,13 @@
   "access.signInRequested": "{bot} bittet Sie, sich bei {engine} anzumelden. Sie melden sich selbst an; der Bot sieht Ihre Anmeldung nie.",
   "appearance.playMove": "Bewegung abspielen",
   "appearance.randomize": "Zufällig",
-  "appearance.tabs": "Anpassen"
+  "appearance.tabs": "Anpassen",
+  "splitView.splitRight": "Rechts teilen",
+  "splitView.splitDown": "Nach unten teilen",
+  "splitView.resize": "Bereiche skalieren",
+  "splitView.close": "Diesen Bereich schließen",
+  "splitView.openInMain": "Im Hauptgespräch öffnen",
+  "splitView.aria": "Bereich: {name}",
+  "splitView.gone": "Dieses Gespräch ist nicht mehr verfügbar.",
+  "splitView.loading": "Gespräch wird geladen"
 }

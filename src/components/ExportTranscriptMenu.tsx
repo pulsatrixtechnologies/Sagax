@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Bug, Check, ChevronRight, Copy, Database, Download, LogOut, MoreHorizontal, Package, Upload } from "lucide-react";
+import { Bug, Check, ChevronRight, Columns2, Copy, Database, Download, LogOut, MoreHorizontal, Package, Rows2, Upload } from "lucide-react";
 
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { cn } from "@/lib/cn";
@@ -44,6 +44,9 @@ export interface ExportTranscriptMenuProps {
   /** A group the viewer may leave (#1480): Leave group, the red last
    * section. The caller asks for confirmation. */
   onLeave?: () => void;
+  /** Split right / Split down (#1504): this conversation in a new section
+   * of the split view, beside the main chat (src/lib/split-view.ts). */
+  onSplit?: (edge: "right" | "bottom") => void;
 }
 
 /**
@@ -65,6 +68,7 @@ export function ExportTranscriptMenu({
   data,
   confidential = false,
   onLeave,
+  onSplit,
 }: ExportTranscriptMenuProps) {
   const [open, setOpen] = useState(false);
   const motion = useMenuMotion(open);
@@ -268,6 +272,33 @@ export function ExportTranscriptMenu({
             </div>
           )}
 
+          {onSplit && (
+            <>
+              <div role="separator" className="mx-2 my-1 h-[0.5px] bg-border" />
+              <button
+                type="button"
+                role="menuitem"
+                data-conversation-split="right"
+                onClick={() => { setOpen(false); onSplit("right"); }}
+                onPointerOver={() => hoverSub(false)}
+                className={ROW}
+              >
+                <Columns2 size={16} className="shrink-0 text-ink" />
+                <span className="flex-1 truncate">{t("splitView.splitRight")}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                data-conversation-split="bottom"
+                onClick={() => { setOpen(false); onSplit("bottom"); }}
+                onPointerOver={() => hoverSub(false)}
+                className={ROW}
+              >
+                <Rows2 size={16} className="shrink-0 text-ink" />
+                <span className="flex-1 truncate">{t("splitView.splitDown")}</span>
+              </button>
+            </>
+          )}
           {tools && <div role="separator" className="mx-2 my-1 h-[0.5px] bg-border" />}
           {onToggleInspector && (
             <button

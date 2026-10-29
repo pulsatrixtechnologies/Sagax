@@ -11,6 +11,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { ConfidentialBadge } from "./ConfidentialBanner";
 import { ThreadMenu, nextSixPm, tomorrowNineAm } from "./ThreadMenu";
 import { THREAD_DRAG_TYPE } from "@/lib/folder-order";
+import { SPLIT_DRAG_TYPE, splitDragData } from "@/lib/split-view";
 import { threadLinkLabel } from "../../shared/thread-link";
 import { isSnoozed, orderedThreadList } from "../../shared/wire";
 import { wantsSideThread } from "@/lib/side-thread";
@@ -291,13 +292,16 @@ export const SidebarThreadRow = memo(function SidebarThreadRow({ task, ownerId, 
   };
   return <>
     <div
-      draggable={canDrag}
+      // Every thread row drags into the split view (#1504); moving it into
+      // a folder needs onMove.
+      draggable={!renaming}
       data-sidebar-thread-drag={canDrag ? "" : undefined}
       onDragStart={(event) => {
-        if (!canDrag) return;
+        if (renaming) return;
         event.stopPropagation();
         event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData(THREAD_DRAG_TYPE, JSON.stringify({ ownerId, threadId: task.threadId }));
+        if (canDrag) event.dataTransfer.setData(THREAD_DRAG_TYPE, JSON.stringify({ ownerId, threadId: task.threadId }));
+        event.dataTransfer.setData(SPLIT_DRAG_TYPE, splitDragData({ kind: "thread", ownerId, threadId: task.threadId }));
       }}
       onDragEnd={(event) => event.stopPropagation()}
       className={cn("group/thread relative flex min-w-0 items-center rounded-lg", canDrag && "cursor-grab active:cursor-grabbing", current ? "bg-sidebar-selected" : "hover:bg-sidebar-hover")}
