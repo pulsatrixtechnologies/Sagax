@@ -23,6 +23,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { engineOffer, offeredEngines } from "../shared/offered-engines.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from "./testing/fake-oidc-provider.ts";
 import { freePortBlock } from "./testing/ports.ts";
@@ -540,13 +541,22 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     const listed = (await api("GET", "/api/bots", alice)).body.bots as Array<any>;
     expect(listed.find((bot) => bot.id === bots.brittle!.id)?.modelSelection).toMatchObject({ instanceId: expect.stringMatching(/^(claude|hold)$/), auto: true });
     expect(listed.find((bot) => bot.id === bots.atlas!.id)?.modelSelection).toMatchObject({ instanceId: "claude", model: "fake-model" });
-    // 2026-10-18 (owner): an engine the organization does not offer is listed
-    // nowhere (shared/offered-engines.ts), and the moved bot says so in one line
-    const offered = ((await api("GET", "/api/instances", alice)).body.instances as Array<{ instanceId: string }>).map((row) => row.instanceId);
+    // 2026-10-18 (owner): an engine the organization does not offer is picked
+    // nowhere (shared/offered-engines.ts), and the moved bot says so in one
+    // line. 2026-10-27 (#1098): the server still lists it to the person,
+    // flagged orgNotAllowed, so Settings can connect their own account for
+    // it; the pick list, read with their own access, leaves it out.
+    const instances = (await api("GET", "/api/instances", alice)).body.instances as Array<{ instanceId: string }>;
+    expect(instances.map((row) => row.instanceId)).toEqual(expect.arrayContaining(["claude", "hold"]));
+    const mine = await api("GET", "/api/me/engines", alice);
+    expect(mine.status, mine.text).toBe(200);
+    const access = mine.body.engines as Array<{ instanceId: string; orgNotAllowed?: boolean; myTurns: string }>;
+    expect(access.find((row) => row.instanceId === "broken")).toMatchObject({ orgNotAllowed: true, myTurns: "none" });
+    const context = { organization: true, allowedEngines: ["claude", "hold"], mine: access };
+    expect(engineOffer(context, "broken")).toBe("notGiven");
+    const offered = offeredEngines(instances, context).map((row) => row.instanceId);
     expect(offered).not.toContain("broken");
     expect(offered).toEqual(expect.arrayContaining(["claude", "hold"]));
-    const mine = await api("GET", "/api/me/engines", alice);
-    if (mine.status === 200) expect((mine.body.engines as Array<{ instanceId: string }>).map((row) => row.instanceId)).not.toContain("broken");
     const moved = (await api("GET", `/api/threads/${bots.brittle!.threadId}/messages?limit=100`, alice)).body.messages as Array<{ kind?: string; tool?: { name: string; engineMove?: { from: string; to: string } } }>;
     const line = moved.find((message) => message.tool?.engineMove);
     expect(line?.tool?.engineMove).toEqual({ from: expect.any(String), to: expect.any(String) });

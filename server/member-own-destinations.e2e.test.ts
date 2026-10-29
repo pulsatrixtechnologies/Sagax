@@ -240,6 +240,9 @@ posixOnly("organization server: a member's own destinations", () => {
     expect(created.status, created.text).toBe(201);
     const bot = { id: created.body.bot.id as string, threadId: created.body.bot.threadId as string };
     expect((await api("PATCH", `/api/bots/${bot.id}`, bob, { modelSelection: { instanceId: "hold", model: "fake-model" } })).status).toBe(200);
+    // 2026-10-27 (#1098): a member's new bot starts on Approve for me; these
+    // tests read his cards at his level, so the bot asks
+    expect((await api("PATCH", `/api/bots/${bot.id}`, bob, { approvalMode: "ask" })).status).toBe(200);
     if (pinnedToComputer) {
       const pinned = await api("PATCH", `/api/bots/${bot.id}`, bob, { computer: "local" });
       expect(pinned.status, pinned.text).toBe(200);

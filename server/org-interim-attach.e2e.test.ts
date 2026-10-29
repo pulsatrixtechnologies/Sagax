@@ -5,7 +5,7 @@
 // Perspicax account carries it; an organization admin attaches it, once,
 // inside the window.
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -182,10 +182,12 @@ posixOnly("slice 8: people from before Perspicax are attached by an admin, never
     expect(await call("POST", "/api/org/interim-people/attach", alice, { interimPrincipalId: INTERIM, principalId: ids.eve })).toMatchObject({ status: 400, body: { code: "not_interim" } });
     const principals = JSON.parse(readFileSync(join(home, ".sagax", "principals.json"), "utf8")).principals as Array<{ id: string; mergedInto?: string }>;
     expect(principals.find((person) => person.id === INTERIM)?.mergedInto).toBe(ids.eve);
-    const dir = join(home, ".sagax", "admin-activity");
-    const rows = readdirSync(dir).flatMap((file) => readFileSync(join(dir, file), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)));
-    const row = rows.find((entry: { action: string }) => entry.action === "person.attach_interim");
-    expect(row).toMatchObject({ category: "org", before: { principalId: INTERIM }, after: { principalId: ids.eve } });
+    // the admin activity rows are sealed on disk (2026-10-27, #1263): read
+    // through the route, as an admin does
+    const activity = await call("GET", "/api/admin-activity?what=org", alice);
+    expect(activity.status, activity.text).toBe(200);
+    const row = (activity.body.entries as Array<{ action: string }>).find((entry) => entry.action === "person.attach_interim");
+    expect(row).toMatchObject({ what: "org", before: { principalId: INTERIM }, after: { principalId: ids.eve } });
     expect(JSON.stringify(row)).not.toContain("@");
   });
 

@@ -12,7 +12,7 @@
 //   again     a second import is additive (fresh names, first copy unchanged)
 //   teams     POST /api/teams/import on the org server lands the caller's bots
 import { spawn, type ChildProcess } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -97,11 +97,13 @@ function startServer(home: string, port: number, env: Record<string, string>) {
   });
 }
 
-function auditRows(): Array<{ action: string; actor?: unknown; target?: unknown; after?: Record<string, unknown> }> {
-  const dir = join(orgHome, ".sagax", "admin-activity");
-  let files: string[] = [];
-  try { files = readdirSync(dir); } catch { return []; }
-  return files.flatMap((file) => readFileSync(join(dir, file), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)));
+/** The organization's admin activity rows, as an admin reads them. The rows
+ * are sealed on disk (2026-10-27, #1263), so they are read through the
+ * route, not the files. */
+async function auditRows(as: Auth): Promise<Array<{ action: string; who?: string; target?: unknown; after?: Record<string, unknown> }>> {
+  const got = await call(ORG, "GET", "/api/admin-activity?what=org", as);
+  expect(got.status, got.text).toBe(200);
+  return got.body.entries;
 }
 
 posixOnly("slice 8: copy a solo Sagax's bots into an organization", () => {
@@ -195,7 +197,7 @@ posixOnly("slice 8: copy a solo Sagax's bots into an organization", () => {
     const sneaky = structuredClone(document);
     sneaky.backup.bots.find((bot: { key: string }) => bot.key === boltId).tasks[0].messages.push({ id: "x", role: "user", text: "hi", at: 1, parentId: null });
     expect(await call(ORG, "POST", "/api/org/import", bob, sneaky)).toMatchObject({ status: 400, body: { code: "invalid_document" } });
-    expect(auditRows().filter((row) => row.action === "org.import")).toHaveLength(0);
+    expect((await auditRows(alice)).filter((row) => row.action === "org.import")).toHaveLength(0);
     expect(((await call(ORG, "GET", "/api/bots", bob)).body.bots as unknown[]).length).toBe(0);
   });
 
@@ -222,9 +224,9 @@ posixOnly("slice 8: copy a solo Sagax's bots into an organization", () => {
     expect(carolList.some((bot) => report.bots.some((mine) => mine.id === bot.id))).toBe(false);
     const routines = (await call(ORG, "GET", "/api/routines", bob)).body.routines as Array<{ name: string; enabled: boolean; runAs?: { principalId: string } }>;
     expect(routines.find((routine) => routine.name === "Hourly")).toMatchObject({ enabled: false, runAs: { principalId: ids.bob } });
-    const rows = auditRows().filter((row) => row.action === "org.import");
+    const rows = (await auditRows(alice)).filter((row) => row.action === "org.import");
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ target: { kind: "server" }, actor: { principalId: ids.bob, via: "sagax" }, after: { bots: 2, rooms: 1, routines: 1 } });
+    expect(rows[0]).toMatchObject({ target: { kind: "server" }, who: "Bob", after: { bots: 2, rooms: 1, routines: 1 } });
     expect(JSON.stringify(rows[0])).not.toContain("Atlas");
   });
 
