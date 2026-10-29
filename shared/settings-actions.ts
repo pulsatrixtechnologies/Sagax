@@ -113,6 +113,9 @@ const serverWide = (_value: unknown, ctx: SettingClassContext): SettingClass[] =
  * widen the bot that read it. Another bot of the owner's: simple. */
 const selfReach = (_value: unknown, ctx: SettingClassContext): SettingClass[] => ctx.self ? ["rule-change"] : ["own"];
 const SECRETISH = /key|token|secret|password|url/i;
+/** #1545: a secret given by reference ({$secret: generate|copy}), resolved
+ * by the server (server/settings-actions.ts resolveSecretRefs). */
+const isSecretRef = (value: unknown): boolean => Boolean(value) && typeof value === "object" && !Array.isArray(value) && "$secret" in (value as object);
 /** A field named like a credential or an address the server connects to. */
 function carriesSecret(value: unknown, depth = 0): boolean {
   if (!value || typeof value !== "object" || depth > 6) return false;
@@ -748,9 +751,10 @@ add({
     for (const [provider, block] of entries) {
       if (!PROVIDER_KEYS.has(provider)) return `${provider} is not a provider key (${[...PROVIDER_KEYS].join(", ")}).`;
       const fields = block && typeof block === "object" && !Array.isArray(block) ? Object.keys(block) : [];
-      if (fields.length !== 1 || fields[0] !== "key" || typeof (block as { key?: unknown }).key !== "string") return `${provider} takes {key} only.`;
+      const key = (block as { key?: unknown } | null)?.key;
+      if (fields.length !== 1 || fields[0] !== "key" || !(typeof key === "string" || isSecretRef(key))) return `${provider} takes {key} only (a key, or a {$secret} reference).`;
       const [section, field] = PROVIDER_KEY_FIELDS[provider]!;
-      body[section] = { ...body[section], [field]: (block as { key: string }).key };
+      body[section] = { ...body[section], [field]: key as string };
     }
     return { method: "PATCH", path: "/api/config", body };
   },
@@ -830,10 +834,14 @@ add({
   classes: (v, ctx) => [...engineReach(v, ctx), "delete"],
 });
 add({
-  key: "models.engineKeySaved", family: "models", target: "engine", value: "boolean",
-  label: "Whether an engine's access key is saved (read only; the key itself is pasted by the person in Settings)", where: "Settings > Models > engine > Access key",
+  key: "models.engineKeySaved", family: "models", target: "engine", value: "object",
+  label: "An engine's access key (get says whether one is saved, never the key; set {key} saves one, key a reference: {$secret: generate|copy})", where: "Settings > Models > engine > Access key",
   read: (ids) => ({ path: `/api/instances/${enc(ids.target!)}/api-key`, field: "configured" }),
-  write: () => "The key is the person's to paste: ask them to open Settings > Models > the engine > Access key.",
+  write: (ids, v) => {
+    const key = (v as { key?: unknown } | null)?.key;
+    return key === undefined ? "value is {key}." : { method: "POST", path: `/api/instances/${enc(ids.target!)}/api-key`, body: { key } };
+  },
+  classes: (_v, ctx) => ctx.organization ? ["secret", "org"] : ["secret"],
 });
 // engine actions the screen offers (install, check again, update Claude Code)
 function engineAction(key: string, action: string, label: string, where: string): void {
@@ -939,19 +947,26 @@ add({
 
 add({
   key: "connections.webSearch", family: "connections", target: "none", value: "object",
-  label: "Your web search provider ({provider: brave|exa|parallel|firecrawl|searxng, baseUrl}; null forgets it). The key is pasted in Settings only: the answer says whether one is saved, never the key",
+  label: "Your web search provider ({provider: brave|exa|parallel|firecrawl|searxng, baseUrl, key?}; null forgets it). get says whether a key is saved, never the key",
   where: "Settings > Models > Web search",
   read: () => ({ path: "/api/me/web-search" }),
+  classes: (v) => v && typeof v === "object" && "key" in v ? ["secret"] : ["own"],
   write: (_ids, v) => {
     if (v === null) return { method: "DELETE", path: "/api/me/web-search" };
     const w = v as { provider?: unknown; baseUrl?: unknown; key?: unknown } | null;
     if (!w || typeof w !== "object" || typeof w.provider !== "string") return "value is {provider, baseUrl}, or null.";
-    if ("key" in w) return "The key is pasted by the person in Settings > Models > Web search, never through a bot.";
-    return { method: "PUT", path: "/api/me/web-search", body: { provider: w.provider, ...(typeof w.baseUrl === "string" ? { baseUrl: w.baseUrl } : {}) } };
+    // #1545 (2026-10-28): the key too, a reference the server resolves ({$secret})
+    return { method: "PUT", path: "/api/me/web-search", body: { provider: w.provider, ...(typeof w.baseUrl === "string" ? { baseUrl: w.baseUrl } : {}), ...(w.key !== undefined ? { key: w.key } : {}) } };
   },
 });
 
-// ── credentials (the person's vault; export and import stay theirs) ───
+// ── credentials (the person's vault) ─────────────────────────────────
+// #1545 (2026-10-28): a bot never reads a secret's value. It sets, replaces
+// or uses one by reference: {"$secret": "generate", length?} (made by the
+// server) or {"$secret": "copy", from: <vault item id>, field} (taken from
+// another item of the person's), resolved by the server
+// (server/settings-actions.ts resolveSecretRefs); export goes to a file in
+// the person's own app (device.vaultExport).
 add({
   key: "credentials.item", family: "credentials", target: "credential", value: "object",
   // #1545: the person's own listing, names and sites only (never a user name,
@@ -1007,8 +1022,74 @@ deviceSetting("device.pairing", "boolean", "Open or close pairing for a new phon
 deviceSetting("device.pairedDeviceRemove", "string", "Remove a paired phone (its id, from device.remoteAccess)", "Settings > Phone > paired device > Remove", always("own", "delete"));
 deviceSetting("device.computerSharing", "object", "Share this computer with a saved organization server ({server, terminal?, computer?, folders?: [{path, write}]}, or {server, revoke: true}; get lists each server's sharing). A new folder is chosen by the person; the desktop app confirms the change on its own screen", "Settings > Servers > server > Computer access");
 deviceSetting("device.serverMode", "enum:leave", "Server mode of the desktop app (get: the server it is locked to; leave signs out of it and returns to the launch screen)", "Settings > General > Server > Change");
+// #1545: secrets, done in the person's own open app so no value reaches a
+// bot: the export file is saved on their device; a security key's
+// ceremony runs on their screen (the touch is theirs)
+function deviceAction(key: keyof typeof DEVICE_ONLY_SETTINGS, value: SettingValue, label: string, where: string, classes: SettingSpec["classes"]): void {
+  add({ key, family: "device", target: "none", label, where, value, classes, write: (_ids, v) => ({ device: key, value: asText(v) }) });
+}
+deviceAction("device.vaultExport", "enum:chrome-csv|bitwarden-csv|bitwarden-json", "Export the vault to a file saved on the person's device (chrome-csv, bitwarden-csv, bitwarden-json; the values never reach the bot; their security key or a fresh sign-in is asked on their screen)", "Settings > Vault > Export", always("secret"));
+deviceAction("device.securityKeyAdd", "string", "Add a security key (its name): the ceremony opens on the person's screen, they touch the key", "Settings > Security > Add a key", always("secret"));
+deviceAction("device.securityKeyRemove", "string", "Remove a security key (its id, from security.keys): confirmed with a key on the person's screen", "Settings > Security > key > Remove", always("secret", "delete"));
+deviceAction("device.securityKeyClasses", "array", "Which approvals ask for a security key (the full list; removing one is confirmed with the key on the person's screen)", "Settings > Security > Ask for my key", always("secret"));
 deviceSetting("device.haptics", "boolean", "Haptic feedback (iPhone app)", "iPhone: Settings > Appearance > Haptics");
 deviceSetting("device.nudgeHaptic", "boolean", "Vibrate on a nudge (iPhone app)", "iPhone: Settings > Notifications > Nudges");
+
+// ── #1545 (2026-10-28): security keys, wallets, purchases, 1Password,
+// webhook secrets: managed for the person, never a value to the bot ─────
+add({
+  key: "security.keys", family: "credentials", target: "none", value: "object", label: "The person's security keys and which approvals ask for one (read only: names, ids, classes; security.keyName, device.securityKey* change them)", where: "Settings > Security",
+  read: () => ({ path: "/api/security-keys", shape: (v) => {
+    const r = (v ?? {}) as { keys?: Array<Record<string, unknown>>; classes?: unknown };
+    return { keys: (r.keys ?? []).map((key) => ({ id: key.id, name: key.name, ...(key.createdAt ? { createdAt: key.createdAt } : {}), ...(key.lastUsedAt ? { lastUsedAt: key.lastUsedAt } : {}) })), classes: r.classes };
+  } }),
+  write: () => "security.keys is read only: security.keyName renames a key, security.keyClasses adds protections, device.securityKeyAdd / device.securityKeyRemove / device.securityKeyClasses run on the person's screen.",
+});
+add({
+  key: "security.keyClasses", family: "credentials", target: "none", value: "array", label: "Which approvals ask for a security key (the full list; adding runs here, removing one needs the key: device.securityKeyClasses)", where: "Settings > Security > Ask for my key",
+  read: () => ({ path: "/api/security-keys", field: "classes" }),
+  write: (_ids, v) => ({ method: "PUT", path: "/api/security-keys/classes", body: { classes: v } }),
+  classes: always("secret"),
+});
+add({
+  key: "security.keyName", family: "credentials", target: "none", value: "object", label: "Rename a security key ({id, name})", where: "Settings > Security > key",
+  read: () => ({ path: "/api/security-keys", field: "keys" }),
+  write: (_ids, v) => {
+    const r = v as { id?: unknown; name?: unknown } | null;
+    if (!r || typeof r.id !== "string" || typeof r.name !== "string" || !r.name.trim()) return "value is {id, name}.";
+    return { method: "PATCH", path: `/api/security-keys/${enc(r.id)}`, body: { name: r.name.trim() } };
+  },
+});
+add({
+  key: "credentials.wallets", family: "credentials", target: "none", value: "object", label: "One-time card wallets the person uses ({wallet: shop_pay|link, chosen})", where: "Settings > Vault > One-time card",
+  read: () => ({ path: "/api/me/credentials/list", method: "POST", field: "wallets" }),
+  write: (_ids, v) => ({ method: "POST", path: "/api/me/credentials/wallets", body: v }),
+  classes: always("secret"),
+});
+add({
+  key: "credentials.purchases", family: "credentials", target: "none", value: "object", label: "Purchases waiting for the person (read only; sagax_approvals answers them)", where: "Settings > Vault > Purchases",
+  read: () => ({ path: "/api/me/credentials/purchases", method: "POST", field: "purchases" }),
+  write: () => "credentials.purchases is read only: answer a purchase with sagax_approvals.",
+});
+add({
+  key: "credentials.onePassword", family: "credentials", target: "none", value: "object", label: "Add an item of the person's 1Password to the vault as a reference ({vaultId, itemId, name?, domains?}; get lists names, vaults and sites, never a value)", where: "Settings > Vault > 1Password",
+  read: () => ({ path: "/api/me/credentials/onepassword/items", method: "POST", field: "items" }),
+  write: (_ids, v) => ({ method: "POST", path: "/api/me/credentials/onepassword/import", body: v }),
+  classes: always("secret"),
+});
+add({
+  key: "connections.webhooks", family: "connections", target: "none", value: "object", label: "The person's webhooks (read only: names, bots, on or off; never a signing secret)", where: "Routines > Webhooks",
+  read: () => ({ path: "/api/webhooks", field: "webhooks", shape: (v) => Array.isArray(v) ? v.map((row) => {
+    const r = (row ?? {}) as Record<string, unknown>;
+    return { id: r.id, name: r.name, botId: r.botId, enabled: r.enabled, source: r.source, ...(r.eventTypes ? { eventTypes: r.eventTypes } : {}) };
+  }) : v }),
+  write: () => "connections.webhooks is read only: connections.webhookSecretRotate gives one a new signing secret.",
+});
+add({
+  key: "connections.webhookSecretRotate", family: "connections", target: "none", value: "string", label: "Give a webhook a new signing secret (its id; the secret is never returned to the bot: the person sees it with Reveal)", where: "Routines > Webhooks > webhook > Rotate",
+  write: (_ids, v) => typeof v === "string" && v ? { method: "POST", path: `/api/webhooks/${enc(v)}/rotate`, body: {} } : "value is the webhook's id.",
+  classes: always("secret"),
+});
 
 // ── #1545: the rest of what Settings shows ──────────────────────────────
 // sidebar teams: the list
@@ -1042,7 +1123,7 @@ add({
     if (!["elevenlabs", "fish", "xai"].includes(provider)) return "provider is elevenlabs, fish or xai.";
     const key = (block as { key?: unknown } | null)?.key;
     if (key === null) return { method: "DELETE", path: `/api/me/voice-keys/${provider}` };
-    if (typeof key !== "string") return "value is {<provider>: {key}}.";
+    if (typeof key !== "string" && !isSecretRef(key)) return "value is {<provider>: {key}}, key a key or a {$secret} reference.";
     return { method: "PUT", path: `/api/me/voice-keys/${provider}`, body: { key } };
   },
   classes: (v) => Object.values((v ?? {}) as Record<string, { key?: unknown }>)[0]?.key === null ? ["delete"] : ["secret"],
@@ -1120,9 +1201,11 @@ add({
   classes: (v, ctx) => v === null ? [...serverWide(v, ctx), "delete"] : serverWide(v, ctx),
 });
 add({
-  key: "org.botSecrets", family: "organization", target: "none", value: "object", label: "Organization bot secrets (read only: their names; a secret is entered by the person)", where: "Settings > Organization > Bots > Team secrets",
-  read: () => ({ path: "/api/org/bot-secrets", shape: (v) => { const rows = (v as { secrets?: unknown } | null)?.secrets; return Array.isArray(rows) ? rows.map((row) => { const r = (row ?? {}) as Record<string, unknown>; return { name: r.name, ...(r.description ? { description: r.description } : {}) }; }) : v; } }),
-  write: () => "A secret is the person's to enter: ask them to open Settings > Organization > Bots > Team secrets.",
+  key: "org.botSecrets", family: "organization", target: "none", value: "object", label: "Organization bot secrets ({op: add, kind, label, value, injection, botIds} | {op: replace, id, value} | {op: assign, id, botIds} | {op: remove, id}; value a {$secret} reference; get lists names and ids, never a value)", where: "Settings > Organization > Bots > Team secrets",
+  read: () => ({ path: "/api/org/bot-secrets", shape: (v) => { const rows = (v as { secrets?: unknown } | null)?.secrets; return Array.isArray(rows) ? rows.map((row) => { const r = (row ?? {}) as Record<string, unknown>; return { ...(r.id ? { id: r.id } : {}), name: r.name ?? r.label, ...(r.description ? { description: r.description } : {}), ...(r.botIds ? { botIds: r.botIds } : {}) }; }) : v; } }),
+  // #1545 (2026-10-28): the team's secrets reach other people's bots: the organization's card
+  write: (_ids, v) => ({ method: "POST", path: "/api/org/bot-secrets", body: v }),
+  classes: (v) => (v as { op?: unknown } | null)?.op === "remove" ? ["secret", "org", "delete"] : ["secret", "org"],
 });
 // bot editor
 botField("bot.host", "host", "any", "Where the bot runs (null: this server; {kind: machine, deviceId}; workers list the machines)", "Bot editor > Behaviour > Runs on");

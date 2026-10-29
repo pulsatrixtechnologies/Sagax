@@ -651,8 +651,9 @@ permission `settings:change`, member scope `own-setup`, deferred on Claude):
   route's own checks answer the rest. Turns with no person (routine,
   webhook, guest) are refused as for `act`.
 - Policy (`shared/settings-actions-policy.ts`): a class the person protects
-  with a security key: card; secret, others, bulk, delete, org: card at
-  every level, Full included; not the owner's own work (the speaker owns
+  with a security key: card; others, org: card at every level, Full
+  included; secret, bulk, delete: the same unless only the person's own
+  environment is touched (then the level decides); not the owner's own work (the speaker owns
   the speaking bot and the target): card; Ask or Edits: card; an approval
   level or owner mode raised: runs up to the speaking bot's own level,
   never Full or Custom; else it runs. Every applied change writes
@@ -686,9 +687,31 @@ permission `settings:change`, member scope `own-setup`, deferred on Claude):
   shared folder is chosen by the person and the desktop app still confirms
   a sharing change on its own screen (native dialog).
 - `act` still refuses approval fields, rules and card answers; its error
-  points to `sagax_settings`. Security keys, vault export and import, and
-  the desktop-only Full of a personal server stay the person's (listed in
-  the doc).
+  points to `sagax_settings`. The desktop-only Full of a personal server
+  keeps its confirmation channel (listed in the doc).
+- Secrets and purchases (#1545, 2026-10-28): the bot manages them for the
+  person and never sees a value. It sets, replaces or uses a secret by
+  reference, `{"$secret": "generate", length?}` (made by the server) or
+  `{"$secret": "copy", from: <vault item id>, field}` (the person's own
+  vault, `vaultValue`), resolved by `resolveSecretRefs` on the server just
+  before the route; the card and the journal keep the reference (`secret`,
+  `[hidden]`). Keys: the vault (`credentials.item`, `.botAccess`,
+  `.delete`), 1Password (`credentials.onePassword`, a reference),
+  one-time card wallets (`credentials.wallets`), purchases
+  (`credentials.purchases`, answered with `sagax_approvals`), provider,
+  voice, web search, cloud agent and engine keys, webhook signing secrets
+  (`connections.webhookSecretRotate`; Reveal stays on screen), team secrets
+  (`org.botSecrets`, the organization's card). Security keys:
+  `security.keys`, `security.keyName` (new `PATCH /api/security-keys/:id`),
+  `security.keyClasses`; what needs the physical key runs on the person's
+  screen through the device channel (`device.securityKeyAdd`,
+  `device.securityKeyRemove`, `device.securityKeyClasses`): the bot starts
+  the ceremony, the person touches the key. Export: `device.vaultExport`
+  saves the file on the person's device (desktop or browser), never in the
+  bot's context. Import: the file is picked by the person on their device.
+  Policy: `secret` joins `OWN_WHEN_ALONE`, so the person's own secrets follow
+  the bot's level like the rest of their environment; the organization's
+  keep its card.
 - #1545 (2026-10-28): capability is the person's rights, permission the
   bot's level. A preference kept for the person reads back from
   `/api/me/preferences` (organization server) or `/api/me/appearance` (a

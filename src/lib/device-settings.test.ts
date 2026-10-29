@@ -103,4 +103,29 @@ describe("device settings in the person's open app (#1545)", () => {
     await answerer.receive();
     expect(posts).toEqual([["/api/me/device-settings/requests/r1", { device: "web", value: "night" }]]);
   });
+
+  it("exports the vault to a file on this device and runs the key ceremonies here: the bot hears only that it is done (#1545)", async () => {
+    const exportVault = vi.fn(async () => 3);
+    const addSecurityKey = vi.fn(async () => {});
+    const setSecurityKeyClasses = vi.fn(async () => {});
+    const e = env({ exportVault, addSecurityKey, setSecurityKeyClasses, removeSecurityKey: async () => {} });
+    expect(await answerDeviceRequest({ op: "set", key: "device.vaultExport", value: "bitwarden-json" }, e)).toEqual({ device: "web", value: "saved on this device: 3 item(s)" });
+    expect(exportVault).toHaveBeenCalledWith("bitwarden-json");
+    expect(await answerDeviceRequest({ op: "set", key: "device.securityKeyAdd", value: "Blue" }, e)).toEqual({ device: "web", value: "added" });
+    expect(await answerDeviceRequest({ op: "set", key: "device.securityKeyClasses", value: JSON.stringify(["destructive"]) }, e)).toEqual({ device: "web", value: "saved" });
+    expect(setSecurityKeyClasses).toHaveBeenCalledWith(["destructive"]);
+    expect(await answerDeviceRequest({ op: "get", key: "device.vaultExport" }, e)).toEqual({ device: "web", unsupported: true });
+  });
+
+  it("says a ceremony started when the person still has to touch their key", async () => {
+    vi.useFakeTimers();
+    try {
+      const e = env({ removeSecurityKey: () => new Promise<void>(() => {}) });
+      const answer = answerDeviceRequest({ op: "set", key: "device.securityKeyRemove", value: "k1" }, e);
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(await answer).toMatchObject({ device: "web", value: expect.stringMatching(/^started/) });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -39,6 +39,11 @@ export const DEVICE_ONLY_SETTINGS = {
   // iPhone app
   "device.haptics": "boolean",
   "device.nudgeHaptic": "boolean",
+  // secrets, done in the person's own app so no value reaches a bot
+  "device.vaultExport": "enum:chrome-csv|bitwarden-csv|bitwarden-json",
+  "device.securityKeyAdd": "string",
+  "device.securityKeyRemove": "string",
+  "device.securityKeyClasses": "array",
 } as const;
 export type DeviceOnlySetting = keyof typeof DEVICE_ONLY_SETTINGS;
 

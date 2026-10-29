@@ -202,6 +202,15 @@ export class SecurityKeyStore {
     this.save();
   }
 
+  /** Rename one key (#1545): its name only, never what it signs with. */
+  renameCredential(person: string, id: string, name: string): boolean {
+    const credential = this.entry(person)?.credentials.find((candidate) => candidate.id === id);
+    if (!credential) return false;
+    credential.name = name.trim().slice(0, 80) || credential.name;
+    this.save();
+    return true;
+  }
+
   /** Remove one key. The last key takes the chosen classes with it: the
    * step-up that removed it was the person's own. */
   removeCredential(person: string, id: string): boolean {

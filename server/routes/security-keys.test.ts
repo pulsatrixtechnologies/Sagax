@@ -70,6 +70,7 @@ describe("security key routes", () => {
     expect(requiredScope("POST", "/api/security-keys/begin")).toBe("client");
     expect(requiredScope("POST", "/api/security-keys/register")).toBe("client");
     expect(requiredScope("DELETE", "/api/security-keys/abc_DEF-1")).toBe("client");
+    expect(requiredScope("PATCH", "/api/security-keys/abc_DEF-1")).toBe("client");
     const bot = await serve(null);
     expect((await bot.call("/api/security-keys")).status).toBe(403);
     expect((await bot.call("/api/security-keys/register", "POST", { via: "desktop-window" })).status).toBe(403);
@@ -108,8 +109,14 @@ describe("security key routes", () => {
     // a second key needs the first
     expect((await call("/api/security-keys/register", "POST", { name: "Second", via: "desktop-window" })).body).toMatchObject({ code: "step_up_required" });
 
-    // removing one needs it too
+    // #1545: renaming is a name only, no key asked
     const id = keys.keys("pr_alice")[0]!.id;
+    const renamed = await call(`/api/security-keys/${id}`, "PATCH", { name: "Blue key" });
+    expect(renamed.status).toBe(200);
+    expect(keys.keys("pr_alice")[0]!.name).toBe("Blue key");
+    expect((await call(`/api/security-keys/${id}`, "PATCH", { name: " " })).status).toBe(400);
+
+    // removing one needs it too
     const removeRefused = await call(`/api/security-keys/${id}`, "DELETE", {});
     expect(removeRefused.body).toMatchObject({ code: "step_up_required", target: { kind: "settings", action: "security-keys.remove", detail: { id } } });
     const removeBegin = await call("/api/security-keys/begin", "POST", { target: removeRefused.body.target, via: "desktop-window" });

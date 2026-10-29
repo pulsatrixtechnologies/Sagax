@@ -22,8 +22,8 @@ describe("every setting is an action (sagax_settings policy)", () => {
     }
   });
 
-  it("lets the level decide a deletion or bulk change of the owner's own things that touches nobody else (2026-10-26)", () => {
-    for (const name of ["bulk", "delete"] as const) {
+  it("lets the level decide a deletion, a bulk change or a secret of the owner's own things that touches nobody else (2026-10-26, #1545 2026-10-28)", () => {
+    for (const name of ["bulk", "delete", "secret"] as const) {
       expect(decideSettingEffect({ ...owner, othersInvolved: false, classes: ["own", name], mode: "auto" }), name).toEqual({ effect: "run" });
       expect(decideSettingEffect({ ...owner, othersInvolved: false, classes: ["own", name], mode: "full" }), name).toEqual({ effect: "run" });
       expect(decideSettingEffect({ ...owner, othersInvolved: false, classes: ["own", name], mode: "ask" }), name).toEqual({ effect: "hold", reason: "level" });
@@ -31,7 +31,7 @@ describe("every setting is an action (sagax_settings policy)", () => {
   });
 
   it("keeps the card for a deletion or bulk change that reaches another person, or of someone else's thing", () => {
-    for (const name of ["bulk", "delete"] as const) {
+    for (const name of ["bulk", "delete", "secret"] as const) {
       // a group with other humans in it
       expect(decideSettingEffect({ ...owner, othersInvolved: true, classes: ["own", name], mode: "full" }), name).toEqual({ effect: "hold", reason: "sensitive" });
       // unknown: the card
@@ -40,7 +40,7 @@ describe("every setting is an action (sagax_settings policy)", () => {
       expect(decideSettingEffect({ ownerWork: false, keyProtected: false, othersInvolved: false, classes: ["own", name], mode: "full" }), name).toEqual({ effect: "hold", reason: "sensitive" });
     }
     // the other card classes keep the card even alone
-    for (const name of ["secret", "others", "org"] as const) {
+    for (const name of ["others", "org"] as const) {
       expect(decideSettingEffect({ ...owner, othersInvolved: false, classes: ["own", name], mode: "full" }), name).toEqual({ effect: "hold", reason: "sensitive" });
     }
     // a removed rule still never raises what runs unasked past the level

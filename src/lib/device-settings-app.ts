@@ -34,6 +34,26 @@ export function receiveDeviceSettingsFrame(context: () => { bots: readonly BotRo
         audioInputs: listAudioInputs,
         preferredAudioInput: preferredAudioInputId,
         setPreferredAudioInput: setPreferredAudioInputId,
+        // #1545: secrets, the way Settings does them (the store's api asks the
+        // person's key and sends again)
+        exportVault: async (format) => {
+          const vault = await import("./credential-vault");
+          const transfer = await import("../../shared/credential-vault-transfer");
+          if (!transfer.isVaultExportFormat(format)) throw new Error("Unknown export format.");
+          const answer = await vault.exportCredentials(format);
+          const file = transfer.exportVaultItems(answer.items, format);
+          vault.downloadText(file.text, file.mime, vault.exportFileName(file.extension));
+          return file.count;
+        },
+        addSecurityKey: async (name) => { await (await import("./step-up-client")).registerSecurityKey(name); },
+        removeSecurityKey: async (id) => {
+          const { api } = await import("@/state/store");
+          await api(`/api/security-keys/${encodeURIComponent(id)}`, { method: "DELETE", body: JSON.stringify({}) });
+        },
+        setSecurityKeyClasses: async (classes) => {
+          const { api } = await import("@/state/store");
+          await api("/api/security-keys/classes", { method: "PUT", body: JSON.stringify({ classes }) });
+        },
       };
     },
   });

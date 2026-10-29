@@ -23,13 +23,14 @@
 //
 // Effect, in order (the first that applies wins):
 // 1. A class the person protects with a security key: card (the key signs it).
-// 2. secret, others, org: card, at every level, Full included, like a
-//    payment. bulk and delete too, unless the change is the owner's own work
+// 2. others, org: card, at every level, Full included, like a payment.
+//    bulk, delete and secret too, unless the change is the owner's own work
 //    and the caller says it touches nobody else (`othersInvolved: false`: no
 //    other human in the group, no shared link): then the level decides, as
 //    for any other change of the person's own bot, conversation, routine,
-//    group or model (2026-10-26: what the bot does in the person's own
-//    environment is theirs).
+//    group, model or vault (2026-10-26: what the bot does in the person's own
+//    environment is theirs; #1545, 2026-10-28: their own secrets too, set or
+//    used by reference, the bot never sees a value).
 // 3. Not the owner's own work (the speaker does not own the bot speaking or
 //    the thing changed): card.
 // 4. The speaking bot at Ask or Auto-accept edits: card.
@@ -56,7 +57,7 @@ export type SettingClass = (typeof SETTING_CLASSES)[number];
 export const CARD_CLASSES: ReadonlySet<SettingClass> = new Set(["secret", "others", "bulk", "delete", "org"]);
 /** Card classes the level decides when the owner changes only their own
  * things and nobody else is involved. */
-export const OWN_WHEN_ALONE: ReadonlySet<SettingClass> = new Set(["bulk", "delete"]);
+export const OWN_WHEN_ALONE: ReadonlySet<SettingClass> = new Set(["bulk", "delete", "secret"]);
 
 const RANK: Readonly<Record<string, number>> = { ask: 0, edits: 1, auto: 2, full: 3, custom: 3 };
 

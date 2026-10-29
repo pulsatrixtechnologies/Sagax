@@ -251,9 +251,17 @@ export function createSecurityKeyRoutes(deps: SecurityKeyRouteDeps): RouteHandle
 
     const item = /^\/api\/security-keys\/([A-Za-z0-9_-]{1,1400})$/.exec(path);
     if (item) {
-      if (method !== "DELETE") return json(res, 405, { error: "DELETE only" });
       const id = item[1]!;
       if (!deps.keys.store.credentials(me).some((credential) => credential.id === id)) return json(res, 404, { error: "no such key" });
+      // #1545: a new name only, the person's own key (nothing it protects changes)
+      if (method === "PATCH") {
+        const body = (await readBody(req)) ?? {};
+        if (typeof body.name !== "string" || !body.name.trim()) return json(res, 400, { error: "send { name }" });
+        deps.keys.store.renameCredential(me, id, body.name);
+        deps.audit({ action: "security_keys.rename", personId: me, after: { key: id.slice(0, 16) } }, auth);
+        return json(res, 200, state(deps, me, req, auth));
+      }
+      if (method !== "DELETE") return json(res, 405, { error: "PATCH or DELETE" });
       const body = (await readBody(req)) ?? {};
       const refused = settingsStepUp(deps.keys, me, "security-keys.remove", { id }, body.stepUp, []);
       if (refused) return json(res, refused.status, refused.body);

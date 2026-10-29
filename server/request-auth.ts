@@ -730,7 +730,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/security-keys$/ },
   { methods: ["PUT"], path: /^\/api\/security-keys\/classes$/ },
   { methods: ["POST"], path: /^\/api\/security-keys\/(?:register|begin)$/ },
-  { methods: ["DELETE"], path: /^\/api\/security-keys\/[A-Za-z0-9_-]{1,1400}$/ },
+  { methods: ["PATCH", "DELETE"], path: /^\/api\/security-keys\/[A-Za-z0-9_-]{1,1400}$/ },
   // rooms
   { methods: ["GET", "POST"], path: /^\/api\/groups$/ },
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/messages$/ },
