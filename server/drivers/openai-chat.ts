@@ -27,6 +27,8 @@ import { requestTooLargeMessage } from "../../shared/request-too-large.ts";
 import { classifyContinuable, writeTurnHandoff } from "../turn-continuation.ts";
 import { DUPLEX_INTERRUPT_WAIT_MS } from "../voice-call-duplex.ts";
 import { KEY_REJECTED_REASON, keyRejected, noteKeyAccepted, noteKeyRejected, rejectsKey } from "../key-rejections.ts";
+import type { EffortLevel } from "../../shared/model-selection.ts";
+import { refusedResponsesOption, refusesModel, refusesResponsesEndpoint, responsesEffort, responsesInput, ResponsesReader, responsesTools } from "./openai-responses.ts";
 
 export interface OpenAIChatMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -152,6 +154,22 @@ interface RuntimeOptions<Config> {
   /** GET /models keep-alive for HTTP grok voice calls. Off for other
    * OpenAI-compatible hosts: they did not opt into that ping. */
   warmSession?: boolean;
+  /** Models this endpoint serves on /responses (openai-responses.ts):
+   * OpenAI's own API, whose newer models take tools with reasoning only
+   * there. A model /responses refuses goes back to /chat/completions. */
+  responsesApi?: (model: string) => boolean;
+  /** Whether a model reasons (OpenAI's o-series and gpt-5 on): only such a
+   * model is sent `reasoning.effort` and asked for its encrypted reasoning. */
+  reasoningModel?: (model: string) => boolean;
+  /** Effort levels the engine passes as `reasoning.effort`. */
+  effortLevels?: readonly EffortLevel[];
+  /** A model the provider refuses for this kind of request (not a chat
+   * model, no tools with reasoning) leaves the catalog, and the same turn
+   * goes on at once on another model of the catalog, without a word in the
+   * chat (#1668's rule). Off: the turn fails in plain words. */
+  modelFallback?: boolean;
+  /** Told when a model is refused that way, so the catalog drops it. */
+  onModelUnsupported?: (model: string) => void;
 }
 
 const usageFrom = (usage: CompletionJson["usage"]): Usage | null =>
@@ -165,6 +183,27 @@ const asError = (value: unknown): Error =>
   value instanceof Error ? value : new Error(String(value));
 
 class UnsupportedChatToolsError extends Error {}
+/** The provider refused the request because of the model (openai-responses.ts
+ * refusesModel). Nothing ran upstream. */
+export class ModelUnsupportedError extends Error {}
+/** /responses does not serve this model: the chat path may. */
+class ResponsesEndpointError extends Error {}
+/** A /responses request refused one optional part (refusedResponsesOption). */
+class ResponsesOptionError extends Error {
+  readonly option: "include" | "reasoning";
+  constructor(message: string, option: "include" | "reasoning") {
+    super(message);
+    this.option = option;
+  }
+}
+
+/** At most this many models take over one turn after a refusal. */
+const MAX_MODEL_SWITCHES = 3;
+
+/** The plain words a turn ends with when no model of the engine can answer
+ * it. "model ... is not supported" lets Auto skip it (model-auto.ts). */
+export const noModelLeftMessage = (label: string) =>
+  `This model is not supported for conversations (${label}), and no other model of this engine could take over. Choose another model.`;
 
 /** One turn's safety stops: model steps, and tool calls across all of them.
  * Tool-heavy models (a memory server, a browser) take dozens of steps, and
@@ -447,7 +486,178 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     createdAt: new Date().toISOString(),
   });
 
+  /** Models whose /responses request refused an optional part, or that
+   * /responses does not serve at all. In memory only. */
+  const responsesRefused = { include: new Set<string>(), reasoning: new Set<string>(), endpoint: new Set<string>() };
+  /** Models the provider refused for a conversation (ModelUnsupportedError). */
+  const unsupportedModels = new Set<string>();
+
+  const idleTimer = () => {
+    const controller = new AbortController();
+    let timer: NodeJS.Timeout | null = null;
+    return {
+      signal: controller.signal,
+      reset() {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => controller.abort(new DOMException("Streaming idle timeout elapsed", "AbortError")), options.timeoutMs);
+      },
+      clear() { if (timer) clearTimeout(timer); },
+    };
+  };
+
+  /** One reply through /responses, read into the chat runtime's shape. */
+  const completeResponses = async (
+    messages: OpenAIChatMessage[],
+    model: string,
+    stream: boolean,
+    signal: AbortSignal | undefined,
+    onDelta: ((delta: string, kind: "assistant_text" | "reasoning_text") => void) | undefined,
+    tools: ChatToolDefinition[],
+    onUsage: TextGenerationOptions["onUsage"] | undefined,
+    maxTokens: number | undefined,
+    apiKey: string,
+    effort: EffortLevel | undefined,
+  ): Promise<Completion> => {
+    const idle = idleTimer();
+    idle.reset();
+    try {
+      const activeSignal = signal ? AbortSignal.any([signal, idle.signal]) : idle.signal;
+      const reasons = options.reasoningModel?.(model) === true;
+      const level = reasons && !responsesRefused.reasoning.has(model) ? responsesEffort(effort) : undefined;
+      const payload = JSON.stringify({
+        model,
+        input: responsesInput(messages),
+        ...(tools.length ? { tools: responsesTools(tools) } : {}),
+        stream,
+        store: false,
+        ...(reasons && !responsesRefused.include.has(model) ? { include: ["reasoning.encrypted_content"] } : {}),
+        ...(level ? { reasoning: { effort: level } } : {}),
+        ...(typeof maxTokens === "number" ? { max_output_tokens: maxTokens } : {}),
+      });
+      const response = await fetch(`${options.apiUrl}/responses`, {
+        method: "POST",
+        ...(messages.some(message => Array.isArray(message.content) && message.content.some(part => part.type === "image_url")) ? { redirect: "error" as const } : {}),
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: payload,
+        signal: activeSignal,
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        if (rejectsKey(response.status, body)) noteKeyRejected(options.apiUrl, apiKey);
+        const message = `${options.httpErrorLabel} HTTP ${response.status}${body ? `: ${httpErrorDetail(body)}` : ""}`;
+        if (refusesRequestSize(response.status, body)) throw new RequestTooLargeError(message, Buffer.byteLength(payload));
+        const option = refusedResponsesOption(response.status, body);
+        if (option && ((option === "include" && reasons && !responsesRefused.include.has(model)) || (option === "reasoning" && level))) {
+          throw new ResponsesOptionError(message, option);
+        }
+        if (refusesResponsesEndpoint(response.status, body)) throw new ResponsesEndpointError(message);
+        if (rejectsToolsParameter(response.status, body)) throw new UnsupportedChatToolsError(message);
+        if (refusesModel(response.status, body)) throw new ModelUnsupportedError(message);
+        throw new Error(message);
+      }
+      noteKeyAccepted(options.apiUrl, apiKey);
+      const reader = new ResponsesReader(onDelta);
+      if (!stream || response.headers.get("content-type")?.includes("application/json")) {
+        reader.json(await response.json());
+      } else {
+        if (!response.body) throw new Error(options.noBodyError ?? `${options.httpErrorLabel} returned no response body`);
+        const stream = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        const consume = (line: string) => {
+          if (!line.startsWith("data:")) return;
+          const data = line.slice(5).trim();
+          if (!data || data === "[DONE]") return;
+          let event: unknown;
+          try { event = JSON.parse(data); } catch { throw new ChatProtocolError("provider stream contained a malformed response event"); }
+          reader.event(event);
+        };
+        try {
+          for (;;) {
+            const { done, value } = await stream.read();
+            if (done) {
+              buffer += decoder.decode();
+              const tail = buffer.trim();
+              if (tail) { try { consume(tail); } catch (error) { if (!reader.done) throw error; } }
+              break;
+            }
+            idle.reset();
+            buffer += decoder.decode(value, { stream: true });
+            if (buffer.length > 2_000_000) throw new ChatProtocolError("provider stream frame exceeded the size limit");
+            let newline: number;
+            while ((newline = buffer.indexOf("\n")) !== -1) {
+              const line = buffer.slice(0, newline).trim();
+              buffer = buffer.slice(newline + 1);
+              consume(line);
+            }
+            if (reader.done) break;
+          }
+        } finally {
+          await stream.cancel().catch(() => {});
+        }
+        activeSignal.throwIfAborted();
+        if (!reader.done) throw new ChatProtocolError("Stream ended before completion");
+      }
+      activeSignal.throwIfAborted();
+      const reply = reader.reply();
+      if (onUsage) {
+        onUsage({
+          model: reply.model?.trim() ? reply.model : model,
+          input: reply.usage?.input,
+          output: reply.usage?.output,
+          cachedInput: reply.usage?.cachedInput,
+          costUsd: undefined,
+        });
+      }
+      return {
+        text: reply.text,
+        reasoning: options.reasoning ? reply.reasoning : "",
+        usage: reply.usage ? { input: reply.usage.input, output: reply.usage.output } : null,
+        toolCalls: reply.toolCalls,
+        finishReason: reply.finishReason,
+        protocolReasoning: "",
+        protocolReasoningDetails: reply.reasoningItems,
+      };
+    } finally {
+      idle.clear();
+    }
+  };
+
+  /** One reply: /responses for the models this endpoint serves there, with
+   * one resend without a refused optional part, else /chat/completions. */
   const complete = async (
+    messages: OpenAIChatMessage[],
+    model: string,
+    stream: boolean,
+    signal?: AbortSignal,
+    onDelta?: (delta: string, kind: "assistant_text" | "reasoning_text") => void,
+    tools: ChatToolDefinition[] = [],
+    onUsage?: TextGenerationOptions["onUsage"],
+    maxTokens?: number,
+    apiKey = "",
+    effort?: EffortLevel,
+  ): Promise<Completion> => {
+    if (options.responsesApi?.(model) && !responsesRefused.endpoint.has(model)) {
+      for (let resend = 0; ; resend++) {
+        try {
+          return await completeResponses(messages, model, stream, signal, onDelta, tools, onUsage, maxTokens, apiKey, effort);
+        } catch (error) {
+          if (error instanceof ResponsesOptionError && resend < 2) {
+            responsesRefused[error.option].add(model);
+            continue;
+          }
+          if (error instanceof ResponsesEndpointError) {
+            responsesRefused.endpoint.add(model);
+            break;
+          }
+          throw error;
+        }
+      }
+    }
+    return completeChat(messages, model, stream, signal, onDelta, tools, onUsage, maxTokens, apiKey);
+  };
+
+  const completeChat = async (
     messages: OpenAIChatMessage[],
     model: string,
     stream: boolean,
@@ -499,6 +709,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         if (messages.some((entry) => entry.reasoning_content !== undefined) && rejectsReasoningReplay(response.status, body)) {
           throw new UnsupportedReasoningReplayError(message);
         }
+        if (refusesModel(response.status, body)) throw new ModelUnsupportedError(message);
         throw new Error(message);
       }
       noteKeyAccepted(options.apiUrl, apiKey);
@@ -642,6 +853,21 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     }
   };
 
+  /** A model refused for conversations leaves the catalog for good (this
+   * process); the next one to try is the catalog's default, else its first
+   * row, never one already refused or tried in this turn. */
+  const refuseModel = (model: string) => {
+    unsupportedModels.add(model);
+    options.onModelUnsupported?.(model);
+  };
+  const nextModel = (tried: ReadonlySet<string>): string | undefined => {
+    if (!options.modelFallback) return undefined;
+    const catalog = options.models();
+    const usable = (id: string) => !unsupportedModels.has(id) && !tried.has(id);
+    if (catalog.default && usable(catalog.default)) return catalog.default;
+    return catalog.options.find((option) => usable(option.id))?.id;
+  };
+
   const seesImages = (turn: SendTurnInput) =>
     options.imageInput?.(turn.model || options.models().default) ?? true;
   const messagesFor = (turn: SendTurnInput): OpenAIChatMessage[] => {
@@ -716,7 +942,14 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     const request = messages.at(-1)!;
     const retainImages = chatImageBudget();
     for (const message of messages) retainImages(message.content);
-    const model = turn.model || options.models().default;
+    const requested = turn.model || options.models().default;
+    let model = requested;
+    /** Models this turn tried, the refused ones included. */
+    const triedModels = new Set<string>([model]);
+    // A model already refused for conversations is not sent again: the turn
+    // starts on the next one, as the switch below does.
+    if (options.modelFallback && unsupportedModels.has(model)) model = nextModel(triedModels) ?? model;
+    triedModels.add(model);
     const secrets = [apiKey].filter((value): value is string => Boolean(value));
     for (const integration of Object.values(turn.integrations ?? {})) {
       const entries = object(integration);
@@ -776,6 +1009,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     active.set(turn.threadId, turnEntry);
     emit({ ...base(turn.threadId, turnId), type: "turn.started" });
     emit({ ...base(turn.threadId, turnId), type: "session.started", sessionId: null, model });
+    if (model !== requested) emit({ ...base(turn.threadId, turnId), type: "session.model-fallback", requested, actual: model });
 
     void (async () => {
       let tools: ChatToolSession | undefined;
@@ -858,7 +1092,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
                 streamed = true;
                 if (streamKind === "assistant_text") answerStreamed = true;
                 delta(text, streamKind);
-              }, tools.definitions, undefined, undefined, apiKey);
+              }, tools.definitions, undefined, undefined, apiKey, turn.effort);
               delta("", "assistant_text", true);
               delta("", "reasoning_text", true);
               break;
@@ -908,6 +1142,28 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
                   error instanceof UnsupportedChatToolsError && verdict.reason === "invalid_request") {
                 optionalQuestionOnly = false;
                 tools.definitions.length = 0;
+                continue;
+              }
+              // The provider refused the model itself (not a chat model, no
+              // tools with reasoning): nothing ran upstream, so the same
+              // request goes on at once on another model of the catalog, and
+              // the refused one leaves it. The chat shows nothing; the Events
+              // lens says why (#1668's rule). Never once answer text streamed.
+              const modelRefused = error instanceof ModelUnsupportedError ||
+                (error instanceof UnsupportedChatToolsError && tools.definitions.length > 0);
+              if (modelRefused && !answerStreamed && !abort.signal.aborted) {
+                refuseModel(model);
+                const next = triedModels.size <= MAX_MODEL_SWITCHES ? nextModel(triedModels) : undefined;
+                native("in", { refused: "model_unsupported", model, ...(next ? { next } : {}) });
+                if (!next) throw new ChatProtocolError(noModelLeftMessage(options.models().options.find((option) => option.id === model)?.label ?? model));
+                console.warn(`${options.driverKind}: ${model} refused this conversation; continuing on ${next}`);
+                emit({ ...base(turn.threadId, turnId), type: "runtime.notice",
+                  message: `${model} cannot answer this conversation: the same turn continues on ${next}.` });
+                emit({ ...base(turn.threadId, turnId), type: "session.model-fallback", requested, actual: next });
+                // Another model cannot read the refused one's reasoning.
+                for (const message of messages) { delete message.reasoning_content; delete message.reasoning; delete message.reasoning_details; }
+                model = next;
+                triedModels.add(next);
                 continue;
               }
               // Once a call has been handled, never replay it through a turn retry.
@@ -1168,7 +1424,8 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         guestTurns: "confined",
         // GET /models on warmOnly, then ping while the call thread is warm so
         // the next spoken turn reuses the HTTP pool (no billed completion).
-        ...(options.warmSession ? { warmSession: true } : {}) },
+        ...(options.warmSession ? { warmSession: true } : {}),
+        ...(options.effortLevels ? { effortLevels: options.effortLevels } : {}) },
       sendTurn,
       // #1373: this engine keeps no copy of Ask, Edits or Auto (only Full
       // is read at launch). Every other call asks Sagax, which answers at
@@ -1216,17 +1473,35 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       },
     },
     generateText: async (prompt, { signal, onUsage, model: requested, system, onDelta, maxTokens } = {}) => {
-      const model = requested ?? options.generateModel?.() ?? options.models().default;
+      let model = requested ?? options.generateModel?.() ?? options.models().default;
+      const tried = new Set<string>([model]);
+      if (options.modelFallback && unsupportedModels.has(model)) model = nextModel(tried) ?? model;
       const messages: OpenAIChatMessage[] = [
         ...(system ? [{ role: "system" as const, content: system }] : []),
         { role: "user", content: prompt },
       ];
       const stream = typeof onDelta === "function";
-      const { text, reasoning, toolCalls } = await complete(
-        messages, model, stream, signal,
-        onDelta ? (delta, kind) => { if (kind === "assistant_text") onDelta(delta); } : undefined,
-        [], onUsage, maxTokens, resolveKey(),
-      );
+      let streamed = false;
+      let reply: Completion;
+      for (;;) {
+        tried.add(model);
+        try {
+          reply = await complete(
+            messages, model, stream, signal,
+            onDelta ? (delta, kind) => { if (kind === "assistant_text") { streamed = true; onDelta(delta); } } : undefined,
+            [], onUsage, maxTokens, resolveKey(),
+          );
+          break;
+        } catch (error) {
+          // A helper on a refused model goes on with the next one, as a turn does.
+          if (!(error instanceof ModelUnsupportedError) || streamed || signal?.aborted) throw error;
+          refuseModel(model);
+          const next = tried.size <= MAX_MODEL_SWITCHES ? nextModel(tried) : undefined;
+          if (!next) throw new ChatProtocolError(noModelLeftMessage(model));
+          model = next;
+        }
+      }
+      const { text, reasoning, toolCalls } = reply;
       if (toolCalls.length) throw new ChatProtocolError("provider returned tool calls to a text-only helper");
       return text.trim() ? text : reasoning;
     },

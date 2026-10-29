@@ -37,12 +37,28 @@ const OPENAI_MODELS: ModelCatalog = {
 };
 
 /** OpenAI's /models lists every model the key can reach: embeddings, speech,
- * images, moderation and Responses-only models too. Only chat models belong
- * in a chat picker. */
+ * images, moderation, completion-only and realtime models too. A bot's
+ * engine needs a conversation model that takes tools, so only the chat and
+ * reasoning families are kept (an allow list by family, never the raw
+ * list): gpt-4 and later, and the o-series. Audio, realtime and speech
+ * models belong to the voice settings, not to this picker. */
 export function isOpenAIChatModel(id: string): boolean {
-  if (!/^(gpt-|chatgpt-|o\d)/i.test(id)) return false;
-  return !/(audio|realtime|tts|transcribe|search|image|embedding|moderation|instruct|codex|computer-use|deep-research|-pro\b)/i.test(id);
+  if (!/^(?:gpt-(?:[4-9]|\d{2,})|o[1-9]\d*(?:-|$))/i.test(id)) return false;
+  // chatgpt-* and o1-mini / o1-preview take no tools; gpt-4-32k and the
+  // dated gpt-4-0314 / 0613 snapshots are retired completion-era models.
+  if (/^o1-(?:mini|preview)\b|^gpt-4-(?:32k|0314|0613|vision)/i.test(id)) return false;
+  return !/(audio|realtime|tts|transcribe|diarize|search|image|embedding|moderation|instruct|codex|computer-use|deep-research|-pro\b|whisper|dall-e|davinci|babbage|-oss\b)/i.test(id);
 }
+
+/** OpenAI's reasoning models: the o-series and gpt-5 on, except the
+ * gpt-5-chat aliases. Only these take `reasoning.effort`. */
+export function isOpenAIReasoningModel(id: string): boolean {
+  if (/-chat\b/i.test(id)) return false;
+  return /^(?:o[1-9]\d*(?:-|$)|gpt-(?:[5-9]|\d{2,}))/i.test(id);
+}
+
+/** Effort levels OpenAI's reasoning models take as `reasoning.effort`. */
+const OPENAI_EFFORT_LEVELS = ["low", "medium", "high"] as const;
 
 export interface OpenAICompatConfig {
   tools?: boolean;
@@ -134,7 +150,14 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
     const missingKey = !ownKeyVariable || OWN_KEY_ENVS.has(config.apiKeyEnv)
       ? "No API key — open Settings → API keys."
       : `no API key — set ${config.apiKeyEnv} or add it to the instance config`;
-    const seeded = config.catalog === "openai" ? OPENAI_MODELS : DEFAULT_MODELS;
+    const openai = config.catalog === "openai";
+    /** Models OpenAI refused for a conversation (openai-chat.ts): they leave
+     * the catalog, so neither the picker nor Auto offers them again. */
+    const refused = new Set<string>();
+    const withEffort = (option: ModelCatalog["options"][number]) => openai
+      ? { ...option, effortLevels: isOpenAIReasoningModel(option.id) ? [...OPENAI_EFFORT_LEVELS] : [] }
+      : option;
+    const seeded = openai ? { ...OPENAI_MODELS, options: OPENAI_MODELS.options.map(withEffort) } : DEFAULT_MODELS;
     let catalog: ModelCatalog = config.managedModels
       ? { default: config.managedModels[0], options: config.managedModels.map(id => ({ id, label: id })) }
       : config.model
@@ -172,14 +195,14 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
           if (!id || seen.has(id)) continue;
           seen.add(id);
           const published = publishedContextWindow(row);
-          options.push({
+          options.push(withEffort({
             id,
             label: typeof row.name === "string" && row.name.trim() ? row.name : id,
             // The endpoint's own window wins over the hardcoded table.
             ...(published ? { contextWindow: published } : {}),
             // A provider's own catalog is its official list, not a custom model.
             ...(config.catalog === "openai" ? {} : { custom: true }),
-          });
+          }));
         }
         if (!options.length) return;
         if (config.model && !options.some((model) => model.id === config.model)) {
@@ -191,6 +214,12 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
       }
     };
     if (apiKey) void fetchModels();
+    const models = (): ModelCatalog => {
+      if (!refused.size) return catalog;
+      const options = catalog.options.filter((option) => !refused.has(option.id));
+      if (!options.length) return catalog;
+      return { ...catalog, default: refused.has(catalog.default) ? options[0]!.id : catalog.default, options };
+    };
 
     return createOpenAIChatRuntime({
       input,
@@ -199,8 +228,17 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
       apiUrl: config.url,
       tools: config.tools,
       computerUse: true,
-      models: () => catalog,
+      models,
       refreshModels: fetchModels,
+      // OpenAI's own API: /responses, where its newer models take tools
+      // with reasoning, and a model it refuses gives way to another one.
+      ...(openai ? {
+        responsesApi: () => true,
+        reasoningModel: isOpenAIReasoningModel,
+        effortLevels: OPENAI_EFFORT_LEVELS,
+        modelFallback: true,
+        onModelUnsupported: (model: string) => { refused.add(model); },
+      } : {}),
       requestBody: (model, messages, stream) => ({
         model,
         messages,
