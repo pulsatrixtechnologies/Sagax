@@ -223,9 +223,9 @@ export class LimitFailoverStore {
   }
 
   /** One more takeover of this message; false once it had MAX_RESENDS. */
-  takeResend(messageId: string): boolean {
+  takeResend(messageId: string, max = MAX_RESENDS): boolean {
     const count = this.resends.get(messageId) ?? 0;
-    if (count >= MAX_RESENDS) return false;
+    if (count >= max) return false;
     this.resends.set(messageId, count + 1);
     if (this.resends.size > MAX_ROWS) this.resends.delete(this.resends.keys().next().value!);
     return true;

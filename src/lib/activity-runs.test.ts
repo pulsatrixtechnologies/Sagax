@@ -412,3 +412,21 @@ describe("a 1:1 goal's status row (#1372)", () => {
     expect(statusActivity(message)).toEqual({ kind: "notice", text: "Goal done: ship the notes (notes shipped)" });
   });
 });
+
+describe("a usage-limit switch is transparent (2026-10-29)", () => {
+  const limitRow = (name: string, limitFailover: NonNullable<Message["tool"]>["limitFailover"]): Message =>
+    ({ id: `l${++seq}`, at: seq, role: "bot", kind: "activity", tool: { name, ok: true, limitFailover } });
+
+  it("leaves a switch and a return out of the chat, stored ones too", () => {
+    expect(isHiddenStatusActivity(limitRow("notice: Limit reached on Claude: continuing on Codex until it resets (around 2:05 PM).",
+      { kind: "switched", from: "Claude", to: "Codex", resetsAt: 0 }))).toBe(true);
+    expect(isHiddenStatusActivity(limitRow("recovery: Limit reached on Claude: continuing on Codex until it resets (around 2:05 PM).",
+      { kind: "switched", from: "Claude", to: "Codex", resetsAt: 0 }))).toBe(true);
+    expect(isHiddenStatusActivity(limitRow("recovery: Claude's limit has reset: back on Claude.", { kind: "back", engine: "Claude" }))).toBe(true);
+  });
+
+  it("keeps the wait when nothing else can answer", () => {
+    expect(isHiddenStatusActivity(limitRow("recovery: Limit reached on Claude and no other engine is available: your message will be sent again when it resets (around 2:05 PM).",
+      { kind: "waiting", from: "Claude", resetsAt: 0 }))).toBe(false);
+  });
+});

@@ -6,7 +6,7 @@
 // server/limit-failover.e2e.test.ts.
 import type { LimitFailoverLine } from "../shared/limit-failover.ts";
 import type { ModelSelection } from "../shared/wire.ts";
-import { pickLimitBackup, type LimitCandidate, type LimitEngine, type LimitFailoverStore } from "./limit-failover.ts";
+import { limitBackupAllowed, pickLimitBackup, type LimitCandidate, type LimitEngine, type LimitFailoverStore } from "./limit-failover.ts";
 import { limitKindOf, limitResetFromText, limitResetOrEstimate } from "./limit-reset-time.ts";
 
 /** What a turn ran on, noted when it was dispatched. */
@@ -58,7 +58,10 @@ export interface LimitFailoverHostDeps {
   busy: (botId: string, threadId: string) => boolean;
   /** Moves the thread (not the bot); the refusal in words, or null once done. */
   switchThread: (botId: string, threadId: string, to: ModelSelection) => string | null;
-  /** One `recovery:` row in the thread. */
+  /** One row in the thread. A switch and a return are transparent (JC,
+   * 2026-10-29): a hidden `notice:` row and a line in the Events lens; only
+   * a wait the person must know of reads in the chat. Auto's own switch is
+   * `switched` to "Auto". */
   note: (threadId: string, line: LimitFailoverLine) => void;
   /** Turns this turn's failure row (its own, or the last written since the
    * turn was dispatched) into the line; appends it when there is none. */
@@ -66,13 +69,22 @@ export interface LimitFailoverHostDeps {
   request: (threadId: string) => LimitRequest | undefined;
   /** Sends the person's message again on the thread's engine now; false
    * when it is no longer the latest, or the thread is busy or gone. */
-  resend: (botId: string, threadId: string, messageId: string, speaker: unknown, trigger: unknown) => Promise<boolean>;
+  resend: (botId: string, threadId: string, messageId: string, speaker: unknown, trigger: unknown,
+    resume?: { turnId?: string }) => Promise<boolean>;
+  /** Auto: the model this thread's turn ran on is not picked again for this
+   * payer before `until` (its usage limit's reset). */
+  autoRefuse?: (threadId: string, payer: string, until: number) => void;
+
   rerunRoutine: (routineId: string) => boolean;
   /** Schedules `run` in `ms`; the default is an unref'd timer. */
   after?: (ms: number, run: () => void) => { cancel(): void };
 }
 
 export interface LimitFailoverHost {
+  /** The engines Auto must not pick for this payer now: one at its usage
+   * limit, and any other sign-in to the same subscription engine
+   * (limitBackupAllowed). */
+  autoExcluded(payer: string, engines: readonly LimitEngine[]): Set<string>;
   /** Remember what a turn runs on, for its failure. */
   noteDispatch(threadId: string, dispatch: LimitDispatch): void;
   /** A runtime.error: keeps the reset the engine said, if any, and whether
@@ -120,6 +132,9 @@ export const BACKUP_REFUSED_MS = 60 * 60_000;
 /** How long a failed turn's own settling may hold its thread before the
  * backup gives up waiting (the turn.completed handler releases it). */
 const SETTLE_WAIT_MS = 10_000;
+/** Auto goes on from model to model until one answers: at most this many
+ * times for one message (each limited model is skipped until its reset). */
+const AUTO_MAX_RESENDS = 6;
 const SETTLE_POLL_MS = 50;
 
 export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailoverHost {
@@ -168,7 +183,7 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
   };
 
   const failed = async (threadId: string, turnId: string | undefined, dispatch: LimitDispatch, resetsAt: number,
-    own: { messageId: string } | null, run: { id: string; routineId: string } | null) => {
+    own: { messageId: string } | null, run: { id: string; routineId: string } | null, auto: { modelOnly: boolean } | null = null) => {
     const failover = store.failover(dispatch.botId, threadId);
     // The engine the thread goes back to: the one it started on.
     const home = failover && same(failover.to, dispatch.selection) ? failover : null;
@@ -188,7 +203,17 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
     if (!own) return;
     // A newer turn took the thread meanwhile: it runs, this one is left as it failed.
     if (!await settled(dispatch.botId, threadId)) return;
-    if (backup && store.takeResend(own.messageId)) {
+    // Auto (JC, 2026-10-29): the same turn goes on at once on the next model
+    // that works, picked as Auto picks, with the steps it already took; the
+    // chat shows nothing, the Events lens says why. Another model of the same
+    // engine still runs when only this model's window refused it.
+    if (auto && (backup || auto.modelOnly) && store.takeResend(own.messageId, AUTO_MAX_RESENDS)) {
+      const from = deps.engineName(dispatch.engine.instanceId);
+      deps.replaceFailure(threadId, turnId, { kind: "switched", from, to: "Auto", resetsAt }, dispatch.at);
+      await deps.resend(dispatch.botId, threadId, own.messageId, dispatch.speaker, dispatch.trigger, { ...(turnId ? { turnId } : {}) });
+      return;
+    }
+    if (!auto && backup && store.takeResend(own.messageId)) {
       const refused = deps.switchThread(dispatch.botId, threadId, backup);
       if (!refused) {
         const kept = store.record({ botId: dispatch.botId, threadId, from: dispatch.selection, to: backup, resetsAt, at: deps.now() });
@@ -196,7 +221,7 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
           kind: "switched", from: deps.engineName(kept.from.instanceId), to: deps.engineName(backup.instanceId), resetsAt: kept.resetsAt,
           ...(dispatch.owner ? { owner: true as const } : {}),
         }, dispatch.at);
-        await deps.resend(dispatch.botId, threadId, own.messageId, dispatch.speaker, dispatch.trigger);
+        await deps.resend(dispatch.botId, threadId, own.messageId, dispatch.speaker, dispatch.trigger, { ...(turnId ? { turnId } : {}) });
         return;
       }
       console.warn(`[limit-failover] ${threadId}: could not move to ${backup.instanceId}: ${refused}`);
@@ -214,6 +239,19 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
   };
 
   const host: LimitFailoverHost = {
+    autoExcluded(payer, engines) {
+      const out = new Set<string>();
+      try {
+        const limited = engines.filter((engine) => store.blockedUntil(payer, engine.instanceId) !== null);
+        for (const engine of engines) {
+          if (limited.some((at) => !limitBackupAllowed(at, engine, deps.config(engine.instanceId)))) out.add(engine.instanceId);
+        }
+      } catch (failure) {
+        console.warn(`[limit-failover] auto: ${failure instanceof Error ? failure.message : String(failure)}`);
+      }
+      return out;
+    },
+
     noteDispatch(threadId, dispatch) {
       dispatches.set(threadId, dispatch);
       errors.delete(threadId);
@@ -266,14 +304,18 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
         if (error?.scope !== "model") store.block(dispatch.payer, dispatch.engine.instanceId, resetsAt);
         if (!deps.enabled()) return false;
         const current = deps.threadSelection(dispatch.botId, threadId);
-        // Auto picks its own engine; a viewer's own model is theirs to change.
-        if (!current || current.auto === true || !same(current, dispatch.selection)) return false;
+        if (!current) return false;
+        // Auto goes on with its own next pick (failed's `auto`); a chosen
+        // model moves to a backup, unless the person changed it meanwhile.
+        const auto = current.auto === true;
+        if (!auto && !same(current, dispatch.selection)) return false;
+        if (auto) deps.autoRefuse?.(threadId, dispatch.payer, resetsAt);
         const run = routineRun ? { id: routineRun.id, routineId: routineRun.routineId } : null;
         const request = run ? undefined : deps.request(threadId);
         const own = request && !request.stopped && request.origin?.kind === "user" && request.messageId &&
           (!request.turnId || !turnId || request.turnId === turnId) ? { messageId: request.messageId } : null;
         if (!run && !own) return false;
-        track(failed(threadId, turnId, dispatch, resetsAt, own, run).catch((failure) => {
+        track(failed(threadId, turnId, dispatch, resetsAt, own, run, auto ? { modelOnly: error?.scope === "model" } : null).catch((failure) => {
           console.warn(`[limit-failover] ${threadId}: ${failure instanceof Error ? failure.message : String(failure)}`);
         }));
         return true;

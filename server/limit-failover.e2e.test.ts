@@ -9,9 +9,10 @@
 //   Off fixture          the bot's own preferred backup, switched off: never taken
 //   Claude (fake CLI)    an engine this person has: takes the turn
 //
-// The person's message continues at once on Claude with one line in the
-// thread, in place of the engine's error; after the simulated reset the
-// next turn is back on the primary engine, with one line.
+// The person's message continues at once on Claude, with nothing in the
+// chat (a hidden notice row and a line in the Events lens, 2026-10-29) in
+// place of the engine's error; after the simulated reset the next turn is
+// back on the primary engine, again without a line in the chat.
 import { spawn, type ChildProcess } from "node:child_process";
 import { closeSync, existsSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, sep } from "node:path";
@@ -120,7 +121,8 @@ it("continues a limited turn on an engine the person has, never another, and goe
     const lines = afterLimit.filter((message) => message.tool?.limitFailover);
     expect(lines).toHaveLength(1);
     expect(lines[0].tool.limitFailover).toEqual({ kind: "switched", from: "Primary fixture", to: "Verification fixture", resetsAt });
-    expect(lines[0].tool.name).toMatch(/^recovery: Limit reached on Primary fixture: continuing on Verification fixture until it resets \(around .+\)\.$/);
+    // Transparent (2026-10-29): a hidden notice row, the words in the Events lens.
+    expect(lines[0].tool.name).toMatch(/^notice: Limit reached on Primary fixture: continuing on Verification fixture until it resets \(around .+\)\.$/);
     expect(afterLimit.filter((message) => message.kind === "activity" && (message.tool?.name ?? "").startsWith("error:"))).toHaveLength(0);
     // Never an engine this person may not use, even the bot's preferred one.
     expect(prompts(missingRpc)).toHaveLength(0);
@@ -151,6 +153,7 @@ it("continues a limited turn on an engine the person has, never another, and goe
     expect(jsonLines(claudePrompts)).toHaveLength(2);
     expect(afterReset.filter((message) => message.tool?.limitFailover)).toHaveLength(2);
     expect(afterReset.filter((message) => message.tool?.limitFailover?.kind === "back")[0].tool.limitFailover).toEqual({ kind: "back", engine: "Primary fixture" });
+    expect(afterReset.filter((message) => message.tool?.limitFailover).every((message) => message.tool.name.startsWith("notice:"))).toBe(true);
     const back = await task();
     expect(back.tasks.find((entry: any) => entry.threadId === threadId).modelSelection).toMatchObject(PRIMARY);
   } finally {
