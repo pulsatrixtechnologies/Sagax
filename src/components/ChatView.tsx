@@ -12,6 +12,7 @@ import { cancelLocalSend } from "@/lib/send-cancel";
 import { useCopyFeedback } from "@/lib/copy-text";
 import { botSeenCaption, messageParticipant } from "@/lib/read-receipts";
 import { useReportRead, useThreadReads } from "@/lib/read-receipts-feed";
+import { splitBesideMain } from "@/lib/split-view";
 import { SeenByRow, SEEN_AVATAR_SIZE, type SeenFace } from "./SeenBy";
 import { ReactionChips } from "./Reactions";
 import { myReactions, reactionSelfIds, useToggleReaction } from "@/lib/reactions";
@@ -2304,6 +2305,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
             confidential={confidential}
             {...(!remoteClient && showInspector && advanced ? { onToggleInspector: () => dispatch({ type: "toggleInspector" }), inspectorOpen: state.inspectorOpen } : {})}
             {...(dataItem ? { data: dataItem } : {})}
+            onSplit={(edge) => splitBesideMain(showThreads ? { kind: "bot", botId: bot.id, threadId: bot.threadId } : { kind: "bot", botId: bot.id }, edge)}
           />}
           <DevPodsToggle bot={bot} />
           {!showThreads && <NewTopicButton bot={bot} />}

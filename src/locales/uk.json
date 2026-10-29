@@ -2390,5 +2390,13 @@
   "access.signInRequested": "{bot} просить вас увійти в {engine}. Ви входите самі; бот ніколи не бачить ваш вхід.",
   "appearance.playMove": "Відтворити рух",
   "appearance.randomize": "Випадково",
-  "appearance.tabs": "Налаштувати"
+  "appearance.tabs": "Налаштувати",
+  "splitView.splitRight": "Розділити праворуч",
+  "splitView.splitDown": "Розділити донизу",
+  "splitView.resize": "Змінити розмір секцій",
+  "splitView.close": "Закрити цю секцію",
+  "splitView.openInMain": "Відкрити в основній розмові",
+  "splitView.aria": "Секція: {name}",
+  "splitView.gone": "Ця розмова більше недоступна.",
+  "splitView.loading": "Завантаження розмови"
 }

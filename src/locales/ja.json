@@ -3822,5 +3822,13 @@
   "access.signInRequested": "{bot} が {engine} へのサインインをお願いしています。サインインはご自身で行います。ボットがサインイン情報を見ることはありません。",
   "appearance.playMove": "動きを再生",
   "appearance.randomize": "ランダム",
-  "appearance.tabs": "カスタマイズ"
+  "appearance.tabs": "カスタマイズ",
+  "splitView.splitRight": "右に分割",
+  "splitView.splitDown": "下に分割",
+  "splitView.resize": "セクションのサイズを変更",
+  "splitView.close": "このセクションを閉じる",
+  "splitView.openInMain": "メインの会話で開く",
+  "splitView.aria": "セクション: {name}",
+  "splitView.gone": "この会話は利用できなくなりました。",
+  "splitView.loading": "会話を読み込んでいます"
 }

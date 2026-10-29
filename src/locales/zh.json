@@ -2674,5 +2674,13 @@
   "access.signInRequested": "{bot} 请你登录 {engine}。由你自己登录；机器人永远看不到你的登录信息。",
   "appearance.playMove": "播放动作",
   "appearance.randomize": "随机",
-  "appearance.tabs": "自定义"
+  "appearance.tabs": "自定义",
+  "splitView.splitRight": "向右拆分",
+  "splitView.splitDown": "向下拆分",
+  "splitView.resize": "调整分区大小",
+  "splitView.close": "关闭此分区",
+  "splitView.openInMain": "在主对话中打开",
+  "splitView.aria": "分区：{name}",
+  "splitView.gone": "此对话已不可用。",
+  "splitView.loading": "正在加载对话"
 }

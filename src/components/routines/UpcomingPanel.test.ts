@@ -102,7 +102,8 @@ describe("dragging a bot from the left sidebar", () => {
   it("is wired on every bot row of the sidebar and read by the calendar", () => {
     const sidebar = readFileSync(join(process.cwd(), "src/components/Sidebar.tsx"), "utf8");
     expect(sidebar).toContain('if (kind === "bot") addBotCalendarDrag(event.dataTransfer, itemId);');
-    expect(sidebar).toContain('layoutInteractive || kind === "bot" ? {');
+    // every bot and group row drags (the split view, #1504), the bot's with the calendar payload
+    expect(sidebar).toContain("const itemDragProps = (kind: SectionItemKind, itemId: string) => ({");
     const calendar = readFileSync(join(process.cwd(), "src/components/RoutineCalendarPage.tsx"), "utf8");
     expect(calendar).toContain("const BOT_DRAG_TYPE = BOT_CALENDAR_DRAG_TYPE;");
     expect(calendar).toContain("data-calendar-drop-target");

@@ -1870,5 +1870,13 @@
   "access.signInRequested": "{bot} आपसे {engine} में साइन इन करने को कहता है। आप स्वयं साइन इन करते हैं; बॉट आपका साइन-इन कभी नहीं देखता।",
   "appearance.playMove": "एक मूव चलाएँ",
   "appearance.randomize": "यादृच्छिक",
-  "appearance.tabs": "अनुकूलित करें"
+  "appearance.tabs": "अनुकूलित करें",
+  "splitView.splitRight": "दाईं ओर विभाजित करें",
+  "splitView.splitDown": "नीचे विभाजित करें",
+  "splitView.resize": "अनुभागों का आकार बदलें",
+  "splitView.close": "यह अनुभाग बंद करें",
+  "splitView.openInMain": "मुख्य बातचीत में खोलें",
+  "splitView.aria": "अनुभाग: {name}",
+  "splitView.gone": "यह बातचीत अब उपलब्ध नहीं है।",
+  "splitView.loading": "बातचीत लोड हो रही है"
 }

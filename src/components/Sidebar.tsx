@@ -119,6 +119,7 @@ import { newThreadChoices, type NewThreadChoice } from "@/lib/confidential-threa
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
 import { draggedFolder, draggedThread, FOLDER_DRAG_TYPE, THREAD_DRAG_TYPE, moveFolder, placeFolder } from "@/lib/folder-order";
 import { addBotCalendarDrag } from "@/lib/bot-drag";
+import { SPLIT_DRAG_TYPE, splitDragData } from "@/lib/split-view";
 import { folderUnreadThreadIds, markBotRead, markFolderRead, markGroupFolderRead } from "@/lib/folder-read";
 import { personPickerThreads } from "@/lib/person-threads";
 import { approvalModeFor, botApprovalSetting } from "../../shared/approval-mode";
@@ -3066,18 +3067,21 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   // A bot row also carries the calendar's payload (2026-10-18): dropped on a
   // time of Automations it schedules that bot, the same routine and dialog
   // as the calendar's own drag. That one works in every density and while
-  // searching; filing into a section keeps its own rule.
-  const itemDragProps = (kind: SectionItemKind, itemId: string) => layoutInteractive || kind === "bot" ? {
+  // searching; filing into a section keeps its own rule. Every bot and group
+  // row also carries the split view's payload (#1504): dropped on the
+  // conversation area, it opens in a section of its own.
+  const itemDragProps = (kind: SectionItemKind, itemId: string) => ({
     draggable: true,
     "data-sidebar-item-drag": kind,
     onDragStart: (event: React.DragEvent<HTMLDivElement>) => {
       if (event.target instanceof Element && event.target.closest("[data-sidebar-folder-row],[data-sidebar-folder-label],[data-sidebar-thread-row],[data-sidebar-thread-drag]")) return;
       event.dataTransfer.effectAllowed = "move";
       if (layoutInteractive) event.dataTransfer.setData(ITEM_DRAG_TYPE, JSON.stringify({ kind, id: itemId }));
+      event.dataTransfer.setData(SPLIT_DRAG_TYPE, splitDragData({ kind, id: itemId }));
       if (kind === "bot") addBotCalendarDrag(event.dataTransfer, itemId);
     },
     onDragEnd: () => setItemDropId(null),
-  } : {};
+  });
   const acceptItemDrag = (event: React.DragEvent<HTMLDivElement>, id: string): boolean => {
     if (!event.dataTransfer.types.includes(ITEM_DRAG_TYPE)) return false;
     if (id === BOT_CHATS_SECTION_ID) return true;
