@@ -52,6 +52,10 @@ export interface InstalledViewProps {
   loading?: boolean;
   /** "Discover" on the empty line (absent: no link) */
   onDiscover?: () => void;
+  /** the Providers (2026-10-29, once a tab of their own): a section after
+   * the entries and the skills, under its own title. A provider listed is
+   * already installed. */
+  providers?: ReactNode;
 }
 
 function EmptyLine({ children, action }: { children: ReactNode; action?: ReactNode }) {
@@ -63,7 +67,7 @@ function EmptyLine({ children, action }: { children: ReactNode; action?: ReactNo
   );
 }
 
-export function InstalledView({ entries, skills, sourceLabel, onOpenEntry, onOpenSkill, entryActions, onAddServer, onPasteConfig, addDisabled, onNewSkill, forms, loading, onDiscover }: InstalledViewProps) {
+export function InstalledView({ entries, skills, sourceLabel, onOpenEntry, onOpenSkill, entryActions, onAddServer, onPasteConfig, addDisabled, onNewSkill, forms, loading, onDiscover, providers }: InstalledViewProps) {
   const tools = onAddServer || onPasteConfig || onNewSkill;
   return (
     <div data-plugins-installed-tab>
@@ -125,6 +129,13 @@ export function InstalledView({ entries, skills, sourceLabel, onOpenEntry, onOpe
               </li>
             ))}
           </ul>
+        </section>
+      )}
+      {providers && (
+        <section className="mt-6 first:mt-0" id="plugins-providers" data-plugins-providers aria-labelledby="plugins-providers-title">
+          <h3 id="plugins-providers-title" className="mb-2 text-[13px] font-semibold text-ink">{t("connectApps.manage.tab.providers")}</h3>
+          <p className="-mt-1 mb-3 text-[12px] leading-[18px] text-ink-secondary" data-plugins-providers-note>{t("connectApps.providers.note")}</p>
+          {providers}
         </section>
       )}
     </div>

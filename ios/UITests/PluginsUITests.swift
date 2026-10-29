@@ -104,18 +104,17 @@ final class PluginsUITests: XCTestCase {
 
     /// The main view: one row per app with Add or Connect, a section per
     /// category, and "N connected >" to Manage (#203, #218).
-    /// "Browse Bots" in Discover (ConnectAppsView `onBrowseBots`): Connect
-    /// apps stays open on its Bots tab, Browse Bots' catalogue (2026-10-29).
+    /// Discover has no "Browse Bots" button any more (2026-10-29): the
+    /// Bots tab is its place, for every bot.
     @MainActor
-    func testBrowseBotsInDiscoverOpensTheBotsTab() {
+    func testDiscoverHasNoBrowseBotsButtonAndBotsIsATab() {
         let app = launch()
-        let button = app.element("connect-apps-bot-templates")
-        XCTAssertTrue(button.waitForExistence(timeout: 10), "Browse Bots in Discover")
-        XCTAssertTrue(button.label.contains("Browse Bots"), button.label)
-        ParityShots.save("Connect apps Browse Bots", app)
-        button.tap()
         let botsTab = app.segmentedControls["connect-apps-tabs"].buttons["Bots"]
         XCTAssertTrue(botsTab.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertFalse(app.element("connect-apps-bot-templates").exists, "no Browse Bots button in Discover")
+        XCTAssertFalse(app.segmentedControls["connect-apps-tabs"].buttons["Providers"].exists, "Providers is a section of Installed")
+        ParityShots.save("Connect apps Discover", app)
+        botsTab.tap()
         XCTAssertTrue(botsTab.isSelected, "the Bots tab is in front")
         XCTAssertTrue(app.element("connect-apps-manage").exists, "Connect apps stays open")
         XCTAssertTrue(app.element("browse-bots.category.all").waitForExistence(timeout: 10), "Browse Bots' categories in the tab")
@@ -243,12 +242,12 @@ final class PluginsUITests: XCTestCase {
     /// PL7: the person's claude.ai answer, Manage, and the admin switch.
     @MainActor
     func testClaudeConnectorsShowTheAnswerAndTheAdminSwitch() {
-        // Manage > Providers (#207)
+        // Installed > Providers (#207; Providers is a section of Installed since 2026-10-29)
         let app = launch()
         app.element("connect-apps-manage").tap()
         let tabs = app.segmentedControls.firstMatch
         XCTAssertTrue(tabs.waitForExistence(timeout: 10))
-        tabs.buttons["Providers"].tap()
+        tabs.buttons["Installed"].tap()
         XCTAssertTrue(app.element("harness-connectors-manage").waitForExistence(timeout: 30), app.debugDescription)
         let empty = app.element("harness-connectors-empty")
         let unavailable = app.element("harness-connectors-unavailable")

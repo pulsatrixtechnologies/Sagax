@@ -1,13 +1,13 @@
 // Connect apps > Discover, the view a person lands on (2026-10-27: the
 // former home page and Manage's Discover made one): the catalog of apps,
-// plugins and skills that can still be added, the category pills with Browse
-// Bots at their end (it opens the Bots tab, 2026-10-29), then the sections in
+// plugins and skills that can still be added, the category pills (no Browse
+// Bots button since 2026-10-29: the Bots tab is its place), then the sections in
 // two columns. View all filters this view in place. The search is Connect
 // Apps' one search above the tabs (2026-10-29: one option, one place). The apps a conversation needs (its Connect
 // apps pill) come first. What is installed lives in Installed; the engines'
-// connectors in Providers.
+// connectors in Installed (Providers).
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronRight, LayoutGrid, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 import { t } from "@/lib/i18n";
 import { mainSections, type PluginFilter, type PluginItem, type PluginTypeFilter } from "@/lib/plugins-model";
@@ -29,34 +29,21 @@ export interface DiscoverViewProps {
   extraSources?: string[];
   /** apps a conversation needs (its Connect apps pill): shown first */
   focus?: readonly string[];
-  /** Browse Bots, at the end of the pills: the Bots tab (absent: no button) */
-  onBrowseBots?: () => void;
   onOpenItem: (item: PluginItem) => void;
   renderAction: (item: PluginItem) => ReactNode;
   renderBelow?: (item: PluginItem) => ReactNode;
 }
 
-export function DiscoverView({ items, loading = false, filter, onFilter, type, onType, sourceLabel, extraSources = [], focus, onBrowseBots, onOpenItem, renderAction, renderBelow }: DiscoverViewProps) {
+export function DiscoverView({ items, loading = false, filter, onFilter, type, onType, sourceLabel, extraSources = [], focus, onOpenItem, renderAction, renderBelow }: DiscoverViewProps) {
   const [limit, setLimit] = useState(PAGE);
   useEffect(() => setLimit(PAGE), [filter, type]);
   const sections = mainSections(items, "", filter, type, extraSources, focus);
   const single = filter !== "all" || type !== "any";
   const pills = [...categoryPills(items, filter), ...moreCategoryPills(items, filter)];
-  const browseBots = onBrowseBots && (
-    // the pills' height, so the row keeps its rhythm (#1548)
-    <button type="button" data-plugins-browse-bots onClick={onBrowseBots}
-      className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border px-3 text-[12.5px] text-ink transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 motion-reduce:transition-none">
-      <LayoutGrid size={13} className="text-ink-secondary" aria-hidden="true" />
-      <span>{t("connectApps.botTemplates")}</span>
-      <ChevronRight size={12} className="text-ink-secondary" aria-hidden="true" />
-    </button>
-  );
   return (
     <div data-plugins-discover>
-      {pills.length <= 1 && browseBots && <div className="flex">{browseBots}</div>}
       {pills.length > 1 && (
-        <div className="flex items-start gap-2">
-        <div className={`min-w-0 flex-1 ${CATEGORY_MODAL.chips}`} role="toolbar" aria-label={t("connectApps.filtersAria")} data-plugins-chips>
+        <div className={CATEGORY_MODAL.chips} role="toolbar" aria-label={t("connectApps.filtersAria")} data-plugins-chips>
           {pills.map((chip) => (
             <button key={chip} type="button" aria-pressed={filter === chip && type === "any"} data-plugins-chip={chip}
               onClick={() => { onFilter(chip); onType("any"); }} className={categoryChipClass(filter === chip && type === "any")}>
@@ -68,8 +55,6 @@ export function DiscoverView({ items, loading = false, filter, onFilter, type, o
               {filterLabel(type, sourceLabel)} ×
             </button>
           )}
-        </div>
-        {browseBots}
         </div>
       )}
       {loading && items.length === 0 ? (

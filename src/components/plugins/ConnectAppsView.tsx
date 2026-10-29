@@ -2,8 +2,9 @@
 // title, the install scope, the one search (2026-10-29: it looks everywhere,
 // ConnectAppsSearch.tsx), then the tabs: Discover (the catalog; the view a
 // person lands on, first since 2026-10-28), Bots (Browse Bots, a tab of its
-// own right after Discover since 2026-10-29), Installed, Providers (the engine accounts: Claude, Codex,
-// Grok, GitHub, 2026-10-28, once "My accounts"), Pages (the published
+// own right after Discover since 2026-10-29), Installed (which also lists
+// the Providers, the engine accounts Claude, Codex, Grok, once "My
+// accounts", a tab of their own until 2026-10-29), Pages (the published
 // pages, which used to sit under My accounts) and Sources (with the organization's
 // part for an admin). The "N connected" button is gone (2026-10-28): its
 // count sits on Installed and Providers, which list them with their logos. No sub-page repeats a tab: "Manage plugins and skills" and
@@ -95,25 +96,31 @@ export function sectionTitle(section: Pick<PluginSection, "id">, sourceLabel?: (
   return t(SECTION_KEY[section.id] ?? "connectApps.section.other");
 }
 
-export type ConnectAppsTab = "installed" | "discover" | "bots" | "providers" | "pages" | "sources";
+export type ConnectAppsTab = "installed" | "discover" | "bots" | "pages" | "sources";
 
-/** The tab an older name or link points at: "accounts" (My accounts, now
- * Providers) leads to "providers", Browse Bots' names to "bots"; anything
- * unknown is not a tab. */
+/** A link or shortcut that used to open the Providers tab (2026-10-29: the
+ * tab is gone, its rows sit in Installed under their own "Providers"
+ * section). The name stays valid in links; it opens Installed on that section. */
+export function isProvidersLink(value: string | null | undefined): boolean {
+  return value === "providers" || value === "accounts";
+}
+
+/** The tab an older name or link points at: "accounts" (My accounts) and
+ * "providers" lead to "installed" (see isProvidersLink), Browse Bots' names
+ * to "bots"; anything unknown is not a tab. */
 export function normalizeConnectAppsTab(value: string | null | undefined): ConnectAppsTab | null {
-  if (value === "accounts") return "providers";
+  if (isProvidersLink(value)) return "installed";
   if (value === "browseBots" || value === "browse-bots" || value === "botCatalog" || value === "templates") return "bots";
-  return value === "installed" || value === "discover" || value === "bots" || value === "providers" || value === "pages" || value === "sources" ? value : null;
+  return value === "installed" || value === "discover" || value === "bots" || value === "pages" || value === "sources" ? value : null;
 }
 /** Discover first (2026-10-28, the owner): it is where Connect Apps opens,
  * unless a link asks for another tab. Bots right after it (2026-10-29). */
-export const CONNECT_APPS_TABS: readonly ConnectAppsTab[] = ["discover", "bots", "installed", "providers", "pages", "sources"];
+export const CONNECT_APPS_TABS: readonly ConnectAppsTab[] = ["discover", "bots", "installed", "pages", "sources"];
 
 const TAB_KEY = {
   installed: "connectApps.manage.tab.installed",
   discover: "connectApps.manage.tab.discover",
   bots: "connectApps.manage.tab.bots",
-  providers: "connectApps.manage.tab.providers",
   pages: "connectApps.manage.tab.pages",
   sources: "connectApps.manage.tab.sources",
 } as const satisfies Record<ConnectAppsTab, LocaleKey>;
@@ -125,15 +132,14 @@ export function connectAppsTabLabel(tab: ConnectAppsTab): string {
 
 /** What the old "N connected" header counted, now on the tab that lists
  * them (2026-10-28, the owner: the button repeated Installed): the
- * person's own connected entries on Installed (the rows it shows), their
- * engine accounts' connected connectors on Providers. Zero: no counter. */
+ * person's own connected entries on Installed (the rows it shows) plus their
+ * providers' connected connectors, which Installed lists too since
+ * 2026-10-29. Zero: no counter. */
 export function connectedCounts(input: { entries: readonly { status: PluginItem["status"] }[]; engineConnected: number }): Partial<Record<ConnectAppsTab, number>> {
   // the rows Installed shows (one per thing, installedEntries), connected
   const own = input.entries.filter((entry) => entry.status === "connected").length;
-  return {
-    ...(own > 0 ? { installed: own } : {}),
-    ...(input.engineConnected > 0 ? { providers: input.engineConnected } : {}),
-  };
+  const total = own + Math.max(0, input.engineConnected);
+  return total > 0 ? { installed: total } : {};
 }
 
 export interface ConnectAppsViewProps {
@@ -144,10 +150,12 @@ export interface ConnectAppsViewProps {
   tabs?: readonly ConnectAppsTab[];
   /** connected things per tab (connectedCounts): a counter beside its name */
   counts?: Partial<Record<ConnectAppsTab, number>>;
-  /** the install scope (everyone, or one bot) under the title, on every tab
-   * (Providers and Pages show it turned off, with why): the title and the tabs
-   * never move from one tab to another */
+  /** the install scope (everyone, or one bot), under the title on every tab
+   * (Pages and Bots show it turned off, with why): the title and the tabs
+   * never move from one tab to another. The one search sits on its right. */
   scope?: ReactNode;
+  /** the line under the scope and the search: what the scope does here */
+  scopeNote?: ReactNode;
   /** a page opened from the open tab (a plugin's detail, a skill): shown in
    * the tab's panel, the title, scope and tabs kept above it */
   page?: ReactNode;
@@ -164,13 +172,12 @@ export interface ConnectAppsViewProps {
   discover?: ReactNode;
   /** Browse Bots (2026-10-29): a pane with its own pages and scroll */
   bots?: ReactNode;
-  providers?: ReactNode;
   pages?: ReactNode;
   sources?: ReactNode;
 }
 
 export function ConnectAppsView(props: ConnectAppsViewProps) {
-  const { tab, onTab, tabs = CONNECT_APPS_TABS, counts = {}, scope, search, results, page, notices, refreshing, onRefresh } = props;
+  const { tab, onTab, tabs = CONNECT_APPS_TABS, counts = {}, scope, scopeNote, search, results, page, notices, refreshing, onRefresh } = props;
   const shown = tabs.includes(tab) ? tab : tabs.includes("discover") ? "discover" : tabs[0] ?? "discover";
   // Bots is a pane of its own (its list scrolls, its pages have a back row),
   // laid out as a page opened from a tab
@@ -179,10 +186,16 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
     <div className="flex min-h-0 flex-1 flex-col" data-plugins-main={shown}>
       <header className={CATEGORY_MODAL.titleBar}>
         <h2 id="plugins-title" className={CATEGORY_MODAL.title}>{t("connectApps.title")}</h2>
-        {/* on every tab, so nothing below it moves (Providers and Pages turn it off) */}
-        {scope && <div className="mt-3" data-plugins-scope-slot>{scope}</div>}
-        {/* one search for every tab (2026-10-29), under the title and the scope */}
-        {search && <div className={scope ? "mt-1" : "mt-3"} data-plugins-search-slot>{search}</div>}
+        {/* the scope and the one search share a line (2026-10-29, the owner):
+            the search, compact, on the scope's right; narrow, it wraps under it */}
+        {(scope || search) && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2" data-plugins-scope-row>
+            {/* on every tab, so nothing below it moves (Pages and Bots turn it off) */}
+            {scope && <div className="shrink-0" data-plugins-scope-slot>{scope}</div>}
+            {search && <div className="min-w-[200px] flex-1 sm:ml-auto sm:max-w-[320px]" data-plugins-search-slot>{search}</div>}
+          </div>
+        )}
+        {scopeNote}
       </header>
       <div className="flex shrink-0 items-end gap-2 border-b border-hairline-weak px-4 sm:px-8" data-plugins-manage-bar>
         <div role="tablist" aria-label={t("connectApps.tabsAria")} className="flex min-w-0 flex-1 gap-5 overflow-x-auto" data-plugins-manage-tabs>
@@ -237,7 +250,6 @@ export function ConnectAppsView(props: ConnectAppsViewProps) {
             {shown === "installed" && props.installed}
             {shown === "discover" && props.discover}
             {shown === "bots" && props.bots}
-            {shown === "providers" && props.providers}
             {shown === "pages" && props.pages}
             {shown === "sources" && props.sources}
           </>

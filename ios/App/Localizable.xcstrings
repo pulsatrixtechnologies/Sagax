@@ -2813,10 +2813,10 @@
         "fr": { "stringUnit": { "state": "translated", "value": "Connecter GitHub ou un jeton : Connecter des applications > Sources." } }
       }
     },
-    "Add, sign in, turn on or off: Connect apps > Providers.": {
+    "Add, sign in, turn on or off: Connect apps > Installed > Providers.": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Add, sign in, turn on or off: Connect apps > Providers." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Ajouter, se connecter, activer ou désactiver : Connecter des applications > Fournisseurs." } }
+        "en": { "stringUnit": { "state": "translated", "value": "Add, sign in, turn on or off: Connect apps > Installed > Providers." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajouter, se connecter, activer ou désactiver : Connecter des applications > Installés > Fournisseurs." } }
       }
     },
     "Mascots": {

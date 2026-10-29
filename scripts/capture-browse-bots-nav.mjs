@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Headless screenshots of Connect Apps > Discover, then Browse Bots opened
- * from it (Playwright, no window): the real panel in the gallery
+ * from the Bots tab (Playwright, no window): the real panel in the gallery
  * (src/gallery/connect-apps.html?view=manage). Checks that Browse Bots keeps
  * Connect Apps' title and tab row where they are, and that the category
  * chips stay inside the window.
@@ -66,7 +66,8 @@ try {
   const box = async (selector) => (await page.locator(selector).first().boundingBox()) ?? null;
   await shot("1-connect-apps");
   const before = { title: await box("#plugins-title"), search: await box("[data-plugins-search]") };
-  await page.click("[data-plugins-browse-bots]");
+  // Browse Bots is the Bots tab (2026-10-29): Discover has no button for it
+  await page.click('[data-plugins-tab="bots"]');
   await page.waitForSelector("[data-bot-catalog-home]", { timeout: 30_000 });
   await page.waitForTimeout(800);
   await shot("2-browse-bots");

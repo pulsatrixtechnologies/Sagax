@@ -30,10 +30,10 @@ describe("Plugins panel views", () => {
   };
   const page = (overrides: Partial<ConnectAppsViewProps> = {}) => renderToStaticMarkup(createElement(ConnectAppsView, {
     tab: "discover", onTab: noop, counts: { installed: 2 }, refreshing: false, onRefresh: noop,
-    discover: createElement(DiscoverView, discoverProps), installed: "INSTALLED", providers: "PROVIDERS", pages: "PAGES", sources: "SOURCES", ...overrides,
+    discover: createElement(DiscoverView, discoverProps), installed: "INSTALLED", pages: "PAGES", sources: "SOURCES", ...overrides,
   }));
 
-  it("one page: Connect Apps, then the five tabs with Discover first and open, the count on Installed", () => {
+  it("one page: Connect Apps, then the five tabs (no Providers tab since 2026-10-29) with Discover first and open, the count on Installed", () => {
     const html = page();
     expect(html).toMatch(/id="plugins-title"[^>]*>Connect Apps<\/h2>/);
     expect(html).not.toContain("data-plugins-connected");
@@ -42,11 +42,14 @@ describe("Plugins panel views", () => {
     expect(html).not.toContain("Manage plugins and skills");
     expect(html).toMatch(/aria-label="Installed, 2 connected"[^>]*data-plugins-tab="installed"/);
     const tabs = [...html.matchAll(/role="tab"[^>]*data-plugins-tab="([a-z]+)"[^>]*><span data-plugins-tab-label="[^"]*">([^<]+)</g)].map((match) => [match[1], match[2]]);
-    expect(tabs).toEqual([["discover", "Discover"], ["bots", "Bots"], ["installed", "Installed"], ["providers", "Providers"], ["pages", "Pages"], ["sources", "Sources"]]);
+    expect(tabs).toEqual([["discover", "Discover"], ["bots", "Bots"], ["installed", "Installed"], ["pages", "Pages"], ["sources", "Sources"]]);
     expect(html).toMatch(/aria-selected="true"[^>]*data-plugins-tab="discover"/);
     // one search (2026-10-29): under the title, above the tabs; none in Discover
     const searched = page({ search: createElement("input", { "data-plugins-search": "", placeholder: "ONE SEARCH" }) });
     expect(searched).toMatch(/id="plugins-title"[\s\S]*?data-plugins-search-slot[\s\S]*?ONE SEARCH[\s\S]*?role="tablist"/);
+    // and on the scope's line, on its right (2026-10-29)
+    const both = page({ scope: createElement("div", null, "SCOPE"), search: createElement("input", { "data-plugins-search": "" }) });
+    expect(both).toMatch(/data-plugins-scope-row[^>]*>[\s\S]*?data-plugins-scope-slot[\s\S]*?SCOPE[\s\S]*?data-plugins-search-slot[\s\S]*?<input/);
     expect(searched.match(/data-plugins-search=""/g)).toHaveLength(1);
     // with text, the results take the tab's place
     const results = page({ results: "RESULTS" });
@@ -61,12 +64,12 @@ describe("Plugins panel views", () => {
     expect(html).not.toContain("INSTALLED");
     expect(page({ tab: "sources" })).toContain("SOURCES");
     // a tab left out is not drawn; a tab not offered falls back to Discover
-    const noSources = page({ tabs: ["discover", "installed", "providers", "pages"], tab: "sources" });
+    const noSources = page({ tabs: ["discover", "installed", "pages"], tab: "sources" });
     expect(noSources).not.toContain('data-plugins-tab="sources"');
     expect(noSources).toMatch(/aria-selected="true"[^>]*data-plugins-tab="discover"/);
   });
 
-  it("Discover: no search of its own, every category pill with Browse Bots at their end, sections of two-column rows", () => {
+  it("Discover: no search of its own, every category pill and no Browse Bots button, sections of two-column rows", () => {
     const html = renderToStaticMarkup(createElement(DiscoverView, discoverProps));
     expect(html).not.toContain("placeholder=");
     expect(html).not.toContain("data-plugins-search");
@@ -78,8 +81,8 @@ describe("Plugins panel views", () => {
     expect(html).toContain("Recommended for you");
     expect(html).toContain("md:grid-cols-2");
     expect(html).toMatch(/data-plugin-row="featured:linear"[\s\S]*?>Connect</);
-    const withBots = renderToStaticMarkup(createElement(DiscoverView, { ...discoverProps, onBrowseBots: noop }));
-    expect(withBots).toMatch(/data-plugins-chips[\s\S]*?data-plugins-browse-bots[\s\S]*?Browse bots/);
+    expect(html).not.toContain("data-plugins-browse-bots");
+    expect(html).not.toMatch(/Browse bots/i);
   });
 
   it("Discover leaves out what is installed and the engines' connectors, keeps an app a conversation needs until it connects", () => {

@@ -32,6 +32,10 @@ export function searchGroupTitle(id: SearchGroupId): string {
   return t(GROUP_KEY[id]);
 }
 
+/** Compact, to sit on the scope's line (2026-10-29): the field of the other
+ * panes, with less padding. */
+const SEARCH_BOX = "flex min-w-0 flex-1 items-center gap-2 rounded-[14px] border border-transparent bg-hover px-3 py-1.5 focus-within:border-border-strong";
+
 const LISTBOX_ID = "connect-apps-search-results";
 const optionId = (index: number) => `connect-apps-result-${index}`;
 
@@ -72,7 +76,7 @@ export function ConnectAppsSearchField({ query, onQuery, groups, opened, active,
     }
   };
   return (
-    <label className={CATEGORY_MODAL.search} data-plugins-search-box>
+    <label className={SEARCH_BOX} data-plugins-search-box>
       <Search size={16} className="shrink-0 text-ink-secondary" aria-hidden="true" />
       <input
         value={query}

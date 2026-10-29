@@ -5933,7 +5933,6 @@
       "connectApps.filter.finance": "b696d75511dc16f2b52563e3113a498311a79866f4672862197aa9a8c5c0da12",
       "connectApps.filter.marketing": "f5904cf7a1231a7a13a8cffbd2f0482984a1c69e96fc48dd96be8858a1707e60",
       "connectApps.filter.mcp": "22a7559f09bf8f82c510280f934bf50db4c45cc611fd4dd47d7cbf7c7d4f5b82",
-      "connectApps.botTemplates": "4815525712dfa0709e999057842aa1f4472c4f6d9c69005a3b41daf6b8a98e0a",
       "connectApps.filter.other": "f97e9da0e3b879f0a9df979ae260a5f7e1371edb127c1862d4f861981166cdc1",
       "connectApps.filter.passwords": "30a07b4061ad498cd190ed94a65cc04110a5f97982e2591bf7df67105758d2d4",
       "connectApps.filter.productivity": "f42bca637cb367c6d5fcd1b37bd3cb35cb736bdb6fdbf9589f8241845a3981f8",
@@ -15385,7 +15384,7 @@
       "botTasks.by.bot": "c4c045dfb37cc0c95aafd5ef2f587261a7305434a4666788909b8b8fa3db7a36",
       "botTasks.by.person": "a698a500c09b09f6cb44d2bc0c2dcbd34349664039c85df7a3401c06725be990",
       "serverRoute.needsUpdate": "f5b836bc3d9a9ecc9c1275fbae27cc364d4f6f0003f7f10beee60a8772c2be1f",
-      "connectApps.scope.accountsNote": "fb1c426f00c775b9a63cbd6463bb23cf79d3c4d81fa4004d35c373dbe6755c13",
+      "connectApps.scope.accountsNote": "2d5e7b41de12ab039720691a73f3145ceeb211869d95335b46c3b40863dbaa07",
       "connectApps.scope.workspaceNote": "5d98e064bc6864a7b77c869cd2aa9ab13a4a459637017562b20969b6ef8f1a6f",
       "connectApps.detail.state.everyoneOn": "31bba3c97e60ca841852f85325cdb04377ac16bf18191cf905f4bd8cc6c8df88",
       "connectApps.detail.state.everyoneOff": "4aa393c07e47e6b4bef78df92a94944fab2ddc333a7938bf792a7e3d50798b3a",
@@ -15836,7 +15835,8 @@
       "routines.logs.period.day": "5c37cf8f018b4ac5c8f0ae78adca85f4184f901bb8b4d28327f87d7350357a57",
       "routines.logs.period.week": "0603deca4fcb660f1c06a02621423721bd48084970ecf2b2de0e326dc783d191",
       "routines.logs.period.month": "f8f03fb441b8b4ae1abf7d0f8dd534ae0244cd4b842d2c08e5d3530dcab04eed",
-      "routines.list.next": "b70d2f85061ae6ddaccf2846b4f5b2772bcd81aef32e6edacded5c85716eaa6f"
+      "routines.list.next": "b70d2f85061ae6ddaccf2846b4f5b2772bcd81aef32e6edacded5c85716eaa6f",
+      "connectApps.providers.note": "36e08e2978b986e2e151c158073c04a3fbc43c860220c1f77953b5ae681a1e2d"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

@@ -11,12 +11,12 @@ import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { setLocale } from "@/lib/i18n";
+import { setLocale, t } from "@/lib/i18n";
 import { buildPluginItems } from "@/lib/plugins-model";
 import { installedEntries, privateSkills } from "@/lib/installed-model";
 import { GROK_CLOUD_CONNECTORS } from "../../../shared/grok-cloud-connectors";
 import { bringsLabel, InstalledView, type InstalledViewProps } from "./InstalledView";
-import { ConnectAppsView, connectedCounts, normalizeConnectAppsTab, CONNECT_APPS_TABS, connectAppsTabLabel } from "./ConnectAppsView";
+import { ConnectAppsView, connectedCounts, normalizeConnectAppsTab, isProvidersLink, CONNECT_APPS_TABS, connectAppsTabLabel } from "./ConnectAppsView";
 import { HarnessConnectorGroups, connectorGroups, noticeAction } from "./HarnessConnectorGroups";
 import { AccountsView, accountServices } from "./AccountsView";
 import { SourcesView } from "./SourcesView";
@@ -49,32 +49,40 @@ beforeEach(() => setLocale("en"));
 afterEach(() => setLocale("en"));
 
 describe("Connect apps tabs", () => {
-  const shell = (tab: "installed" | "discover" | "providers" | "pages" | "sources") => renderToStaticMarkup(createElement(ConnectAppsView, {
+  const shell = (tab: "installed" | "discover" | "pages" | "sources") => renderToStaticMarkup(createElement(ConnectAppsView, {
     tab, onTab: noop, refreshing: false, onRefresh: noop,
-    installed: createElement(InstalledView, props()), discover: "D", providers: "A", pages: "G", sources: "S",
+    installed: createElement(InstalledView, props()), discover: "D", pages: "G", sources: "S",
   }));
 
-  it("no N connected button: its count sits on Installed and Providers (2026-10-28)", () => {
+  it("no N connected button: its count sits on Installed, providers included (2026-10-28)", () => {
     const entries = installedEntries(items);
-    // GitHub (three rows folded into one) and Twilio Docs: two entries, as Installed shows them
-    expect(connectedCounts({ entries, engineConnected: 3 })).toEqual({ installed: 2, providers: 3 });
+    // GitHub (three rows folded into one) and Twilio Docs: two entries, as Installed shows them,
+    // plus the three connectors of the providers, which Installed lists too
+    expect(connectedCounts({ entries, engineConnected: 3 })).toEqual({ installed: 5 });
+    expect(connectedCounts({ entries, engineConnected: 0 })).toEqual({ installed: 2 });
     expect(connectedCounts({ entries: [], engineConnected: 0 })).toEqual({});
-    const html = renderToStaticMarkup(createElement(ConnectAppsView, { tab: "discover", onTab: noop, counts: { installed: 6, providers: 3 }, refreshing: false, onRefresh: noop }));
+    const html = renderToStaticMarkup(createElement(ConnectAppsView, { tab: "discover", onTab: noop, counts: { installed: 6 }, refreshing: false, onRefresh: noop }));
     expect(html).not.toContain("data-plugins-connected");
     expect(html).not.toMatch(/\d+ connected</);
     expect(html).toMatch(/aria-label="Installed, 6 connected"[^>]*data-plugins-tab="installed"[\s\S]*?data-plugins-tab-count="6"/);
-    expect(html).toMatch(/aria-label="Providers, 3 connected"[^>]*data-plugins-tab="providers"/);
+    expect(html).not.toContain('data-plugins-tab="providers"');
     // no counter where nothing is connected
     expect(html).not.toMatch(/data-plugins-tab="discover"[^>]*>[\s\S]*?data-plugins-tab-count[\s\S]*?data-plugins-tab="installed"/);
   });
 
-  it("has four tabs on the Connect Apps page itself, and no Advanced zone", () => {
+  it("has five tabs on the Connect Apps page itself, and no Advanced zone", () => {
     const html = shell("installed");
     expect(html).toMatch(/id="plugins-title"[^>]*>Connect Apps</);
     const tabs = [...html.matchAll(/role="tab"[^>]*data-plugins-tab="([a-z]+)"[^>]*><span data-plugins-tab-label="[^"]*">([^<]+)</g)].map((match) => [match[1], match[2]]);
-    expect(tabs).toEqual([["discover", "Discover"], ["bots", "Bots"], ["installed", "Installed"], ["providers", "Providers"], ["pages", "Pages"], ["sources", "Sources"]]);
+    expect(tabs).toEqual([["discover", "Discover"], ["bots", "Bots"], ["installed", "Installed"], ["pages", "Pages"], ["sources", "Sources"]]);
     expect(html).not.toContain("data-plugins-advanced");
     expect(html).not.toContain("Advanced");
+  });
+
+  it("Installed lists the Providers in a section of its own, after the entries and the skills", () => {
+    const html = renderToStaticMarkup(createElement(InstalledView, props({ providers: createElement("div", { "data-test-provider": "" }, "PROVIDER ROWS") })));
+    expect(html).toMatch(/data-plugins-installed[\s\S]*?data-plugins-skills[\s\S]*?data-plugins-providers[\s\S]*?>Providers<[\s\S]*?PROVIDER ROWS/);
+    expect(renderToStaticMarkup(createElement(InstalledView, props()))).not.toContain("data-plugins-providers");
   });
 
   it("Installed: GitHub once, named for people, saying what it brings, then the private skills", () => {
@@ -99,7 +107,7 @@ describe("Connect apps tabs", () => {
   });
 
   it("says nothing about an administrator to a member", () => {
-    for (const tab of ["installed", "discover", "providers", "pages", "sources"] as const) {
+    for (const tab of ["installed", "discover", "pages", "sources"] as const) {
       expect(shell(tab)).not.toMatch(/administrator|admin/i);
     }
   });
@@ -154,7 +162,7 @@ describe("the \"...\" menu of an entry", () => {
     click(host.querySelector("[data-entry-menu]"));
     expect([...host.querySelectorAll("[data-entry-action]")].map((node) => node.textContent)).toEqual(["Mettre à jour", "Pour quels bots", "Retirer"]);
     flushSync(() => root.render(createElement(ConnectAppsView, { tab: "installed", onTab: noop, counts: { installed: 2 }, refreshing: false, onRefresh: noop })));
-    expect([...host.querySelectorAll('[role="tab"]')].map((node) => node.textContent)).toEqual(["Découvrir", "Bots", "Installés2", "Fournisseurs", "Pages", "Sources"]);
+    expect([...host.querySelectorAll('[role="tab"]')].map((node) => node.textContent)).toEqual(["Découvrir", "Bots", "Installés2", "Pages", "Sources"]);
     expect(host.querySelector('[data-plugins-tab="installed"]')?.getAttribute("aria-label")).toBe("Installés, 2 connectés");
   });
 });
@@ -315,21 +323,26 @@ describe("Providers and Sources: a click on a service pill, GitHub in Providers"
 });
 
 describe("Providers (once My accounts) and Pages: names and old links", () => {
-  it("the tab is named for the providers, Pages has its own tab", () => {
-    expect(CONNECT_APPS_TABS).toEqual(["discover", "bots", "installed", "providers", "pages", "sources"]);
-    expect(connectAppsTabLabel("providers")).toBe("Providers");
+  it("Providers is a section of Installed, Pages has its own tab", () => {
+    expect(CONNECT_APPS_TABS).toEqual(["discover", "bots", "installed", "pages", "sources"]);
+    expect(t("connectApps.manage.tab.providers")).toBe("Providers");
     expect(connectAppsTabLabel("pages")).toBe("Pages");
     setLocale("fr");
     try {
-      expect(connectAppsTabLabel("providers")).toBe("Fournisseurs");
+      expect(t("connectApps.manage.tab.providers")).toBe("Fournisseurs");
       expect(connectAppsTabLabel("pages")).toBe("Pages");
     } finally {
       setLocale("en");
     }
   });
 
-  it("the old tab id and the old link lead to Providers; Pages and the rest stay", () => {
-    expect(normalizeConnectAppsTab("accounts")).toBe("providers");
+  it("the old Providers and My accounts links lead to Installed, on its Providers section; Pages and the rest stay", () => {
+    expect(normalizeConnectAppsTab("accounts")).toBe("installed");
+    expect(normalizeConnectAppsTab("providers")).toBe("installed");
+    expect(isProvidersLink("providers")).toBe(true);
+    expect(isProvidersLink("accounts")).toBe(true);
+    expect(isProvidersLink("installed")).toBe(false);
+    expect(CONNECT_APPS_TABS).toEqual(["discover", "bots", "installed", "pages", "sources"]);
     for (const tab of CONNECT_APPS_TABS) expect(normalizeConnectAppsTab(tab)).toBe(tab);
     expect(normalizeConnectAppsTab("nope")).toBeNull();
     expect(normalizeConnectAppsTab(null)).toBeNull();
