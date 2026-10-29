@@ -933,7 +933,9 @@ describe("steer-queue e2e (fake ACP fleet)", () => {
     const bot = await newBot("steerEarly", "Early completion");
     expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "first before acknowledgment" })).status).toBe(202);
     await until(async () => existsSync(`${dispatchGate}.entered`), "the pending dispatch acknowledgment");
-    expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "queued after acknowledgment" })).body.queued).toBe(true);
+    // "after": the words wait for the running turn (a plain send would pause
+    // it at a safe step, #1489); the queue mechanics under test need the wait
+    expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "queued after acknowledgment", busyMode: "after" })).body.queued).toBe(true);
     writeFileSync(earlyGate, "complete provider turn");
     await until(async () => echoes(await botById(bot.id)).length === 1, "completion before acknowledgment");
     const pending = await botById(bot.id);
@@ -953,7 +955,7 @@ describe("steer-queue e2e (fake ACP fleet)", () => {
   it("retains a replacement receipt through stale completion and settles its own completion before ACK", async () => {
     const bot = await newBot("steerReceipt", "Receipt generation");
     expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "first receipt turn" })).status).toBe(202);
-    const body = { threadId: bot.threadId, text: "queued replacement", sendId: "replacement_receipt_123456" };
+    const body = { threadId: bot.threadId, text: "queued replacement", sendId: "replacement_receipt_123456", busyMode: "after" };
     const queued = await api("POST", `/api/bots/${bot.id}/messages`, body);
     expect(queued.body).toMatchObject({ queued: true, queueId: expect.any(String) });
     const receipt = () => {
@@ -986,11 +988,13 @@ describe("steer-queue e2e (fake ACP fleet)", () => {
       expect(first.body.queued).toBeUndefined();
       expect((await botById(bot.id)).busy).toBe(true);
 
-      // sends while busy stay off the transcript so they cannot become the leaf
-      const second = await api("POST", `/api/bots/${bot.id}/messages`, { text: "steer two" });
+      // sends that wait for the running turn ("after", #1489: a plain send
+      // would pause it at a safe step) stay off the transcript so they
+      // cannot become the leaf
+      const second = await api("POST", `/api/bots/${bot.id}/messages`, { text: "steer two", busyMode: "after" });
       expect(second.status).toBe(202);
       expect(second.body).toMatchObject({ ok: true, queued: true });
-      const third = await api("POST", `/api/bots/${bot.id}/messages`, { text: "steer three" });
+      const third = await api("POST", `/api/bots/${bot.id}/messages`, { text: "steer three", busyMode: "after" });
       expect(third.body.queued).toBe(true);
 
       let snapshot = await botById(bot.id);

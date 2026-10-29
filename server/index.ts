@@ -5822,7 +5822,11 @@ function storedFamily(name: string): string[] {
  * read by path before the engine starts: an archive (its listing, solo) and
  * the pictures of an engine that takes a picture by path (`picturesByPath`).
  * An organization server's engines get copies (staging). */
-async function holdTurnAttachments(threadId: string, texts: readonly (string | undefined)[], images: readonly TurnImageInput[], options: { picturesByPath?: boolean } = {}): Promise<void> {
+// Returns a promise only when the turn must wait: a start that has nothing
+// to wait for never yields here, so the admission checks of startTurn stay
+// synchronous up to its slot claim (a drain starts several waiting turns
+// in one pass; a yield between check and claim lets them all through).
+function holdTurnAttachments(threadId: string, texts: readonly (string | undefined)[], images: readonly TurnImageInput[], options: { picturesByPath?: boolean } = {}): Promise<void> | undefined {
   const solo = IDENTITY.kind !== "perspicax";
   const open = async (): Promise<void> => {
     const holder = turnHolder(threadId);
@@ -5851,6 +5855,7 @@ async function holdTurnAttachments(threadId: string, texts: readonly (string | u
   const mustWait = Boolean(options.picturesByPath && images.length) || (solo && texts.some((text) => storedNamesIn(text).some(isArchiveAttachment)));
   if (mustWait) return open();
   setImmediate(() => { void open().catch(() => undefined); });
+  return undefined;
 }
 
 /** As soon as the person types in (or opens) a conversation: its bot's
@@ -20909,6 +20914,18 @@ function threadTitleGate(bot: Pick<BotRecord, "modelSelection">, principalId?: s
 const titleRegenerations = new Set<string>();
 
 // ── turn dispatch (upstream ProviderCommandReactor, miniature) ──────────
+/** What a direct turn needs before it claims its slot: the thread free, no
+ * live room turn, a capacity slot (the main chat never waits for one).
+ * Synchronous; startTurn runs it before its first wait and again after one. */
+function assertTurnAdmission(botId: string, threadId: string): void {
+  if (threadBusy(botId, threadId)) throw Object.assign(new Error("this thread is already working — interrupt it first"), { status: 409, code: "thread_busy" });
+  if (activeGroupTurnForBot(botId)) {
+    throw Object.assign(new Error("the bot is already working in a channel — wait for it to finish"), { status: 409, code: "thread_busy" });
+  }
+  if (botAtThreadCapacity(botId, threadId)) {
+    throw Object.assign(new Error(`this bot has reached its limit of ${botMaxConcurrentThreads(store.bot(botId), cfg)} parallel threads — wait for one to finish`), { status: 409, code: "thread_limit" });
+  }
+}
 async function startTurn(
   botId: string,
   text: string,
@@ -21202,13 +21219,7 @@ async function startTurn(
   // turn waits for it and takes its process over.
   if (!warmOnly && threadPrewarm.has(threadId)) await joinPrewarm(threadId);
   if (!warmOnly) turnTrace(threadId, "prewarm-joined");
-  if (threadBusy(botId, threadId)) throw Object.assign(new Error("this thread is already working — interrupt it first"), { status: 409, code: "thread_busy" });
-  if (activeGroupTurnForBot(botId)) {
-    throw Object.assign(new Error("the bot is already working in a channel — wait for it to finish"), { status: 409, code: "thread_busy" });
-  }
-  if (botAtThreadCapacity(botId, threadId)) {
-    throw Object.assign(new Error(`this bot has reached its limit of ${botMaxConcurrentThreads(store.bot(botId), cfg)} parallel threads — wait for one to finish`), { status: 409, code: "thread_limit" });
-  }
+  assertTurnAdmission(botId, threadId);
   // Steering is never a cancel. A message sent while teammates are working
   // runs now, with their assignments still attached: they keep running and
   // their results still return here (outstandingAssignmentsPrompt tells this
@@ -21301,7 +21312,13 @@ async function startTurn(
   // files in parallel with the rest of the setup, awaited before the engine
   // starts (below).
   if (!warmOnly && supportsWorkspaceFiles(instance.driverKind)) void holdBotMemoryPlain(bot.id, turnHolder(threadId));
-  if (!warmOnly) await holdTurnAttachments(threadId, [text], resolvedImages.images, { picturesByPath: instance.driverKind === "codex" });
+  const attachmentsHold = warmOnly ? undefined : holdTurnAttachments(threadId, [text], resolvedImages.images, { picturesByPath: instance.driverKind === "codex" });
+  if (attachmentsHold) {
+    await attachmentsHold;
+    // The wait yielded: another start may have taken this slot since the
+    // checks above. From here to the dispatch claim nothing yields again.
+    assertTurnAdmission(botId, threadId);
+  }
   const usesNativeImageInput = instance.adapter.capabilities.nativeImageInput === true;
   let providerText = promptWithDataContext(usesNativeImageInput ? resolvedImages.text : text, opts?.dataContext);
   const turnImages = usesNativeImageInput ? resolvedImages.images : [];
@@ -25804,7 +25821,8 @@ async function runGroupMemberTurn(
     ? extractTurnImages(latestUser.text)
     : { text: latestUser?.text ?? "", images: [] };
   // stored files sealed at rest go plain for the engine (server/content-at-rest.ts)
-  if (!cardContinuation) await holdTurnAttachments(threadId, [latestUser?.text], [...burstImages, ...resolvedLatestImages.images], { picturesByPath: instance.driverKind === "codex" });
+  const roomAttachmentsHold = cardContinuation ? undefined : holdTurnAttachments(threadId, [latestUser?.text], [...burstImages, ...resolvedLatestImages.images], { picturesByPath: instance.driverKind === "codex" });
+  if (roomAttachmentsHold) await roomAttachmentsHold;
   // Organization server: where this room turn's tools run (the person whose
   // message it answers), and their own attachments pointed there.
   const roomRoutine = !roomSpeakerId && roomRoutineSpeaker(threadId) !== null;

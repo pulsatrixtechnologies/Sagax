@@ -57,17 +57,23 @@ describe("per-bot thread capacity through an isolated HTTP fixture", () => {
     expect(result.body.threads).toEqual({ maxConcurrentPerBot, maxParallelPerPerson: 3 });
     return result;
   };
+  // threads[0] is the bot's conversation as the server names it
+  // (WireBot.mainThreadId: the newest open segment, shared/single-stream.ts),
+  // the one chat that never waits for a capacity slot; the rest are task
+  // threads in creation order.
   const botWithThreads = async (count: number) => {
     const created = await api("POST", "/api/bots", { name: "Capacity fixture", modelSelection: { instanceId: "claude", model } });
     expect(created.status).toBe(201);
     const bot = created.body.bot;
-    const threads = [bot.threadId as string];
+    const createdThreads = [bot.threadId as string];
     for (let i = 1; i < count; i++) {
       const createdTask = await api("POST", `/api/bots/${bot.id}/tasks`, { title: `Capacity thread ${i + 1}` });
       expect(createdTask.status).toBe(201);
-      threads.push(createdTask.body.task.threadId);
+      createdThreads.push(createdTask.body.task.threadId);
     }
-    return { botId: bot.id as string, threads };
+    const main = (await botState(bot.id)).mainThreadId as string;
+    expect(createdThreads).toContain(main);
+    return { botId: bot.id as string, threads: [main, ...createdThreads.filter((threadId) => threadId !== main)] };
   };
   const capabilityStatus = async (launched: any) => {
     const response = await fetch(`${fixture.info.url}/api/internal/agents`, {
@@ -460,13 +466,14 @@ describe("per-bot thread capacity through an isolated HTTP fixture", () => {
     try {
       // One busy thread, one free slot: when the delegator's turn settles
       // and the handoff drains, it must land in the target's standing
-      // thread — its newest task thread — instead of waiting for the whole
-      // bot to go idle. Every turn here, including the agentless delegated
-      // one, runs from its thread's task folder, so the fixture's shared
-      // cwd-keyed gates cover them all.
-      expect((await send(target.botId, target.threads[0], "HOLD_ONE_SLOT")).body.queued).toBeUndefined();
-      await dump(target.threads[0]);
-      expect(await busyThreads(target.botId)).toEqual([target.threads[0]]);
+      // thread, its conversation (threads[0]), instead of waiting for the
+      // whole bot to go idle. Every turn here, including the agentless
+      // delegated one, runs from its thread's task folder, so the fixture's
+      // shared cwd-keyed gates cover them all.
+      const [standing, holder] = target.threads;
+      expect((await send(target.botId, holder, "HOLD_ONE_SLOT")).body.queued).toBeUndefined();
+      await dump(holder);
+      expect(await busyThreads(target.botId)).toEqual([holder]);
       expect((await botState(target.botId)).busy).toBe(true);
 
       const first = await delegatorTurn();
@@ -474,7 +481,7 @@ describe("per-bot thread capacity through an isolated HTTP fixture", () => {
       expect(queued.status).toBe(200);
       expect(queued.body).toMatchObject({ queued: true, taskId: expect.any(String) });
       finish(first.threadId);
-      await dump(target.threads[1]);
+      await dump(standing);
       // The busy list orders by recent activity, not thread creation.
       expect((await busyThreads(target.botId)).sort()).toEqual([...target.threads].sort());
       expect((await botState(target.botId)).busy).toBe(true);
@@ -493,9 +500,9 @@ describe("per-bot thread capacity through an isolated HTTP fixture", () => {
       // handoff re-tests its own admission and moves — the whole-bot busy
       // flag is never the gate. Its turn lands in the just-freed thread,
       // whose gate is already down, so it settles and wakes the delegator.
-      finish(target.threads[1]);
+      finish(standing);
       await expect.poll(async () => (await runState(second.runId))?.status, { timeout: 20_000 }).toBe("completed");
-      expect(await busyThreads(target.botId)).toEqual([target.threads[0]]);
+      expect(await busyThreads(target.botId)).toEqual([holder]);
       await expectWokenByCompletion(second);
       await expect.poll(async () => (await runState(first.runId))?.status, { timeout: 15_000 }).toBe("completed");
       await expectWokenByCompletion(first);

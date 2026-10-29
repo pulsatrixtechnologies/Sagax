@@ -133,7 +133,11 @@ describe.skipIf(process.platform === "win32")("direct final-screen settlement", 
     gate("capture.gate");
     await expect.poll(async () => (await bot()).busy, { timeout: 15_000 }).toBe(false);
     const messages = (await bot()).messages;
-    expect(messages.some((message: any) => typeof message.text === "string" && withoutTurnClock(message.text).includes("reply to: FOLLOWUP_AFTER_SCREEN"))).toBe(true);
+    // The follow-up's turn answers it; its prompt may open with the
+    // safe-step note (#1489: the running turn was paused at the end of its
+    // screen capture so the words were read at once).
+    expect(messages.some((message: any) => message.role === "bot" && typeof message.text === "string"
+      && withoutTurnClock(message.text).startsWith("reply to:") && message.text.includes("FOLLOWUP_AFTER_SCREEN"))).toBe(true);
     expect(messages.some((message: any) => message.tool?.name?.includes("another thread is working"))).toBe(false);
     const screenIndex = messages.findIndex((message: any) => message.kind === "screen");
     expect(screenIndex).toBeGreaterThanOrEqual(0);

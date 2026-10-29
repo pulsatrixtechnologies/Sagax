@@ -143,7 +143,11 @@ posixOnly("mid-turn steering e2e", () => {
     );
     child = spawn(process.execPath, [join(SERVER_DIR, "index.ts")], {
       cwd: join(SERVER_DIR, ".."),
-      env: { ...(process.env.PATH ? { PATH: process.env.PATH } : {}), HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT) },
+      env: {
+        ...(process.env.PATH ? { PATH: process.env.PATH } : {}), HOME: home, USERPROFILE: home, SAGAX_PORT: String(PORT),
+        // these tests read the events and native logs raw (docs/content-encryption.md)
+        SAGAX_CONTENT_ENCRYPTION: "off",
+      },
       stdio: ["ignore", "pipe", "pipe"],
     });
     child.stderr!.on("data", (c) => (stderr += c));
@@ -310,8 +314,10 @@ posixOnly("mid-turn steering e2e", () => {
     const firstAttachedText = `look at this\n\n<attached-image path="${firstImagePath}" name="first.png" />`;
     const secondAttachedText = `and this\n\n<attached-image path="${secondImagePath}" name="second.png" />`;
     try {
-      const firstReceipt = await api("POST", `/api/bots/${created.id}/messages`, { text: firstAttachedText });
-      const secondReceipt = await api("POST", `/api/bots/${created.id}/messages`, { text: secondAttachedText });
+      // "after": both wait for the running turn (a plain send with an image
+      // cannot be steered and would pause the turn at a safe step, #1489)
+      const firstReceipt = await api("POST", `/api/bots/${created.id}/messages`, { text: firstAttachedText, busyMode: "after" });
+      const secondReceipt = await api("POST", `/api/bots/${created.id}/messages`, { text: secondAttachedText, busyMode: "after" });
 
       expect(firstReceipt.status).toBe(202);
       expect(firstReceipt.body).toMatchObject({ ok: true, queued: true });
@@ -350,7 +356,10 @@ posixOnly("mid-turn steering e2e", () => {
     const followUp = nativeRows
       .filter((row) => row.dir === "out" && row.source === "claude.sdk.message")
       .at(-1)?.msg;
-    expect(followUp.message.content.map((block: any) => block.type === "text" ? { ...block, text: withoutTurnClock(block.text) } : block)).toEqual([
+    // a text block may open with the volatile-context note (the sections
+    // that changed since the session's last copy, server/drivers/prompt-split.ts)
+    const withoutVolatileNote = (text: string) => text.replace(/^<system-reminder>\n[\s\S]*?\n<\/system-reminder>\n\n/, "");
+    expect(followUp.message.content.map((block: any) => block.type === "text" ? { ...block, text: withoutVolatileNote(withoutTurnClock(block.text)) } : block)).toEqual([
       {
         type: "image",
         source: { type: "base64", media_type: "image/png", data: "[image data: 12 base64 chars]" },
@@ -508,15 +517,18 @@ posixOnly("mid-turn steering e2e", () => {
     const created = (await api("POST", "/api/bots")).body.bot;
     await api("PATCH", `/api/bots/${created.id}`, { modelSelection: { instanceId: "acp", model: "fake-model" } });
     const limit = (await api("GET", "/api/config")).body.threads.maxConcurrentPerBot as number;
-    const threads: string[] = [created.threadId];
+    // The newest thread is the bot's conversation (shared/single-stream.ts),
+    // the one chat that never waits for a slot: the task threads hold the
+    // slots and the bot's first thread is the one that waits.
+    const waiting = created.threadId as string;
+    const threads: string[] = [];
     for (let i = 0; i < limit; i++) {
-      threads.push((await api("POST", `/api/bots/${created.id}/tasks`, { title: `Slot ${i + 2}` })).body.task.threadId);
+      threads.push((await api("POST", `/api/bots/${created.id}/tasks`, { title: `Slot ${i + 1}` })).body.task.threadId);
     }
-    const waiting = threads.at(-1)!;
     const busy = async () =>
       (await getBot(created.id)).tasks.filter((task: any) => task.busy).map((task: any) => task.threadId) as string[];
     try {
-      for (const threadId of threads.slice(0, limit)) {
+      for (const threadId of threads) {
         expect((await api("POST", `/api/bots/${created.id}/messages`, { threadId, text: "hold a slot" })).status).toBe(202);
       }
       await waitFor(async () => (await busy()).length === limit, "every slot to be taken");
@@ -533,7 +545,7 @@ posixOnly("mid-turn steering e2e", () => {
       await waitFor(async () => Boolean(await line()), "the waiting message to start its turn");
       expect((await line()).sender).toEqual(PAIRED);
     } finally {
-      for (const threadId of threads) await api("POST", `/api/bots/${created.id}/interrupt`, { threadId });
+      for (const threadId of [waiting, ...threads]) await api("POST", `/api/bots/${created.id}/interrupt`, { threadId });
       await waitFor(async () => (await busy()).length === 0, "every slot to settle");
     }
   }, 40_000);
@@ -550,8 +562,9 @@ posixOnly("mid-turn steering e2e", () => {
     expect((await api("POST", `/api/bots/${created.id}/messages`, { text: "first codex turn" })).status).toBe(202);
     await waitFor(async () => (await getBot(created.id)).busy === true, "the codex turn to start");
     // the unanswered question parks the turn mid-flight, like real work
+    // (a live card, with a requestId: the new bot's intro card is not one)
     await waitFor(
-      async () => (await getBot(created.id)).messages.some((m: any) => m.card),
+      async () => (await getBot(created.id)).messages.some((m: any) => m.card?.requestId && !m.card.answered),
       "the codex question card",
     );
 
@@ -588,14 +601,15 @@ posixOnly("mid-turn steering e2e", () => {
     expect((await api("POST", `/api/bots/${created.id}/messages`, { text: "first gated turn" })).status).toBe(202);
     await waitFor(async () => (await getBot(created.id)).busy === true, "the gated turn to start");
     await waitFor(
-      async () => (await getBot(created.id)).messages.some((m: any) => m.card),
+      async () => (await getBot(created.id)).messages.some((m: any) => m.card?.requestId && !m.card.answered),
       "the gated question card",
     );
 
     // the gate file makes the live steer lose: the words queue instead
     // ...and they are a paired person's words, which the owner then steers
     const person = await asPairedPerson();
-    const queued = await person("POST", `/api/bots/${created.id}/messages`, { text: "steer these queued words" });
+    // "after" keeps the words in the queue (#1489) until Steer is pressed
+    const queued = await person("POST", `/api/bots/${created.id}/messages`, { text: "steer these queued words", busyMode: "after" });
     expect(queued.body).toMatchObject({ ok: true, queued: true });
     expect((await getBot(created.id)).messages.some((m: any) => m.text === "steer these queued words")).toBe(false);
 
