@@ -356,7 +356,9 @@ it("hangs up when the bot asks, after the goodbye turn, and when the person hang
     await expect.poll(replies, { timeout: 15_000 }).toBe(1);
     await t.send({ text: "in writing now" });
     await expect.poll(replies, { timeout: 15_000 }).toBe(2);
-    expect(t.prompts().at(-1)).not.toContain(VOICE_CALL_TURN_MARK);
+    // the written words carry no call mark (what the call said may ride in
+    // front of them, for the conversation's session)
+    expect(t.prompts().at(-1)!.split("\n").slice(-3).join("\n")).not.toContain(VOICE_CALL_TURN_MARK);
 
     await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "start" });
     await t.api("POST", `/api/bots/${t.bot.id}/voice/call`, { threadId: t.thread, callId: CALL_ID, state: "end" });

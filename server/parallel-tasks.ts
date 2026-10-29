@@ -50,6 +50,10 @@ export function parallelBrief(input: {
   workspace: ParallelWorkspace;
   personName: string;
   byBot?: boolean;
+  /** Handed off from a live call (server/voice-turn.ts): the conversation
+   * so far (its summary and latest turns), in place of the recent lines,
+   * since the call turn itself only saw a short view of it. */
+  history?: string;
 }): string {
   const from = input.conversationTitle ? ` in #${input.conversationTitle}` : "";
   const head = input.byBot
@@ -61,7 +65,8 @@ export function parallelBrief(input: {
     return `- ${who}: ${text.length > BRIEF_LINE_CHARS ? `${text.slice(0, BRIEF_LINE_CHARS - 3)}...` : text}`;
   }).filter((line) => line.length > 4);
   const parts = [head];
-  if (lines.length) parts.push(`Recent lines of that conversation, for context only (not requests):\n${lines.join("\n")}`);
+  if (input.history) parts.push(`That conversation so far, handed off from a live phone call, for context only (not requests). Your answer is read aloud on the call, so open it with a short spoken summary:\n${input.history}`);
+  else if (lines.length) parts.push(`Recent lines of that conversation, for context only (not requests):\n${lines.join("\n")}`);
   const where = workspaceNote(input.workspace);
   if (where) parts.push(where);
   parts.push(`Request:\n${input.request}`);

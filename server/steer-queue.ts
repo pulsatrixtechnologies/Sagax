@@ -22,6 +22,7 @@ import { chatFollowups, saveChatFollowup, settleChatFollowups } from "./message-
 import { drainCoalesceHead } from "./admission.ts";
 import { spokenLineFields } from "./live-call-record.ts";
 import { workOriginSchema, type WorkOrigin } from "./peer-provenance.ts";
+import { voiceQueuePrompt } from "./voice-turn.ts";
 import type { ResolvedSender, SteerQueueReason } from "../shared/wire.ts";
 import type { BotRecord, Message } from "./store.ts";
 import type { TurnSpeaker } from "./engine-access.ts";
@@ -279,7 +280,10 @@ export function drainSteeredMessages(
     // drain already took this entry, `entry` is stale, and draining it again
     // would append and dispatch the same words twice.
     if (queues.get(threadId) !== entry) continue;
-    const group = drainCoalesceHead(entry.items, coalesceIdentity, (item) => item.queuedAt);
+    // Lines said on a voice call never pile up into turns: every waiting
+    // line of the same call and person drains at once, and the turn answers
+    // the newest with the earlier ones as its context (voiceQueuePrompt).
+    const group = entry.items[0]?.voiceCall ? callLineGroup(entry.items) : drainCoalesceHead(entry.items, coalesceIdentity, (item) => item.queuedAt);
     // committed to draining: the entry leaves the map before anything runs,
     // so a settle racing another settle can never fire the same queue twice
     const ids = group.map((item) => item.messageId);
@@ -320,7 +324,7 @@ export function drainSteeredMessages(
     // newline can merge a trailing standalone attachment tag with the next
     // message into one HTML block, which makes that attachment stop being a
     // native image when the combined follow-up is dispatched.
-    const prompt = group.map((item) => item.prompt).join("\n\n");
+    const prompt = group[0]?.voiceCall ? voiceQueuePrompt(group.map((item) => item.prompt)) : group.map((item) => item.prompt).join("\n\n");
     const running = run(
       entry.botId,
       threadId,
@@ -362,6 +366,19 @@ function coalesceIdentity(item: QueueEntry["items"][number]): string {
   // the "call:" prefix cannot begin any other identity; a row from a build
   // that kept no call id is still a spoken line, in a call of its own
   return item.via === "call" ? `call:${item.callId ?? ""}|${person}` : person;
+}
+
+/** The leading lines said on one voice call by one person, whatever the gap
+ * between them: one turn answers them (the newest, the rest as context). */
+function callLineGroup(items: QueueEntry["items"]): QueueEntry["items"] {
+  const head = items[0]!;
+  const identity = coalesceIdentity(head);
+  const group: QueueEntry["items"] = [];
+  for (const item of items) {
+    if (item.voiceCall?.callId !== head.voiceCall?.callId || coalesceIdentity(item) !== identity) break;
+    group.push(item);
+  }
+  return group;
 }
 
 /** Find the receipt for a retry whose message is still waiting to drain. */

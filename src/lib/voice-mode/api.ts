@@ -340,6 +340,24 @@ export async function voiceCallSession(
   }
 }
 
+/** The first words of a call turn's answer were heard: its audio stages
+ * (ms only, never the words) for the thread's Events lens. Best effort. */
+export async function voiceCallHeard(
+  botId: string,
+  call: { callId: string; threadId?: string },
+  audio: { firstSentenceMs?: number; ttsMs?: number; playbackMs?: number; totalMs?: number },
+): Promise<void> {
+  try {
+    await fetch(`${base(botId)}/call`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ state: "heard", callId: call.callId, ...(call.threadId ? { threadId: call.threadId } : {}), audio }),
+    });
+  } catch {
+    /* an old server or a lost network: the Events line is skipped */
+  }
+}
+
 /** The live call's streaming speech to text socket (GET /voice/listen). */
 /** The person's browser or app locale (fr-CA...), sent beside "auto" so the
  * server can ask xAI for French on a French computer (shared/voice-mode.ts

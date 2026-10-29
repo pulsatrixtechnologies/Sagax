@@ -611,6 +611,24 @@ export function pickOrchestrationModel(request: AutoRequest, task?: TaskInput): 
   return pickTier(request, ORCHESTRATION_TIER[taskClass], "orchestration", taskClass);
 }
 
+/** A turn said on a live call (server/voice-turn.ts): a fast model, so the
+ * person hears the first words soon. The bot's own fast model when it set
+ * one, else the fast tier of its own engine, else the fast tier of another
+ * engine the payer can use. Null when no engine has one: the turn keeps the
+ * bot's model. Work too big for it is handed to a parallel task on the
+ * bot's main model (the call instruction says so). */
+export function pickVoiceModel(request: AutoRequest): AutoPick | null {
+  const fast = pickFast(request, "orchestration", "fast", "quick");
+  if (fast) return fast;
+  const own = request.engines.filter((engine) => engine.instanceId === request.base.instanceId);
+  for (const engines of [own, request.engines]) {
+    if (!engines.length) continue;
+    const pick = pickTier({ ...request, engines }, "fast", "orchestration", "quick");
+    if (pick.tier === "fast" && pick.reason !== "base" && pick.reason !== "tier-fallback") return pick;
+  }
+  return null;
+}
+
 /** Work the bot hands out: classify it, then the tier's model; the fast
  * model for the light classes when the bot has one. */
 export function pickWorkerModel(request: AutoRequest & { task: TaskInput }): AutoPick {

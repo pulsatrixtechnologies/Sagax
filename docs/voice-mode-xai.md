@@ -422,8 +422,8 @@ What keeps it short:
   level; a Codex bot with no effort is left alone, since Codex would keep
   the call's level for the turns after the call. Written turns keep the
   bot's own effort, so the first written turn after a call starts a new
-  Grok or Claude process. The model is not changed here: a faster model
-  for calls belongs to the Auto mode (PR #153).
+  Grok or Claude process. The model changes too: see "A call turn runs
+  fast" below.
 - **The server environment stays up.** sandboxd stops a person's
   environment after 10 minutes without use. The call's start and each
   heartbeat (about every 5 minutes) count as use of the environment the
@@ -569,7 +569,8 @@ What keeps it short:
   sentence does not pay a new TLS handshake after the person spoke.
 - **Short context on a call.** A call turn recalls at most two notes in
   1,200 characters and no other conversation, and skips the recent-work
-  brief.
+  brief. It never reads the conversation's own engine session either: see
+  "A call turn runs fast".
 - **The voice's playback.** The page plays the voice on an audio context at
   24 kHz (xAI's rate, so the browser resamples once, at the output; the
   device's rate when the browser refuses). An answer's first chunk starts
@@ -610,6 +611,67 @@ Release acceptance is a separate 32-turn run with hard gates (p50 at most
 enforces those gates on the synthetic profile only.
 `pnpm voice:acceptance:real -- --enforce` is the real-provider run, and a
 release waits on it. Recipe: [docs/verification/voice-acceptance.md](verification/voice-acceptance.md).
+
+## A call turn runs fast (2026-10-29)
+
+Measured in production before this: about 5.8 s from the end of speech to
+the first words (1.9 s of turn setup over a conversation of about 183,000
+tokens, a cold engine, 3.8 s to the first token), more on a large model,
+and lines said meanwhile piled up. Now (`server/voice-turn.ts`):
+
+- **A fast model.** Every call turn, and the warm that starts its process
+  when the call is accepted, runs on a fast model: the bot's own fast model
+  when it set one, else the fast tier of its engine (Haiku on Claude Code,
+  a fast Grok on Grok), else the fast tier of another engine the payer can
+  use (`pickVoiceModel`, server/model-auto.ts, the same tiers Auto uses). A
+  bot pinned to a model gets it too; a request that needed another
+  engine's connector keeps that engine. No fast model anywhere: the bot's
+  model.
+- **A short context, in a session of its own.** The call never resumes the
+  conversation's engine session. Its first dispatch (the warm) closes an
+  idle process the thread kept and starts a new session; the first spoken
+  turn carries a short view of the conversation (`voiceTranscript`: the
+  conversation's own summary, or a quoted summary of what is older, then
+  the latest 12 messages, 6,000 bytes in all); every later turn resumes
+  that session with its words alone, plus anything that reached the
+  conversation meanwhile that the call did not write or hear (a task's
+  result). The call session's cursor lives in memory (`VoiceTurnSessions`);
+  the conversation's cursor and handed-message record are left alone, and a
+  call turn neither folds the conversation nor waits for it. A new call on
+  the thread before a hang-up keeps the warm process and session.
+- **The conversation learns what the call said.** Its next written turn
+  resumes its own session on the bot's model: an engine that records what
+  its session was handed gets the call's lines as unseen messages; another
+  gets them in front of the words (`callLinesBlock`, the newest 24; memory
+  only, a restart loses it). A conversation that had no session before the
+  call starts one from the usual rebuild.
+- **Real work is handed off.** The call instruction (`VOICE_CALL_DELEGATE_LINE`)
+  tells the bot that it answers on a fast model from a short view: for
+  code, a long search or read, many tool steps, it says in one sentence it
+  is on it and calls `start_thread` with `report_back`. That parallel task
+  runs on the bot's main model, its brief carrying the conversation (its
+  summary and latest turns at the rebuild budget, `callHandoffHistory`),
+  and its result is posted back into the conversation, where the call
+  announces and reads it (`howToSpeakTopicResult`).
+- **No pile-up.** A barge-in still cuts the answer (the page stops the turn
+  its words cut, `expectedUtteranceId`), and a stale answer is still never
+  spoken (the speech fence). Lines said while the bot cannot take them
+  (a turn being stopped) wait in the queue, and every waiting line of the
+  same call drains as one turn (`callLineGroup`, server/steer-queue.ts)
+  that answers the newest, the earlier ones given as its context
+  (`voiceQueuePrompt`). Every line stays in the conversation.
+- **Timings.** The Events lens line of each call turn names the model, the
+  bytes of context and whether the call session was started or resumed
+  (`callTurnNotice`), and the page reports when the answer's first words
+  were heard (`POST /voice/call` `state: "heard"`, numbers only): first
+  sentence, text to speech, playback and the total from the end of speech
+  (`audioTurnNotice`). The server log has `[voice-turn]` per dispatch.
+
+Tests: `server/voice-turn.test.ts`, `server/model-auto.test.ts`
+(`pickVoiceModel`), `server/steer-queue.test.ts` (one call's lines),
+`server/voice-fast-turn.e2e.test.ts` (fake Claude CLI: the fast model and
+short context in one warm session, the conversation's own session after,
+barge-in, no pile-up, a heavy request handed off).
 
 ## A call recovers by itself
 

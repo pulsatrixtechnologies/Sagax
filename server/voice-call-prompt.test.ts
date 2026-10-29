@@ -10,6 +10,7 @@ import {
   voiceCallSteerPrompt,
   voiceCallTurnPrompt,
   VOICE_CALL_CONTINUES_NOTE,
+  VOICE_CALL_DELEGATE_LINE,
   VOICE_CALL_TURN_MARK,
 } from "./voice-call-prompt.ts";
 
@@ -169,5 +170,13 @@ describe("voice call turns in the system prompt halves", () => {
     expect(sent[6]).not.toContain(CALL_MARK);
     expect(sent[6]).not.toContain(ENDED_MARK);
     for (const [index, text] of sent.entries()) expect(text.endsWith(`words ${index}`)).toBe(true);
+  });
+});
+
+describe("handing real work off from a call", () => {
+  it("tells the call turn to say it is on it and hand the work to a parallel task", () => {
+    const text = voiceCallInstruction("Ada", { callId: "call-12345678" });
+    expect(text).toContain(VOICE_CALL_DELEGATE_LINE);
+    expect(VOICE_CALL_DELEGATE_LINE).toContain("start_thread with report_back true");
   });
 });
