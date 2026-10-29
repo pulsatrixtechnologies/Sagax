@@ -723,7 +723,7 @@ struct BotActivityDetailView: View {
 enum BotActivitySteerState { case idle, sending, sent, failed }
 
 /// A message into a running task: it joins the work in progress.
-private struct BotActivitySteerSection: View {
+struct BotActivitySteerSection: View {
     @Environment(\.themePalette) var themePalette
     let botId: String
     let threadId: String
@@ -789,7 +789,7 @@ private struct BotActivitySteerSection: View {
 /// count when it repeated, the place only when it changes, the danger tone
 /// only on a failure. Every call sits behind one disclosure; a sub-agent's
 /// step opens to what it was asked, its own grouped steps and its result.
-private struct BotActivityStepGroupRow: View {
+struct BotActivityStepGroupRow: View {
     @Environment(\.themePalette) var themePalette
     let group: BotActivityStepGroup
     @State private var open = false

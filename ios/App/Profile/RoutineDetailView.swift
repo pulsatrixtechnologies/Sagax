@@ -73,6 +73,9 @@ struct RoutineDetailView: View {
     @State private var runs: [RoutineRun] = []
     @State private var showingInstruction = false
     @State private var editing = false
+    /// Duplicate (2026-10-29): the editor opens on a copy.
+    @State private var duplicating = false
+    @State private var starting = false
     @State private var saving = false
     @State private var confirmingDelete = false
     @State private var openRun: RoutineRun?
@@ -88,6 +91,8 @@ struct RoutineDetailView: View {
                 // panel does beside Pause and Edit (RoutinesSection.tsx)
                 .contextMenu {
                     Button(String(localized: "Edit routine"), systemImage: "pencil") { editing = true }
+                    Button(String(localized: "Duplicate"), systemImage: "plus.square.on.square") { duplicating = true }
+                        .accessibilityIdentifier("routine-duplicate")
                     // AU15: the results thread, as the desktop's routine
                     // details offer it (EventDetails "Open results thread").
                     if let results = RoutineResults.openTarget(for: routine, bots: session.state.bots, rooms: session.state.rooms) {
@@ -112,7 +117,22 @@ struct RoutineDetailView: View {
                         .disabled(saving || !routine.canToggle())
                         .accessibilityIdentifier("routine-active")
                 }
-                
+                // 2026-10-29: Run now, within reach, as on the desktop's
+                // routine page; the run opens at once.
+                if routine.mayRun {
+                    ProfileDivider(leading: Theme.Profile.textInset)
+                    Button {
+                        Haptics.selection()
+                        Task { await runNow() }
+                    } label: {
+                        ProfileRow(title: Text("Run now"), titleColor: Theme.accent, height: Theme.Profile.singleRow) {
+                            if starting { ProgressView().controlSize(.small).padding(.trailing, Theme.Profile.textInset) }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(starting || runs.contains { $0.isActive })
+                    .accessibilityIdentifier("routine-run-now")
+                }
             }
 
             ProfileSectionLabel(text: "Schedule", margin: margin)
@@ -192,9 +212,19 @@ struct RoutineDetailView: View {
 #if DEBUG
         // captures only (`-parityOpenRoutineEditor YES`): the editor open
         .task { if UserDefaults.standard.bool(forKey: "parityOpenRoutineEditor") { try? await Task.sleep(nanoseconds: 1_500_000_000); editing = true } }
+        // captures only (`-parityOpenRoutineRun completed|waiting|failed`):
+        // that run's detail open
+        .task {
+            guard let status = UserDefaults.standard.string(forKey: "parityOpenRoutineRun") else { return }
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            openRun = runs.first { $0.status == status }
+        }
 #endif
         .sheet(isPresented: $editing) {
             RoutineEditorView(routine: routine) { await reload() }
+        }
+        .sheet(isPresented: $duplicating) {
+            RoutineEditorView(routine: nil, copyOf: routine) { await onChange() }
         }
         .sheet(item: $openRun) { run in
             RoutineRunDetailView(run: run, routine: routine) { updated in
@@ -235,6 +265,14 @@ struct RoutineDetailView: View {
         }
     }
 
+    private func runNow() async {
+        starting = true
+        defer { starting = false }
+        guard let started = await session.runRoutine(routine) else { return }
+        runs = [started] + runs.filter { $0.id != started.id }
+        openRun = started
+    }
+
     private func cancel(_ run: RoutineRun) async {
         if let updated = await session.cancelRoutineRun(run) {
             runs = RoutineRunLog.replacing(runs, with: [updated])
@@ -256,16 +294,24 @@ private struct RunHistoryRow: View {
     /// A failed or missed run nobody opened: the red dot (AU9).
     var unseen = false
 
+    /// 2026-10-29: how long it took, what it cost and its first line.
+    private var subtitle: Text? {
+        let parts = [RoutineRunWording.duration(run), RoutineRunWording.cost(run), run.quiet == true ? nil : run.previewLine].compactMap { $0 }
+        return parts.isEmpty ? nil : Text(verbatim: parts.joined(separator: " · "))
+    }
+
     var body: some View {
         ProfileRow(
             title: Text(verbatim: Self.when.string(from: Date(timeIntervalSince1970: (run.startedAt ?? run.scheduledFor) / 1_000))),
-            height: Theme.Profile.row
+            subtitle: subtitle,
+            height: subtitle == nil ? Theme.Profile.row : Theme.Profile.routineRow
         ) {
             HStack(spacing: 6) {
                 if unseen {
                     Circle().fill(Theme.danger).frame(width: 6, height: 6)
                         .accessibilityLabel(Text("Unseen failure"))
                 }
+                BotActivityStatusIcon(status: run.activityStatus, size: 13)
                 Text(verbatim: status)
                     .font(Theme.Font.body)
                     .foregroundStyle(statusColor)
@@ -273,7 +319,6 @@ private struct RunHistoryRow: View {
             .padding(.trailing, 18.7)
         }
         .contentShape(Rectangle())
-        
         .accessibilityIdentifier("routine-run.\(run.id)")
     }
 

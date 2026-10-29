@@ -64,29 +64,32 @@ struct RoutineEditorView: View {
     /// `presetBotId`: a new routine made from a bot's profile starts on that bot.
     /// `seed`: a new routine from the Automations calendar ("More options"
     /// of a slot) starts at that slot with what was typed there.
-    init(routine: Routine?, presetBotId: String? = nil, seed: RoutineEditorSeed? = nil, onSaved: @escaping () async -> Void) {
+    /// `copyOf` (Duplicate, 2026-10-29): a new routine with every setting of
+    /// that one, named "<name> (copy)"; saving creates it.
+    init(routine: Routine?, presetBotId: String? = nil, seed: RoutineEditorSeed? = nil, copyOf: Routine? = nil, onSaved: @escaping () async -> Void) {
         self.routine = routine
         self.onSaved = onSaved
-        _name = State(initialValue: routine?.name ?? seed?.name ?? "")
-        _prompt = State(initialValue: routine?.prompt ?? seed?.prompt ?? "")
-        _botId = State(initialValue: routine?.botId ?? seed?.botId ?? presetBotId ?? "")
-        _target = State(initialValue: routine?.target ?? "bot")
-        _groupId = State(initialValue: routine?.groupId ?? "")
-        _runOn = State(initialValue: routine?.runLocation ?? .maus)
-        let seedAt = routine?.nextRunAt.map { Date(timeIntervalSince1970: $0 / 1_000) } ?? seed?.at ?? RoutineScheduleForm.nextHour()
-        _form = State(initialValue: RoutineScheduleForm(schedule: routine?.schedule, seedAt: seedAt))
-        _duration = State(initialValue: routine?.durationMinutes ?? 30)
-        _timeoutMinutes = State(initialValue: routine?.timeoutMinutes)
-        _intervalTimeoutDefaultApplied = State(initialValue: routine != nil)
-        _overlap = State(initialValue: routine?.overlap ?? "skip")
+        let source = routine ?? copyOf
+        _name = State(initialValue: routine?.name ?? copyOf.map { String(localized: "\($0.name) (copy)") } ?? seed?.name ?? "")
+        _prompt = State(initialValue: source?.prompt ?? seed?.prompt ?? "")
+        _botId = State(initialValue: source?.botId ?? seed?.botId ?? presetBotId ?? "")
+        _target = State(initialValue: source?.target ?? "bot")
+        _groupId = State(initialValue: source?.groupId ?? "")
+        _runOn = State(initialValue: source?.runLocation ?? .maus)
+        let seedAt = source?.nextRunAt.map { Date(timeIntervalSince1970: $0 / 1_000) } ?? seed?.at ?? RoutineScheduleForm.nextHour()
+        _form = State(initialValue: RoutineScheduleForm(schedule: source?.schedule, seedAt: seedAt))
+        _duration = State(initialValue: source?.durationMinutes ?? 30)
+        _timeoutMinutes = State(initialValue: source?.timeoutMinutes)
+        _intervalTimeoutDefaultApplied = State(initialValue: source != nil)
+        _overlap = State(initialValue: source?.overlap ?? "skip")
         _results = State(initialValue: routine == nil ? .newThread : .keep)
-        _attachments = State(initialValue: routine?.target == "room-goal" ? [] : routine?.attachments ?? [])
+        _attachments = State(initialValue: source?.target == "room-goal" ? [] : source?.attachments ?? [])
         _advancedExpanded = State(initialValue: false)
-        _onlyWhenPresent = State(initialValue: routine?.onlyWhenPresent == true)
+        _onlyWhenPresent = State(initialValue: source?.onlyWhenPresent == true)
         // Default silent for a new routine; an existing one keeps its choice.
-        _postResults = State(initialValue: routine?.postResults == true)
-        _autoPauseAfter = State(initialValue: routine.map(RoutineAutoPause.after) ?? RoutineAutoPause.defaultAfter)
-        let watch = RoutineWatchDraft(precheck: routine?.precheck)
+        _postResults = State(initialValue: source?.postResults == true)
+        _autoPauseAfter = State(initialValue: source.map(RoutineAutoPause.after) ?? RoutineAutoPause.defaultAfter)
+        let watch = RoutineWatchDraft(precheck: source?.precheck)
         initialWatch = watch
         _watchDraft = State(initialValue: watch)
     }

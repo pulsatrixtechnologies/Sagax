@@ -24,6 +24,8 @@ struct TasksRoutinesView: View {
     @State private var botFilter = RoutineBotFilter()
     @State private var routineFilter: String?
     @State private var statusFilter: RoutineRunStatusFilter = .all
+    /// 2026-10-29: the logs narrowed to the last day, week or month.
+    @State private var logPeriod: RoutineRunLog.Period = .all
     @State private var query = ""
     @State private var logLimit = 50
     let page: Page
@@ -80,7 +82,10 @@ struct TasksRoutinesView: View {
     private var visibleBots: [Bot] { session.state.bots.filter { $0.hidden != true } }
     private var unseenFailures: Int { RoutineRunLog.unseenProblems(runs) }
     private var filteredRuns: [RoutineRun] {
-        RoutineRunLog.filter(botFilter.runs(runs), bots: session.state.bots, routineId: routineFilter, status: statusFilter, query: query)
+        RoutineRunLog.narrowed(
+            RoutineRunLog.filter(botFilter.runs(runs), bots: session.state.bots, routineId: routineFilter, status: statusFilter, query: query),
+            botId: nil, period: logPeriod, now: Date().timeIntervalSince1970 * 1_000
+        )
     }
 
     private var sectionPicker: some View {
@@ -550,6 +555,26 @@ struct TasksRoutinesView: View {
                 Text("Filter runs by status")
             }
             .accessibilityIdentifier("routines-status-filter")
+            // 2026-10-29: one routine (a deleted one included, its runs
+            // stay) and a period, beside the status; the bot is in the menu.
+            Picker(selection: Binding(get: { routineFilter }, set: { routineFilter = $0; logLimit = 50 })) {
+                Text("All routines").tag(String?.none)
+                ForEach(RoutineRunLog.routineChoices(botFilter.runs(runs)), id: \.id) { choice in
+                    Text(verbatim: choice.name).tag(String?.some(choice.id))
+                }
+            } label: {
+                Text("Filter runs by routine")
+            }
+            .accessibilityIdentifier("routines-routine-filter")
+            Picker(selection: Binding(get: { logPeriod }, set: { logPeriod = $0; logLimit = 50 })) {
+                Text("Any time").tag(RoutineRunLog.Period.all)
+                Text("Last 24 hours").tag(RoutineRunLog.Period.day)
+                Text("Last 7 days").tag(RoutineRunLog.Period.week)
+                Text("Last 30 days").tag(RoutineRunLog.Period.month)
+            } label: {
+                Text("Period")
+            }
+            .accessibilityIdentifier("routines-period-filter")
             if routineFilter != nil {
                 HStack {
                     Text("Showing one routine's runs.").foregroundStyle(Theme.textSecondary)
