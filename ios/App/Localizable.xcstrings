@@ -1,6 +1,96 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Subscriptions": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Subscriptions" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Abonnements" } }
+      }
+    },
+    "Sold by %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Sold by %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vendu par %@" } }
+      }
+    },
+    "Out of stock": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Out of stock" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En rupture de stock" } }
+      }
+    },
+    "In stock": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "In stock" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En stock" } }
+      }
+    },
+    "Was %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Was %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Avant %@" } }
+      }
+    },
+    "%@ out of 5": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ out of 5" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%@ sur 5" } }
+      }
+    },
+    "Ordered": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ordered" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Commandé" } }
+      }
+    },
+    "Shipped": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Shipped" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Expédié" } }
+      }
+    },
+    "In transit": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "In transit" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En transit" } }
+      }
+    },
+    "Out for delivery": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Out for delivery" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En cours de livraison" } }
+      }
+    },
+    "Delivered": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Delivered" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Livré" } }
+      }
+    },
+    "Delivery problem": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Delivery problem" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Problème de livraison" } }
+      }
+    },
+    "Expected %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Expected %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Prévu %@" } }
+      }
+    },
+    "Delivery progress": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Delivery progress" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Progression de la livraison" } }
+      }
+    },
+    "Track the parcel": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Track the parcel" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Suivre le colis" } }
+      }
+    },
     "your voice key%@": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "your voice key%@" } },

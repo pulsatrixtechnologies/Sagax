@@ -34,7 +34,7 @@ final class NewBotOptionsTests: XCTestCase {
     }
 
     func testBuiltInRolesAreTheDesktops() {
-        XCTAssertEqual(NewBotRules.builtInRoles.map(\.id), ["assistant", "inbox", "research", "coder", "community", "ops"])
+        XCTAssertEqual(NewBotRules.builtInRoles.map(\.id), ["assistant", "inbox", "research", "coder", "community", "ops", "subscriptions"])
         let scout = NewBotRules.fill(NewBotRules.builtInRoles[2])
         XCTAssertEqual(scout.name, "Scout")
         XCTAssertEqual(scout.title, "Researcher")

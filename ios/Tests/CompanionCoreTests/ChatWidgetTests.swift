@@ -35,7 +35,7 @@ final class ChatWidgetTests: XCTestCase {
     func testEveryWidgetRowDecodesWithItsTree() throws {
         let rows = try messages()
         let widgets = rows.filter { $0.kind == .widget }
-        XCTAssertEqual(widgets.count, 13)
+        XCTAssertEqual(widgets.count, 14)
         for row in widgets where row.id != "widget-broken" {
             XCTAssertNotNil(row.drawableWidget, row.id)
             XCTAssertFalse((row.text ?? "").isEmpty, row.id)
@@ -49,7 +49,7 @@ final class ChatWidgetTests: XCTestCase {
     func testActionsScopesAndDefaultsMatchTheServer() throws {
         let expectations = try JSONDecoder().decode([String: Expectation].self, from: fixture("widget-expectations"))
         let rows = try messages()
-        XCTAssertEqual(expectations.count, 10)
+        XCTAssertEqual(expectations.count, 11)
         for (id, expected) in expectations {
             let root = try XCTUnwrap(rows.first { $0.id == id }?.widget?.root, id)
             let actions = ChatWidgetRules.actions(root)
@@ -68,7 +68,7 @@ final class ChatWidgetTests: XCTestCase {
         let future = try XCTUnwrap(try messages().first { $0.id == "widget-future" }?.widget?.root)
         XCTAssertEqual(future.type, "Card")
         XCTAssertEqual(future.string("title"), "From the future")
-        XCTAssertEqual(future.children.map(\.type), ["Carousel", "Hologram", "Text"])
+        XCTAssertEqual(future.children.map(\.type), ["Tesseract", "Hologram", "Text"])
         XCTAssertEqual(future.children[0].children.first?.string("value"), "Still readable")
         // a node without an id still gets one, so it can be drawn and keyed
         XCTAssertFalse(future.children[2].id.isEmpty)

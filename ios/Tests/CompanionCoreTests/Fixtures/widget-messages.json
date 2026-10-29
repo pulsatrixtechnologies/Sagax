@@ -1266,8 +1266,185 @@
       }
     },
     {
-      "id": "widget-kitchenSink",
+      "id": "widget-shopping",
       "at": 1791930009000,
+      "role": "bot",
+      "kind": "widget",
+      "text": "**Wireless headphones under $200**\n- Studio wireless headphones, noise cancelling · 189.99 CAD (was 229.99) · Audio Shop · 4.6/5 (2140) · Arrives Friday · Best seller · Free shipping\n- Over-ear headphones · 149.00 CAD · Sound Depot · 4.3/5 (912) · Sale\n- Travel earbuds · 79.00 CAD · Gadget Store · 4.1/5 (380) · Out of stock",
+      "widget": {
+        "v": 1,
+        "root": {
+          "type": "Card",
+          "id": "n1",
+          "title": "Wireless headphones under $200",
+          "children": [
+            {
+              "type": "Carousel",
+              "id": "n2",
+              "children": [
+                {
+                  "type": "Product",
+                  "id": "n3",
+                  "title": "Studio wireless headphones, noise cancelling",
+                  "price": "189.99",
+                  "compareAtPrice": "229.99",
+                  "currency": "CAD",
+                  "store": "Audio Shop",
+                  "rating": 4.6,
+                  "reviews": 2140,
+                  "badges": [
+                    "Best seller",
+                    "Free shipping"
+                  ],
+                  "url": "https://shop.example.com/p/studio-wireless",
+                  "delivery": "Arrives Friday",
+                  "children": [
+                    {
+                      "type": "Image",
+                      "id": "n4",
+                      "src": "https://images.example.com/headphones-a.jpg",
+                      "alt": "Studio wireless headphones, noise cancelling",
+                      "fit": "contain",
+                      "aspectRatio": 1,
+                      "radius": 12
+                    },
+                    {
+                      "type": "Button",
+                      "id": "n5",
+                      "label": "Buy now",
+                      "block": true,
+                      "onClickAction": {
+                        "type": "buy_now",
+                        "payload": {
+                          "title": "Studio wireless headphones, noise cancelling",
+                          "price": "189.99",
+                          "currency": "CAD",
+                          "store": "Audio Shop",
+                          "url": "https://shop.example.com/p/studio-wireless"
+                        }
+                      },
+                      "style": "primary"
+                    },
+                    {
+                      "type": "Button",
+                      "id": "n6",
+                      "label": "View",
+                      "iconEnd": "external-link",
+                      "block": true,
+                      "onClickAction": {
+                        "type": "open_url",
+                        "payload": {
+                          "url": "https://shop.example.com/p/studio-wireless"
+                        }
+                      },
+                      "style": "secondary"
+                    }
+                  ]
+                },
+                {
+                  "type": "Product",
+                  "id": "n7",
+                  "title": "Over-ear headphones",
+                  "price": "149.00",
+                  "currency": "CAD",
+                  "store": "Sound Depot",
+                  "rating": 4.3,
+                  "reviews": 912,
+                  "badges": [
+                    "Sale"
+                  ],
+                  "children": [
+                    {
+                      "type": "Image",
+                      "id": "n8",
+                      "src": "https://images.example.com/headphones-b.jpg",
+                      "alt": "Over-ear headphones",
+                      "fit": "contain",
+                      "aspectRatio": 1,
+                      "radius": 12
+                    },
+                    {
+                      "type": "Button",
+                      "id": "n9",
+                      "label": "Buy now",
+                      "block": true,
+                      "onClickAction": {
+                        "type": "buy_now",
+                        "payload": {
+                          "title": "Over-ear headphones",
+                          "price": "149.00",
+                          "currency": "CAD",
+                          "store": "Sound Depot"
+                        }
+                      },
+                      "style": "primary"
+                    }
+                  ]
+                },
+                {
+                  "type": "Product",
+                  "id": "n10",
+                  "title": "Travel earbuds",
+                  "price": "79.00",
+                  "currency": "CAD",
+                  "store": "Gadget Store",
+                  "rating": 4.1,
+                  "reviews": 380,
+                  "inStock": false,
+                  "url": "https://gadgets.example.com/travel-earbuds",
+                  "children": [
+                    {
+                      "type": "Image",
+                      "id": "n11",
+                      "src": "https://images.example.com/earbuds.jpg",
+                      "alt": "Travel earbuds",
+                      "fit": "contain",
+                      "aspectRatio": 1,
+                      "radius": 12
+                    },
+                    {
+                      "type": "Button",
+                      "id": "n12",
+                      "label": "Buy now",
+                      "block": true,
+                      "disabled": true,
+                      "onClickAction": {
+                        "type": "buy_now",
+                        "payload": {
+                          "title": "Travel earbuds",
+                          "price": "79.00",
+                          "currency": "CAD",
+                          "store": "Gadget Store",
+                          "url": "https://gadgets.example.com/travel-earbuds"
+                        }
+                      },
+                      "style": "primary"
+                    },
+                    {
+                      "type": "Button",
+                      "id": "n13",
+                      "label": "View",
+                      "iconEnd": "external-link",
+                      "block": true,
+                      "onClickAction": {
+                        "type": "open_url",
+                        "payload": {
+                          "url": "https://gadgets.example.com/travel-earbuds"
+                        }
+                      },
+                      "style": "secondary"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "widget-kitchenSink",
+      "at": 1791930010000,
       "role": "bot",
       "kind": "widget",
       "text": "**Kitchen sink**\nSuccess · Info · Discovery · Danger · Warning · Secondary\nTitle xl\nBody text with a longer line that wraps onto a second line when the card is narrow.\nA caption in secondary ink\nInside a box\nwith padding and a surface\n[image: MausBot]\nA transition wraps one child.\nHow did the run go?\n(Good / Mixed / Bad)\n[Optional: where Scout can reply]\nNote\n[Anything Scout should know?]\n[Send feedback] · [Open the docs] · [Ask me later]",
@@ -1693,7 +1870,7 @@
           "glow": 3,
           "children": [
             {
-              "type": "Carousel",
+              "type": "Tesseract",
               "id": "n2",
               "autoplay": true,
               "children": [

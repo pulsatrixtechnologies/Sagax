@@ -123,6 +123,7 @@ import { VAULT_LOGIN_TARGET, ONE_PASSWORD_WAITING } from "../shared/credential-v
 import { HOST_COMPUTER_RESOURCE, HOST_CONTROL_NOTICE } from "../shared/host-control.ts";
 import { CredentialVault, fillResolverFor, LOCAL_VAULT_PRINCIPAL } from "./credential-vault.ts";
 import { outboundWiring, primaryOutboundDecision, primaryPurchaseCard } from "./outbound-wiring.ts";
+import { followUpNote, OrderFollowUps } from "./order-follow-ups.ts";
 import { OnePassword } from "./onepassword.ts";
 import { createCredentialVaultRoutes, vaultPrincipalFor } from "./routes/credential-vault.ts";
 import { createCredentialVaultInternalRoutes } from "./routes/credential-vault-internal.ts";
@@ -7605,6 +7606,20 @@ const outbound = outboundWiring({
 });
 // a conversation call's transcript leaves its card 30 days after the call
 setInterval(() => { try { outbound.sweepTranscripts(); } catch { /* the next sweep tries again */ } }, 60 * 60_000).unref?.();
+// 2026-10-29: a recorded order is checked again until delivered
+// (server/order-follow-ups.ts): the bot is woken in the purchase's conversation.
+const orderFollowUps = new OrderFollowUps(DATA_DIR);
+setInterval(() => {
+  try {
+    for (const due of orderFollowUps.takeDue()) {
+      const listing = credentialVault.purchaseById(due.principalId, due.purchaseId);
+      if (!listing?.tracking || listing.tracking.step === "delivered" || !store.bot(due.botId)) continue;
+      outbound.orderFollowUp(listing, followUpNote(listing));
+    }
+  } catch {
+    // the next sweep tries again
+  }
+}, 10 * 60_000).unref?.();
 const onePassword = new OnePassword({ organization: () => IDENTITY.kind === "perspicax" });
 /** 2026-10-21 (parité R10, ligne 80): the app a screen action of this Mac
  * acts on (server/computer-app.ts), and the turns whose mounted computer is
@@ -42347,7 +42362,19 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // this bot and this conversation (server/credential-fill.ts).
         const vaultPrincipal = vaultPrincipalForThread(internalCapability.threadId);
         const credentials = vaultPrincipal
-          ? fillResolverFor(credentialVault, { principalId: vaultPrincipal, botId: bot.id, threadId: internalCapability.threadId }, onePasswordReaderFor(internalCapability.threadId), (listing) => outbound.purchaseCard(listing))
+          ? fillResolverFor(credentialVault, { principalId: vaultPrincipal, botId: bot.id, threadId: internalCapability.threadId }, onePasswordReaderFor(internalCapability.threadId), (listing) => outbound.purchaseCard(listing), {
+            // 2026-10-29 (the maintainer): the bot's approval level is the only barrier. In
+            // Full a purchase is approved at once (its card says so); below
+            // Full the card asks. A person whose security key guards
+            // purchases keeps the card: the key is physical.
+            autoApprove: () => {
+              const current = store.bot(bot.id);
+              if (!current || approvalModeForTurn(current, false, internalCapability.threadId) !== "full") return null;
+              const keyed = securityKeys.required(IDENTITY.kind === "perspicax" ? vaultPrincipal : localPrincipalId(), [SETTINGS_ACTION_CLASS["purchase.allow"]!]);
+              return keyed.length ? null : "Full access";
+            },
+            onOrder: (listing, hours) => orderFollowUps.schedule({ principalId: vaultPrincipal, purchaseId: listing.id, botId: listing.botId, threadId: listing.threadId }, hours),
+          })
           : undefined;
         const beforeDispatch = () => {
           requireActiveInternalCapability();

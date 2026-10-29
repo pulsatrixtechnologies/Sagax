@@ -53,6 +53,7 @@ private func roleTitle(_ role: WizardRole?) -> String {
     case .coder?: String(localized: "Coding partner")
     case .community?: String(localized: "Community monitor")
     case .ops?: String(localized: "Operations")
+    case .subscriptions?: String(localized: "Subscriptions")
     case nil: String(localized: "Custom")
     }
 }

@@ -429,7 +429,7 @@ public enum BotCatalogRules {
     /// organization packages of the desktop are read on the computer), then
     /// the xAI Bot Marketplace's bots.
     public static func templates(presets: [BotPreset], community: [TeamLibraryCatalog.Team], roles: [BotRole], xai: [XaiMarketplaceEntry] = []) -> [BotCatalogTemplate] {
-        let roleCategory = ["assistant": "personal", "inbox": "operations", "research": "product", "coder": "engineering", "community": "marketing", "ops": "operations"]
+        let roleCategory = ["assistant": "personal", "inbox": "operations", "research": "product", "coder": "engineering", "community": "marketing", "ops": "operations", "subscriptions": "personal"]
         let palette = ["blue", "purple", "teal", "orange", "pink", "green"]
         var out: [BotCatalogTemplate] = presets.map { preset in
             BotCatalogTemplate(

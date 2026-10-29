@@ -48,7 +48,7 @@ messages.push({ id: "widget-answer", at: AT + 60_000, role: "user", kind: "text"
 messages.push({
   id: "widget-future", at: AT + 70_000, role: "bot", kind: "widget", text: "**From the future**\nStill readable",
   widget: { v: 1, sparkle: true, root: { type: "Card", id: "n1", title: "From the future", glow: 3, children: [
-    { type: "Carousel", id: "n2", autoplay: true, children: [{ type: "Text", id: "n3", value: "Still readable" }] },
+    { type: "Tesseract", id: "n2", autoplay: true, children: [{ type: "Text", id: "n3", value: "Still readable" }] },
     { type: "Hologram", id: "n4" },
     { type: "Text", value: "No id on this one" },
   ] } },

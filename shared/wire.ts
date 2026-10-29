@@ -9,6 +9,7 @@
  * fails compilation until it is either declared here or explicitly listed
  * as server-private. */
 import type { LimitFailoverLine } from "./limit-failover.ts";
+import type { OrderTracking } from "./order-tracking.ts";
 import type { SoloGoalLine } from "./solo-goal-line.ts";
 import type { MeetingRequestCardData } from "./meeting-request.ts";
 import type { ParallelTaskRef, TaskParallelOf } from "./parallel-tasks.ts";
@@ -1596,5 +1597,8 @@ export interface OutboundCard {
   mismatchTotal?: string;
   /** Who answered for the person (their Primary Bot). */
   via?: string;
+  /** A purchase once ordered: where the parcel is, as the bot declared it
+   * (record_purchase, update_order_tracking; shared/order-tracking.ts). */
+  tracking?: OrderTracking;
   error?: string;
 }

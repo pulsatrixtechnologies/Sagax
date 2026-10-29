@@ -184,6 +184,22 @@ export const WIDGET_SAMPLES: Record<string, unknown> = {
     ],
   },
 
+  // Shopping: products side by side, in stock first, each with Buy now.
+  shopping: {
+    type: "Card",
+    title: "Wireless headphones under $200",
+    children: [
+      {
+        type: "Carousel",
+        children: [
+          { type: "Product", title: "Studio wireless headphones, noise cancelling", src: "https://images.example.com/headphones-a.jpg", price: 189.99, compareAtPrice: 229.99, currency: "CAD", store: "Audio Shop", rating: 4.6, reviews: 2140, badges: ["Best seller", "Free shipping"], url: "https://shop.example.com/p/studio-wireless", delivery: "Arrives Friday" },
+          { type: "Product", title: "Travel earbuds", src: "https://images.example.com/earbuds.jpg", price: "79", currency: "CAD", store: "Gadget Store", rating: 4.1, reviews: 380, inStock: false, url: "https://gadgets.example.com/travel-earbuds" },
+          { type: "Product", title: "Over-ear headphones", src: "https://images.example.com/headphones-b.jpg", price: 149, currency: "CAD", seller: "Sound Depot", rating: 4.3, reviews: 912, badges: ["Sale"] },
+        ],
+      },
+    ],
+  },
+
   // Everything the other samples leave out, in one card.
   kitchenSink: {
     type: "Card",

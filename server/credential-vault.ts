@@ -64,6 +64,7 @@ import {
 } from "../shared/payment-vault.ts";
 import { isSingleUseWallet, redactCardNumbers, requestSingleUseToken, walletLinkView, walletName, type SingleUseWallet, type WalletLinkView } from "../shared/single-use-card.ts";
 import { mergePatch, planVaultImport, type VaultDuplicateMode, type VaultExportFormat, type VaultTransferItem } from "../shared/credential-vault-transfer.ts";
+import { ORDER_CHECK_HOURS, ORDER_STEPS, trackingLine, type OrderTracking, type TrackingInput } from "../shared/order-tracking.ts";
 import { writeFileAtomic } from "./atomic.ts";
 import type { VaultKeySource } from "./mcp-oauth.ts";
 import { principalDir } from "./person-connections.ts";
@@ -160,6 +161,17 @@ const purchaseSchema = z.object({
   // kind: the other fields of that same form and page may follow for a few
   // minutes, each once (re-review of #956)
   cardFilledAt: z.number().optional(),
+  // 2026-10-29: where the parcel is, as the bot declared it
+  // (record_purchase, update_order_tracking; shared/order-tracking.ts)
+  tracking: z.object({
+    step: z.enum(ORDER_STEPS),
+    carrier: z.string().min(1).max(60).optional(),
+    number: z.string().min(1).max(64).optional(),
+    url: z.string().min(1).max(1_000).optional(),
+    eta: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    note: z.string().min(1).max(160).optional(),
+    updatedAt: z.number(),
+  }).strict().optional(),
   formKey: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   filledFields: z.array(z.string().min(1).max(40)).max(20).optional(),
 }).strict().superRefine((row, ctx) => {
@@ -242,6 +254,8 @@ export interface PurchaseListing {
   receipt?: { orderRef?: string; total?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[] };
   /** The confirmed total is not the approved amount. */
   mismatch?: boolean;
+  /** Where the parcel is (shared/order-tracking.ts), once ordered. */
+  tracking?: OrderTracking;
 }
 
 export class CredentialVaultError extends Error {
@@ -1005,7 +1019,7 @@ export class CredentialVault {
    * the purchase that let the bot pay on this site, and a purchase allowed
    * once is closed by it. Null when no approved purchase covers the page. */
   recordPurchase(principalId: string, input: {
-    botId: string; threadId: string; pageUrl: string; orderRef?: string; total?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[];
+    botId: string; threadId: string; pageUrl: string; orderRef?: string; total?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[]; tracking?: TrackingInput;
   }): PurchaseListing | null {
     const domain = domainOfPage(input.pageUrl);
     if (!domain) return null;
@@ -1033,8 +1047,37 @@ export class CredentialVault {
         ...(input.items?.length ? { items: input.items } : {}),
         ...(input.flights?.length ? { flights: input.flights } : {}),
       };
+      // a parcel is followed from here; a flight has none
+      const flown = Boolean(row.flights?.length || input.flights?.length);
+      if (input.tracking || !flown) row.tracking = { ...(input.tracking ?? { step: "ordered" }), updatedAt: now };
       // closed: the next payment asks again
       row.expiresAt = now;
+      return this.purchaseListing({ items }, row);
+    });
+  }
+
+  /** update_order_tracking: the bot says where an order it recorded is now.
+   * By order number among this bot's orders for this person, else the
+   * latest order of this conversation. Null when none matches. */
+  updateTracking(principalId: string, input: { botId: string; threadId: string; orderRef?: string; tracking: TrackingInput }): PurchaseListing | null {
+    const now = this.now();
+    return this.mutate(principalId, (items, purchases) => {
+      const ordered = Object.values(purchases)
+        .filter((row) => row.receipt !== undefined && row.botId === input.botId)
+        .sort((a, b) => (b.receipt?.at ?? 0) - (a.receipt?.at ?? 0));
+      const wanted = input.orderRef?.trim().toLowerCase();
+      const row = wanted
+        ? ordered.find((candidate) => candidate.receipt?.orderRef?.toLowerCase() === wanted)
+        : ordered.find((candidate) => candidate.threadId === input.threadId);
+      if (!row) return null;
+      // a field the bot did not repeat keeps what it said before
+      const before = row.tracking;
+      row.tracking = {
+        ...(before ? { carrier: before.carrier, number: before.number, url: before.url, eta: before.eta } : {}),
+        ...input.tracking,
+        updatedAt: now,
+      };
+      for (const key of ["carrier", "number", "url", "eta", "note"] as const) if (row.tracking[key] === undefined) delete row.tracking[key];
       return this.purchaseListing({ items }, row);
     });
   }
@@ -1087,6 +1130,7 @@ export class CredentialVault {
         },
       } : {}),
       ...(row.receipt?.total && row.receipt.total !== row.amount ? { mismatch: true } : {}),
+      ...(row.tracking ? { tracking: row.tracking } : {}),
     };
   }
 
@@ -1327,11 +1371,21 @@ export function fillResolverFor(
   readOnePassword?: OnePasswordFieldReader,
   /** A purchase was asked or recorded: the conversation shows its card. */
   onPurchase?: (listing: PurchaseListing) => void,
+  options: {
+    /** 2026-10-29 (the maintainer: the bot's approval level is the only barrier): the
+     * name the purchase is approved under when this turn runs in Full
+     * ("Full access"), or null to show the card. */
+    autoApprove?: () => string | null;
+    /** An order was recorded or its tracking changed: when to check again
+     * (hours), or 0 once delivered (server/order-follow-ups.ts). */
+    onOrder?: (listing: PurchaseListing, checkAgainHours: number) => void;
+  } = {},
 ): {
   resolve(request: { handle: string; field: VaultFillField; pageUrl: string; form?: string }): Promise<{ ok: true; value: string; label: string } | { ok: false; message: string; code: string }>;
   armed(): boolean;
   requestPurchase(input: PurchaseRequestInput): { ok: true; message: string } | { ok: false; message: string };
-  recordPurchase(input: { pageUrl: string; orderRef?: string; total?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[] }): { ok: true; message: string } | { ok: false; message: string };
+  recordPurchase(input: { pageUrl: string; orderRef?: string; total?: string; items?: PurchaseItem[]; flights?: PurchaseFlightLeg[]; tracking?: TrackingInput }): { ok: true; message: string } | { ok: false; message: string };
+  updateTracking(input: { orderRef?: string; tracking: TrackingInput; checkAgainHours: number }): { ok: true; message: string } | { ok: false; message: string };
 } {
   return {
     async resolve(request) {
@@ -1357,6 +1411,15 @@ export function fillResolverFor(
           ...(input.flights ? { flights: input.flights } : {}),
           ...(input.category ? { category: input.category } : {}),
         });
+        if (!opened.already && opened.listing.status === "pending") {
+          // Full: approved at once, the card says by what; nothing else changes
+          const level = options.autoApprove?.() ?? null;
+          if (level) {
+            const answered = vault.answerPurchase(context.principalId, opened.listing.id, "once", level);
+            notify(answered.listing);
+            return { ok: true as const, message: answered.note };
+          }
+        }
         if (!opened.already) notify(opened.listing);
         return { ok: true as const, message: opened.note };
       } catch (error) {
@@ -1369,13 +1432,35 @@ export function fillResolverFor(
         const listing = vault.recordPurchase(context.principalId, { ...input, botId: context.botId, threadId: context.threadId });
         if (!listing) return { ok: false as const, message: "No approved purchase covers this page: nothing was recorded. A payment needs request_purchase first." };
         notify(listing);
+        if (listing.tracking) order(listing, listing.tracking.step === "delivered" ? 0 : ORDER_CHECK_HOURS.default);
         const mismatch = listing.mismatch ? ` The confirmed total ${listing.receipt?.total} ${listing.currency} does not match the approved ${listing.amount}: tell the person plainly.` : "";
         return { ok: true as const, message: `Recorded: ${listing.merchant}, ${listing.amount} ${listing.currency}${listing.orderRef ? `, order ${listing.orderRef}` : ""}. The person sees the receipt in this conversation. Tell them it is done.${mismatch}` };
       } catch (error) {
         return { ok: false as const, message: error instanceof Error ? error.message : "The purchase could not be recorded." };
       }
     },
+    updateTracking(input) {
+      try {
+        const listing = vault.updateTracking(context.principalId, { botId: context.botId, threadId: context.threadId, ...(input.orderRef ? { orderRef: input.orderRef } : {}), tracking: input.tracking });
+        if (!listing?.tracking) {
+          return { ok: false as const, message: input.orderRef ? `No order ${input.orderRef} recorded by you: nothing was updated. Pass the order number you gave record_purchase.` : "No order recorded in this conversation: nothing was updated. Pass order_ref, the order number you gave record_purchase." };
+        }
+        notify(listing);
+        const delivered = listing.tracking.step === "delivered";
+        order(listing, delivered ? 0 : input.checkAgainHours);
+        return { ok: true as const, message: `Updated: ${listing.merchant}${listing.orderRef ? `, order ${listing.orderRef}` : ""}: ${trackingLine(listing.tracking)}. The card shows it.${delivered ? " Delivered: Sagax stops checking." : ` Sagax asks you to check again in ${input.checkAgainHours} h.`}` };
+      } catch (error) {
+        return { ok: false as const, message: error instanceof Error ? error.message : "The tracking could not be updated." };
+      }
+    },
   };
+  function order(listing: PurchaseListing, hours: number): void {
+    try {
+      options.onOrder?.(listing, hours);
+    } catch {
+      // the follow-up is a convenience: the order itself stands
+    }
+  }
   function notify(listing: PurchaseListing): void {
     try {
       onPurchase?.(listing);

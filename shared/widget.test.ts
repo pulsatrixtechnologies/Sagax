@@ -109,7 +109,7 @@ describe("parseWidgetInput", () => {
   it("refuses with the path of the problem", () => {
     expect(refusal(null)).toBe("widget: must be an object with a type.");
     expect(refusal("not json")).toBe("widget: must be a JSON object, not text.");
-    expect(refusal({ type: "Card", children: [{ type: "Row", children: [{ type: "Carousel" }] }] })).toMatch(/^widget\.children\[0\]\.children\[0\]: unknown type "Carousel"; use one of Card, ListView, /);
+    expect(refusal({ type: "Card", children: [{ type: "Row", children: [{ type: "Hologram" }] }] })).toMatch(/^widget\.children\[0\]\.children\[0\]: unknown type "Hologram"; use one of Card, ListView, /);
     expect(refusal({ type: "Card", children: [{ type: "Text" }] })).toBe("widget.children[0].value: is required.");
     expect(refusal({ type: "Card", children: [{ type: "Select", name: "a", options: [] }] })).toBe(`widget.children[0].options: needs 1 to ${WIDGET_LIMITS.options} items.`);
     expect(refusal({ type: "Card", children: [{ type: "Card" }] })).toBe("widget.children[0]: Card is a root and cannot be nested.");
@@ -131,7 +131,7 @@ describe("parseWidgetInput", () => {
     let nested: unknown = { type: "Text", value: "deep" };
     for (let level = 0; level < WIDGET_LIMITS.depth; level += 1) nested = { type: "Col", children: [nested] };
     expect(refusal({ type: "Card", children: [nested] })).toMatch(/is nested deeper than 10 levels\.$/);
-    expect(refusal({ type: "Card", children: Array.from({ length: WIDGET_LIMITS.images + 1 }, () => ({ type: "Image", src: "https://example.com/a.png" })) })).toMatch(/more than 6 images\.$/);
+    expect(refusal({ type: "Card", children: Array.from({ length: WIDGET_LIMITS.images + 1 }, () => ({ type: "Image", src: "https://example.com/a.png" })) })).toMatch(new RegExp(`more than ${WIDGET_LIMITS.images} images\\.$`));
     expect(refusal({ type: "Card", children: [{ type: "Input", name: "a" }, { type: "Input", name: "a" }] })).toBe('widget.children[1].name: repeats the field name "a".');
     expect(refusal({ type: "Card", children: [{ type: "Button", label: "Go", onClickAction: { type: "go", payload: { blob: "x".repeat(WIDGET_LIMITS.actionPayloadBytes) } } }] })).toMatch(/payload: must be at most 2000 characters of JSON\.$/);
   });
@@ -392,5 +392,61 @@ describe("times, days, labels and progress", () => {
     expect(widgetAdvice(form)).toBe('"Which days" asks the person to type what a DayPicker lets them pick. Call update_widget with a DayPicker in its place. "Time" asks the person to type what a TimePicker lets them pick. Call update_widget with a TimePicker in its place. "Start date" asks the person to type what a DatePicker lets them pick. Call update_widget with a DatePicker in its place.');
     expect(widgetAdvice(sample("bookCall"))).toBeUndefined();
     expect(widgetAdvice(sample("routineForm"))).toBeUndefined();
+  });
+});
+
+describe("products", () => {
+  const shop = () => sample("shopping");
+  const carousel = () => shop().children![0]!;
+
+  it("draws products in a Carousel, in stock first, each with its picture and Buy now", () => {
+    const products = carousel().children!;
+    expect(carousel().type).toBe("Carousel");
+    expect(products.map((product) => product.title)).toEqual(["Studio wireless headphones, noise cancelling", "Over-ear headphones", "Travel earbuds"]);
+    expect(products[0]).toMatchObject({ type: "Product", price: "189.99", compareAtPrice: "229.99", currency: "CAD", store: "Audio Shop", rating: 4.6, reviews: 2140, badges: ["Best seller", "Free shipping"], delivery: "Arrives Friday" });
+    // seller is read as the store
+    expect(products[1]).toMatchObject({ store: "Sound Depot", price: "149.00" });
+    expect(products[2]!.inStock).toBe(false);
+    expect(products[0]!.children!.map((child) => child.type)).toEqual(["Image", "Button", "Button"]);
+    expect(products[0]!.children![1]).toMatchObject({ label: "Buy now", style: "primary", onClickAction: { type: "buy_now", payload: { title: "Studio wireless headphones, noise cancelling", price: "189.99", currency: "CAD", store: "Audio Shop", url: "https://shop.example.com/p/studio-wireless" } } });
+  });
+
+  it("names each product's buttons after it, keeps View on the device and turns Buy now off when out of stock", () => {
+    const actions = widgetActions(shop());
+    expect(actions.map((entry) => [entry.label, entry.client === true])).toEqual([
+      ["Buy now: Studio wireless headphones, noise cancelling", false],
+      ["View: Studio wireless headphones, noise cancelling", true],
+      ["Buy now: Over-ear headphones", false],
+      ["View: Travel earbuds", true],
+    ]);
+    const buy = actions[0]!;
+    const press = resolveWidgetAction({ v: 1, root: shop() }, buy.ref, {});
+    expect(press).toMatchObject({ ok: true, text: "Buy now: Studio wireless headphones, noise cancelling", action: { type: "buy_now" } });
+    expect(press.ok && press.tone).toBeUndefined();
+  });
+
+  it("replaces what the bot put under a Product and keeps its own Buy now action", () => {
+    const root = parsed({ type: "Card", children: [{ type: "Product", title: "Lamp", price: 20, currency: "usd", buyAction: { type: "cart.add", payload: { sku: "L1" } }, children: [{ type: "Text", value: "ignored" }] }] });
+    const product = root.children![0]!;
+    expect(product.currency).toBe("USD");
+    expect(product.children!.map((child) => child.type)).toEqual(["Button"]);
+    expect(product.children![0]!.onClickAction).toEqual({ type: "cart.add", payload: { sku: "L1" } });
+  });
+
+  it("refuses a Carousel of anything else, too many products, or a bad product page", () => {
+    expect(refusal({ type: "Card", children: [{ type: "Carousel", children: [{ type: "Text", value: "x" }] }] })).toBe("widget.children[0].children[0]: a Carousel takes Product children.");
+    const many = Array.from({ length: WIDGET_LIMITS.carouselItems + 1 }, (_, index) => ({ type: "Product", title: `P${index}` }));
+    expect(refusal({ type: "Card", children: [{ type: "Carousel", children: many }] })).toBe(`widget.children[0].children: a Carousel takes 1 to ${WIDGET_LIMITS.carouselItems} products.`);
+    expect(refusal({ type: "Card", children: [{ type: "Product", title: "x", url: "javascript:alert(1)" }] })).toBe("widget.children[0].url: must be an http or https url.");
+    expect(refusal({ type: "Card", children: [{ type: "Product", price: 3 }] })).toBe("widget.children[0].title: is required.");
+  });
+
+  it("reads as one line per product", () => {
+    expect(widgetToText(shop())).toBe([
+      "**Wireless headphones under $200**",
+      "- Studio wireless headphones, noise cancelling · 189.99 CAD (was 229.99) · Audio Shop · 4.6/5 (2140) · Arrives Friday · Best seller · Free shipping",
+      "- Over-ear headphones · 149.00 CAD · Sound Depot · 4.3/5 (912) · Sale",
+      "- Travel earbuds · 79.00 CAD · Gadget Store · 4.1/5 (380) · Out of stock",
+    ].join("\n"));
   });
 });

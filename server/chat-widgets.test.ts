@@ -84,7 +84,7 @@ describe("show_widget", () => {
     expect(call({ tool: "show_widget", widget: WIDGET_SAMPLES.buildStatus })).toEqual({ ok: true, messageId: "m1" });
     expect(call({ tool: "update_widget", widget_id: "m1", widget: WIDGET_SAMPLES.buildStatus })).toEqual({ ok: true, messageId: "m1" });
     expect(authored.mock.calls).toEqual([["m1"], ["m1"]]);
-    expect(call({ tool: "show_widget", widget: { type: "Carousel" } }).ok).toBe(false);
+    expect(call({ tool: "show_widget", widget: { type: "Hologram" } }).ok).toBe(false);
     expect(call({ tool: "update_widget", widget_id: "nope", widget: WIDGET_SAMPLES.buildStatus }).ok).toBe(false);
     expect(call({ tool: "show_widget", widget: WIDGET_SAMPLES.buildStatus }, "thread-room").ok).toBe(false);
     expect(call({ title: "Deploy now?", subtitle: "The build is green.", options: ["Yes", "No"] }).ok).toBe(false);
@@ -110,7 +110,7 @@ describe("show_widget", () => {
 
   it("answers malformed input with the parser's sentence and posts nothing", () => {
     const fake = fakeStore();
-    expect(show(fake, { type: "Card", children: [{ type: "Carousel" }] })).toMatchObject({ ok: false, status: 400, error: expect.stringMatching(/^widget\.children\[0\]: unknown type "Carousel"/) });
+    expect(show(fake, { type: "Card", children: [{ type: "Hologram" }] })).toMatchObject({ ok: false, status: 400, error: expect.stringMatching(/^widget\.children\[0\]: unknown type "Hologram"/) });
     expect(show(fake, undefined)).toEqual({ ok: false, status: 400, error: "widget: must be an object with a type." });
     expect(show(fake, { type: "Card", children: [{ type: "Input", name: "pw", inputType: "password" }] })).toMatchObject({ ok: false, status: 400, error: expect.stringContaining("request_credential") });
     expect(show(fake, WIDGET_SAMPLES.pullRequests, { fallback_text: 7 })).toEqual({ ok: false, status: 400, error: "fallback_text: must be a string." });
@@ -254,7 +254,7 @@ describe("update_widget", () => {
     expect(update(fake, row.id, WIDGET_SAMPLES.pullRequests).ok).toBe(true);
     expect(payloadOf(fake, row.id)).toMatchObject({ v: 1, rev: 2, root: { type: "ListView", title: "Pull requests" } });
     // A refused update does not count.
-    expect(update(fake, row.id, { type: "Carousel" }).ok).toBe(false);
+    expect(update(fake, row.id, { type: "Hologram" }).ok).toBe(false);
     expect(payloadOf(fake, row.id).rev).toBe(2);
   });
 

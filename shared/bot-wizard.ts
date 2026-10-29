@@ -254,6 +254,11 @@ const ROUTINES: RoutineSuggestion[] = [
   { id: "research-digest", name: { en: "News digest", fr: "Veille" }, prompt: { en: "Look for what is new on the topics I follow and bring back a sourced digest.", fr: "Cherche ce qui est nouveau sur les sujets que je suis et ramène une veille avec les sources." }, time: "09:00", weekdays: [1, 3, 5] },
   { id: "code-health", name: { en: "Project check", fr: "Vérification du projet" }, prompt: { en: "Run the project's tests and tell me what fails, with the real output.", fr: "Roule les tests du projet et dis-moi ce qui échoue, avec la vraie sortie." }, time: "09:00", weekdays: [1, 2, 3, 4, 5] },
   { id: "community-digest", name: { en: "Community digest", fr: "Résumé de la communauté" }, prompt: { en: "Read what is new in the channels since last time and report questions, bugs and anything urgent.", fr: "Lis ce qui est nouveau dans les canaux depuis la dernière fois et rapporte les questions, les bogues et l'urgent." }, time: "10:00", weekdays: [1, 2, 3, 4, 5] },
+  // Subscriptions (2026-10-29): a free trial cancelled before it bills, the
+  // unused ones, the price at renewal; the bot cancels once the person says so.
+  { id: "trial-watch", name: { en: "Free trials", fr: "Essais gratuits" }, prompt: { en: "Find my free trials and the day each one starts charging. Two days before a charge, ask me whether to keep it; if I say cancel, cancel it for me and show me the confirmation.", fr: "Trouve mes essais gratuits et le jour où chacun commence à facturer. Deux jours avant un prélèvement, demande-moi si je le garde ; si je dis d'annuler, annule-le pour moi et montre-moi la confirmation." }, time: "09:00", weekdays: [0, 1, 2, 3, 4, 5, 6] },
+  { id: "unused-subscriptions", name: { en: "Unused subscriptions", fr: "Abonnements inutilisés" }, prompt: { en: "List my subscriptions with the price, the next charge and when I last used each. Point out the ones I do not use and offer to cancel them; cancel only the ones I agree to.", fr: "Liste mes abonnements avec le prix, le prochain prélèvement et la dernière fois que j'ai utilisé chacun. Signale ceux que je n'utilise pas et propose de les annuler ; annule seulement ceux que j'accepte." }, time: "10:00", weekdays: [1] },
+  { id: "renewal-prices", name: { en: "Renewal prices", fr: "Prix au renouvellement" }, prompt: { en: "Check the subscriptions that renew in the next 30 days and their renewal price. Tell me when a price went up, and offer to cancel or switch plans before it renews.", fr: "Vérifie les abonnements qui se renouvellent dans les 30 prochains jours et leur prix au renouvellement. Dis-moi quand un prix a augmenté et propose d'annuler ou de changer de forfait avant le renouvellement." }, time: "09:30", weekdays: [5] },
   { id: "ops-day-plan", name: { en: "Plan of the day", fr: "Plan de la journée" }, prompt: { en: "Check my calendar and open tasks, list today's commitments and what is overdue.", fr: "Regarde mon agenda et mes tâches, liste les engagements du jour et ce qui est en retard." }, time: "07:45", weekdays: [1, 2, 3, 4, 5] },
 ];
 
@@ -343,6 +348,20 @@ export const WIZARD_KITS: WizardKit[] = [
     routines: ["ops-day-plan", "weekly-review", "morning-brief"],
     tools: ["apps", "mcp", "browser"],
     apps: ["googlecalendar", "notion", "linear"],
+  },
+  {
+    id: "subscriptions",
+    answers: {
+      tone: a("Plain and to the point", "Simple et direct"),
+      language: a("The language I write in", "La langue dans laquelle j'écris"),
+      does: a("Watches my free trials and subscriptions, flags the unused ones and price rises, and cancels the ones I say.", "Surveille mes essais gratuits et mes abonnements, signale ceux que je n'utilise pas et les hausses de prix, et annule ceux que je lui dis."),
+      never: a("Never cancels or buys a plan unless I said so.", "N'annule et n'achète jamais de forfait sans que je l'aie dit."),
+      speech: a("A short list: the service, the price, the next charge, what to do.", "Une courte liste : le service, le prix, le prochain prélèvement, quoi faire."),
+    },
+    rules: ["allow-read-web", "ask-send-mail"],
+    routines: ["trial-watch", "unused-subscriptions", "renewal-prices"],
+    tools: ["browser", "apps", "mcp"],
+    apps: ["gmail", "outlook"],
   },
 ];
 

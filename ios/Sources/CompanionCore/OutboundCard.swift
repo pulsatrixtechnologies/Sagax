@@ -41,6 +41,37 @@ public struct OutboundCardData: Codable, Hashable, Sendable {
         }
     }
 
+    /// Where an ordered parcel is (shared/order-tracking.ts), as the bot
+    /// declared it: ordered, shipped, in transit, out for delivery,
+    /// delivered, or a problem.
+    public struct Tracking: Codable, Hashable, Sendable {
+        public var step: String
+        public var carrier: String?
+        public var number: String?
+        public var url: String?
+        /// YYYY-MM-DD
+        public var eta: String?
+        public var note: String?
+        public init(step: String, carrier: String? = nil, number: String? = nil, url: String? = nil, eta: String? = nil, note: String? = nil) {
+            self.step = step
+            self.carrier = carrier
+            self.number = number
+            self.url = url
+            self.eta = eta
+            self.note = note
+        }
+
+        /// The four steps a card draws; in transit is still shipped.
+        public static let stepper = ["ordered", "shipped", "out_for_delivery", "delivered"]
+
+        /// Where the step sits on the bar; -1 for a problem or a step this phone does not know.
+        public var stepIndex: Int {
+            step == "in_transit" ? 1 : Self.stepper.firstIndex(of: step) ?? -1
+        }
+
+        public var isProblem: Bool { step == "exception" }
+    }
+
     public var kind: Kind
     /// The record the answer goes to: call_... or pay_... (never shown).
     public var id: String
@@ -74,6 +105,7 @@ public struct OutboundCardData: Codable, Hashable, Sendable {
     public var declared: Bool?
     public var mismatchTotal: String?
     public var via: String?
+    public var tracking: Tracking?
     public var error: String?
 
     /// A call the bot holds as a conversation (place_phone_call mode conversation).
@@ -92,7 +124,7 @@ public struct OutboundCardData: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case kind, id, status, botName, destination, from, callback, purpose, script, language
         case mode, objective, instructions, maxMinutes, voicemail, result
-        case merchant, amount, currency, cardLabel, items, flights, orderRef, declared, mismatchTotal, via, error
+        case merchant, amount, currency, cardLabel, items, flights, orderRef, declared, mismatchTotal, via, tracking, error
     }
 
     /// Lenient: a field this phone does not know the shape of is left out
@@ -126,6 +158,7 @@ public struct OutboundCardData: Codable, Hashable, Sendable {
         declared = try? row.decodeIfPresent(Bool.self, forKey: .declared)
         mismatchTotal = try? row.decodeIfPresent(String.self, forKey: .mismatchTotal)
         via = try? row.decodeIfPresent(String.self, forKey: .via)
+        tracking = try? row.decodeIfPresent(Tracking.self, forKey: .tracking)
         error = try? row.decodeIfPresent(String.self, forKey: .error)
     }
 }
