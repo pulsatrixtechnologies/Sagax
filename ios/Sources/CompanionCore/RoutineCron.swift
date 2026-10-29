@@ -1,10 +1,9 @@
 // Cron schedules for routines (matrix AU12), as the desktop edits them.
 //
-// The desktop's Monthly, Yearly and "Custom cron (advanced)" choices
-// (src/components/routines/cron-editor.ts, CronScheduleFields.tsx) write a
-// five-field cron expression in an explicit IANA zone; the server and the
-// editor's "Next runs" preview read it with croner (shared/routine-schedule.ts,
-// `mode: "5-part"`). This file is that calculator for the phone: the same
+// The editor's frequencies (RoutineScheduleModel, shared/schedule-model.ts)
+// write a five-field cron expression in an explicit IANA zone; the server and
+// the editor's "Next runs" preview read it with croner
+// (shared/routine-schedule.ts, `mode: "5-part"`). This file is that calculator for the phone: the same
 // field syntax, the same day rule (day of month OR day of week when both are
 // restricted), the same errors, and strictly-future runs. The server stays the
 // authority; the phone uses this to validate before saving and to preview.
@@ -269,119 +268,6 @@ public struct CronExpression: Hashable, Sendable {
             out.formUnion(stride(from: lower, through: upper, by: step))
         }
         return out
-    }
-}
-
-// MARK: - The desktop's cron editor (cron-editor.ts)
-
-/// Monthly, Yearly or a raw expression.
-public enum RoutineCronChoice: String, CaseIterable, Hashable, Sendable {
-    case monthly, yearly, cron
-}
-
-/// `CronDraft`: what the Monthly / Yearly / Custom fields hold.
-public struct RoutineCronDraft: Hashable, Sendable {
-    public var expression: String
-    public var timeZone: String
-    /// "1"..."31" or "L".
-    public var day: String
-    /// "1"..."12".
-    public var month: String
-    /// "HH:mm".
-    public var time: String
-
-    public init(expression: String, timeZone: String, day: String, month: String, time: String) {
-        self.expression = expression
-        self.timeZone = timeZone
-        self.day = day
-        self.month = month
-        self.time = time
-    }
-}
-
-public enum RoutineCronEditor {
-    struct Preset: Equatable {
-        let day: String
-        let month: String
-        let time: String
-    }
-
-    /// A Monthly or Yearly expression: "M H D|L *|MONTH *".
-    static func presetParts(_ expression: String) -> Preset? {
-        let parts = expression.trimmingCharacters(in: .whitespaces).split(whereSeparator: \.isWhitespace).map(String.init)
-        guard parts.count == 5 else { return nil }
-        let (minute, hour, day, month, weekday) = (parts[0], parts[1], parts[2], parts[3], parts[4])
-        func number(_ text: String, _ range: ClosedRange<Int>) -> Int? {
-            guard !text.isEmpty, text.allSatisfy(\.isNumber), let value = Int(text), range.contains(value) else { return nil }
-            return value
-        }
-        guard let m = number(minute, 0...59), let h = number(hour, 0...23),
-              day == "L" || number(day, 1...31) != nil,
-              month == "*" || number(month, 1...12) != nil,
-              weekday == "*"
-        else { return nil }
-        return Preset(
-            day: day == "L" ? day : String(number(day, 1...31)!),
-            month: month,
-            time: String(format: "%02d:%02d", h, m)
-        )
-    }
-
-    public static func choice(for schedule: RoutineSchedule) -> RoutineCronChoice {
-        guard let preset = presetParts(schedule.expression ?? "") else { return .cron }
-        return preset.month == "*" ? .monthly : .yearly
-    }
-
-    /// `cronDraftFor`: an existing schedule's fields, or a new one from `at`
-    /// read in this device's zone.
-    public static func draft(for schedule: RoutineSchedule?, at: Date, localZone: TimeZone = .current) -> RoutineCronDraft {
-        let zoneName = schedule?.timeZone ?? localZone.identifier
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: zoneName) ?? TimeZone(identifier: "UTC")!
-        let parts = calendar.dateComponents([.month, .day, .hour, .minute], from: at)
-        let preset = schedule.flatMap { presetParts($0.expression ?? "") }
-        let time = preset?.time ?? String(format: "%02d:%02d", parts.hour ?? 0, parts.minute ?? 0)
-        let day = preset?.day ?? String(parts.day ?? 1)
-        let minute = Int(time.suffix(2)) ?? 0
-        let hour = Int(time.prefix(2)) ?? 0
-        return RoutineCronDraft(
-            expression: schedule?.expression ?? "\(minute) \(hour) \(day) * *",
-            timeZone: zoneName,
-            day: day,
-            month: preset.flatMap { $0.month == "*" ? nil : String(Int($0.month) ?? 1) } ?? String(parts.month ?? 1),
-            time: time
-        )
-    }
-
-    public struct Value: Equatable, Sendable {
-        public var schedule: RoutineSchedule?
-        public var runs: [Date]
-        public var error: String
-    }
-
-    /// `cronEditorValue`: the schedule to save, its next three runs, or the
-    /// error to show. `unchanged` keeps an untouched expression byte for byte.
-    public static func value(
-        choice: RoutineCronChoice, draft: RoutineCronDraft, after: Date, unchanged: RoutineSchedule? = nil
-    ) -> Value {
-        do {
-            if choice != .cron, draft.time.range(of: #"^\d{2}:\d{2}$"#, options: .regularExpression) == nil {
-                throw RoutineScheduleError("Choose a time for this routine.")
-            }
-            let hour = Int(draft.time.prefix(2)) ?? 0
-            let minute = Int(draft.time.suffix(2)) ?? 0
-            let proposed = unchanged ?? .cron(
-                expression: choice == .cron
-                    ? draft.expression
-                    : "\(minute) \(hour) \(draft.day) \(choice == .yearly ? draft.month : "*") *",
-                timeZone: draft.timeZone
-            )
-            let normalized = try CronExpression.normalized(proposed, after: after)
-            let cron = try CronExpression(expression: normalized.expression ?? "", timeZone: normalized.timeZone ?? "")
-            return Value(schedule: unchanged ?? normalized, runs: cron.nextRuns(after: after, count: 3), error: "")
-        } catch {
-            return Value(schedule: nil, runs: [], error: error.localizedDescription)
-        }
     }
 }
 

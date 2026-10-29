@@ -29,7 +29,8 @@ final class CronDescribeTests: XCTestCase {
         }
     }
 
-    func testUnclearExpressionsStayRaw() {
+    /// Nil: the phone then reads "Custom schedule", never the expression.
+    func testUnclearExpressionsAreNotDescribed() {
         for expression in ["0 9 1 * 1", "0 9 ? * 1", "*/15 8,12 * * *", "61 9 * * *", "0 9 * *", "0 9 L * *", "0 9 * * 1#2"] {
             XCTAssertNil(CronDescribe.describe(expression, language: .en), expression)
             XCTAssertNil(CronDescribe.describe(expression, language: .fr), expression)

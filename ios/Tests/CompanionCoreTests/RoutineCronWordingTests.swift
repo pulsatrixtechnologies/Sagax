@@ -2,7 +2,8 @@ import XCTest
 @testable import CompanionCore
 
 /// The profile's routine rows say simple cron schedules as sentences
-/// ("Weekdays at 8:11 AM"); anything else stays raw.
+/// ("Weekdays at 8:11 AM"); anything else is described
+/// by CronDescribe or reads "Custom schedule".
 final class RoutineCronWordingTests: XCTestCase {
     private func wording(_ expression: String, zone: String? = "America/Toronto") -> RoutineSchedule.CronWording? {
         RoutineSchedule(type: .cron, expression: expression, timeZone: zone).cronWording

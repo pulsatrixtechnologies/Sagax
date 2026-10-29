@@ -466,7 +466,8 @@ async function seedThroughAPI(base) {
     prompt: "Texte de remplacement : liste les compétences les plus utilisées ce mois-ci et propose deux ajouts.",
     botId: ara,
     runOn: "maus",
-    schedule: { type: "cron", expression: "2 7 1-7 * 1", timeZone: "America/Toronto" },
+    // PARITY_ROUTINE_CRON (2026-10-29, the schedule editor's captures): another expression
+    schedule: { type: "cron", expression: process.env.PARITY_ROUTINE_CRON || "2 7 1-7 * 1", timeZone: "America/Toronto" },
     durationMinutes: 30,
   });
   const weekly = await api(base, "POST", "/api/routines", {

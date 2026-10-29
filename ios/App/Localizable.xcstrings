@@ -145,6 +145,202 @@
         "fr": { "stringUnit": { "state": "translated", "value": "aucun" } }
       }
     },
+    "Every N minutes or hours": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Every N minutes or hours" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Toutes les N minutes ou heures" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A cada N minutos ou horas" } }
+      }
+    },
+    "Certain days": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Certain days" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Certains jours" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Certos dias" } }
+      }
+    },
+    "Every month": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Every month" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chaque mois" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Todo mês" } }
+      }
+    },
+    "Every year": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Every year" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chaque année" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Todo ano" } }
+      }
+    },
+    "At minute": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "At minute" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "À la minute" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "No minuto" } }
+      }
+    },
+    "And at": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "And at" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Et à" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "E às" } }
+      }
+    },
+    "Remove this time": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Remove this time" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Retirer cette heure" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Remover este horário" } }
+      }
+    },
+    "Add a time": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Add a time" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajouter une heure" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Adicionar um horário" } }
+      }
+    },
+    "Choose a simple schedule": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Choose a simple schedule" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Choisir un horaire simple" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Escolher um horário simples" } }
+      }
+    },
+    "Next runs": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Next runs" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Prochaines exécutions" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Próximas execuções" } }
+      }
+    },
+    "Unit": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Unit" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Unité" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Unidade" } }
+      }
+    },
+    "Minutes": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Minutes" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Minutes" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Minutos" } }
+      }
+    },
+    "Hours": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Hours" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Heures" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Horas" } }
+      }
+    },
+    "1 hour": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "1 hour" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "1 heure" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "1 hora" } }
+      }
+    },
+    "%lld hours": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld hours" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%lld heures" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "%lld horas" } }
+      }
+    },
+    "hours": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "hours" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "heures" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "horas" } }
+      }
+    },
+    "Custom interval in hours": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Custom interval in hours" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Intervalle personnalisé en heures" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Intervalo personalizado em horas" } }
+      }
+    },
+    "Your time zone": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Your time zone" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Votre fuseau horaire" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Seu fuso horário" } }
+      }
+    },
+    "All time zones": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "All time zones" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Tous les fuseaux horaires" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Todos os fusos horários" } }
+      }
+    },
+    "Search a city": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Search a city" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chercher une ville" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Buscar uma cidade" } }
+      }
+    },
+    "Custom schedule": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Custom schedule" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Horaire personnalisé" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Horário personalizado" } }
+      }
+    },
+    "On the last day of the month at %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "On the last day of the month at %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le dernier jour du mois à %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "No último dia do mês às %@" } }
+      }
+    },
+    "%@ (%@ time)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%1$@ (%2$@ time)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%1$@ (heure de %2$@)" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "%1$@ (horário de %2$@)" } }
+      }
+    },
+    "Add at least one time.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Add at least one time." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajoutez au moins une heure." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Adicione pelo menos um horário." } }
+      }
+    },
+    "Times on the same day must share their minutes, such as 8:30, 12:30 and 4:30.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Times on the same day must share their minutes, such as 8:30, 12:30 and 4:30." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Les heures d'une même journée doivent avoir les mêmes minutes, par exemple 8 h 30, 12 h 30 et 16 h 30." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Os horários do mesmo dia precisam ter os mesmos minutos, como 8:30, 12:30 e 16:30." } }
+      }
+    },
+    "Choose a valid time.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Choose a valid time." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Choisissez une heure valide." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Escolha um horário válido." } }
+      }
+    },
+    "This schedule never runs: choose a date that exists.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This schedule never runs: choose a date that exists." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cet horaire ne s'exécute jamais : choisissez une date qui existe." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Este horário nunca é executado: escolha uma data que exista." } }
+      }
+    },
+    "Choose a valid schedule.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Choose a valid schedule." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Choisissez un horaire valide." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Escolha um horário válido." } }
+      }
+    },
     "Deleted routine": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Deleted routine" } },
@@ -5529,28 +5725,6 @@
         }
       }
     },
-    "Copy cron expression": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Copy cron expression"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Copier l'expression"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Copiar expressão"
-          }
-        }
-      }
-    },
     "Built-in Mac voices need no key, and this computer has none available. Switch the voice engine to ElevenLabs in Sagax on your computer to keep using voice.": {
       "localizations": {
         "en": {
@@ -8595,22 +8769,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Entrez le code affiché sur cet ordinateur"
-          }
-        }
-      }
-    },
-    "Every X minutes": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Toutes les X minutes"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A cada X minutos"
           }
         }
       }
@@ -17393,28 +17551,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@ · Pausada"
-          }
-        }
-      }
-    },
-    "Cron": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cron"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cron"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cron"
           }
         }
       }
@@ -28095,50 +28231,6 @@
         }
       }
     },
-    "Cron expression": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cron expression"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Expression cron"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Expressão cron"
-          }
-        }
-      }
-    },
-    "Custom cron (advanced)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Custom cron (advanced)"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cron personnalisé (avancé)"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cron personalizado (avançado)"
-          }
-        }
-      }
-    },
     "Custom hours…": {
       "localizations": {
         "en": {
@@ -28381,28 +28473,6 @@
         }
       }
     },
-    "Every weekday (Monday to Friday)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Every weekday (Monday to Friday)"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chaque jour de semaine (lundi au vendredi)"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Todo dia útil (segunda a sexta)"
-          }
-        }
-      }
-    },
     "Filter by bot": {
       "localizations": {
         "en": {
@@ -28535,28 +28605,6 @@
         }
       }
     },
-    "Minute · hour · day of month · month · day of week. For example, 0 9 1 * * runs at 9 am on the first of each month.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Minute · hour · day of month · month · day of week. For example, 0 9 1 * * runs at 9 am on the first of each month."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Minute · heure · jour du mois · mois · jour de la semaine. Par exemple, 0 9 1 * * s’exécute à 9 h le premier de chaque mois."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Minuto · hora · dia do mês · mês · dia da semana. Por exemplo, 0 9 1 * * roda às 9h no primeiro dia de cada mês."
-          }
-        }
-      }
-    },
     "Month": {
       "localizations": {
         "en": {
@@ -28619,28 +28667,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Meses sem esta data são pulados. Escolha Último dia para usar sempre o fim do mês."
-          }
-        }
-      }
-    },
-    "Next runs · %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Next runs · %@"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Prochaines exécutions · %@"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Próximas execuções · %@"
           }
         }
       }
@@ -29085,28 +29111,6 @@
         }
       }
     },
-    "Selected weekdays": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Selected weekdays"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Jours choisis"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Dias escolhidos"
-          }
-        }
-      }
-    },
     "Show all routines": {
       "localizations": {
         "en": {
@@ -29503,28 +29507,6 @@
         }
       }
     },
-    "Weekly on %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Weekly on %@"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Chaque semaine le %@"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Semanalmente: %@"
-          }
-        }
-      }
-    },
     "What should the team accomplish?": {
       "localizations": {
         "en": {
@@ -29543,28 +29525,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "O que a equipe deve realizar?"
-          }
-        }
-      }
-    },
-    "Yearly": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Yearly"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tous les ans"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Anualmente"
           }
         }
       }
@@ -29851,28 +29811,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Abrir conversa do grupo"
-          }
-        }
-      }
-    },
-    "Choose a time for this routine.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose a time for this routine."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choisissez une heure pour cette routine."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Escolha um horário para esta rotina."
           }
         }
       }
@@ -30247,116 +30185,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Escolha uma janela no mesmo dia de pelo menos %lld minutos."
-          }
-        }
-      }
-    },
-    "Invalid cron expression: %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Invalid cron expression: %@"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Expression cron invalide : %@"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Expressão cron inválida: %@"
-          }
-        }
-      }
-    },
-    "Cron must have five fields: minute hour day-of-month month weekday (no seconds, year, or macros)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cron must have five fields: minute hour day-of-month month weekday (no seconds, year, or macros)"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Le cron doit avoir cinq champs : minute heure jour-du-mois mois jour-de-semaine (sans secondes, année ni macros)"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "O cron deve ter cinco campos: minuto hora dia-do-mês mês dia-da-semana (sem segundos, ano ou macros)"
-          }
-        }
-      }
-    },
-    "Choose an IANA timezone such as America/New_York, Asia/Kolkata, or UTC": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose an IANA timezone such as America/New_York, Asia/Kolkata, or UTC"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choisissez un fuseau IANA comme America/New_York, Asia/Kolkata ou UTC"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Escolha um fuso IANA como America/New_York, Asia/Kolkata ou UTC"
-          }
-        }
-      }
-    },
-    "Choose a valid IANA timezone such as America/New_York, Asia/Kolkata, or UTC": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose a valid IANA timezone such as America/New_York, Asia/Kolkata, or UTC"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choisissez un fuseau IANA valide comme America/New_York, Asia/Kolkata ou UTC"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Escolha um fuso IANA válido como America/New_York, Asia/Kolkata ou UTC"
-          }
-        }
-      }
-    },
-    "This cron expression has no future runs. Choose dates that exist.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This cron expression has no future runs. Choose dates that exist."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cette expression cron n’a aucune exécution à venir. Choisissez des dates qui existent."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Esta expressão cron não tem execuções futuras. Escolha datas que existam."
           }
         }
       }

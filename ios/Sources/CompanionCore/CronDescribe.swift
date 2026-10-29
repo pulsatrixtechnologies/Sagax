@@ -3,7 +3,8 @@ import Foundation
 /// Human wording for cron expressions: lists, ranges, steps, day names, day of
 /// month and months, in French or English. A port of `shared/cron-describe.ts`
 /// (same sentences, same cases it refuses). Presentation only: nil means the
-/// expression cannot be said without guessing, so the caller shows it raw.
+/// expression cannot be said without guessing, so the caller says "Custom
+/// schedule" (never the raw expression).
 public enum CronDescribe {
     public enum Language: String, Sendable { case en, fr }
 
