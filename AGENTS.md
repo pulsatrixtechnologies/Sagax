@@ -4,7 +4,10 @@ Before every merge (and before every push, through the pre-push hook), run
 `pnpm verify:merge`: the local gate (lint, typecheck, locale catalogs, source
 terms, contrast, the guard tests that break `main` silently, the tests beside
 the files of the diff, iOS when `ios/` or `shared/` changed), a few minutes;
-no CI runs on a private PR. The full suite runs once, at the version cut.
+no CI runs on a private PR. It writes its result on the branch's pull request
+(a "verify:merge" comment with the commit it ran on): merge only a PR whose
+head commit has that OK; one without it was pushed around the gate
+(`--no-verify`). The full suite runs once, at the version cut.
 
 Before claiming a server or conversation change works, follow
 [`docs/verification/README.md`](docs/verification/README.md). Always launch an
