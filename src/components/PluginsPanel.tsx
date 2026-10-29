@@ -817,10 +817,10 @@ export function PluginsPanel() {
   const detailItem = page.page === "detail" ? items.find((item) => item.key === page.key) : undefined;
   // The breadcrumb: each page under the current one. A page opened from a
   // tab shows in that tab under Connect Apps' title: its first crumb is the
-  // tab ("Installed"); Browse Bots fills the window: Connect apps.
+  // tab ("Installed"); Browse Bots too, from Discover (2026-10-28).
   const pageLabel = (entry: Page): string => {
     switch (entry.page) {
-      case "main": return page.page === "bots" ? t("connectApps.title") : connectAppsTabLabel(tab);
+      case "main": return connectAppsTabLabel(tab);
       case "botsFor": return t("connectApps.entry.bots");
       case "detail": {
         const item = items.find((candidate) => candidate.key === entry.key);
@@ -852,9 +852,12 @@ export function PluginsPanel() {
   };
 
   // A page opened from a tab (2026-10-28): inside that tab's panel, under
-  // the title, scope and tabs (Browse Bots alone fills the window).
+  // the title, scope and tabs. Browse Bots too (2026-10-28): it opens from
+  // Discover and used to fill the window with its own title, which jumped.
   let subpage: ReactNode = null;
-  if (page.page === "skill" && (pageSkill || !page.name)) {
+  if (page.page === "bots") {
+    subpage = <BotCatalogPane onClose={close} backRef={botsBack} trail={trail} />;
+  } else if (page.page === "skill" && (pageSkill || !page.name)) {
     subpage = (
       <SkillPage
         key={page.name ?? "new"}
@@ -910,127 +913,122 @@ export function PluginsPanel() {
     setTab(next);
   };
 
-  let content;
-  if (page.page === "bots") {
-    content = <BotCatalogPane onClose={close} backRef={botsBack} trail={trail} />;
-  } else {
-    const isOrgAdmin = perspicaxOrg?.viewerRole === "admin";
-    const orgHere = isOrgAdmin && scope === "workspace" && perspicaxOrg !== null;
-    // Sources: the marketplaces only (2026-10-28)
-    const tabs: ConnectAppsTab[] = ["discover", "installed", "providers", "pages",
-      ...(marketRoute !== null || (marketSummaries?.length ?? 0) > 0 || orgHere ? ["sources" as const] : [])];
-    const groups = connectorGroups({
-      claude: harness.answer?.claude ? { available: harness.answer.claude.available, reason: harness.answer.claude.reason, connectors: harness.answer.claude.connectors ?? [], manageUrl: harness.answer.manageUrl } : null,
-      claudeLoading: harness.loading && !harness.answer,
-      grok: grokConfigured ? { connectors: GROK_CLOUD_CONNECTORS } : null,
-      codex: harness.answer?.codex ?? null,
-    });
-    content = (
-      <ConnectAppsView
-        tab={tab}
-        onTab={chooseTab}
-        page={subpage ?? undefined}
-        tabs={tabs}
-        // what "N connected" counted, on the tabs that list them (2026-10-28):
-        // the person's connected entries on Installed, the engine accounts'
-        // connectors on Providers (a bot's scope counts its plugins only)
-        counts={connectedCounts({ entries, engineConnected: scope === "bot" ? 0 : claudeConnectors })}
-        scope={scopeControl}
-        notices={notices}
-        refreshing={refreshing}
-        onRefresh={refreshAll}
-        installed={(
-          <InstalledView
-            loading={mcp.servers === null}
-            entries={entries}
-            skills={scope === "bot" ? [] : privateSkills(items)}
-            sourceLabel={pluginSourceLabel}
-            onOpenEntry={(entry) => openItem(entry.primary)}
-            onOpenSkill={openItem}
-            entryActions={entryActions}
-            onAddServer={scope === "workspace" && !mcp.restricted ? mcp.startAdd : undefined}
-            onPasteConfig={scope === "workspace" && !mcp.restricted ? mcp.toggleImport : undefined}
-            addDisabled={mcp.busy !== null}
-            onNewSkill={scope === "workspace" && skillsOn && (ownerOrAdmin !== false || libraryEditor) ? () => push({ page: "skill" }) : undefined}
-            onDiscover={() => setTab("discover")}
-            forms={scope === "workspace" ? (
-              <>
-                {mcp.restricted && mcp.policy && <p role="status" className="mb-3 text-[12.5px] leading-relaxed text-ink-secondary">{t("policy.mcpRestricted", { organization: mcp.policy.organizationName })}</p>}
-                <McpMessages mcp={mcp} />
-                <McpReservedServers mcp={mcp} />
-                <McpImportForm mcp={mcp} />
-                {mcp.editing === "new" && <div className="mb-4"><McpServerEditor mcp={mcp} /></div>}
-              </>
-            ) : undefined}
-          />
-        )}
-        discover={(
-          <DiscoverView
-            items={discoverItems(scopedItems, state.pluginsFocusApps ?? undefined)}
-            loading={mcp.servers === null || (scope === "bot" && botView === null)}
-            search={search}
-            onSearch={setSearch}
-            filter={filter}
-            onFilter={setFilter}
-            type={type}
-            onType={setType}
-            sourceLabel={pluginSourceLabel}
-            extraSources={(shownMarketplaces ?? []).map((market) => market.name)}
-            focus={state.pluginsFocusApps ?? undefined}
-            onBrowseBots={remoteClient ? undefined : () => push({ page: "bots" })}
-            onOpenItem={openItem}
-            renderAction={renderAction}
-            renderBelow={renderBelow}
-          />
-        )}
-        providers={(
-          <AccountsView
-            groups={groups}
-            service={accountService}
-            onService={setAccountService}
-            github={githubHere ? (
-              <GithubAccountSection connection={organization ? (
-                <MyGithubConnection onEnableApp={isOrgAdmin ? () => { close(); openSettings(dispatch, "organization", "organization.githubApp"); } : undefined} />
-              ) : undefined} />
-            ) : undefined}
-            refreshing={harness.loading}
-            onRefresh={() => void harness.load(true)}
-            servers={organization ? <MyMcpServers /> : undefined}
-            claudeCode={!organization && canEditConfig(state.config) ? <ClaudeMcpSwitch /> : undefined}
-            // a section with no account offers to connect it (2026-10-28):
-            // Settings > Models and voice, where each engine signs in
-            onSetUp={() => {
-              close();
-              openSettings(dispatch, "engines");
-            }}
-          />
-        )}
-        pages={<PublishedPagesSettings personal />}
-        sources={(
-          <SourcesView
-            marketplaces={marketRoute !== null || (marketSummaries?.length ?? 0) > 0 ? (
-              <MarketplacesSection
-                marketplaces={marketSummaries}
-                busy={marketBusy}
-                error={marketError}
-                onAdd={addMarketplace}
-                onRefresh={refreshMarketplace}
-                onRemove={removeMarketplace}
-                onSetVisibility={marketRoute === "workspace" ? setMarketplaceVisibility : undefined}
-                canChooseVisibility={marketRoute !== null}
-                disabled={marketRoute === null}
-                removeKeepsInstalls={marketRoute === "bot"}
-                credentials={marketCredentials}
-                needsToken={marketCredentials ? marketNeedsToken : null}
-                onOpenGithub={githubHere ? openGithub : undefined}
-              />
-            ) : undefined}
-            organization={orgHere ? <OrgSourcesAccess initial={perspicaxOrg.settings} flat /> : undefined}
-          />
-        )}
-      />
-    );
-  }
+  const isOrgAdmin = perspicaxOrg?.viewerRole === "admin";
+  const orgHere = isOrgAdmin && scope === "workspace" && perspicaxOrg !== null;
+  // Sources: the marketplaces only (2026-10-28)
+  const tabs: ConnectAppsTab[] = ["discover", "installed", "providers", "pages",
+    ...(marketRoute !== null || (marketSummaries?.length ?? 0) > 0 || orgHere ? ["sources" as const] : [])];
+  const groups = connectorGroups({
+    claude: harness.answer?.claude ? { available: harness.answer.claude.available, reason: harness.answer.claude.reason, connectors: harness.answer.claude.connectors ?? [], manageUrl: harness.answer.manageUrl } : null,
+    claudeLoading: harness.loading && !harness.answer,
+    grok: grokConfigured ? { connectors: GROK_CLOUD_CONNECTORS } : null,
+    codex: harness.answer?.codex ?? null,
+  });
+  const content = (
+    <ConnectAppsView
+      tab={tab}
+      onTab={chooseTab}
+      page={subpage ?? undefined}
+      tabs={tabs}
+      // what "N connected" counted, on the tabs that list them (2026-10-28):
+      // the person's connected entries on Installed, the engine accounts'
+      // connectors on Providers (a bot's scope counts its plugins only)
+      counts={connectedCounts({ entries, engineConnected: scope === "bot" ? 0 : claudeConnectors })}
+      scope={scopeControl}
+      notices={notices}
+      refreshing={refreshing}
+      onRefresh={refreshAll}
+      installed={(
+        <InstalledView
+          loading={mcp.servers === null}
+          entries={entries}
+          skills={scope === "bot" ? [] : privateSkills(items)}
+          sourceLabel={pluginSourceLabel}
+          onOpenEntry={(entry) => openItem(entry.primary)}
+          onOpenSkill={openItem}
+          entryActions={entryActions}
+          onAddServer={scope === "workspace" && !mcp.restricted ? mcp.startAdd : undefined}
+          onPasteConfig={scope === "workspace" && !mcp.restricted ? mcp.toggleImport : undefined}
+          addDisabled={mcp.busy !== null}
+          onNewSkill={scope === "workspace" && skillsOn && (ownerOrAdmin !== false || libraryEditor) ? () => push({ page: "skill" }) : undefined}
+          onDiscover={() => setTab("discover")}
+          forms={scope === "workspace" ? (
+            <>
+              {mcp.restricted && mcp.policy && <p role="status" className="mb-3 text-[12.5px] leading-relaxed text-ink-secondary">{t("policy.mcpRestricted", { organization: mcp.policy.organizationName })}</p>}
+              <McpMessages mcp={mcp} />
+              <McpReservedServers mcp={mcp} />
+              <McpImportForm mcp={mcp} />
+              {mcp.editing === "new" && <div className="mb-4"><McpServerEditor mcp={mcp} /></div>}
+            </>
+          ) : undefined}
+        />
+      )}
+      discover={(
+        <DiscoverView
+          items={discoverItems(scopedItems, state.pluginsFocusApps ?? undefined)}
+          loading={mcp.servers === null || (scope === "bot" && botView === null)}
+          search={search}
+          onSearch={setSearch}
+          filter={filter}
+          onFilter={setFilter}
+          type={type}
+          onType={setType}
+          sourceLabel={pluginSourceLabel}
+          extraSources={(shownMarketplaces ?? []).map((market) => market.name)}
+          focus={state.pluginsFocusApps ?? undefined}
+          onBrowseBots={remoteClient ? undefined : () => push({ page: "bots" })}
+          onOpenItem={openItem}
+          renderAction={renderAction}
+          renderBelow={renderBelow}
+        />
+      )}
+      providers={(
+        <AccountsView
+          groups={groups}
+          service={accountService}
+          onService={setAccountService}
+          github={githubHere ? (
+            <GithubAccountSection connection={organization ? (
+              <MyGithubConnection onEnableApp={isOrgAdmin ? () => { close(); openSettings(dispatch, "organization", "organization.githubApp"); } : undefined} />
+            ) : undefined} />
+          ) : undefined}
+          refreshing={harness.loading}
+          onRefresh={() => void harness.load(true)}
+          servers={organization ? <MyMcpServers /> : undefined}
+          claudeCode={!organization && canEditConfig(state.config) ? <ClaudeMcpSwitch /> : undefined}
+          // a section with no account offers to connect it (2026-10-28):
+          // Settings > Models and voice, where each engine signs in
+          onSetUp={() => {
+            close();
+            openSettings(dispatch, "engines");
+          }}
+        />
+      )}
+      pages={<PublishedPagesSettings personal />}
+      sources={(
+        <SourcesView
+          marketplaces={marketRoute !== null || (marketSummaries?.length ?? 0) > 0 ? (
+            <MarketplacesSection
+              marketplaces={marketSummaries}
+              busy={marketBusy}
+              error={marketError}
+              onAdd={addMarketplace}
+              onRefresh={refreshMarketplace}
+              onRemove={removeMarketplace}
+              onSetVisibility={marketRoute === "workspace" ? setMarketplaceVisibility : undefined}
+              canChooseVisibility={marketRoute !== null}
+              disabled={marketRoute === null}
+              removeKeepsInstalls={marketRoute === "bot"}
+              credentials={marketCredentials}
+              needsToken={marketCredentials ? marketNeedsToken : null}
+              onOpenGithub={githubHere ? openGithub : undefined}
+            />
+          ) : undefined}
+          organization={orgHere ? <OrgSourcesAccess initial={perspicaxOrg.settings} flat /> : undefined}
+        />
+      )}
+    />
+  );
 
   return (
     <div
@@ -1046,7 +1044,7 @@ export function PluginsPanel() {
         data-plugins-depth={stack.length - 1}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={page.page === "bots" ? "bot-catalog-title" : "plugins-title"}
+        aria-labelledby="plugins-title"
         tabIndex={-1}
         className={cn("animate-pop-in", CATEGORY_MODAL.frame)}
       >

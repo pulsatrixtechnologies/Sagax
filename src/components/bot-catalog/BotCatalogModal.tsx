@@ -650,14 +650,15 @@ export function BotCatalogPane({ onClose, backRef, trail }: BotCatalogPaneProps)
         />
       ) : tool && templateToolsOn ? (
         <div className="flex min-h-0 flex-1 flex-col" data-catalog-tools="">
-          <header className={CATEGORY_MODAL.titleBar}>
+          {/* inside Connect Apps: its back row only, under its title and tabs (2026-10-28) */}
+          <header className={trail && trail.length > 0 ? "shrink-0 px-4 pt-3 sm:px-8" : CATEGORY_MODAL.titleBar}>
             <Breadcrumb
               trail={[...(trail ?? []), { label: t("botCatalog.title"), onSelect: () => { setTool(null); setInstallUrl(undefined); } }]}
               current={t("botCatalog.section.templates")}
               onBack={() => { if (!toolsBack.current?.()) { setTool(null); setInstallUrl(undefined); } }}
               backData={{ "data-catalog-back": "" }}
             />
-            <h2 id="bot-catalog-title" className={CATEGORY_MODAL.title}>{t("botCatalog.section.templates")}</h2>
+            <h2 id="bot-catalog-title" className={trail && trail.length > 0 ? "sr-only" : CATEGORY_MODAL.title}>{t("botCatalog.section.templates")}</h2>
           </header>
           <TemplateTools tool={tool} onTool={setTool} installUrl={installUrl} onImported={teamImported} backRef={toolsBack} />
         </div>

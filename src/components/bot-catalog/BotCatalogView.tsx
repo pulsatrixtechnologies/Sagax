@@ -227,28 +227,52 @@ export function BotCatalogView(props: BotCatalogViewProps) {
   const nothing = sections.every((section) => section.items.length === 0);
   // The pages above: the host window's, then Browse Bots itself under View all.
   const crumbs: Crumb[] = [...(props.trail ?? []), ...(expanded ? [{ label: t("botCatalog.title"), onSelect: () => onExpand(null) }] : [])];
+  const inside = (props.trail?.length ?? 0) > 0;
+  const current = expanded ? t(SECTION_LABEL[expanded]) : t("botCatalog.title");
+  const onBack = expanded ? () => onExpand(null) : () => crumbs[crumbs.length - 1]?.onSelect();
+  const searchBox = (
+    <label className={CATEGORY_MODAL.search}>
+      <Search size={16} className="shrink-0 text-ink-secondary" aria-hidden="true" />
+      <input
+        value={query}
+        onChange={(event) => onQuery(event.target.value)}
+        placeholder={t("botCatalog.searchPlaceholder")}
+        aria-label={t("botCatalog.searchPlaceholder")}
+        data-catalog-search=""
+        className={CATEGORY_MODAL.searchInput}
+      />
+    </label>
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col" data-bot-catalog-home="">
-      <header className={CATEGORY_MODAL.titleBar}>
-        {crumbs.length > 0 && (
-          <Breadcrumb
-            trail={crumbs}
-            current={expanded ? t(SECTION_LABEL[expanded]) : t("botCatalog.title")}
-            onBack={expanded ? () => onExpand(null) : crumbs[crumbs.length - 1]!.onSelect}
-            backData={{ "data-catalog-back": "" }}
-          />
-        )}
-        <h2 id="bot-catalog-title" className={CATEGORY_MODAL.title}>
-          {expanded ? t(SECTION_LABEL[expanded]) : t("botCatalog.title")}
-        </h2>
-        {!expanded && (
-          <p className={CATEGORY_MODAL.subtitle}>{organization ? t("botCatalog.subtitle") : t("botCatalog.subtitleSolo")}</p>
-        )}
-      </header>
+      {inside ? (
+        // Inside Connect Apps (2026-10-28): a page of its Discover tab, as a
+        // plugin's or a skill's page. Connect Apps' title, scope and tabs stay
+        // above; here only the back row, never a second big title.
+        <div className="shrink-0 px-4 pt-3 sm:px-8" data-plugins-page-bar="" data-catalog-page-bar="">
+          <Breadcrumb trail={crumbs} current={current} onBack={onBack} backData={{ "data-catalog-back": "" }} />
+          <h2 id="bot-catalog-title" className="sr-only">{current}</h2>
+          {!expanded && (
+            <p className="mt-1 text-[12.5px] leading-[18px] text-ink-secondary" data-catalog-subtitle="">{organization ? t("botCatalog.subtitle") : t("botCatalog.subtitleSolo")}</p>
+          )}
+        </div>
+      ) : (
+        <header className={CATEGORY_MODAL.titleBar}>
+          {crumbs.length > 0 && (
+            <Breadcrumb trail={crumbs} current={current} onBack={onBack} backData={{ "data-catalog-back": "" }} />
+          )}
+          <h2 id="bot-catalog-title" className={CATEGORY_MODAL.title}>{current}</h2>
+          {!expanded && (
+            <p className={CATEGORY_MODAL.subtitle}>{organization ? t("botCatalog.subtitle") : t("botCatalog.subtitleSolo")}</p>
+          )}
+        </header>
+      )}
 
-      <div className={CATEGORY_MODAL.toolbar}>
-        <div className={CATEGORY_MODAL.chips} role="toolbar" aria-label={t("botCatalog.categoriesAria")} data-catalog-chips="">
+      <div className={cn(CATEGORY_MODAL.toolbar, inside && "pt-3")}>
+        {/* Inside Connect Apps: the search, then the chips, as its Discover tab */}
+        {inside && <div className="flex items-center gap-2">{searchBox}</div>}
+        <div className={cn(CATEGORY_MODAL.chips, inside && "mt-3")} role="toolbar" aria-label={t("botCatalog.categoriesAria")} data-catalog-chips="">
           {categories.map((chip) => (
             <button
               key={chip}
@@ -262,17 +286,7 @@ export function BotCatalogView(props: BotCatalogViewProps) {
             </button>
           ))}
         </div>
-        <label className={cn(CATEGORY_MODAL.search, "mt-3")}>
-          <Search size={16} className="shrink-0 text-ink-secondary" aria-hidden="true" />
-          <input
-            value={query}
-            onChange={(event) => onQuery(event.target.value)}
-            placeholder={t("botCatalog.searchPlaceholder")}
-            aria-label={t("botCatalog.searchPlaceholder")}
-            data-catalog-search=""
-            className={CATEGORY_MODAL.searchInput}
-          />
-        </label>
+        {!inside && <div className="mt-3 flex">{searchBox}</div>}
         {expanded === "templates" && props.templateApps && props.templateApps.length > 0 && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5" role="toolbar" aria-label={t("botCatalog.template.appsAria")} data-catalog-app-chips="">
             <span className="mr-1 text-[12px] text-ink-tertiary">{t("botCatalog.template.uses")}</span>

@@ -125,7 +125,8 @@ export function BotCatalogDetailView({ item, content, loading, tab, onTab, onBac
   const template = item.kind === "template" ? item.template : null;
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain" data-bot-catalog-detail={item.key}>
-      <div className="shrink-0 px-6 pr-14 pt-5 sm:px-8" data-catalog-header="">
+      {/* inside Connect Apps, the back row sits where a plugin's page has it (2026-10-28) */}
+      <div className={trail && trail.length > 0 ? "shrink-0 px-4 pt-3 sm:px-8" : "shrink-0 px-6 pr-14 pt-5 sm:px-8"} data-catalog-header="">
         {trail && trail.length > 0 ? (
           <Breadcrumb
             trail={[...trail, { label: t("botCatalog.title"), onSelect: onBack }]}

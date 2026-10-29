@@ -224,6 +224,22 @@ describe("the home pane", () => {
     expect(all).toMatch(/>Connect apps<[\s\S]*?>Browse Bots<[\s\S]*?aria-current="page"[^>]*>Templates</);
   });
 
+  it("inside Connect apps it is a page of Discover: a back row, no second big title, the search then the chips (2026-10-28)", () => {
+    const inside = view({ trail: [{ label: "Discover", onSelect: () => {} }] });
+    expect(inside).toContain("data-plugins-page-bar");
+    expect(inside).not.toContain(`class="${CATEGORY_MODAL.title}"`);
+    expect(inside).toMatch(/<h2 id="bot-catalog-title" class="sr-only">Browse Bots<\/h2>/);
+    // the subtitle stays, as a line under the back row
+    expect(inside).toContain("data-catalog-subtitle");
+    // the search first, then the chips, as Connect apps' Discover
+    expect(inside.indexOf("data-catalog-search")).toBeLessThan(inside.indexOf("data-catalog-chips"));
+    expect(inside).toContain(`class="${CATEGORY_MODAL.chips}`);
+    // opened alone: unchanged, the title, the chips, then the search
+    const alone = view();
+    expect(alone).toContain(`class="${CATEGORY_MODAL.title}"`);
+    expect(alone.indexOf("data-catalog-chips")).toBeLessThan(alone.indexOf("data-catalog-search"));
+  });
+
   it("says so when a search finds nothing", () => {
     const sections = catalogSections({ organization: true, entries }, templates, { ...filter, query: "zzz" });
     expect(view({ sections, query: "zzz" })).toContain("No bot matches this search.");
