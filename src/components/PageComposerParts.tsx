@@ -6,14 +6,14 @@
 //     latest answer in one line, with its avatar ("On it", then its reply),
 //     so the person talks to the bot without closing the page.
 import { t } from "@/lib/i18n";
-import { openPagePanel } from "@/lib/open-page";
+import { openPage } from "@/lib/open-page";
 import type { Message } from "@/state/store";
 import { PageGlyph } from "./PageViewer";
 
 export function PageRefChip({ page, botId, threadId }: { page: { pageId: string; title: string; version?: number }; botId: string; threadId: string }) {
   return (
     <button type="button" data-page-ref={page.pageId} title={t("pages.cardOpen", { title: page.title })}
-      onClick={() => openPagePanel({ pageId: page.pageId, botId, threadId, title: page.title })}
+      onClick={() => void openPage({ pageId: page.pageId, botId, threadId, title: page.title })}
       className="mb-1.5 inline-flex max-w-full items-center gap-1.5 rounded-lg bg-black/5 px-2 py-1 text-[12px] font-medium text-ink hover:bg-black/10 dark:bg-white/10 dark:hover:bg-white/15">
       <PageGlyph size={16} className="rounded-[4px]" />
       <span className="min-w-0 truncate">{page.title || t("pages.untitled")}</span>

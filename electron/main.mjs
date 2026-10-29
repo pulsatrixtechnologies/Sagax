@@ -14,6 +14,7 @@ import { finishSpeech, startSpeech, stopSpeech } from "./speech.mjs";
 import { openBlankTerminal } from "./terminal-launch.mjs";
 import { pasteMenuItem } from "./paste-menu-item.mjs";
 import { blockPageFrameNavigation } from "./page-frame-guard.mjs";
+import { installPageFrameWatch } from "./page-frames.mjs";
 import { attachUpdaterWindow, startUpdater, registerUpdaterIpc } from "./updater.mjs";
 import {
   buildDiagnosticsReport,
@@ -2859,10 +2860,21 @@ function bundledUiDevOrigin() {
   if (app.isPackaged || process.env.SAGAX_BUNDLED_UI_DIR) return null;
   return new URL(DEV_URL).origin;
 }
-// The page frames a window is loading as an iframe (will-frame-navigate
-// below): passed through net.fetch, they would otherwise say "empty" and the
-// server refuses a page frame that is not an iframe (blank card, 0.8.12).
+// The page frames a window is loading as an iframe (noted by
+// installPageFrameWatch below): passed through net.fetch, they would
+// otherwise say "empty" and the server refuses a page frame that is not an
+// iframe (blank card, 0.8.12).
 const bundledPageFrames = bundledUiModule.createPageFrameLoads();
+// Every window of this app, present and future (the main window and each
+// account's page, an artifact's or a page's own window, the Data window, the
+// floating bots, Hibou 98): a published page's frame is guarded and noted
+// from here, once, for each WebContents the app creates. No window module
+// hooks will-frame-navigate for a page frame itself (electron/page-frames.mjs).
+installPageFrameWatch(app, {
+  block: blockPageFrameNavigation,
+  expect: (url) => bundledPageFrames.expect(url),
+  log: (line) => slog(line),
+});
 const bundledUiHandler = bundledUiModule.createBundledUiHandler({
   origin: () => bundledOriginsNow,
   staticDir: bundledUiStaticDir,
@@ -3684,18 +3696,11 @@ function wireAccountPage(win, contents) {
   contents.on("will-redirect", guardNavigation);
   // Subframes: a page may not embed the local server, or any other saved
   // server, inside this preload-bearing window.
+  // A published page's frame (its guard, and the note the bundled UI handler
+  // needs) is watched for every window in one place: installPageFrameWatch
+  // (electron/page-frames.mjs), never here.
   contents.on("will-frame-navigate", (details) => {
     if (details.isMainFrame) return;
-    // A published page's preview frame may only reload its own address
-    // (electron/page-frame-guard.mjs): never carry data out by navigating.
-    if (blockPageFrameNavigation(details)) {
-      details.preventDefault();
-      slog("blocked a published page's frame navigation");
-      return;
-    }
-    // a subframe loading a published page's frame: the bundled UI handler
-    // tells the server it is an iframe, as the browser would
-    if (bundledUiModule.isPageFrameUrl(details.url)) bundledPageFrames.expect(details.url);
     let target = null;
     let page = null;
     try {
@@ -4559,8 +4564,6 @@ const artifactWindows = createArtifactWindows({
   // the page on screen drives it (each account has its page)
   getMainWindow: () => pageHandle(mainPage()),
   isTrustedMain: (event) => isDesktopUiSender(event),
-  blockFrame: blockPageFrameNavigation,
-  expectFrame: (url) => bundledPageFrames.expect(url),
   openExternal: (url) => {
     try {
       void shell.openExternal(externalOpenUrl(url)).catch(() => {});

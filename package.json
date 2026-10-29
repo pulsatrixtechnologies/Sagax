@@ -48,6 +48,7 @@
     "typecheck": "tsc -b && tsc -p tsconfig.server.json && tsc -p tsconfig.gallery.json",
     "test": "vitest run && pnpm test:electron && pnpm test:packaged-server",
     "test:electron": "node --test \"electron/*.node-test.mjs\"",
+    "test:pages-open": "vite build && vitest run scripts/testing/pages-open-ui.e2e.test.ts",
     "voice:acceptance": "node --experimental-transform-types --import ./scripts/voice-benchmark/register-asset-urls.mjs scripts/voice-benchmark/cli.ts",
     "voice:acceptance:real": "node --experimental-transform-types --import ./scripts/voice-benchmark/register-asset-urls.mjs scripts/voice-benchmark/cli.ts --profile real",
     "bench:observation": "node --experimental-strip-types scripts/bench-observation.ts",

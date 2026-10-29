@@ -1,8 +1,10 @@
 // A published page, open (2026-10-28, the reference design's page view):
 // over its conversation as a full panel (ChatView), or in a system window of
-// its own (src/lib/page-windows.ts: the Library, Settings, « Open in a
-// window »). Never a window drawn inside Sagax. One surface for both, so they
-// show the same page and offer the same actions:
+// its own (ArtifactStandaloneWindow). Where it opens is decided in one place,
+// openPage (src/lib/open-page.ts), for the card, the Library, Settings and
+// « Open in a window ». Never a window drawn inside Sagax. One surface for
+// both, and one frame (PageFrame, also the card's thumbnail), so they show
+// the same page and offer the same actions:
 //   - top left, a round × that closes it (back to the conversation, at the
 //     same place: the conversation stays mounted under the panel);
 //   - top centre, the title pill: a click turns it into a field (pencil),
@@ -24,7 +26,7 @@
 // posts to this window; a message counts only when it comes from that very
 // frame, and its fields are plain text (parseAnnotationMessage). Nothing
 // reaches a bot until the person presses Send.
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { BarChart3, Check, Ellipsis, Highlighter, History, Loader2, MessageSquare, Pencil, Play, Save, Send, Share, Trash2, X, XCircle } from "lucide-react";
 
 import { cn } from "@/lib/cn";
@@ -162,6 +164,40 @@ export function PageTitlePill({ title, busy, onRename }: { title: string; busy?:
         className="w-[min(40vw,320px)] min-w-0 bg-transparent text-[13px] font-medium text-ink outline-none" />
       <Pencil size={13} aria-hidden="true" className="shrink-0 text-ink-secondary" />
     </form>
+  );
+}
+
+/**
+ * The one frame a published page is drawn in, wherever it is shown: the
+ * open page (PageSurface, over a conversation or in a window of its own)
+ * and the card's thumbnail. Only a preview address previewSrc accepted is
+ * ever given to it. No referrer (the bundled UI handler must never take the
+ * page for the app's own request), no permissions, a transparent box in the
+ * app's colour scheme. A thumbnail is inert: no focus, no pointer, lazy.
+ */
+export function PageFrame({ src, title = "", theme, thumbnail = false, frameRef, className }: {
+  src: string;
+  title?: string;
+  theme: "light" | "dark";
+  thumbnail?: boolean;
+  frameRef?: Ref<HTMLIFrameElement>;
+  className?: string;
+}) {
+  return (
+    <iframe
+      // a new address (mode, theme, a new version) draws the frame again
+      key={src}
+      ref={frameRef}
+      data-page-viewer-frame={thumbnail ? undefined : ""}
+      data-page-thumb-frame={thumbnail ? "" : undefined}
+      title={title}
+      src={src}
+      referrerPolicy="no-referrer"
+      allow=""
+      {...(thumbnail ? { tabIndex: -1, loading: "lazy" as const } : {})}
+      className={cn("border-0 bg-transparent", className)}
+      style={{ colorScheme: theme }}
+    />
   );
 }
 
@@ -412,9 +448,7 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
           ) : failed && !src ? (
             <PageUnavailable kind="failed" detail={error} onClose={onClose} />
           ) : src ? (
-            // a new address (mode, theme, a new version) draws the frame again
-            <iframe key={src} ref={frameRef} data-page-viewer-frame title={t("pages.previewTitle", { title })} src={src}
-              referrerPolicy="no-referrer" allow="" className="min-h-0 w-full flex-1 border-0 bg-transparent" style={{ colorScheme: theme }} />
+            <PageFrame src={src} frameRef={frameRef} title={t("pages.previewTitle", { title })} theme={theme} className="min-h-0 w-full flex-1" />
           ) : (
             <div className="flex flex-1 items-center justify-center"><Loader2 size={16} className="animate-spin text-ink-secondary" /></div>
           )}

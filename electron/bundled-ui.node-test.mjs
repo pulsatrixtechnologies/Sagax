@@ -2,7 +2,7 @@
 // (bundled-ui.cjs), the preload's bundled-page bridge, the desktop-UI IPC
 // gate (local-origin.cjs) and main's wiring of both.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -190,15 +190,20 @@ test("a page frame a window loads as an iframe tells the server so; nothing else
   assert.equal(fetched[4].headers.get("sec-fetch-dest"), null);
 });
 
-test("main notes a subframe's page frame load for the bundled UI handler, after the frame guard", () => {
+test("main guards and notes every window's page frames in one place (electron/page-frames.mjs), never per window", () => {
   const main = sourceText(readFileSync(new URL("./main.mjs", import.meta.url), "utf8"));
   assert.match(main, /const bundledPageFrames = bundledUiModule\.createPageFrameLoads\(\);/);
   assert.match(main, /pageFrames: bundledPageFrames,/);
-  const guard = main.indexOf("if (blockPageFrameNavigation(details)) {");
-  const note = main.indexOf("if (bundledUiModule.isPageFrameUrl(details.url)) bundledPageFrames.expect(details.url);");
-  assert.ok(guard > 0 && note > guard, "noted only once the guard let it go");
-  const block = main.slice(main.lastIndexOf('contents.on("will-frame-navigate"', note), note);
-  assert.match(block, /^contents\.on\("will-frame-navigate", \(details\) => \{\n    if \(details\.isMainFrame\) return;/, "subframes only");
+  assert.match(main, /installPageFrameWatch\(app, \{\n  block: blockPageFrameNavigation,\n  expect: \(url\) => bundledPageFrames\.expect\(url\),/);
+  // the note and the guard are called from that one hook only
+  assert.equal(main.match(/bundledPageFrames\.expect\(/g).length, 1, "bundledPageFrames.expect is called once, in installPageFrameWatch");
+  assert.equal((main.match(/blockPageFrameNavigation\(/g) ?? []).length, 0, "the guard is handed to installPageFrameWatch, never called by a window");
+  assert.doesNotMatch(main, /blockFrame|expectFrame/, "no window module takes a page frame hook");
+  // no other module of the app hooks will-frame-navigate for a page frame
+  const dir = new URL("./", import.meta.url);
+  const hooked = readdirSync(dir).filter((name) => /\.(?:mjs|cjs)$/.test(name) && !/node-test|\.test\.|fixtures/.test(name))
+    .filter((name) => /\.on\("will-frame-navigate"/.test(sourceText(readFileSync(new URL(name, dir), "utf8"))));
+  assert.deepEqual(hooked.sort(), ["main.mjs", "page-frames.mjs"], "main (origins) and page-frames (page frames) only");
 });
 
 test("every saved organization server is drawn from the bundle, and each one's session rides with its own page only", async () => {

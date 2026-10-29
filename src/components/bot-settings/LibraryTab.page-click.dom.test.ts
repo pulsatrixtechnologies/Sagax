@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
-// A click on a page in the Library opens the full panel over the conversation
-// (the open-page store the chat card writes to), never a system window.
+// A click on a page in the Library opens it the one way every page opens
+// (openPage, src/lib/open-page.ts): the full panel over the conversation
+// while that conversation is on screen, else a window of its own, never a
+// panel that shows nothing.
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setLocale } from "@/lib/i18n";
-import { closePagePanel, currentOpenPage } from "@/lib/open-page";
+import { currentOpenPage, registerPagePanelHost, resetOpenPage } from "@/lib/open-page";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -30,7 +32,7 @@ afterEach(() => {
   act(() => root?.unmount());
   root = null;
   document.body.innerHTML = "";
-  closePagePanel();
+  resetOpenPage();
   windowOpen.mockClear();
   artifactWindowOpen.mockClear();
 });
@@ -43,12 +45,20 @@ function mount() {
   return host;
 }
 
-describe("Library: a page opens the full panel", () => {
-  it("a click on the row opens the panel, not a window", () => {
+describe("Library: a page opens the one way", () => {
+  it("with the bot's conversation on screen, a click on the row opens the panel, not a window", async () => {
+    registerPagePanelHost("bot1");
     const host = mount();
-    act(() => host.querySelector<HTMLElement>("[data-page-open]")!.click());
+    await act(async () => { host.querySelector<HTMLElement>("[data-page-open]")!.click(); });
     expect(currentOpenPage()).toMatchObject({ pageId: "pageAAAA1111", botId: "bot1", threadId: "t1", title: "Weekly KPIs" });
     expect(artifactWindowOpen).not.toHaveBeenCalled();
     expect(windowOpen).not.toHaveBeenCalled();
+  });
+
+  it("without that conversation on screen, the page opens in a window of its own instead of nowhere", async () => {
+    const host = mount();
+    await act(async () => { host.querySelector<HTMLElement>("[data-page-open]")!.click(); });
+    expect(currentOpenPage()).toBeNull();
+    expect(artifactWindowOpen).toHaveBeenCalledWith({ botId: "bot1", artifactId: "page:pageAAAA1111", title: "Weekly KPIs" });
   });
 });
