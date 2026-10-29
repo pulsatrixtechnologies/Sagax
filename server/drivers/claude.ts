@@ -546,6 +546,9 @@ export const CLAUDE_FLAG_FLOORS = {
   // A one-shot helper with no built-in tool (oneShotIsolationArgs). Placed
   // conservatively: an older CLI keeps the plain one-shot it always had.
   "--tools": [2, 1, 0],
+  // Claude in Chrome off (2026-10-28): placed conservatively after the
+  // integration's 2.0 releases; an older CLI never had it to turn off.
+  "--no-chrome": [2, 1, 0],
 } as const satisfies Record<string, ClaudeCliVersion>;
 
 /** The only built-in tools a guest's turn on a Cloud home gets
@@ -2069,6 +2072,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // tells a folded steer from one that runs next (CLAUDE_REPLAY_FLOOR).
       const replaysUserMessages = cliVersion === null || versionAtLeast(cliVersion, CLAUDE_REPLAY_FLOOR);
       if (replaysUserMessages) args.push("--replay-user-messages");
+      // Never the Claude in Chrome extension (2026-10-28): with it on, a bot
+      // asked for "the latest video of" someone drove the person's own Chrome
+      // in front of them, with no banner and no Stop. Web work goes to web
+      // search, fetch and the built-in browser, out of sight; the person's
+      // own Chrome is reached through My Chrome or this computer, both
+      // announced and stoppable (HOST_SCREEN_RULE, server/surface.ts).
+      if (claudeCliSupports(cliVersion, "--no-chrome")) args.push("--no-chrome");
       const isolated = !inheritsUserConfig(turnEnvironment);
       // A guest's confined turn never gets anyone's connectors. Standing
       // allow rules (SAGAX_CLAUDE_ALLOW) may name mcp__claude_ai_ tools; deny

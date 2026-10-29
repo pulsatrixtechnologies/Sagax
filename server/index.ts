@@ -120,6 +120,7 @@ import {
   type CredentialTargetId,
 } from "../shared/credential-request.ts";
 import { VAULT_LOGIN_TARGET, ONE_PASSWORD_WAITING } from "../shared/credential-vault.ts";
+import { HOST_COMPUTER_RESOURCE, HOST_CONTROL_NOTICE } from "../shared/host-control.ts";
 import { CredentialVault, fillResolverFor, LOCAL_VAULT_PRINCIPAL } from "./credential-vault.ts";
 import { outboundWiring, primaryOutboundDecision, primaryPurchaseCard } from "./outbound-wiring.ts";
 import { OnePassword } from "./onepassword.ts";
@@ -1070,7 +1071,7 @@ import { createSecurityKeyRoutes, securityKeyCeremonyRoutes, settingsStepUp } fr
 import { SETTINGS_ACTION_CLASS, STEP_UP_CLASSES, approvalModeLoosens, botActClasses, toolChangesRules, type StepUpAnswer, type StepUpClass, type StepUpRefusal, type StepUpSettingsAction } from "../shared/step-up.ts";
 import { createComputerStatusRoutes, diskStateForFree } from "./routes/computer-status.ts";
 import { createComputerCareRoutes } from "./routes/computer-care.ts";
-import { createComputerWorkingBotsRoutes, type WorkingBotsRefusal } from "./routes/computer-working-bots.ts";
+import { createComputerWorkingBotsRoutes, HOST_CONTROL_PATH, type WorkingBotsRefusal } from "./routes/computer-working-bots.ts";
 import { workingBots, type WorkingBotHold } from "./computer-working-bots.ts";
 import { createBrowserNetworkRoutes } from "./routes/browser-network.ts";
 import { createMyChromeRoutes } from "./routes/my-chrome.ts";
@@ -4878,6 +4879,13 @@ async function bindTurnComputer(owner: TurnOwner, resource: string, exclusive = 
   }
   turnResourceOwners.set(owner.threadId, owner);
   turnComputerResources.set(owner.threadId, { owner, resource });
+  // This computer's own screen (2026-10-28): the turn's first screen action
+  // says so in the conversation, whatever the model said before it; the
+  // banner with Stop reads the same seat (GET /api/computer/host-control).
+  if (exclusive && resource === HOST_COMPUTER_RESOURCE && !owner.hostControlAnnounced && turnResources.owns(resource, owner)) {
+    owner.hostControlAnnounced = true;
+    store.appendMessage(owner.threadId, { role: "bot", kind: "activity", tool: { name: HOST_CONTROL_NOTICE, ok: true } });
+  }
 }
 
 function botForThread(botId: string, threadId: string): BotRecord | null {
@@ -15421,7 +15429,7 @@ async function mountHostComputer(owner: TurnOwner, botId: string, providerSuppor
   await bindTurnComputer(owner, "computer:host");
   autoVmClaims.set(owner.threadId, {
     owner, lazy: true, label: "this computer", onRejected,
-    claim: () => bindTurnComputer(owner, "computer:host", true),
+    claim: () => bindTurnComputer(owner, HOST_COMPUTER_RESOURCE, true),
   });
   return gatedLocalComputer(cua, controlIntegration(botId, owner.threadId, owner.generation, "this computer"));
 }
@@ -22423,7 +22431,7 @@ async function startTurn(
             label: "this computer",
             onRejected: surfaceLazyClaimRejection("this computer"),
             claim: async () => {
-              await bindTurnComputer(resourceOwner, "computer:host", true);
+              await bindTurnComputer(resourceOwner, HOST_COMPUTER_RESOURCE, true);
             },
           });
           integrations.localComputer = gatedLocalComputer(cua, controlIntegration(bot.id, threadId, dispatchClaimId, "this computer"));
@@ -22550,14 +22558,17 @@ async function startTurn(
       }
       // One place per turn. On Auto the branches above may have reached a
       // computer; then the built-in browser stays unmounted and web work
-      // happens in that computer's own browser, where the person can see it.
+      // happens in that computer's own browser. Not on this computer, the
+      // person's own screen (2026-10-28): the built-in browser stays beside
+      // it, so a lookup never opens a window in front of them
+      // (HOST_SCREEN_RULE in server/surface.ts).
       const mountedComputer = surfaceOfComputerKind(computerKind);
       if (computerKind === "local") hostScreenTurns.set(threadId, { botId: bot.id, generation: dispatchClaimId });
       else hostScreenTurns.delete(threadId);
       if (
         liveBot &&
         plan.browser &&
-        !(plan.computer === undefined && mountedComputer) &&
+        !(plan.computer === undefined && mountedComputer && mountedComputer !== "local") &&
         // On the person's computer, web pages open in their own browser
         // (sagax-desktop browse), on their network, not on this server.
         // Auto keeps the built-in browser: it is one of the places it picks.
@@ -31812,6 +31823,24 @@ ROUTES.push(createComputerWorkingBotsRoutes({
     botName: (botId) => store.bot(botId)?.name ?? null,
   }),
 }));
+// The banner across the app while a bot controls this computer's own screen
+// (2026-10-28, shared/host-control.ts): the turn holding the computer:host
+// seat, with Stop through the ordinary task stop. Same gate as the list
+// above; an organization server never drives its own host, so it answers
+// 404 and the app stops asking.
+ROUTES.push(createComputerWorkingBotsRoutes({
+  guard: (auth) => IDENTITY.kind === "perspicax"
+    ? { status: 404, body: { error: "This server never controls its own screen.", code: "host_control_unavailable" } }
+    : localComputerManagementRefusal(auth),
+  list: async () => workingBots({
+    holders: () => {
+      const owner = turnResources.holder(HOST_COMPUTER_RESOURCE);
+      const bot = owner ? store.botByThread(owner.threadId) : undefined;
+      return owner && bot ? [{ botId: bot.id, threadId: owner.threadId }] : [];
+    },
+    botName: (botId) => store.bot(botId)?.name ?? null,
+  }),
+}, HOST_CONTROL_PATH));
 // Settings > Computer: scheduled update in a maintenance window and the disk
 // saver (server/computer-care.ts, server/routes/computer-care.ts), for the
 // same computers as the routes above.

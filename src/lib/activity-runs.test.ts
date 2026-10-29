@@ -389,6 +389,15 @@ describe("1Password waiting row (parité R10)", () => {
   });
 });
 
+describe("this computer's control line (2026-10-28)", () => {
+  it("is a notice the chat keeps, in the reader's language", async () => {
+    const { HOST_CONTROL_NOTICE } = await import("../../shared/host-control");
+    const message = { id: "h", role: "bot", kind: "activity", at: 1, tool: { name: HOST_CONTROL_NOTICE, ok: true } } as Message;
+    expect(isHiddenStatusActivity(message)).toBe(false);
+    expect(statusActivity(message)).toEqual({ kind: "notice", text: "The bot is now controlling this computer: its screen, mouse and keyboard. Stop it at any time with Stop." });
+  });
+});
+
 describe("the connector switch line (review of #943)", () => {
   it("reads in the person's language, from the structured line", () => {
     const message: Message = { id: "cs", at: 1, role: "bot", kind: "activity", tool: { name: "notice: Switched to Claude for Gmail.", ok: true, connectorSwitch: { engine: "Claude", connector: "Gmail" } } };

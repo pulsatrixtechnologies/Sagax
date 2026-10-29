@@ -10,6 +10,10 @@ export type TurnOwner = {
    * wait ceiling: the lazy-claim rejection path registers the resume from
    * it, and the completion fold settles the turn as parked, not failed. */
   computerParkedOn?: string;
+  /** Set once Sagax told the conversation this turn now controls this
+   * computer (HOST_CONTROL_NOTICE): one line per turn, at its first screen
+   * action, however many calls follow. */
+  hostControlAnnounced?: boolean;
 };
 
 /** One harness owns the data directory. Claims are synchronous and last for
@@ -105,6 +109,11 @@ export class TurnResources {
     }
     this.owners.set(resource, owner);
     return true;
+  }
+
+  /** The turn holding a resource now, if any (the host-control banner). */
+  holder(resource: string): TurnOwner | undefined {
+    return this.owners.get(resource);
   }
 
   owns(resource: string, owner: TurnOwner): boolean {

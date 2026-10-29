@@ -8,6 +8,7 @@ import {
   cloudPlaceRefusal,
   computerSkippedNote,
   honouredPin,
+  HOST_SCREEN_RULE,
   computerToolsRefusal,
   parseSurface,
   placeUnavailable,
@@ -48,11 +49,20 @@ describe("resolveSurface", () => {
   });
 
   it("a computer destination mounts only that computer: one place per turn", () => {
-    for (const destination of ["cloud", "vm", "local"] as const) {
+    for (const destination of ["cloud", "vm"] as const) {
       // the bot's browser switch no longer adds a second place next to a computer
       expect(resolveSurface({ destination, browserOn: true })).toEqual({ computer: destination, browser: false, pinned: null, note: "" });
       expect(resolveSurface({ destination, browserOn: false })).toMatchObject({ computer: destination, browser: false });
     }
+  });
+
+  it("this computer, the person's own screen, keeps the out-of-sight browser beside it (2026-10-28)", () => {
+    expect(resolveSurface({ destination: "local", browserOn: true })).toEqual({ computer: "local", browser: true, pinned: null, note: "" });
+    expect(resolveSurface({ destination: "local", browserOn: false })).toEqual({ computer: "local", browser: false, pinned: null, note: "" });
+    for (const destination of ["browser", undefined, "cloud"] as const) {
+      expect(resolveSurface({ destination, pinnedSurface: "local", browserOn: true })).toEqual({ computer: "local", browser: true, pinned: "local", note: "" });
+    }
+    expect(resolveSurface({ destination: undefined, pinnedSurface: "local", browserOn: false })).toMatchObject({ computer: "local", browser: false });
   });
 
   it("Off mounts no computer and no browser, and says which setting did it", () => {
@@ -92,7 +102,7 @@ describe("resolveSurface", () => {
       .toEqual({ computer: "off", browser: true, pinned: "browser", note: "" });
     // pinned to a computer while the bot is browser-only or on Auto
     for (const destination of ["browser", undefined] as const) {
-      for (const pin of ["cloud", "vm", "local"] as const) {
+      for (const pin of ["cloud", "vm"] as const) {
         expect(resolveSurface({ destination, pinnedSurface: pin, browserOn: true }))
           .toEqual({ computer: pin, browser: false, pinned: pin, note: "" });
       }
@@ -135,6 +145,31 @@ describe("surfacePrompt", () => {
     expect(text).toMatch(/say in one short sentence where you are working/);
     expect(text).not.toMatch(/Two surfaces/);
     expect(surfacePrompt({ computer: "local", browser: false })).toMatch(/tell them it is on this computer/);
+  });
+
+  it("sends web work out of sight when this computer is the person's own screen (2026-10-28)", () => {
+    const both = surfacePrompt({ computer: "local", browser: true });
+    expect(both).toContain("the built-in browser (agent_browser_open, agent_browser_snapshot, agent_browser_click and friends), which runs out of sight inside Sagax");
+    expect(both).toContain("this computer, the person's own screen");
+    expect(both).toContain("Web tasks → the built-in browser");
+    expect(both).toContain(HOST_SCREEN_RULE);
+    // Without the browser, lookups still go to web search and fetch.
+    const alone = surfacePrompt({ computer: "local", browser: false });
+    expect(alone).toContain(HOST_SCREEN_RULE);
+    expect(HOST_SCREEN_RULE).toContain("Looking something up, searching, reading a page or finding a video is never a reason to use it");
+    expect(HOST_SCREEN_RULE).toContain("use web search, fetch or the built-in browser when you have it");
+    expect(HOST_SCREEN_RULE).toContain("shows as a player the person can watch right in the chat");
+    // Not a restriction: the person's request is enough, announced first.
+    expect(HOST_SCREEN_RULE).toContain("only when the person asks for it");
+    expect(HOST_SCREEN_RULE).toContain("open it in my Chrome");
+    expect(HOST_SCREEN_RULE).toContain("their request is enough, under their approval level");
+    expect(HOST_SCREEN_RULE).toContain("Before your first action on their screen, say so in one line in the chat");
+    expect(HOST_SCREEN_RULE).toContain("Replaying a recorded procedure follows the same rule");
+    // Other computers are not the person's screen and keep their wording.
+    for (const computer of ["cloud", "vm"] as const) {
+      expect(surfacePrompt({ computer, browser: true })).not.toContain(HOST_SCREEN_RULE);
+      expect(surfacePrompt({ computer, browser: false })).not.toContain(HOST_SCREEN_RULE);
+    }
   });
 
   it("names only the browser tab when it is the only surface", () => {

@@ -213,7 +213,8 @@ describe("computerPrompt", () => {
     const prompt = computerPrompt("local");
     expect(prompt).toContain("background delivery");
     expect(prompt).toContain("do not bring Sagax");
-    expect(prompt).toContain("dedicated browser tools");
+    // 2026-10-28: web work goes out of sight, never to a browser on this screen by default
+    expect(prompt).toContain("Web work (search, reading a page, finding a video) goes to web search, fetch or the built-in browser, out of sight");
     expect(prompt).toContain("keeping the user's intended browser profile/account");
     expect(prompt).toContain("Do not silently retry a background refusal");
     expect(prompt).toContain("including through shell scripts, AppleScript/System Events");

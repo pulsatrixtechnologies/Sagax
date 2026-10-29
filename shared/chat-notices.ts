@@ -15,13 +15,15 @@
 // builds stay hidden too.
 import { ONE_PASSWORD_WAITING } from "./credential-vault.ts";
 import { SANDBOX_WAKE_TIMEOUT_NOTICE } from "./sandbox-wake.ts";
+import { HOST_CONTROL_NOTICE } from "./host-control.ts";
 
 export const CHAT_NOTICE_RULES = {
   /** Every activity row whose name starts with one of these is technical. */
   hiddenPrefixes: ["notice:", "recovery: Automatic recovery:"],
   /** Except these, which ask something of the person: approve in
-   * 1Password, send the message again. */
-  shown: [ONE_PASSWORD_WAITING, SANDBOX_WAKE_TIMEOUT_NOTICE],
+   * 1Password, send the message again, see that a bot now controls this
+   * computer (and can be stopped). */
+  shown: [ONE_PASSWORD_WAITING, SANDBOX_WAKE_TIMEOUT_NOTICE, HOST_CONTROL_NOTICE],
 } as const;
 
 /** True for an activity row name the chat leaves out. */

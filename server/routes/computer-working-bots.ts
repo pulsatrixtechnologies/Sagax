@@ -29,9 +29,13 @@ export interface ComputerWorkingBotsRouteDeps {
 
 const PATH = "/api/computer/working-bots";
 
-export function createComputerWorkingBotsRoutes(deps: ComputerWorkingBotsRouteDeps): RouteHandler {
+/** The bots controlling this computer's own screen now (2026-10-28,
+ * shared/host-control.ts): the banner with Stop across the app. */
+export const HOST_CONTROL_PATH = "/api/computer/host-control";
+
+export function createComputerWorkingBotsRoutes(deps: ComputerWorkingBotsRouteDeps, routePath: string = PATH): RouteHandler {
   return async ({ res, path, method, auth, json }) => {
-    if (path !== PATH) return PASS;
+    if (path !== routePath) return PASS;
     if (method !== "GET") return json(res, 405, { error: "GET only" });
     res.setHeader("cache-control", "no-store");
     const refused = deps.guard(auth);
