@@ -104,6 +104,9 @@ import { groupHumanLabel } from "@/lib/private-threads";
 import { addableRosterBots } from "@/lib/room-members";
 import { GroupAvatarStack, GroupPanel, PanelSection } from "./GroupPanel";
 import { NudgeLine } from "./NudgeLine";
+import { RosterLine } from "./RosterLine";
+import { LeaveGroupDialog } from "./LeaveGroupDialog";
+import { canLeaveGroup } from "@/lib/group-leave";
 import { ConversationRoutineToggle } from "./RoutineToggleLine";
 import { repeatedFailureIds } from "../../shared/failure-dedup";
 import { groupActivityRuns, isHiddenStatusActivity, isStatusActivity, type ActivityTranscriptItem } from "@/lib/activity-runs";
@@ -922,6 +925,8 @@ export const Transcript = memo(function Transcript({
             showToolCallsEnabled(state.config) ? <DigestChip message={m} /> : null
           ) : m.kind === "nudge" && m.nudge ? (
             <NudgeLine note={m.nudge} />
+          ) : m.kind === "roster" && m.roster ? (
+            <RosterLine note={m.roster} />
           ) : m.kind === "routines" && m.routineToggle ? (
             <ConversationRoutineToggle message={m} />
           ) : m.kind === "text" && (m.text || m.attachments?.length) ? (
@@ -1251,17 +1256,10 @@ export function GroupView({ group: stored }: { group: Group }) {
   // (folders.roomWorkingFolder, held by every member); the server checks
   // the path and keeps the folder fixed after the first turn (pinnedCwd).
   const folderEditable = roomFolderEditable(group, state.config);
-  const viewerListed = (group.humanIds ?? []).some((id) => {
-    const entry = id.trim().toLowerCase();
-    return entry === viewerId || (Boolean(viewerEmail) && entry === viewerEmail);
-  });
-  const leaveGroup = () => {
-    const humanIds = (group.humanIds ?? []).filter((id) => {
-      const entry = id.trim().toLowerCase();
-      return entry !== viewerId && !(viewerEmail && entry === viewerEmail);
-    });
-    dispatch({ type: "patchGroup", groupId: group.id, patch: { humanIds } });
-  };
+  // #1480: anyone listed in their own name leaves, owner included (the
+  // group passes on); the same confirmation everywhere (LeaveGroupDialog).
+  const mayLeave = canLeaveGroup(group, state.config, remoteClient);
+  const [leaving, setLeaving] = useState(false);
   // On an organization server each person reads as their Perspicax display
   // name with their avatar (the directory); elsewhere the stored id, as before.
   const viewerAvatar = personAvatarSrc(state.config?.profile?.avatarUrl);
@@ -1460,6 +1458,7 @@ export function GroupView({ group: stored }: { group: Group }) {
       <ExchangeColumnProvider node={exchangeColumnNode}>
       <div ref={exchangeColumnRef} className="relative isolate flex min-w-0 flex-1 flex-col">
       <GroupCallOverlay group={group} members={members} />
+      <LeaveGroupDialog groupId={leaving ? group.id : null} onClose={() => setLeaving(false)} />
 
       {(macInset || browser) && <div className="content-topbar-strip" />}
       {/* Header: laid out like a bot chat's. The centered chip (stacked
@@ -1523,6 +1522,7 @@ export function GroupView({ group: stored }: { group: Group }) {
             title={group.name}
             messages={group.messages}
             isGroup
+            {...(mayLeave ? { onLeave: () => setLeaving(true) } : {})}
           />}
           {!group.dm && <GroupTaskPicker group={group} />}
           {stored.peopleDm && <PersonThreadPicker group={stored} />}
@@ -1851,10 +1851,11 @@ export function GroupView({ group: stored }: { group: Group }) {
                   </button>
                 )}
               </PanelSection>
-              {!remoteClient && !ownsRoom && viewerListed && (
+              {mayLeave && (
                 <button
                   type="button"
-                  onClick={leaveGroup}
+                  data-leave-group=""
+                  onClick={() => setLeaving(true)}
                   className="self-start rounded-lg px-3 py-2 text-[13px] text-danger hover:bg-hover"
                 >
                   {t("groupPanel.leave")}

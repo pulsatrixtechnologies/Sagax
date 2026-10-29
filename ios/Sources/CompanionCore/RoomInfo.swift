@@ -76,7 +76,27 @@ public enum RoomOwnership {
         (room.humanIds ?? []).contains { isViewer($0, viewer) }
     }
 
-    /// `leaveGroup`: the room's people without the viewer.
+    /// Listed in their own name, or the recorded owner (server/group-leave.ts).
+    public static func mayLeave(_ room: Room, viewer: RoomViewer) -> Bool {
+        if isListed(room, viewer: viewer) { return true }
+        guard let raw = room.ownerId, let owner = RoomViewer.norm(raw), !owner.isEmpty else { return false }
+        return owner == viewer.actorId || viewer.normalizedEmail == owner
+    }
+
+    /// What leaving does (src/lib/group-leave.ts `leaveOutcome`).
+    public enum LeaveOutcome: Equatable, Sendable { case member, owner, last }
+
+    public static func leaveOutcome(_ room: Room, viewer: RoomViewer) -> LeaveOutcome {
+        let others = humanIdsLeaving(room, viewer: viewer).filter {
+            let id = RoomViewer.norm($0) ?? ""
+            return !id.isEmpty && !id.hasPrefix("team:")
+        }
+        if others.isEmpty { return .last }
+        guard let raw = room.ownerId, let owner = RoomViewer.norm(raw) else { return .member }
+        return owner == viewer.actorId || viewer.normalizedEmail == owner ? .owner : .member
+    }
+
+    /// The room's people without the viewer.
     public static func humanIdsLeaving(_ room: Room, viewer: RoomViewer) -> [String] {
         (room.humanIds ?? []).filter { !isViewer($0, viewer) }
     }
@@ -156,7 +176,8 @@ public struct RoomInfoAccess: Hashable, Sendable {
     public var readOnlyNote: Bool { manages && !owns }
     /// The Memory row (RM8, D3).
     public var memory: Bool
-    /// Leave group: listed, not the owner.
+    /// Leave group (#1480): listed in their own name, owner included (the
+    /// group passes on), on an organization server.
     public var canLeave: Bool
     /// Delete group chat (RM16).
     public var canDelete: Bool
@@ -189,7 +210,7 @@ public struct RoomInfoAccess: Hashable, Sendable {
         self.owns = owns
         self.organization = organization
         memory = gate.allows(.roomMemory) && teamRoom
-        canLeave = manages && !owns && RoomOwnership.isListed(room, viewer: viewer)
+        canLeave = manages && organization && RoomOwnership.mayLeave(room, viewer: viewer)
         canDelete = gate.allows(.roomDelete) && room.peopleDm != true
             && RoomOwnership.mayDelete(room, viewer: viewer, organization: organization)
         canMoveSection = manages && !organization

@@ -82380,6 +82380,116 @@
         "en": { "stringUnit": { "state": "translated", "value": "Shared · %@" } },
         "fr": { "stringUnit": { "state": "translated", "value": "Partagée · %@" } }
       }
+    },
+    "%@ left the group": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ left the group"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ a quitté le groupe"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ saiu do grupo"
+          }
+        }
+      }
+    },
+    "Leave %@?": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Leave %@?"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quitter %@ ?"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sair de %@?"
+          }
+        }
+      }
+    },
+    "The group leaves your sidebar and you stop getting its messages and notifications. Your messages stay for the others, and your private bots leave with you. Someone in the group can add you back.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The group leaves your sidebar and you stop getting its messages and notifications. Your messages stay for the others, and your private bots leave with you. Someone in the group can add you back."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le groupe quitte votre barre latérale et vous ne recevez plus ses messages ni ses notifications. Vos messages restent pour les autres, et vos bots privés partent avec vous. Une personne du groupe peut vous rajouter."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ele sai da sua barra lateral e você deixa de receber as mensagens e notificações. Suas mensagens ficam para os outros, e seus bots privados saem com você. Alguém do grupo pode adicionar você de novo."
+          }
+        }
+      }
+    },
+    "You own this group: it passes to the person who has been in it the longest.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You own this group: it passes to the person who has been in it the longest."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ce groupe vous appartient : il passe à la personne qui en fait partie depuis le plus longtemps."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Este grupo é seu: ele passa para a pessoa que está nele há mais tempo."
+          }
+        }
+      }
+    },
+    "You are the last person in it: the group will be archived.": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You are the last person in it: the group will be archived."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vous êtes la dernière personne du groupe : il sera archivé."
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Você é a última pessoa: o grupo será arquivado."
+          }
+        }
+      }
     }
   },
   "version": "1.0"

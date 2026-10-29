@@ -263,6 +263,7 @@ func previewText(of message: Message) -> String {
     case .compaction: return message.compaction?.chipText ?? message.text ?? ""
     case .routineRun: return message.routineRun?.previewLine ?? message.text ?? ""
     case .connector, .access, .goalRun, .widget, .unknown: return message.text ?? ""
+    case .roster: return message.roster.map { String(localized: "\($0.name) left the group") } ?? message.text ?? ""
     }
 }
 

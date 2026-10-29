@@ -255,10 +255,10 @@ export interface SecretRequestCardData {
   error?: string;
 }
 
-export interface Message extends Pick<import("../../shared/wire").WireMessage, "widget" | "app" | "routineToggle" | "pagePublish" | "requested" | "outbound" | "dataContext"> {
+export interface Message extends Pick<import("../../shared/wire").WireMessage, "widget" | "app" | "routineToggle" | "pagePublish" | "requested" | "outbound" | "dataContext" | "roster"> {
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "video" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "app" | "routines";
+  kind: "text" | "options" | "activity" | "screen" | "video" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "app" | "routines" | "roster";
   text?: string;
   /** An accepted nudge. Drawn per viewer from these names, not as a bubble.
    * `groupId` is set when the line belongs to that group chat. */
@@ -1615,6 +1615,8 @@ export type Action =
       patch: Partial<Pick<Group, "name" | "bulletin" | "memberIds" | "humanIds" | "defaultResponder" | "pinnedMessageId" | "section" | "unread" | "pinned" | "mentionAll">>;
     }
   | { type: "deleteGroup"; groupId: string }
+  /** #1480: the viewer leaves a group they were added to (POST /leave). */
+  | { type: "leaveGroup"; groupId: string }
   | { type: "newGroupTask"; groupId: string; projectId?: string }
   | { type: "switchGroupTask"; groupId: string; threadId: string }
   | { type: "renameGroupTask"; groupId: string; threadId: string; title: string }
@@ -3525,6 +3527,7 @@ export function reducer(state: AppState, action: Action): AppState {
     case "nudgePerson":
     case "nudgeGroup":
     case "deleteGroup":
+    case "leaveGroup":
     case "interruptGroup":
     case "steerGroupQueued":
     case "createRoutine":
@@ -5002,6 +5005,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         case "deleteGroup":
           api(`/api/groups/${action.groupId}`, { method: "DELETE" }).catch(showError);
           break;
+        case "leaveGroup":
+          // the group leaves this client once the server took them out; their
+          // other devices get "group.left"
+          api(`/api/groups/${action.groupId}/leave`, { method: "POST" })
+            .then(() => rawDispatch({ type: "groupDeleted", groupId: action.groupId }))
+            .catch(showError);
+          break;
         case "setModel":
           if (action.threadId) {
             persistTaskPatch(action.botId, action.threadId, {
@@ -5632,6 +5642,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           break;
         case "group.deleted":
           rawDispatch({ type: "groupDeleted", groupId: frame.groupId });
+          break;
+        case "group.left":
+          rawDispatch({ type: "groupDeleted", groupId: frame.roomId });
           break;
         case "routine":
           rawDispatch({ type: "routinePatched", routine: frame.routine });

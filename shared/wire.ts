@@ -687,7 +687,7 @@ export interface WireMessage {
   roomRequest?: { id: string; phase: "request" | "result" };
   id: string;
   role: "bot" | "user";
-  kind: "text" | "options" | "activity" | "screen" | "video" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "app" | "routines";
+  kind: "text" | "options" | "activity" | "screen" | "video" | "secret" | "routine.run" | "goal.run" | "digest" | "compaction" | "access" | "nudge" | "call" | "widget" | "app" | "routines" | "roster";
   text?: string;
   /** kind "routines" (2026-10-15): one compact line in the conversation
    * saying this turn turned routines on or off (server/routine-chat-events.ts).
@@ -700,6 +700,11 @@ export interface WireMessage {
    * marks a line in that group chat. A direct nudge has no groupId. A
    * refusal does not write this. */
   nudge?: { fromId: string; fromName: string; toId: string; toName: string; groupId?: string };
+  /** kind "roster" (#1480): one neutral line in a group chat about its
+   * people, drawn centred, never a bubble. `left`: that person left the
+   * group (server/group-leave.ts). `text` is the fallback line for clients
+   * that do not know the kind. */
+  roster?: { event: "left"; personId: string; name: string };
   /** kind "access" (organization server, slice 3): a turn that could not run
    * for lack of engine access. Never provider text, except `detail` on
    * key_refused (redacted, at most 200 characters), which only the bot's
@@ -1422,6 +1427,10 @@ export type ServerFrame =
   /** An approval was answered or expired: take its notification down. */
   | { kind: "notify-withdraw"; threadId: string; requestId: string }
   | { kind: "group.deleted"; groupId: string }
+  /** #1480: the viewer left this group; only their own streams get it
+   * (server/group-leave.ts). `roomId`, not `groupId`: the group's own frame
+   * filters would drop it, since they no longer see the group. */
+  | { kind: "group.left"; roomId: string; audience: string }
   | { kind: "routine"; routine: Routine }
   | { kind: "routine.deleted"; routineId: string }
   /** 2026-10-28: a bot's routine folders in their order (shared/routine-folders.ts). */

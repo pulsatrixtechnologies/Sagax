@@ -389,6 +389,22 @@ struct MessageRow: View {
             } else if let text = message.text, !text.isEmpty {
                 TextBubble(message: message, chat: chat, tailed: endsRun, openLink: openLink, cwAsk: askCw)
             }
+        case .roster:
+            // #1480: one neutral centred line (RosterLine.tsx), never a bubble
+            if let note = message.roster {
+                Text(String(localized: "\(note.name) left the group"))
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                    .accessibilityIdentifier("roster-line-\(message.id)")
+            } else if let text = message.text, !text.isEmpty {
+                Text(verbatim: text)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textSecondary)
+                    .frame(maxWidth: .infinity)
+            }
         case .unknown:
             // A message kind from a newer computer. Almost everything the
             // harness sends carries `text`, so showing it is usually the

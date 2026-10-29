@@ -100,7 +100,7 @@ extension Notification.Name {
 extension Frame: Decodable {
     private enum CodingKeys: String, CodingKey {
         case kind, cursor, resumed, threadId, message, activeLeafId
-        case bot, botId, group, groupId, notification, png, mime, state, event, queues
+        case bot, botId, group, groupId, roomId, notification, png, mime, state, event, queues
         case audience, fromId, fromName, at, open, principalId, label, people, count, added
         case preferences, updatedAt
         case participantId, read, reset
@@ -154,6 +154,10 @@ extension Frame: Decodable {
             self = .room(try container.decode(Room.self, forKey: .group))
         case "group.deleted":
             self = .roomDeleted(groupId: try container.decode(String.self, forKey: .groupId))
+        case "group.left":
+            // #1480: this person left the group (their own streams only):
+            // it leaves this device as a deleted one does
+            self = .roomDeleted(groupId: try container.decode(String.self, forKey: .roomId))
         case "notify":
             self = .notify(try container.decode(NotificationFrame.self, forKey: .notification))
         case "screen":

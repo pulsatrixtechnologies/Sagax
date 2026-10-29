@@ -1892,7 +1892,12 @@
       "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
       "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8",
       "remoteSession.screenExpand": "ce79ee1785358a0b3a2e5b75577ea0a19705db39b74cb968ee50f40449ce5795",
-      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8"
+      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8",
+      "room.leave.title": "0dc8972f0d9ae662058c9b8bc4e344a875f347db37981ce3af919d8d322617bb",
+      "room.leave.body": "86c50178a8c41e20062a65944861b0d54b465d398cdb479d997622734e580db9",
+      "room.leave.owner": "f0f61e67bde5918444d279554e345d084b14e945a59ac477edc31c8f382d6e5b",
+      "room.leave.last": "b0274f7e833c07e4375c1892c1719300139ffddc39dc81d22b08f86a995245ac",
+      "room.roster.left": "6bb795be0f14a96856a299a635a8d670391b64ed8a595451c4496732763bf307"
     },
     "es": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -3767,7 +3772,12 @@
       "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
       "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8",
       "remoteSession.screenExpand": "ce79ee1785358a0b3a2e5b75577ea0a19705db39b74cb968ee50f40449ce5795",
-      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8"
+      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8",
+      "room.leave.title": "0dc8972f0d9ae662058c9b8bc4e344a875f347db37981ce3af919d8d322617bb",
+      "room.leave.body": "86c50178a8c41e20062a65944861b0d54b465d398cdb479d997622734e580db9",
+      "room.leave.owner": "f0f61e67bde5918444d279554e345d084b14e945a59ac477edc31c8f382d6e5b",
+      "room.leave.last": "b0274f7e833c07e4375c1892c1719300139ffddc39dc81d22b08f86a995245ac",
+      "room.roster.left": "6bb795be0f14a96856a299a635a8d670391b64ed8a595451c4496732763bf307"
     },
     "fr": {
       "botPanel.turnLimits.title": "35696e37e777cad0dc06cfa324dc49ef445287e54d0eba6f80d6ba90e2611858",
@@ -15503,7 +15513,12 @@
       "routineCalendar.saveAnswerLost": "ca4894c74c15f71fd4861d6413e31bb49f1bcbc2a4058360f103d0a6cc068240",
       "routineCalendar.deletedRoutine": "d214e0250b3b20cbaee78b1cc5aae54f88968b3d029dda8e5b633e1705649bce",
       "remoteSession.screenExpand": "ce79ee1785358a0b3a2e5b75577ea0a19705db39b74cb968ee50f40449ce5795",
-      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8"
+      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8",
+      "room.leave.title": "0dc8972f0d9ae662058c9b8bc4e344a875f347db37981ce3af919d8d322617bb",
+      "room.leave.body": "86c50178a8c41e20062a65944861b0d54b465d398cdb479d997622734e580db9",
+      "room.leave.owner": "f0f61e67bde5918444d279554e345d084b14e945a59ac477edc31c8f382d6e5b",
+      "room.leave.last": "b0274f7e833c07e4375c1892c1719300139ffddc39dc81d22b08f86a995245ac",
+      "room.roster.left": "6bb795be0f14a96856a299a635a8d670391b64ed8a595451c4496732763bf307"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -17368,7 +17383,12 @@
       "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
       "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8",
       "remoteSession.screenExpand": "ce79ee1785358a0b3a2e5b75577ea0a19705db39b74cb968ee50f40449ce5795",
-      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8"
+      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8",
+      "room.leave.title": "0dc8972f0d9ae662058c9b8bc4e344a875f347db37981ce3af919d8d322617bb",
+      "room.leave.body": "86c50178a8c41e20062a65944861b0d54b465d398cdb479d997622734e580db9",
+      "room.leave.owner": "f0f61e67bde5918444d279554e345d084b14e945a59ac477edc31c8f382d6e5b",
+      "room.leave.last": "b0274f7e833c07e4375c1892c1719300139ffddc39dc81d22b08f86a995245ac",
+      "room.roster.left": "6bb795be0f14a96856a299a635a8d670391b64ed8a595451c4496732763bf307"
     },
     "ja": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -21186,7 +21206,12 @@
       "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
       "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8",
       "remoteSession.screenExpand": "ce79ee1785358a0b3a2e5b75577ea0a19705db39b74cb968ee50f40449ce5795",
-      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8"
+      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8",
+      "room.leave.title": "0dc8972f0d9ae662058c9b8bc4e344a875f347db37981ce3af919d8d322617bb",
+      "room.leave.body": "86c50178a8c41e20062a65944861b0d54b465d398cdb479d997622734e580db9",
+      "room.leave.owner": "f0f61e67bde5918444d279554e345d084b14e945a59ac477edc31c8f382d6e5b",
+      "room.leave.last": "b0274f7e833c07e4375c1892c1719300139ffddc39dc81d22b08f86a995245ac",
+      "room.roster.left": "6bb795be0f14a96856a299a635a8d670391b64ed8a595451c4496732763bf307"
     },
     "pt-br": {
       "achievements.panel.all": "e2adb0c3b5f28a7c9d5bdac240382201b39376dd11671aedc93e8a73b6468f19",
@@ -23820,7 +23845,12 @@
       "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
       "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8",
       "remoteSession.screenExpand": "ce79ee1785358a0b3a2e5b75577ea0a19705db39b74cb968ee50f40449ce5795",
-      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8"
+      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8",
+      "room.leave.title": "0dc8972f0d9ae662058c9b8bc4e344a875f347db37981ce3af919d8d322617bb",
+      "room.leave.body": "86c50178a8c41e20062a65944861b0d54b465d398cdb479d997622734e580db9",
+      "room.leave.owner": "f0f61e67bde5918444d279554e345d084b14e945a59ac477edc31c8f382d6e5b",
+      "room.leave.last": "b0274f7e833c07e4375c1892c1719300139ffddc39dc81d22b08f86a995245ac",
+      "room.roster.left": "6bb795be0f14a96856a299a635a8d670391b64ed8a595451c4496732763bf307"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -26206,7 +26236,12 @@
       "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
       "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8",
       "remoteSession.screenExpand": "ce79ee1785358a0b3a2e5b75577ea0a19705db39b74cb968ee50f40449ce5795",
-      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8"
+      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8",
+      "room.leave.title": "0dc8972f0d9ae662058c9b8bc4e344a875f347db37981ce3af919d8d322617bb",
+      "room.leave.body": "86c50178a8c41e20062a65944861b0d54b465d398cdb479d997622734e580db9",
+      "room.leave.owner": "f0f61e67bde5918444d279554e345d084b14e945a59ac477edc31c8f382d6e5b",
+      "room.leave.last": "b0274f7e833c07e4375c1892c1719300139ffddc39dc81d22b08f86a995245ac",
+      "room.roster.left": "6bb795be0f14a96856a299a635a8d670391b64ed8a595451c4496732763bf307"
     },
     "zh-tw": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -29913,7 +29948,12 @@
       "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
       "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8",
       "remoteSession.screenExpand": "ce79ee1785358a0b3a2e5b75577ea0a19705db39b74cb968ee50f40449ce5795",
-      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8"
+      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8",
+      "room.leave.title": "0dc8972f0d9ae662058c9b8bc4e344a875f347db37981ce3af919d8d322617bb",
+      "room.leave.body": "86c50178a8c41e20062a65944861b0d54b465d398cdb479d997622734e580db9",
+      "room.leave.owner": "f0f61e67bde5918444d279554e345d084b14e945a59ac477edc31c8f382d6e5b",
+      "room.leave.last": "b0274f7e833c07e4375c1892c1719300139ffddc39dc81d22b08f86a995245ac",
+      "room.roster.left": "6bb795be0f14a96856a299a635a8d670391b64ed8a595451c4496732763bf307"
     },
     "zh": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -32583,7 +32623,12 @@
       "chat.exchange.empty": "d1355f3ff521ff3214e8b10a3ffcc80c1086ec1075fedd4a9a87530b0c09e187",
       "chat.exchange.loadError": "518d261188968b84e6d6bc3435c87abc635331553136cc3b5e15097fedaa31e8",
       "remoteSession.screenExpand": "ce79ee1785358a0b3a2e5b75577ea0a19705db39b74cb968ee50f40449ce5795",
-      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8"
+      "remoteSession.screenShrink": "50c0f05451f74e9fab7fbb8e54ce7c136e09b414fae6a8817132d9e956c382e8",
+      "room.leave.title": "0dc8972f0d9ae662058c9b8bc4e344a875f347db37981ce3af919d8d322617bb",
+      "room.leave.body": "86c50178a8c41e20062a65944861b0d54b465d398cdb479d997622734e580db9",
+      "room.leave.owner": "f0f61e67bde5918444d279554e345d084b14e945a59ac477edc31c8f382d6e5b",
+      "room.leave.last": "b0274f7e833c07e4375c1892c1719300139ffddc39dc81d22b08f86a995245ac",
+      "room.roster.left": "6bb795be0f14a96856a299a635a8d670391b64ed8a595451c4496732763bf307"
     }
   }
 }

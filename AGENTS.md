@@ -15,6 +15,25 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Leave a group chat (#1480, 2026-10-28)
+
+On an organization server a person listed in a group in their own name
+leaves it on their own, owner included, without an admin:
+`POST /api/groups/:id/leave` (server/group-leave.ts `planGroupLeave`). The
+session names who leaves, never the body. They leave `humanIds` under every
+id they are listed by; their private bots (owned by them, no grant) leave
+with them, a shared bot stays. The owner hands the group to the person
+listed longest (first non-team entry left), and the last person archives it
+(`archivedAt`, server-private: kept, listed to no one, its routines off).
+Their past messages stay. The others get one neutral line, message kind
+`roster` (`WireMessage.roster`, drawn by RosterLine, `text` is the English
+fallback); their own devices get `group.left` (`roomId`, their streams
+only) and drop the group. Leave group sits in the sidebar menu, the
+conversation's « … » and the group panel on desktop (LeaveGroupDialog
+confirms), and in the row menu and Room info on iOS. They can be added back
+like anyone. Tests: `server/group-leave.test.ts`, `src/lib/group-leave.test.ts`,
+`src/components/Sidebar.member-menu.test.ts`, iOS `GroupLeaveTests`.
+
 ## Run a part on another engine: run_with_engine (2026-10-28)
 
 A bot may run one part of its work on another engine or model and get the

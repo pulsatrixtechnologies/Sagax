@@ -42,6 +42,8 @@ import { api, useStore, formatTime, visibleMessages, currentTaskBot, openBot, st
 
 import { peerLine } from "@/lib/peer-message";
 import { viewerMayDeleteGroup, viewerOwnsGroup } from "@/lib/group-owner";
+import { canLeaveGroup } from "@/lib/group-leave";
+import { LeaveGroupDialog } from "./LeaveGroupDialog";
 import { otherAuthorName, viewerActorId, viewerIsOrgMember } from "@/lib/viewer";
 import { showBotArchive, showBotDelete, showBotRename, showServerSectionMove } from "@/lib/bot-capabilities";
 import { viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
@@ -71,7 +73,7 @@ import { useOrgPeople, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { peopleDmPeer } from "@/lib/people-dm";
 import { BotRoleTag, PersonLabelTag } from "./LabelTag";
 import { nudgeLineText } from "@/lib/nudge-line";
-import { ChevronsRight, Eye, UserRound } from "lucide-react";
+import { ChevronsRight, Eye, LogOut, UserRound } from "lucide-react";
 import { entriesToUnhide, hiddenKey, hiddenKeySet, hideFromSidebar, showInSidebar, useSidebarHidden } from "@/lib/sidebar-hidden";
 import { closedDmToReopen, groupHiddenKey, hiddenSidebarRows, withoutHiddenEntries } from "@/lib/sidebar-hidden-entries";
 import { PersonAvatar } from "./MessageAuthor";
@@ -591,11 +593,14 @@ export function RoomContextMenu({
   onClose,
   onMoveToSection,
   onDelete,
+  onLeave,
 }: {
   menu: { groupId: string; x: number; y: number } | null;
   onClose: () => void;
   onMoveToSection: (groupId: string) => void;
   onDelete: (groupId: string) => void;
+  /** #1480: leave a group you were added to (the caller confirms). */
+  onLeave?: (groupId: string) => void;
 }) {
   const motion = useHeldMenuMotion(menu);
   const shown = motion.value;
@@ -638,7 +643,7 @@ export function RoomContextMenu({
     if (name) dispatch({ type: "patchGroup", groupId: group.id, patch: { name } });
     onClose();
   };
-  const top = Math.min(shown.y, window.innerHeight - (group.peopleDm ? 280 : 204));
+  const top = Math.min(shown.y, window.innerHeight - (group.peopleDm ? 280 : 240));
   const left = Math.min(shown.x, window.innerWidth - 240);
   return createPortal(
     <div
@@ -785,6 +790,20 @@ export function RoomContextMenu({
         >
           <BellDot size={16} className="text-ink" />
           {t("sidebar.bot.markUnread")}
+        </button>
+      )}
+      {onLeave && canLeaveGroup(group, state.config, remoteClient) && (
+        <button
+          type="button"
+          data-room-leave=""
+          onClick={() => {
+            onClose();
+            onLeave(group.id);
+          }}
+          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-danger hover:bg-hover"
+        >
+          <LogOut size={16} />
+          {t("groupPanel.leave")}
         </button>
       )}
       {!group.peopleDm && !remoteClient && mayDelete && <button
@@ -2741,6 +2760,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const [roomMenu, setRoomMenu] = useState<{ groupId: string; x: number; y: number } | null>(null);
   const [roomSectionPicker, setRoomSectionPicker] = useState<{ groupId: string; x: number; y: number } | null>(null);
   const [deletingRoomId, setDeletingRoomId] = useState<string | null>(null);
+  const [leavingRoomId, setLeavingRoomId] = useState<string | null>(null);
   const deletingRoom = deletingRoomId ? state.groups.find((g) => g.id === deletingRoomId) : undefined;
   const [archivedBotsOpen, setArchivedBotsOpen] = useState(false);
   const [teamFeedback, setTeamFeedback] = useState<{
@@ -3728,7 +3748,12 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             sidebarRef.current?.focus();
             setDeletingRoomId(groupId);
           }}
+          onLeave={(groupId) => {
+            sidebarRef.current?.focus();
+            setLeavingRoomId(groupId);
+          }}
         />
+      <LeaveGroupDialog groupId={leavingRoomId} onClose={() => setLeavingRoomId(null)} returnFocusRef={sidebarRef} />
       <ConfirmDialog
         open={deletingRoom !== undefined}
         {...roomDeleteCopy(deletingRoom ?? { name: "" })}

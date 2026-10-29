@@ -1889,5 +1889,10 @@
   "chat.exchange.empty": "Noch keine Nachrichten mit {name}.",
   "chat.exchange.loadError": "Diese Unterhaltung konnte nicht geladen werden.",
   "remoteSession.screenExpand": "Bildschirm vergrößern",
-  "remoteSession.screenShrink": "Bildschirm verkleinern"
+  "remoteSession.screenShrink": "Bildschirm verkleinern",
+  "room.leave.title": "{name} verlassen?",
+  "room.leave.body": "Die Gruppe verschwindet aus deiner Seitenleiste, und du erhältst keine Nachrichten und Benachrichtigungen mehr. Deine Nachrichten bleiben für die anderen, und deine privaten Bots gehen mit dir. Jemand aus der Gruppe kann dich wieder hinzufügen.",
+  "room.leave.owner": "Die Gruppe gehört dir: Sie geht an die Person über, die am längsten dabei ist.",
+  "room.leave.last": "Du bist die letzte Person darin: Die Gruppe wird archiviert.",
+  "room.roster.left": "{name} hat die Gruppe verlassen"
 }

@@ -175,9 +175,9 @@ struct RoomInfoView: View {
             if access.canLeave {
                 Section {
                     Button(String(localized: "Leave group"), role: .destructive) {
-                        Task {
-                            await session.patchRoom(room, RoomPatch(humanIds: RoomOwnership.humanIdsLeaving(room, viewer: session.roomViewer)))
-                        }
+                        // #1480: confirmed by the host's RoomActionsPresenter,
+                        // then POST /leave
+                        actions.leaving = room
                     }
                     .accessibilityIdentifier("room-leave")
                 }

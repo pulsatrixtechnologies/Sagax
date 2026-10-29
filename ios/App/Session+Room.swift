@@ -41,6 +41,19 @@ extension Session {
         }
     }
 
+    /// #1480 `leaveGroup`: the person leaves; the room leaves this device.
+    func leaveRoom(_ room: Room) async -> Bool {
+        guard let client = settingsClient else { return false }
+        do {
+            try await client.leaveRoom(groupId: room.id)
+            applyRoomDeleted(room.id)
+            return true
+        } catch {
+            actionError = error.localizedDescription
+            return false
+        }
+    }
+
     func roomMemory(_ room: Room) async throws -> GroupMemoryView {
         guard let client = settingsClient else { throw APIError.transport(String(localized: "Not connected")) }
         return try await client.groupMemory(groupId: room.id)
