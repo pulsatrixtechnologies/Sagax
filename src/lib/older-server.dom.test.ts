@@ -15,7 +15,7 @@ import type { Routine } from "@/lib/routines";
 import { SERVER_FEATURES } from "../../shared/server-features";
 
 const fixture = vi.hoisted(() => ({
-  state: { routinesLoadState: "ready", routineFolders: {} as Record<string, string[]>, config: {} as Record<string, unknown> },
+  state: { routinesLoadState: "ready", routineFolders: {} as Record<string, string[]>, routineRuns: [] as unknown[], config: {} as Record<string, unknown> },
   dispatch: vi.fn(),
 }));
 vi.mock("@/state/store", async (importOriginal) => ({
@@ -157,20 +157,23 @@ describe("Routines panel against a 0.8.7 server", () => {
     act(() => more.click());
   };
 
-  it("hides Sort by prefix and keeps Move to folder disabled with the neutral line", async () => {
+  // Since #1669 a routine's menu acts on the routine (no folder items there):
+  // against the old server it opens without folder actions and without red.
+  it("hides Sort by prefix and opens the routine menu without folder actions", async () => {
     vi.stubGlobal("fetch", server087("admin", routines));
     noteRoutinesListing(await api("/api/routines"));
     await mount(render());
     expect(host.querySelector("[data-routine-prefix-offer]")).toBeNull();
+    expect(shownErrors()).toEqual([]);
     openRowMenu();
     const menu = document.querySelector("[data-routine-folder-menu=row]");
-    expect(menu?.querySelector("[data-routine-folder-unavailable]")?.textContent).toBe(NEEDS_UPDATE);
-    const create = menu?.querySelector("[data-routine-new-folder]") as HTMLButtonElement;
-    expect(create.getAttribute("aria-disabled")).toBe("true");
-    act(() => create.click());
+    expect(menu).not.toBeNull();
+    expect(menu?.querySelector("[data-routine-new-folder]")).toBeNull();
+    expect(menu?.querySelector("[data-routine-folder-unavailable]")).toBeNull();
     await flush();
     expect(document.querySelector("[data-routine-folder-name-input]")).toBeNull();
-    expect(shownErrors()).toEqual([]);
+    // The open menu's Delete item is red by design: only error dispatches count here.
+    expect(fixture.dispatch.mock.calls.filter(([action]) => action?.type === "error")).toEqual([]);
   });
 
   for (const role of ["admin", "member"] as const) {
