@@ -156,6 +156,8 @@ export class PersonVoiceKeysStore {
  * the organization's for the same engine. The engine, its voice and its
  * other settings stay the installation's. */
 export function withPersonalVoiceKeys(cfg: AppConfig, keys: PersonalVoiceKeys): AppConfig {
+  // OpenAI's key serves voice mode only (server/voice-mode.ts providerKeys),
+  // never the installation's engines
   if (!keys.elevenlabs && !keys.fish && !keys.xai) return cfg;
   return {
     ...cfg,

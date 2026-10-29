@@ -438,7 +438,8 @@ final class CallController: ObservableObject {
             routes: route,
             settings: { [weak self] in
                 guard let self else { return .default }
-                var settings = self.callVoiceSettings
+                // the voice of this bot's provider (the person's choice for it)
+                var settings = self.callVoiceSettings.forBot(botId)
                 if let preview = self.previewVoice { settings.voice = preview }
                 return settings
             }
@@ -645,11 +646,12 @@ final class CallController: ObservableObject {
         note = nil
     }
 
-    /// xAI's voices, for the settings' Voice list.
+    /// The voices of the provider this bot speaks with, for the settings'
+    /// Voice list.
     func loadVoices() {
         guard voices == nil, voiceModeAvailable, case let .bot(bot)? = target, let client = session?.callClient else { return }
         Task {
-            do { voices = try await client.voiceModeVoices(botId: bot.id) }
+            do { voices = try await client.voiceModeVoices(botId: bot.id, provider: voiceSettings.ttsChoice(botId: bot.id)) }
             catch { voicesError = error.localizedDescription }
         }
     }

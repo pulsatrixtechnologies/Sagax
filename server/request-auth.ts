@@ -543,7 +543,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // a key is never answered back.
   { methods: ["GET", "PATCH"], path: /^\/api\/me\/experimental$/ },
   { methods: ["GET"], path: /^\/api\/me\/voice-keys$/ },
-  { methods: ["PUT", "DELETE"], path: /^\/api\/me\/voice-keys\/(?:elevenlabs|fish|xai)$/ },
+  { methods: ["PUT", "DELETE"], path: /^\/api\/me\/voice-keys\/(?:elevenlabs|fish|xai|openai)$/ },
   // The person's visit signature (server/routes/web-bot-auth.ts): on unless
   // they turn it off. No admin right. The private key is never answered.
   { methods: ["GET", "PUT"], path: /^\/api\/me\/web-bot-auth$/ },
@@ -782,6 +782,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // voice mode (server/voice-mode.ts): the speaker's own turn on a bot they may use; never the key
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:status|voices|listen)$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/voice\/(?:prepare|speak|transcribe|stream|call)$/ },
+  // the person's own providers, a provider's voices and the voice test (Settings > Voice, 2026-10-29)
+  { methods: ["GET"], path: /^\/api\/voice\/(?:status|voices)$/ },
+  { methods: ["POST"], path: /^\/api\/voice\/speak$/ },
   // routines: a scheduled message; the input carries no cwd or permission field
   { methods: ["GET"], path: /^\/api\/routines$/ },
   // the routine modal's "Runs as" choices (server/routine-run-as.ts)

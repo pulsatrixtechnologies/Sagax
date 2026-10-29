@@ -888,6 +888,30 @@ final class VoiceModeWireTests: XCTestCase {
         XCTAssertEqual(formatCallTime(3725), "1:02:05")
     }
 
+    /// 2026-10-29: the desktop's providers travel through the phone untouched,
+    /// and a bot's voice is the one of its provider.
+    func testProvidersOfTheDesktopSurviveThePhoneAndPickTheBotsVoice() {
+        let raw = #"{"bots":{"b-1":{"tts":"elevenlabs","voices":{"elevenlabs":"myClone"}}},"language":"fr","speed":1,"tts":"openai","voice":"eve","voices":{"openai":"cedar"}}"#
+        var settings = VoiceModeSettings.decode(raw)
+        XCTAssertEqual(settings.voice, "eve")
+        XCTAssertEqual(settings.forBot("b-1").voice, "myClone")
+        XCTAssertEqual(settings.forBot("b-1").ttsProvider, "elevenlabs")
+        XCTAssertEqual(settings.forBot("b-2").voice, "cedar")
+        XCTAssertEqual(settings.ttsChoice(botId: "b-2"), "openai")
+        settings.speed = 1.25
+        let again = VoiceModeSettings.decode(settings.encoded)
+        XCTAssertEqual(again.forBot("b-1").voice, "myClone")
+        XCTAssertEqual(again.forBot("b-2").voice, "cedar")
+        // picking a voice fills the bot's provider's slot, never xAI's
+        let picked = again.withVoice("marin", forBot: "b-2")
+        XCTAssertEqual(picked.voice, "eve")
+        XCTAssertEqual(picked.forBot("b-2").voice, "marin")
+        XCTAssertEqual(picked.withVoice("other", forBot: "b-1").forBot("b-1").voice, "other")
+        let body = CompanionClient.voiceFields(picked, botId: "b-1")
+        XCTAssertEqual(body["tts"] as? String, "elevenlabs")
+        XCTAssertEqual(body["voice"] as? String, "myClone")
+    }
+
     func testFrenchCallsListenInTheRegionThePersonSpeaks() {
         let locales = VoiceModeSettings(language: "fr").recognitionLocales(preferred: [Locale(identifier: "fr-CA"), Locale(identifier: "en-US")])
         XCTAssertEqual(locales.first?.identifier, "fr-CA")

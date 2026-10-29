@@ -223,6 +223,7 @@ describe("voice mode routes", () => {
       provider: "xai", available: true, organization: true, via: "speaker-key",
       key: { source: "perspicax-key", last4: "c0Je" },
       keys: [{ source: "perspicax-key", last4: "c0Je" }, { source: "org-key", last4: "t6Yb" }],
+      providers: { tts: ["xai"], stt: ["xai"] }, tts: "xai", stt: "xai",
     });
     expect(leaks(out.body)).toBe(false);
   });
@@ -407,7 +408,7 @@ describe("voice mode routes", () => {
   it("lists voices with labels only", async () => {
     const { call } = harness();
     const out = await call({ method: "GET", path: "/api/bots/b-quasar/voice/voices" });
-    expect(out.body).toEqual({ voices: [{ id: "ara", label: "Ara" }, { id: "eve", label: "Eve" }], key: { source: "org-key", last4: "t6Yb" } });
+    expect(out.body).toEqual({ voices: [{ id: "ara", label: "Ara" }, { id: "eve", label: "Eve" }], provider: "xai", key: { source: "org-key", last4: "t6Yb" } });
   });
 
   it("rate limits each person", async () => {
@@ -534,6 +535,99 @@ describe("voice mode uses the key that has funds (2026-10-28)", () => {
   it("only ever has one key on a solo server, named as the server's", async () => {
     const { call } = harness({ organization: false, speaker: () => ({ principalId: "" }) });
     const out = await call({ method: "GET", path: "/api/bots/b-quasar/voice/status" });
-    expect(out.body).toEqual({ provider: "xai", available: true, via: "server", key: { source: "server", last4: "t6Yb" }, keys: [{ source: "server", last4: "t6Yb" }] });
+    expect(out.body).toEqual({ provider: "xai", available: true, via: "server", key: { source: "server", last4: "t6Yb" }, keys: [{ source: "server", last4: "t6Yb" }], providers: { tts: ["xai"], stt: ["xai"] }, tts: "xai", stt: "xai" });
+  });
+});
+
+describe("voice mode with OpenAI and ElevenLabs (2026-10-29)", () => {
+  const OPENAI_KEY = "sk-OPENfake1Zx2Cv3Bn4Mm8Qq";
+  const ELEVEN_KEY = "el-ELEVENfake5Lk6Jh7Gf8Dd";
+  function providers(options: { eleven?: () => Promise<{ bytes: Uint8Array; mime: string }>; preference?: unknown; noXai?: boolean; noOpenai?: boolean } = {}) {
+    const notices: string[] = [];
+    const openai = {
+      listVoices: vi.fn(async (_key: string) => [{ id: "marin", label: "Marin" }]),
+      synthesize: vi.fn(async (_text: string, _voice: string | undefined, _key: string, _options: { speed?: number; language?: string }) => ({ bytes: new Uint8Array([7]), mime: "audio/mpeg" })),
+    };
+    const elevenlabs = {
+      listVoices: vi.fn(async (_key: string) => [{ id: "myClonedVoice01", label: "Me", own: true }]),
+      synthesize: vi.fn(async (_text: string, _voice: string | undefined, _key: string, _options: { speed?: number; language?: string }) => (options.eleven ? options.eleven() : { bytes: new Uint8Array([9]), mime: "audio/mpeg" })),
+    };
+    const h = harness({
+      ...(options.noXai ? { serverKey: () => undefined } : {}),
+      openai,
+      elevenlabs,
+      providerKeys: (provider) => {
+        if (provider === "openai") return options.noOpenai ? [] : [{ key: OPENAI_KEY, via: "speaker-key", source: "voice-key", last4: "8Qq", payerPrincipalId: "p-ada" }];
+        return [{ key: ELEVEN_KEY, via: "speaker-key", source: "voice-key", last4: "f8Dd", payerPrincipalId: "p-ada" }];
+      },
+      preference: () => options.preference,
+      notice: (_threadId, message) => { notices.push(message); },
+    });
+    return { ...h, openai, elevenlabs, notices };
+  }
+
+  it("lists only the providers the person has a key for, the chosen one first", async () => {
+    const { call } = providers({ preference: { tts: "elevenlabs", stt: "openai" } });
+    const out = await call({ method: "GET", path: "/api/bots/b-quasar/voice/status" });
+    expect(out.body).toMatchObject({ available: true, providers: { tts: ["xai", "openai", "elevenlabs"], stt: ["xai"] }, tts: "elevenlabs", stt: "xai" });
+    expect(out.body.key).toEqual({ source: "voice-key", last4: "f8Dd", provider: "elevenlabs" });
+    expect(leaks(out.body)).toBe(false);
+    expect(JSON.stringify(out.body)).not.toContain(ELEVEN_KEY.slice(4, 14));
+  });
+
+  it("speaks with the provider and voice asked for, and books it under that provider", async () => {
+    const { call, elevenlabs, xai, usage } = providers();
+    const out = await call({ method: "POST", path: "/api/bots/b-quasar/voice/speak", body: { text: "Bonjour", tts: "elevenlabs", voice: "myClonedVoice01", speed: 1, language: "fr" } });
+    expect(out.status).toBe(200);
+    expect(out.headers?.["x-voice-provider"]).toBe("elevenlabs");
+    expect(elevenlabs.synthesize).toHaveBeenCalledWith("Bonjour", "myClonedVoice01", ELEVEN_KEY, { speed: 1, language: "fr" });
+    expect(xai.synthesize).not.toHaveBeenCalled();
+    expect(usage.at(-1)).toMatchObject({ model: "elevenlabs-tts", provider: "elevenlabs", via: "speaker-key", payerPrincipalId: "p-ada", input: 7 });
+  });
+
+  it("follows the person's synced choice for this bot when the client names no provider (the iPhone)", async () => {
+    const { call, openai } = providers({ preference: { voice: "eve", speed: 1, language: "auto", bots: { "b-quasar": { tts: "openai", voices: { openai: "cedar" } } } } });
+    const out = await call({ method: "POST", path: "/api/bots/b-quasar/voice/speak", body: { text: "Hi" } });
+    expect(out.status).toBe(200);
+    expect(openai.synthesize).toHaveBeenCalledWith("Hi", "cedar", OPENAI_KEY, expect.anything());
+  });
+
+  it("falls back to another provider silently when one fails, with a line in Events", async () => {
+    const { call, xai, notices } = providers({ eleven: async () => { throw new Error("ElevenLabs is rate-limiting speech. Wait a moment and try again."); } });
+    const out = await call({ method: "POST", path: "/api/bots/b-quasar/voice/speak", body: { text: "Hi", tts: "elevenlabs", voice: "myClonedVoice01" } });
+    expect(out.status).toBe(200);
+    expect(out.headers?.["x-voice-provider"]).toBe("xai");
+    // no key skipped on the page's side: the switch is silent there
+    expect(out.headers?.["x-voice-key-skipped"]).toBeUndefined();
+    expect(xai.synthesize).toHaveBeenCalled();
+    expect(notices).toEqual(["Voice: voice went on with xAI after ElevenLabs (rate limit)"]);
+    // the next sentence goes straight to the provider that works
+    xai.synthesize.mockClear();
+    await call({ method: "POST", path: "/api/bots/b-quasar/voice/speak", body: { text: "Again", tts: "elevenlabs" } });
+    expect(xai.synthesize).toHaveBeenCalledTimes(1);
+    expect(notices).toHaveLength(1);
+  });
+
+  it("lists one provider's voices, the person's own ElevenLabs voices included", async () => {
+    const { call } = providers();
+    const out = await call({ method: "GET", path: "/api/bots/b-quasar/voice/voices?provider=elevenlabs" });
+    expect(out.body).toEqual({ voices: [{ id: "myClonedVoice01", label: "Me", own: true }], provider: "elevenlabs", key: { source: "voice-key", last4: "f8Dd", provider: "elevenlabs" } });
+  });
+
+  it("reads aloud with a voice alone, but offers no call without ears", async () => {
+    const { call, elevenlabs } = providers({ noXai: true, noOpenai: true });
+    const status = await call({ method: "GET", path: "/api/bots/b-quasar/voice/status" });
+    expect(status.body).toMatchObject({ available: false, refusal: { cause: "no_credentials" }, providers: { tts: ["elevenlabs"], stt: [] } });
+    const spoken = await call({ method: "POST", path: "/api/bots/b-quasar/voice/speak", body: { text: "Hi" } });
+    expect(spoken.status).toBe(200);
+    expect(elevenlabs.synthesize).toHaveBeenCalled();
+    const heard = await call({ method: "POST", path: "/api/bots/b-quasar/voice/transcribe", raw: WAV, contentType: "audio/wav" });
+    expect(heard.status).toBe(403);
+  });
+
+  it("refuses a voice id that is not one", async () => {
+    const { call } = providers();
+    const out = await call({ method: "POST", path: "/api/bots/b-quasar/voice/speak", body: { text: "Hi", tts: "openai", voice: "../etc" } });
+    expect(out.status).toBe(400);
   });
 });

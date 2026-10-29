@@ -13,15 +13,98 @@ public struct VoiceModeLanguage: Hashable, Sendable {
 }
 
 public struct VoiceModeSettings: Codable, Equatable, Sendable {
-    /// An xAI voice id; "" is Not set (xAI's default voice).
+    /// An xAI voice id; "" is Not set (xAI's default voice). In a view for
+    /// one bot (`forBot`), the voice of that bot's provider.
     public var voice: String
     public var speed: Double
     public var language: String
+    /// The desktop's other fields of the same preference, kept as they are
+    /// (2026-10-29, shared/voice-providers.ts): `tts`, `stt`, `voices` (a
+    /// voice per provider) and `bots` (a bot's own choice). Sorted JSON.
+    public var extraJSON: String
+    /// Set on a view for one bot: the provider that speaks ("openai",
+    /// "elevenlabs", "xai"), nil for Auto. Never stored.
+    public var ttsProvider: String?
+    /// The bot this view was made for (`forBot`), never stored.
+    public var resolvedFor: String?
 
-    public init(voice: String = "", speed: Double = 1, language: String = "auto") {
+    public init(voice: String = "", speed: Double = 1, language: String = "auto", extraJSON: String = "") {
         self.voice = voice
         self.speed = speed
         self.language = language
+        self.extraJSON = extraJSON
+    }
+
+    public static let ttsProviders = ["xai", "openai", "elevenlabs"]
+
+    private var extra: [String: Any] {
+        guard !extraJSON.isEmpty, let data = extraJSON.data(using: .utf8) else { return [:] }
+        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+    }
+
+    private static func json(_ record: [String: Any]) -> String {
+        guard !record.isEmpty, let data = try? JSONSerialization.data(withJSONObject: record, options: [.sortedKeys]) else { return "" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// The provider that speaks for this bot: the bot's own choice, then the
+    /// person's, nil for Auto (the desktop's `effectiveVoiceChoice`).
+    public func ttsChoice(botId: String?) -> String? {
+        let bot = botId.flatMap { (extra["bots"] as? [String: Any])?[$0] as? [String: Any] }
+        let choice = (bot?["tts"] as? String) ?? (extra["tts"] as? String)
+        guard let choice, Self.ttsProviders.contains(choice) else { return nil }
+        return choice
+    }
+
+    /// The voice picked for one provider for this bot.
+    private func voice(of provider: String, botId: String?) -> String {
+        let bot = botId.flatMap { (extra["bots"] as? [String: Any])?[$0] as? [String: Any] }
+        if let own = (bot?["voices"] as? [String: Any])?[provider] as? String { return own }
+        if provider == "xai" { return voice }
+        return ((extra["voices"] as? [String: Any])?[provider] as? String) ?? ""
+    }
+
+    /// These settings as one bot speaks them: `voice` is the voice of its
+    /// provider, `ttsProvider` that provider (nil: Auto, xAI's voice).
+    public func forBot(_ botId: String?) -> VoiceModeSettings {
+        var view = self
+        let provider = ttsChoice(botId: botId)
+        view.ttsProvider = provider
+        view.voice = voice(of: provider ?? "xai", botId: botId)
+        view.resolvedFor = botId ?? ""
+        return view
+    }
+
+    /// Pick a voice for this bot's provider: the bot's own slot when the bot
+    /// has its own provider, else the person's.
+    public func withVoice(_ id: String, forBot botId: String?) -> VoiceModeSettings {
+        var out = self
+        out.ttsProvider = nil
+        out.resolvedFor = nil
+        let provider = ttsChoice(botId: botId) ?? "xai"
+        var record = extra
+        var bots = record["bots"] as? [String: Any] ?? [:]
+        if let botId, var bot = bots[botId] as? [String: Any], bot["tts"] != nil {
+            var voices = bot["voices"] as? [String: Any] ?? [:]
+            voices[provider] = id.isEmpty ? nil : id
+            bot["voices"] = voices.isEmpty ? nil : voices
+            bots[botId] = bot
+            record["bots"] = bots
+        } else if provider == "xai" {
+            out.voice = id
+            return out
+        } else {
+            var voices = record["voices"] as? [String: Any] ?? [:]
+            voices[provider] = id.isEmpty ? nil : id
+            record["voices"] = voices.isEmpty ? nil : voices
+        }
+        out.extraJSON = Self.json(record)
+        return out
+    }
+
+    public static func == (lhs: VoiceModeSettings, rhs: VoiceModeSettings) -> Bool {
+        lhs.voice == rhs.voice && lhs.speed == rhs.speed && lhs.language == rhs.language && lhs.extraJSON == rhs.extraJSON
+            && lhs.ttsProvider == rhs.ttsProvider && lhs.resolvedFor == rhs.resolvedFor
     }
 
     public static let storageKey = "omb.voiceMode.v1"
@@ -56,6 +139,9 @@ public struct VoiceModeSettings: Codable, Equatable, Sendable {
         if let voice = record["voice"] as? String, voice.isEmpty || isVoiceId(voice) { out.voice = voice }
         if let speed = (record["speed"] as? NSNumber)?.doubleValue, speed.isFinite, speed >= minSpeed, speed <= maxSpeed { out.speed = speed }
         if let language = record["language"] as? String, isLanguage(language) { out.language = language }
+        // the desktop's provider fields travel through untouched
+        let others = record.filter { !["voice", "speed", "language"].contains($0.key) }
+        out.extraJSON = VoiceModeSettings.json(others)
         return out
     }
 
@@ -67,7 +153,10 @@ public struct VoiceModeSettings: Codable, Equatable, Sendable {
     }
 
     public var encoded: String {
-        let body: [String: Any] = ["voice": voice, "speed": speed, "language": language]
+        var body: [String: Any] = extra
+        body["voice"] = voice
+        body["speed"] = speed
+        body["language"] = language
         let data = (try? JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])) ?? Data()
         return String(decoding: data, as: UTF8.self)
     }

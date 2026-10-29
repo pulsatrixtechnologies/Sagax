@@ -48,7 +48,8 @@ const IDLE: SpeechSnapshot = { status: "idle" };
 /** How many utterances are rendered ahead of the one that is audible. */
 const PREFETCH_WINDOW = 3;
 
-/** On an organization server voice mode's xAI voice is the voice (the
+/** On an organization server voice mode's voice (xAI, OpenAI or
+ * ElevenLabs, the person's choice for this bot) is the voice (the
  * person's own key, their Perspicax key or the organization's,
  * server/voice-mode.ts): reading a reply aloud goes through it too, with
  * the person's Voice, Speed and Language, instead of the installation's
@@ -57,7 +58,8 @@ const PREFETCH_WINDOW = 3;
 async function organizationVoiceMode(botId: string): Promise<{ settings: VoiceModeSettings; botId: string; threadId?: string } | null> {
   let check = voiceModeCheckNow(botId);
   if (check.state === "loading") check = await refreshVoiceMode(botId).catch(() => ({ state: "error" as const, error: "", missing: true }));
-  if (check.state !== "ready" || !check.status.organization || !check.status.available) return null;
+  // a voice alone serves a reply read aloud (2026-10-29: ElevenLabs without ears)
+  if (check.state !== "ready" || !check.status.organization || !(check.status.available || (check.status.providers?.tts.length ?? 0) > 0)) return null;
   return { settings: readVoiceModeSettings(), botId };
 }
 

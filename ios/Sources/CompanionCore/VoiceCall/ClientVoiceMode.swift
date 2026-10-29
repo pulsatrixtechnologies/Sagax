@@ -458,10 +458,21 @@ extension CompanionClient {
         try await send(try makeRequest("GET", "\(Self.voiceBase(botId))/status"), as: VoiceModeStatus.self)
     }
 
-    /// xAI's voices (labels only).
-    public func voiceModeVoices(botId: String) async throws -> [VoiceModeVoice] {
+    /// The voices of one provider (labels only): the one this bot speaks
+    /// with (`provider`, nil: the server's pick for the person).
+    public func voiceModeVoices(botId: String, provider: String? = nil) async throws -> [VoiceModeVoice] {
         struct Body: Decodable { var voices: [VoiceModeVoice]? }
-        return try await sendVoice(try makeRequest("GET", "\(Self.voiceBase(botId))/voices"), as: Body.self).0.voices ?? []
+        let query = provider.map { "?provider=\($0)" } ?? ""
+        return try await sendVoice(try makeRequest("GET", "\(Self.voiceBase(botId))/voices\(query)"), as: Body.self).0.voices ?? []
+    }
+
+    /// The body fields of the voice that speaks for this bot: its voice,
+    /// and its provider when the person picked one (2026-10-29).
+    public static func voiceFields(_ settings: VoiceModeSettings, botId: String) -> [String: Any] {
+        let view = settings.resolvedFor == botId ? settings : settings.forBot(botId)
+        var body: [String: Any] = ["voice": view.voice, "speed": view.speed, "language": view.language]
+        if let provider = view.ttsProvider { body["tts"] = provider }
+        return body
     }
 
     /// A text cut into what the voice says (POST /voice/prepare), for a
@@ -474,7 +485,8 @@ extension CompanionClient {
     /// One utterance as an MP3 clip (POST /voice/speak), with the person's
     /// Voice, Speed and Language: a reply read aloud.
     public func voiceModeSpeak(botId: String, text: String, settings: VoiceModeSettings, threadId: String?) async throws -> (Data, VoiceKeyOutcome) {
-        var body: [String: Any] = ["text": String(text.prefix(500)), "voice": settings.voice, "speed": settings.speed, "language": settings.language]
+        var body = Self.voiceFields(settings, botId: botId)
+        body["text"] = String(text.prefix(500))
         if let threadId, Self.validRouteID(threadId) { body["threadId"] = threadId }
         var request = try makeRequest("POST", "\(Self.voiceBase(botId))/speak", body: body)
         request.timeoutInterval = 30
@@ -485,7 +497,8 @@ extension CompanionClient {
 
     /// One sentence spoken as xAI makes it; nil when there is nothing to say.
     public func voiceModeStream(botId: String, text: String, settings: VoiceModeSettings, threadId: String?) async throws -> VoiceStreamAudio? {
-        var body: [String: Any] = ["text": text, "voice": settings.voice, "speed": settings.speed, "language": settings.language]
+        var body = Self.voiceFields(settings, botId: botId)
+        body["text"] = text
         if let threadId, Self.validRouteID(threadId) { body["threadId"] = threadId }
         var request = try makeRequest("POST", "\(Self.voiceBase(botId))/stream", body: body)
         request.timeoutInterval = 30

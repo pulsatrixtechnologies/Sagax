@@ -57,7 +57,7 @@ import { speaker } from "@/lib/tts";
 import { fetchVoiceModeVoices, useVoiceModeAvailable } from "@/lib/voice-mode/api";
 import { notifyCallSettings, readCallSettings, useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
 import { liveCallNow, useLiveCall } from "@/lib/voice-mode/live-call-store";
-import { readVoiceModeSettings, useVoiceModeSettings, writeVoiceModeSettings } from "@/lib/voice-mode/settings";
+import { readVoiceModeSettings, useVoiceModeSettings, voiceSettingsForBot, writeVoiceForBot, writeVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { forgetVoiceprint } from "@/lib/voice-mode/speaker-id";
 import { callLevels, callPose, mascotCallSnapshot, NO_PANEL, runMascotCallEvent, type MascotCallDeps, type MascotCallPanel } from "./mascot-call";
 import { hotkeyAction, hotkeyBot, hotkeyConfig, type HotkeyKind } from "./hotkey";
@@ -432,7 +432,7 @@ export function FloatingBots() {
           if (snapshot.status === "speaking") setCallPanel((current) => (current.previewing?.id === voiceId ? { ...current, previewing: { id: voiceId, loading: false } } : current));
         });
         void speaker
-          .speak(t("voiceMode.previewLine", { voice: label }), { botId, voiceMode: { settings: { ...readVoiceModeSettings(), voice: voiceId } } })
+          .speak(t("voiceMode.previewLine", { voice: label }), { botId, voiceMode: { settings: { ...voiceSettingsForBot(readVoiceModeSettings(), botId), voice: voiceId } } })
           .finally(() => {
             unsubscribe();
             setCallPanel((current) => (current.previewing?.id === voiceId ? { ...current, previewing: null } : current));
@@ -453,7 +453,10 @@ export function FloatingBots() {
         setPanel({ enrollment: { state: "none" } });
         notifyCallSettings();
       },
-      writeSettings: (change) => void writeVoiceModeSettings(change),
+      writeSettings: ({ voice, ...rest }) => {
+        if (voice !== undefined) writeVoiceForBot(botId, voice);
+        if (Object.keys(rest).length) writeVoiceModeSettings(rest);
+      },
       writeCallSettings: (change) => void writeCallSettings(change),
     };
   }, [patch]);
@@ -647,7 +650,7 @@ export function FloatingBots() {
     // voice calls: the button where voice mode serves this bot, and the call itself when it is this bot's
     if (canCall) item.snapshot.hints = { ...item.snapshot.hints, call: t("floatingBots.call", { name: bot.name }) };
     if (thisCall) {
-      item.snapshot.call = mascotCallSnapshot(thisCall, callPanel, voiceSettings, callSettings);
+      item.snapshot.call = mascotCallSnapshot(thisCall, callPanel, voiceSettingsForBot(voiceSettings, bot.id), callSettings);
       // the mascot takes the pose of the call's phase (its status chip names it)
       item.snapshot.pose = callPose(thisCall.state.phase, item.snapshot.pose);
     }

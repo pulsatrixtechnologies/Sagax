@@ -29,6 +29,7 @@ import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
 import { DescribedRow, FIELD, FoldRow, HelpTip, PILL, PillSelect, SettingsGroup } from "./SettingsPrimitives";
 import { KeyList, ProviderKeyDialog } from "./settings/ProviderKeys";
 import { CloudAgentProvidersSettings, useCloudAgentProviders } from "./settings/CloudAgentProvidersSettings";
+import { VoiceProviderSettings } from "./settings/VoiceProviderSettings";
 import { PersonalVoiceKeys } from "./settings/PersonalVoiceKeys";
 import { WebSearchSettings } from "./settings/WebSearchSettings";
 import { VoiceEngineSettings } from "./settings/VoiceEngineSettings";
@@ -511,6 +512,8 @@ export function VoiceSettingsPage() {
       {/* #1098: the person's own voice keys on an organization server (their
           own speech and voice notes); the shared keys stay engines.manage */}
       {personalVoiceKeys && <PersonalVoiceKeys />}
+      {/* 2026-10-29: who speaks and who hears on a call, read aloud and dictation */}
+      <VoiceProviderSettings />
       {/* this computer's microphone: everyone's, whoever edits the installation */}
       <div data-settings-card="connections.audio">
         <SettingsGroup title={t("settings.audio.title")} groupId="audio">

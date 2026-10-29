@@ -1,5 +1,5 @@
 // Settings > Models and voice > My voice keys (#1098, 2026-10-28): the
-// person's own ElevenLabs, Fish Audio and xAI keys on an organization
+// person's own ElevenLabs, Fish Audio, xAI and OpenAI keys on an organization
 // server. Theirs, no admin right: the server uses them for their own speech
 // and voice notes, in place of the organization's key for the same engine
 // (server/routes/person-voice-keys.ts). The organization's shared keys stay
@@ -30,7 +30,7 @@ export const PERSONAL_VOICE_KEYS_PATH = "/api/me/voice-keys";
 
 /** The grey line under the row: which of the person's keys are saved. */
 export function personalVoiceKeysSummary(view: PersonalVoiceKeysView | null): string {
-  const saved = view ? PERSONAL_VOICE_KEY_PROVIDERS.filter((provider) => view[provider].configured) : [];
+  const saved = view ? PERSONAL_VOICE_KEY_PROVIDERS.filter((provider) => view[provider]?.configured) : [];
   if (!saved.length) return t("voiceKeys.summary.none");
   return t("voiceKeys.summary.saved", { providers: saved.map((provider) => PERSONAL_VOICE_KEY_LABELS[provider]).join(", ") });
 }

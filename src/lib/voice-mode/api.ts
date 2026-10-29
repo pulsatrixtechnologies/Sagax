@@ -3,10 +3,38 @@
 import { useEffect, useState } from "react";
 
 import type { VoiceKeyInfo, VoiceModeRefusalCause, VoiceModeSettings, VoiceModeStatus, VoiceProviderFailure } from "../../../shared/voice-mode";
+import { encodeProviderVoices, isVoiceTtsProvider, type VoiceProviderId, type VoiceTtsProvider } from "../../../shared/voice-providers";
+import { readVoiceModeSettings, voiceSettingsForBot } from "./settings";
+
+/** What a voice request says about who speaks (2026-10-29): the providers
+ * this bot speaks and hears with for this person, and a voice for each.
+ * The server falls back on the other providers by itself. */
+function voiceBody(botId: string, settings: VoiceModeSettings): Record<string, unknown> {
+  const view = voiceSettingsForBot(settings, botId);
+  return {
+    voice: view.voice, speed: view.speed, language: view.language,
+    ...(view.tts !== "auto" ? { tts: view.tts } : {}),
+    ...(Object.keys(view.voices).length ? { voices: view.voices } : {}),
+  };
+}
+
+/** The same for a socket's query. */
+function voiceQuery(botId: string, settings: VoiceModeSettings): Record<string, string> {
+  const view = voiceSettingsForBot(settings, botId);
+  const voices = encodeProviderVoices(view.voices);
+  return {
+    ...(view.tts !== "auto" ? { tts: view.tts } : {}),
+    ...(view.stt !== "auto" ? { stt: view.stt } : {}),
+    ...(voices ? { voices } : {}),
+  };
+}
 
 export interface VoiceOption {
   id: string;
   label: string;
+  description?: string;
+  /** ElevenLabs: one of the person's own voices (cloned or designed) */
+  own?: boolean;
 }
 
 /** A refusal shown as an access card in the bar, to this person only. */
@@ -31,6 +59,7 @@ export class VoiceModeRefused extends Error {
 export type { VoiceProviderFailure };
 const PROVIDER_FAILURES = new Set<VoiceProviderFailure>(["key", "quota", "busy", "down", "voice", "other"]);
 const KEY_SOURCES = new Set<VoiceKeyInfo["source"]>(["voice-key", "perspicax-key", "org-key", "server"]);
+const PROVIDERS = new Set<VoiceProviderId>(["xai", "openai", "elevenlabs"]);
 
 /** One key xAI refused on the way (server/voice-keys.ts). */
 export interface VoiceKeyRefusal extends VoiceKeyInfo {
@@ -38,9 +67,10 @@ export interface VoiceKeyRefusal extends VoiceKeyInfo {
 }
 
 function cleanKeyInfo(value: unknown): VoiceKeyInfo | undefined {
-  const record = value as { source?: unknown; last4?: unknown } | null | undefined;
+  const record = value as { source?: unknown; last4?: unknown; provider?: unknown } | null | undefined;
   if (!record || !KEY_SOURCES.has(record.source as VoiceKeyInfo["source"])) return undefined;
-  return { source: record.source as VoiceKeyInfo["source"], last4: typeof record.last4 === "string" && /^[\w.-]{1,4}$/.test(record.last4) ? record.last4 : null };
+  const provider = PROVIDERS.has(record.provider as VoiceProviderId) && record.provider !== "xai" ? { provider: record.provider as VoiceProviderId } : {};
+  return { source: record.source as VoiceKeyInfo["source"], last4: typeof record.last4 === "string" && /^[\w.-]{1,4}$/.test(record.last4) ? record.last4 : null, ...provider };
 }
 
 function cleanRefusals(value: unknown): VoiceKeyRefusal[] {
@@ -99,8 +129,10 @@ export function parseVoiceKeyHeader(value: string | null): VoiceKeyInfo | undefi
 /** The keys an HTTP answer names (`x-voice-key`, `x-voice-key-skipped`):
  * told to the listeners when a key was skipped. */
 export function noteVoiceKeyHeaders(headers: Pick<Headers, "get">): VoiceKeyEvent | null {
-  const used = parseVoiceKeyHeader(headers.get("x-voice-key"));
-  if (!used) return null;
+  const parsed = parseVoiceKeyHeader(headers.get("x-voice-key"));
+  if (!parsed) return null;
+  const provider = headers.get("x-voice-provider");
+  const used = PROVIDERS.has(provider as VoiceProviderId) && provider !== "xai" ? { ...parsed, provider: provider as VoiceProviderId } : parsed;
   const skipped = (headers.get("x-voice-key-skipped") ?? "").split(",").flatMap((entry) => {
     const parts = entry.split(":");
     const key = parts.length === 3 ? cleanKeyInfo({ source: parts[0], last4: parts[1] || null }) : undefined;
@@ -139,6 +171,12 @@ export function transientVoiceFailure(error: unknown): boolean {
 }
 
 const base = (botId: string) => `/api/bots/${encodeURIComponent(botId)}/voice`;
+
+/** The provider this bot speaks with for this person, or undefined for Auto. */
+function providerOf(botId: string): VoiceTtsProvider | undefined {
+  const tts = voiceSettingsForBot(readVoiceModeSettings(), botId).tts;
+  return isVoiceTtsProvider(tts) ? tts : undefined;
+}
 
 async function failure(res: Response): Promise<Error> {
   const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string; cause?: VoiceModeRefusalCause; failure?: string; key?: unknown; tried?: unknown; card?: { keysUrl?: string; admin?: boolean } };
@@ -185,8 +223,10 @@ export async function checkVoiceMode(botId: string, signal?: AbortSignal): Promi
   }
 }
 
-export async function fetchVoiceModeVoices(botId: string, signal?: AbortSignal): Promise<VoiceOption[]> {
-  const res = await fetch(`${base(botId)}/voices`, { signal });
+/** One provider's voices: the one this bot speaks with for this person
+ * (`provider`, else the server's pick). */
+export async function fetchVoiceModeVoices(botId: string, signal?: AbortSignal, provider: VoiceTtsProvider | undefined = providerOf(botId)): Promise<VoiceOption[]> {
+  const res = await fetch(`${base(botId)}/voices${provider ? `?provider=${provider}` : ""}`, { signal });
   if (!res.ok) throw await failure(res);
   noteVoiceKeyHeaders(res.headers);
   const body = (await res.json()) as { voices?: VoiceOption[] };
@@ -215,7 +255,7 @@ export async function speakVoiceMode(
   const res = await fetch(`${base(botId)}/speak`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text, voice: settings.voice, speed: settings.speed, language: settings.language, ...(threadId ? { threadId } : {}) }),
+    body: JSON.stringify({ text, ...voiceBody(botId, settings), ...(threadId ? { threadId } : {}) }),
     signal,
   });
   if (!res.ok) throw await failure(res);
@@ -272,7 +312,7 @@ async function streamVoiceModeSpeechOnce(
     res = await fetch(`${base(botId)}/stream`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text, voice: settings.voice, speed: settings.speed, language: settings.language, ...(threadId ? { threadId } : {}) }),
+      body: JSON.stringify({ text, ...voiceBody(botId, settings), ...(threadId ? { threadId } : {}) }),
       signal: controller.signal,
     });
   } catch (error) {
@@ -370,12 +410,13 @@ export function voiceLocale(): string | undefined {
   }
 }
 
-function sttQuery(language: string, threadId: string | undefined, locale: string | undefined): URLSearchParams {
-  return new URLSearchParams({ language, ...(language === "auto" && locale ? { locale } : {}), ...(threadId ? { threadId } : {}) });
+function sttQuery(language: string, threadId: string | undefined, locale: string | undefined, botId?: string): URLSearchParams {
+  const stt = botId ? voiceSettingsForBot(readVoiceModeSettings(), botId).stt : "auto";
+  return new URLSearchParams({ language, ...(language === "auto" && locale ? { locale } : {}), ...(threadId ? { threadId } : {}), ...(stt !== "auto" ? { stt } : {}) });
 }
 
 export function voiceModeListenUrl(botId: string, language: string, threadId?: string, origin = typeof location === "undefined" ? "http://localhost" : location.origin, locale = voiceLocale()): string {
-  return `${origin.replace(/^http/, "ws")}${base(botId)}/listen?${sttQuery(language, threadId, locale)}`;
+  return `${origin.replace(/^http/, "ws")}${base(botId)}/listen?${sttQuery(language, threadId, locale, botId)}`;
 }
 
 /** A whole-turn upload that has not answered in this long is given up (the
@@ -390,7 +431,7 @@ export async function transcribeVoiceMode(
   signal?: AbortSignal,
   timeoutMs = TRANSCRIBE_TIMEOUT_MS,
 ): Promise<string> {
-  const query = sttQuery(language, threadId, voiceLocale());
+  const query = sttQuery(language, threadId, voiceLocale(), botId);
   const controller = new AbortController();
   const forward = () => controller.abort(signal?.reason);
   if (signal?.aborted) forward();
@@ -494,7 +535,38 @@ export function forgetVoiceModeStatus(): void {
 
 /** The live call's streaming voice socket (GET /voice/speech): the voice,
  * speed and language are fixed for the socket. */
-export function voiceModeSpeechUrl(botId: string, settings: Pick<VoiceModeSettings, "voice" | "speed" | "language">, threadId?: string, origin = typeof location === "undefined" ? "http://localhost" : location.origin): string {
-  const query = new URLSearchParams({ language: settings.language, speed: String(settings.speed), ...(settings.voice ? { voice: settings.voice } : {}), ...(threadId ? { threadId } : {}) });
+export function voiceModeSpeechUrl(botId: string, settings: VoiceModeSettings, threadId?: string, origin = typeof location === "undefined" ? "http://localhost" : location.origin): string {
+  const view = voiceSettingsForBot(settings, botId);
+  const query = new URLSearchParams({ language: view.language, speed: String(view.speed), ...(view.voice ? { voice: view.voice } : {}), ...(threadId ? { threadId } : {}), ...voiceQuery(botId, view) });
   return `${origin.replace(/^http/, "ws")}${base(botId)}/speech?${query}`;
+}
+
+/** The person's providers for this bot, or for no bot (Settings > Voice):
+ * GET /api/bots/<id>/voice/status or GET /api/voice/status. */
+export async function fetchVoiceProviders(botId?: string, signal?: AbortSignal): Promise<VoiceModeStatus> {
+  const res = await fetch(botId ? `${base(botId)}/status` : "/api/voice/status", { signal, cache: "no-store" });
+  if (!res.ok) throw await failure(res);
+  return (await res.json()) as VoiceModeStatus;
+}
+
+/** One provider's voices, for a bot or for no bot. */
+export async function fetchProviderVoices(provider: VoiceTtsProvider, botId?: string, signal?: AbortSignal): Promise<VoiceOption[]> {
+  if (botId) return fetchVoiceModeVoices(botId, signal, provider);
+  const res = await fetch(`/api/voice/voices?provider=${provider}`, { signal });
+  if (!res.ok) throw await failure(res);
+  const body = (await res.json()) as { voices?: VoiceOption[] };
+  return Array.isArray(body.voices) ? body.voices.filter((voice) => typeof voice?.id === "string" && typeof voice?.label === "string") : [];
+}
+
+/** "Test the voice": a short sample in the voice picked, as audio. */
+export async function testVoice(text: string, settings: VoiceModeSettings, botId?: string, signal?: AbortSignal): Promise<Blob> {
+  if (botId) return speakVoiceMode(botId, text, settings, undefined, signal);
+  const res = await fetch("/api/voice/speak", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text, ...voiceBody("", settings) }),
+    signal,
+  });
+  if (!res.ok) throw await failure(res);
+  return res.blob();
 }

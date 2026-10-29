@@ -1,12 +1,13 @@
 // A person's own voice keys on an organization server (#1098, 2026-10-28):
-// ElevenLabs, Fish Audio and xAI (Grok voice). The person saves them with
+// ElevenLabs, Fish Audio, xAI (Grok voice) and OpenAI (2026-10-29: OpenAI's
+// voice and ears in voice mode, shared/voice-providers.ts). The person saves them with
 // no admin right (GET/PUT/DELETE /api/me/voice-keys,
 // server/routes/person-voice-keys.ts); the server uses them for that
 // person's own speech and voice notes, in place of the organization's key
 // for the same engine. The organization's shared keys stay engines.manage.
 // The voice engine itself stays the installation's choice.
 
-export const PERSONAL_VOICE_KEY_PROVIDERS = ["elevenlabs", "fish", "xai"] as const;
+export const PERSONAL_VOICE_KEY_PROVIDERS = ["elevenlabs", "fish", "xai", "openai"] as const;
 export type PersonalVoiceKeyProvider = (typeof PERSONAL_VOICE_KEY_PROVIDERS)[number];
 
 export function isPersonalVoiceKeyProvider(value: unknown): value is PersonalVoiceKeyProvider {
@@ -26,4 +27,5 @@ export const PERSONAL_VOICE_KEY_LABELS: Record<PersonalVoiceKeyProvider, string>
   elevenlabs: "ElevenLabs",
   fish: "Fish Audio",
   xai: "xAI (Grok voice)",
+  openai: "OpenAI",
 };

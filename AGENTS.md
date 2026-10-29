@@ -64,6 +64,29 @@ lines waiting in the queue drain as one turn answering the newest. Events
 lines name the model and context; the page posts `state: "heard"` audio
 stages. Details: docs/voice-mode-xai.md, "A call turn runs fast". Tests:
 `server/voice-turn.test.ts`, `server/voice-fast-turn.e2e.test.ts`.
+## Voice providers: OpenAI and ElevenLabs beside xAI (2026-10-29)
+
+Voice mode (calls, read aloud, dictation) is no longer xAI only. A person
+picks who speaks (xAI, OpenAI, ElevenLabs) and who listens (xAI; OpenAI
+comes next) in Settings > Voice (`VoiceProviderSettings`) and, per bot, in
+Edit bot > Voice ("Same as my settings" by default). The choice lives in
+the synced `omb.voiceMode.v1` (`tts`, `stt`, `voices`, `bots[botId]`,
+`shared/voice-providers.ts`); every request sends it (`src/lib/voice-mode/api.ts`
+`voiceBody`), and a client that does not (an older page) gets the person's
+stored choice on the server (`requestedChoice`). The iPhone keeps the other
+fields as they are and speaks with the bot's provider (`VoiceModeSettings.forBot`).
+Only providers with a usable key are offered (`status.providers`). Keys: the
+person's own (My voice keys, OpenAI added), their Perspicax OpenAI key, the
+organization's (`openai.key`, `tts.key`, same grant as its xAI voice), a solo
+server's. Adapters: `server/tts/openai-voice.ts`, `server/tts/elevenlabs-voice.ts`
+(the person's voices, cloned first); a live call's voice over HTTP streams
+behind the same session (`server/tts/http-speech-stream.ts`). A provider that
+fails or reaches its limit gives way to the next one silently
+(`nextCandidateIndex`, remembered a minute), with a line in Events
+(`providerFallbackNotice`), first audio times too. Usage: `openai-tts`,
+`elevenlabs-tts` (`voice-cost.ts`). Bot-less routes `/api/voice/(status|voices|speak)`
+serve Settings. Telephony (Perspicax Voice) is untouched. Gallery
+`src/gallery/voice-providers.html`, captures `node scripts/capture-voice-providers.mjs`.
 
 ## Edit routine, redone (2026-10-29)
 

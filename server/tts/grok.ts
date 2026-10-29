@@ -25,7 +25,7 @@ export function grokVoiceFailure(message: string): GrokVoiceFailure {
   if (/needs credits/.test(message)) return "quota";
   if (/rate-limiting/.test(message)) return "busy";
   if (/could not find that voice/.test(message)) return "voice";
-  if (/Could not reach Grok voice|timed out|Grok voice failed \(HTTP 5\d\d[):]|not reachable/.test(message)) return "down";
+  if (/Could not reach (?:Grok|OpenAI|ElevenLabs) voice|timed out|(?:Grok|OpenAI|ElevenLabs) voice failed \(HTTP 5\d\d[):]|not reachable/.test(message)) return "down";
   return "other";
 }
 

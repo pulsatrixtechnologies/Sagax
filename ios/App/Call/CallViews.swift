@@ -826,8 +826,14 @@ struct CallSettingsPanel: View {
 
     // MARK: Voice, speed, language
 
+    /// The bot this call speaks for (its provider decides which voice slot).
+    private var voiceBotId: String? {
+        if case let .bot(bot)? = call.target { return bot.id }
+        return nil
+    }
+
     private var voiceName: String {
-        let id = call.voiceSettings.voice
+        let id = call.voiceSettings.forBot(voiceBotId).voice
         guard !id.isEmpty else { return String(localized: "Not set") }
         return call.voices?.first { $0.id == id }?.label ?? id
     }
@@ -871,7 +877,7 @@ struct CallSettingsPanel: View {
     private var voiceList: some View {
         ScrollView {
             VStack(spacing: 0) {
-                option(id: "", label: String(localized: "Not set"), selected: call.voiceSettings.voice.isEmpty) { call.voiceSettings.voice = "" }
+                option(id: "", label: String(localized: "Not set"), selected: call.voiceSettings.forBot(voiceBotId).voice.isEmpty) { call.voiceSettings = call.voiceSettings.withVoice("", forBot: voiceBotId) }
                 if call.voices == nil && call.voicesError == nil {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
@@ -894,8 +900,8 @@ struct CallSettingsPanel: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(Text(String(localized: "Preview \(voice.label)")))
-                        option(id: voice.id, label: voice.label, selected: call.voiceSettings.voice == voice.id) {
-                            call.voiceSettings.voice = voice.id
+                        option(id: voice.id, label: voice.label, selected: call.voiceSettings.forBot(voiceBotId).voice == voice.id) {
+                            call.voiceSettings = call.voiceSettings.withVoice(voice.id, forBot: voiceBotId)
                         }
                     }
                 }

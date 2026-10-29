@@ -20,7 +20,7 @@ describe("the keys that may serve a voice, in order (server/voice-keys.ts)", () 
       return "audio";
     };
     const out = await withVoiceKeys("p-ada", [MINE, OWN, ORG], refusals, attempt, { log: (line) => lines.push(line), what: "speak" });
-    expect(out).toEqual({ value: "audio", used: OWN, skipped: [{ source: "voice-key", last4: "6Rf8", failure: "quota" }] });
+    expect(out).toEqual({ value: "audio", used: OWN, skipped: [{ source: "voice-key", last4: "6Rf8", failure: "quota" }], fellBack: [] });
     expect(lines).toEqual(["[voice-mode] xAI speak refused the person's voice key ···6Rf8 (quota): trying the person's Perspicax key ···c0Je"]);
     // the next request starts with the key that worked
     expect(refusals.order("p-ada", [MINE, OWN, ORG]).map((entry) => [entry.candidate.source, entry.refused])).toEqual([["perspicax-key", null], ["org-key", null], ["voice-key", "quota"]]);
@@ -81,5 +81,42 @@ describe("the keys that may serve a voice, in order (server/voice-keys.ts)", () 
     expect(describeVoiceKey(MINE)).toBe("person's voice key ···6Rf8");
     expect(describeVoiceKey({ source: "org-key", last4: null })).toBe("organization's key");
     expect(describeVoiceKey({ source: "server", last4: "abcd" })).toBe("server's key ···abcd");
+  });
+
+  it("gives way to another provider on any failure, silently, and remembers a busy one only a minute (2026-10-29)", async () => {
+    let clock = 0;
+    const refusals = new VoiceKeyRefusals({ now: () => clock });
+    const OPENAI: VoiceKeyCandidate = { key: "sk-OPENfake1Zx2Cv3Bn4Mm", via: "speaker-key", source: "voice-key", last4: "n4Mm", provider: "openai", payerPrincipalId: "p-ada" };
+    const OPENAI_ORG: VoiceKeyCandidate = { key: "sk-ORGfake5Lk6Jh7Gf8Dd", via: "org-key", source: "org-key", last4: "f8Dd", provider: "openai" };
+    const tried: string[] = [];
+    const attempt = async (candidate: VoiceKeyCandidate) => {
+      tried.push(`${candidate.provider ?? "xai"}:${candidate.source}`);
+      if (candidate.provider === "openai") throw new Error("OpenAI is rate-limiting speech. Wait a moment and try again.");
+      return "audio";
+    };
+    const out = await withVoiceKeys("p-ada", [OPENAI, OPENAI_ORG, ORG], refusals, attempt);
+    // a rate limit skips the other OpenAI key: another key of it would not help
+    expect(tried).toEqual(["openai:voice-key", "xai:org-key"]);
+    expect(out.used).toBe(ORG);
+    expect(out.skipped).toEqual([]);
+    expect(out.fellBack).toEqual([{ source: "voice-key", last4: "n4Mm", provider: "openai", failure: "busy" }]);
+    tried.length = 0;
+    await withVoiceKeys("p-ada", [OPENAI, OPENAI_ORG, ORG], refusals, attempt);
+    expect(tried).toEqual(["openai:org-key", "xai:org-key"]);
+    clock += 61_000;
+    expect(refusals.failure("p-ada", OPENAI)).toBeNull();
+  });
+
+  it("never treats the person's own abort as a provider failure", async () => {
+    const refusals = new VoiceKeyRefusals();
+    const OPENAI: VoiceKeyCandidate = { key: "sk-OPENfake1Zx2Cv3Bn4Mm", via: "speaker-key", source: "voice-key", last4: "n4Mm", provider: "openai" };
+    const abort = Object.assign(new Error("aborted"), { name: "AbortError" });
+    const error = await withVoiceKeys("p-ada", [OPENAI, ORG], refusals, async () => { throw abort; }).catch((caught: unknown) => caught);
+    expect(error).toBe(abort);
+    expect(refusals.failure("p-ada", OPENAI)).toBeNull();
+  });
+
+  it("names the provider of a key that is not xAI's", () => {
+    expect(describeVoiceKey({ source: "voice-key", last4: "n4Mm", provider: "elevenlabs" })).toBe("person's voice key (ElevenLabs) ···n4Mm");
   });
 });

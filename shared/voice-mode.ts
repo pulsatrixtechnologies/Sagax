@@ -7,6 +7,21 @@
 // the bot as an ordinary message, and the bot's answer is read back.
 // Sources: https://docs.x.ai/developers/model-capabilities/audio/speech-to-text
 // and https://docs.x.ai/developers/model-capabilities/audio/text-to-speech
+// Since 2026-10-29 OpenAI may hear and OpenAI or ElevenLabs may speak too
+// (shared/voice-providers.ts); the routes and the settings stay the same.
+import {
+  cleanBotVoiceChoices,
+  cleanProviderVoices,
+  cleanSttChoice,
+  cleanTtsChoice,
+  type BotVoiceChoice,
+  type ProviderVoices,
+  type VoiceProviderId,
+  type VoiceSttChoice,
+  type VoiceSttProvider,
+  type VoiceTtsChoice,
+  type VoiceTtsProvider,
+} from "./voice-providers.ts";
 
 /** localStorage key; travels with the person on an organization server
  * (shared/user-preferences.ts). */
@@ -145,6 +160,14 @@ export interface VoiceModeSettings {
   voice: string;
   speed: number;
   language: string;
+  /** Who speaks and who hears (shared/voice-providers.ts, 2026-10-29).
+   * Absent is "auto". */
+  tts?: VoiceTtsChoice;
+  stt?: VoiceSttChoice;
+  /** The voice picked for OpenAI and ElevenLabs (xAI's is `voice`). */
+  voices?: ProviderVoices;
+  /** A bot's own providers and voices, for this person (Edit bot > Voice). */
+  bots?: Record<string, BotVoiceChoice>;
 }
 
 export const DEFAULT_VOICE_MODE_SETTINGS: VoiceModeSettings = { voice: "", speed: 1, language: "auto" };
@@ -160,7 +183,18 @@ export function cleanVoiceModeSettings(input: unknown): VoiceModeSettings {
     ? record.speed
     : DEFAULT_VOICE_MODE_SETTINGS.speed;
   const language = isVoiceModeLanguage(record.language) ? record.language : DEFAULT_VOICE_MODE_SETTINGS.language;
-  return { voice, speed, language };
+  const tts = cleanTtsChoice(record.tts);
+  const stt = cleanSttChoice(record.stt);
+  const voices = cleanProviderVoices(record.voices);
+  const bots = cleanBotVoiceChoices(record.bots);
+  // "auto" is the default: kept out, so an untouched preference stays as it was
+  return {
+    voice, speed, language,
+    ...(tts && tts !== "auto" ? { tts } : {}),
+    ...(stt && stt !== "auto" ? { stt } : {}),
+    ...(voices ? { voices } : {}),
+    ...(bots ? { bots } : {}),
+  };
 }
 
 /** Why voice mode cannot run for this person: no xAI key serves them, or
@@ -192,6 +226,8 @@ export type VoiceProviderFailure = "key" | "quota" | "busy" | "down" | "voice" |
 export interface VoiceKeyInfo {
   source: VoiceKeySource;
   last4: string | null;
+  /** whose key: xAI when absent (an older server) */
+  provider?: VoiceProviderId;
 }
 
 /** One key of the person's, with what xAI refused it for lately, if anything. */
@@ -215,4 +251,10 @@ export interface VoiceModeStatus {
   /** For the speaker only (the access card's audience); `admin` adds the
    * organization's key hint, as on every access card. */
   refusal?: { cause: VoiceModeRefusalCause; admin?: true; keysUrl?: string };
+  /** The providers this person has a usable key for, in the default order
+   * (2026-10-29). Only these are offered in the settings. */
+  providers?: { tts: VoiceTtsProvider[]; stt: VoiceSttProvider[] };
+  /** The provider the next request starts with, for this bot and person. */
+  tts?: VoiceTtsProvider;
+  stt?: VoiceSttProvider;
 }

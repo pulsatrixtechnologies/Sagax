@@ -91,7 +91,8 @@ interface Clause {
 /** A sentence ends here: what is buffered for POST goes. */
 const SENTENCE_END = /[.!?…]["'»)\]]*\s*$/;
 
-const settingsKey = (settings: VoiceModeSettings) => `${settings.voice}|${settings.speed}|${settings.language}`;
+// the providers and their voices too (2026-10-29): another voice is another socket
+const settingsKey = (settings: VoiceModeSettings) => `${settings.voice}|${settings.speed}|${settings.language}|${JSON.stringify([settings.tts ?? "", settings.voices ?? {}, settings.bots ?? {}])}`;
 
 export class SpeechSocket {
   private readonly o: SpeechSocketOptions;
