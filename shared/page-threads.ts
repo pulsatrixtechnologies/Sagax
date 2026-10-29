@@ -9,6 +9,7 @@
 // scripts could forge: every field is plain text, checked and cut here. The
 // frame only ever receives anchors back (the page's own words and an id),
 // never a comment, a name or anything else a reader wrote.
+import type { PageContextComment } from "./data-context.ts";
 
 /** Where an annotation points: a piece of text (its words and a little of
  * what comes before and after, to find it again), or a part of the page
@@ -89,6 +90,26 @@ export function parseThreadText(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const text = value.trim();
   return text && text.length <= THREAD_LIMITS.textChars ? text : null;
+}
+
+/** The threads as the page's bot reads them (its page context and
+ * page_comments): names instead of ids, the page's words each one is about,
+ * dates, and which are new since the bot last read them. Pure. */
+export function commentsForModel(threads: readonly PageThread[], names: (id: string) => string, botReadAt?: number): PageContextComment[] {
+  const when = (at: number) => new Date(at).toISOString();
+  return threads.map((thread) => {
+    const latest = Math.max(thread.at, ...thread.replies.map((reply) => reply.at));
+    return {
+      threadId: thread.id,
+      on: thread.anchor.kind === "text" ? thread.anchor.quote : `<${thread.anchor.tag}> ${thread.anchor.quote}`.trim(),
+      by: names(thread.by),
+      text: thread.text,
+      at: when(thread.at),
+      resolved: Boolean(thread.resolved),
+      ...(botReadAt === undefined || latest > botReadAt ? { new: true } : {}),
+      replies: thread.replies.map((reply) => ({ by: names(reply.by), text: reply.text, at: when(reply.at) })),
+    };
+  });
 }
 
 // ── between the reader's bar and the page's frame ────────────────────────

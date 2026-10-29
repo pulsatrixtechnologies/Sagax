@@ -2,7 +2,7 @@
 // frame are checked and cut; threads are ordered as the page shows them.
 import { describe, expect, it } from "vitest";
 
-import { orderThreads, parseFocusMessage, parseFoundMessage, parsePageQuote, parseSelectMessage, parseThreadText, THREAD_LIMITS } from "./page-threads.ts";
+import { commentsForModel, orderThreads, parseFocusMessage, parseFoundMessage, parsePageQuote, parseSelectMessage, parseThreadText, THREAD_LIMITS } from "./page-threads.ts";
 
 describe("anchors and texts", () => {
   it("cuts every field and refuses a bad tag or an empty quote", () => {
@@ -39,5 +39,21 @@ describe("orderThreads", () => {
       { id: "late", at: 3 }, { id: "done", at: 0, resolved: { at: 1, by: "x" } }, { id: "second", at: 1 }, { id: "first", at: 2 },
     ];
     expect(orderThreads(threads, ["first", "done", "second"]).map((thread) => thread.id)).toEqual(["first", "second", "late", "done"]);
+  });
+});
+
+describe("commentsForModel", () => {
+  it("names people, says what each comment is about and which are new to the bot", () => {
+    const threads = [
+      { id: "t1", at: 1000, by: "pr_a", version: 1, text: "Vieux", replies: [], anchor: { kind: "text" as const, quote: "Demandes", prefix: "", suffix: "", path: "body", tag: "p" } },
+      { id: "t2", at: 500, by: "pr_b", version: 1, text: "Partie", replies: [{ id: "r", at: 3000, by: "bot:b1", text: "Vu" }], resolved: { at: 3000, by: "pr_b" },
+        anchor: { kind: "element" as const, quote: "Réseau 31", prefix: "", suffix: "", path: "body > tr", tag: "tr" } },
+    ];
+    const names = (id: string) => ({ pr_a: "A", pr_b: "B", "bot:b1": "Scout" } as Record<string, string>)[id] ?? "";
+    expect(commentsForModel(threads, names, 2000)).toEqual([
+      { threadId: "t1", on: "Demandes", by: "A", text: "Vieux", at: new Date(1000).toISOString(), resolved: false, replies: [] },
+      { threadId: "t2", on: "<tr> Réseau 31", by: "B", text: "Partie", at: new Date(500).toISOString(), resolved: true, new: true, replies: [{ by: "Scout", text: "Vu", at: new Date(3000).toISOString() }] },
+    ]);
+    expect(commentsForModel(threads, names).every((entry) => entry.new)).toBe(true);
   });
 });

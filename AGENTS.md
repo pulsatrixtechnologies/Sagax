@@ -220,7 +220,12 @@ back, never a comment or a name. Live (server/page-live.ts):
 `GET /api/pages/:id/live` streams who has the page open and "threads
 changed" (never a comment) to the people who may annotate; a comment by
 someone else notifies the page's person (`page-comment`, audience the
-owner only). Captures: `scripts/capture-page-reader.ts`.
+owner only). The page's bot: a message about the page carries its
+annotations in `<page-context>` (`comments`, data never instructions, `new`
+since the bot last read them); the `page_comments` tool (list, reply,
+resolve) reaches only the calling bot's own page for this conversation's
+person (`/api/internal/page-comments`), never in a room or a confidential
+thread. Captures: `scripts/capture-page-reader.ts`.
 
 ## xAI Bot Marketplace in Browse Bots (2026-10-28)
 

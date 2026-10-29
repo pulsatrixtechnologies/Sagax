@@ -178,7 +178,8 @@
 //                      An argument "$ATTACHED_FILE" becomes the path the
 //                      prompt's first <attached-file> tag names.
 //                      An argument "$PROMPT_ID" becomes the id the prompt
-//                      names after "PROMPT_ID=".
+//                      names after "PROMPT_ID=" ("$PROMPT_ID2": after
+//                      "PROMPT_ID2=").
 //                      A call with `onSteer: true` never runs at a turn's
 //                      start: it runs when a message steered into the
 //                      running turn contains `when` (the model reading it
@@ -958,9 +959,11 @@ const playTurn = (prompt: JsonValue, late = false) => {
     // "$PROMPT_ID" in an argument: the id the prompt names after
     // "PROMPT_ID=" (a test that only learns an id at run time sends it).
     const promptId = /PROMPT_ID=([\w-]+)/.exec(promptText)?.[1] ?? "";
+    // "$PROMPT_ID2": a second id, after "PROMPT_ID2=" (a page and its thread)
+    const promptId2 = /PROMPT_ID2=([\w-]+)/.exec(promptText)?.[1] ?? "";
     const withAttached = (call: FakeMcpCall): FakeMcpCall => ({
       ...call,
-      arguments: Object.fromEntries(Object.entries(call.arguments).map(([key, value]) => [key, value === "$ATTACHED_FILE" ? attachedPath : value === "$PROMPT_ID" ? promptId : value])),
+      arguments: Object.fromEntries(Object.entries(call.arguments).map(([key, value]) => [key, value === "$ATTACHED_FILE" ? attachedPath : value === "$PROMPT_ID" ? promptId : value === "$PROMPT_ID2" ? promptId2 : value])),
     });
     void runFakeMcpCalls(fakeMcpCalls.filter((call) => !call.onSteer && (!call.when || promptText.includes(call.when))).map(withAttached), argAfter("--mcp-config")).then(
       (note) => playReply(prompt, note),

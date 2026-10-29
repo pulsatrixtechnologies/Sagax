@@ -1,7 +1,7 @@
 {
   "direct": {
-    "bytes": 88190,
-    "sha256": "1286dd762d0051ee38f218b7f764f2b32762e26a1b605a3effc64c0d68b7e5e3",
+    "bytes": 89052,
+    "sha256": "997091794b74be329434c494908c47c563dd9282c9d629f169b257ce5e41786a",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -29,6 +29,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",
@@ -83,8 +84,8 @@
     ]
   },
   "direct+voice": {
-    "bytes": 89157,
-    "sha256": "0e6cb94d2b624856c37908a6d959bf1231b2e0b91d813efaeadd0073e9458300",
+    "bytes": 90019,
+    "sha256": "fdddd8a4d53ffe71aac8d08e9cd62d4ce4d7dbdfea310ad48d601142287a7760",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -112,6 +113,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",
@@ -167,8 +169,8 @@
     ]
   },
   "direct+shared": {
-    "bytes": 90191,
-    "sha256": "92335d7313b773ce2a0fb9cac2f7e4628dbafdfdfd99db501f3bcbd214dd52ee",
+    "bytes": 91053,
+    "sha256": "fc2c5e2691759ac220040b9214af2e0f4bf35a88e32142e55f306ccc9ee29d41",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -198,6 +200,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",
@@ -252,8 +255,8 @@
     ]
   },
   "direct+shared+voice": {
-    "bytes": 91158,
-    "sha256": "f48e8d3a474e1b5e44c3928140e05c04cfb37a6584aff67d6f34b6eb6ab83c31",
+    "bytes": 92020,
+    "sha256": "c6c524ff3bde163f3980f197df94bec31d1197fd4986680015ccab9632e1c728",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -283,6 +286,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",
@@ -338,8 +342,8 @@
     ]
   },
   "direct+skills": {
-    "bytes": 90243,
-    "sha256": "86f24619e6e375746b838ed79fc3c08b0ac5ec983679806fe18f52efc8d9b8bf",
+    "bytes": 91105,
+    "sha256": "75068e4a73f8461af00ebd1cec7e26ce2526192a90d58d7132c602658c5b772e",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -367,6 +371,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",
@@ -423,8 +428,8 @@
     ]
   },
   "direct+skills+voice": {
-    "bytes": 91210,
-    "sha256": "1ed9b5e86bb77e4112eb1ee850ca41de4ec48019338a6d303b05ef78eef3410b",
+    "bytes": 92072,
+    "sha256": "96697cd52591941646135b68520740798058b384acde0aed3325fa4acd89f576",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -452,6 +457,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",
@@ -509,8 +515,8 @@
     ]
   },
   "direct+skills+shared": {
-    "bytes": 92244,
-    "sha256": "e180fb0ca54f564d7ceb9acca1ad03e41e168167aabcfeee757bd51116fed083",
+    "bytes": 93106,
+    "sha256": "136b6e88c8f6d4842b59d07593fe3231f89ddca0c74f50f40f3d6aa2ecda0e4d",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -540,6 +546,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",
@@ -596,8 +603,8 @@
     ]
   },
   "direct+skills+shared+voice": {
-    "bytes": 93211,
-    "sha256": "23dcfd25b94d642b28b81dca9230342bb40c57b78e65e5f52a2f15942187b476",
+    "bytes": 94073,
+    "sha256": "f0449eda5d875e92205054a91c0d0634b55cfd41f91c96178d7749df4cf7a450",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -627,6 +634,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",
@@ -1932,8 +1940,8 @@
     ]
   },
   "direct+non-chief": {
-    "bytes": 77691,
-    "sha256": "367929e02022f5aed700b8845d282b78b26dfb5495217fe11a9e92e0018f6677",
+    "bytes": 78553,
+    "sha256": "fe441c43606653a1581353ef6d7d07c86df61847ab4305486ee4bed0a6d55c23",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -1961,6 +1969,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",
@@ -2007,8 +2016,8 @@
     ]
   },
   "direct+voice+non-chief": {
-    "bytes": 78658,
-    "sha256": "6572fa0570991d47fa5957c74c2c695af7a09ac25dc881045b63dcd8676952c2",
+    "bytes": 79520,
+    "sha256": "34e404f90333c96ca83e88e6834b4e031d25ee5cdbda4e0e884b21c87db48099",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2036,6 +2045,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",
@@ -2083,8 +2093,8 @@
     ]
   },
   "direct+shared+non-chief": {
-    "bytes": 79692,
-    "sha256": "c5f8931782b9152397411e04dc9e19b787bd4c0135ee85e29afee92638faa75a",
+    "bytes": 80554,
+    "sha256": "14fa0b72940ebe95fe40127ecb2e13f1ee1468899f9e13e8294f62f9d7e72e1b",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2114,6 +2124,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",
@@ -2160,8 +2171,8 @@
     ]
   },
   "direct+shared+voice+non-chief": {
-    "bytes": 80659,
-    "sha256": "a63592529de67222856a17d56eb6890dc4b68724ada4f551ab716bd8a4e74669",
+    "bytes": 81521,
+    "sha256": "12bfe5b2d233b840a989aec72d8f6c24ad97cf2f9bb78dc56e7868e3a0850a6f",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2191,6 +2202,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",
@@ -2238,8 +2250,8 @@
     ]
   },
   "direct+skills+non-chief": {
-    "bytes": 79744,
-    "sha256": "77f5903d37f5e8499e7afa19ef8d4e94d34469a1d9cb480bec05b8fbe952d61d",
+    "bytes": 80606,
+    "sha256": "85535600e795a169fd7b1c95c6f45c195e44f668c5bc30ce08301a0ba38cee2a",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2267,6 +2279,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",
@@ -2315,8 +2328,8 @@
     ]
   },
   "direct+skills+voice+non-chief": {
-    "bytes": 80711,
-    "sha256": "d9063fd5a3462ba7d6848a19e4ac165e0f360a33f6fd1ccb717a263cbeded248",
+    "bytes": 81573,
+    "sha256": "387762bf1e7e34fd725879d1f94d1eb49e5566ef90f0885d4715793253eb91d2",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2344,6 +2357,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",
@@ -2393,8 +2407,8 @@
     ]
   },
   "direct+skills+shared+non-chief": {
-    "bytes": 81745,
-    "sha256": "e004dab8a971029734ccbe74c90bdc39a2d1d11acc3035f9a4e12029dd7a90e6",
+    "bytes": 82607,
+    "sha256": "ed8f9ab0035b3533b8038842a296ead01486bdb34444f48b1825e5ffd056a8b2",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2424,6 +2438,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",
@@ -2472,8 +2487,8 @@
     ]
   },
   "direct+skills+shared+voice+non-chief": {
-    "bytes": 82712,
-    "sha256": "72e999dd7c7dcdd5a710b6474f0575cbc195bea786577179a6882f10f9fe42a6",
+    "bytes": 83574,
+    "sha256": "3d4c59799dbe50f48d9f5d8de6425446ab489fef5c89b1ffbaf6ee37ce69cba4",
     "tools": [
       "ask_choice",
       "tool_result_read",
@@ -2503,6 +2518,7 @@
       "delete_artifact",
       "task_list",
       "propose_page",
+      "page_comments",
       "sagax_help",
       "sagax_settings",
       "sagax_approvals",

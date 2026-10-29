@@ -61,6 +61,8 @@ if (KIND === "html") {
   const first = pages.addThread(pageId, { by: READER, version: 1, text: "Peut-on ajouter la comparaison avec le trimestre précédent ?",
     anchor: { kind: "text", quote: "Le volume de demandes a augmenté de 12 %", prefix: "Faits saillants", suffix: " par rapport au mois précédent", path: "body > p:nth-of-type(2)", tag: "p" } });
   if (first.ok) pages.reply(pageId, first.thread.id, { by: OWNER, text: "Oui, je demande au bot de l'ajouter." });
+  // the page's bot answers too (page_comments, 2026-10-28)
+  if (first.ok) pages.reply(pageId, first.thread.id, { by: "bot:bot_capture", text: "C'est fait : la version 2 compare avec le trimestre précédent." });
   pages.addThread(pageId, { by: OWNER, version: 1, text: "Vérifier le délai du réseau avant l'envoi.",
     anchor: { kind: "element", quote: "Réseau 31 5 h 10", prefix: "", suffix: "", path: "body > table > tbody > tr:nth-of-type(2)", tag: "tr" } });
 }
