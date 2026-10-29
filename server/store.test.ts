@@ -1708,7 +1708,8 @@ describe("Store", () => {
     const user = store.appendMessage(bot.threadId, { role: "user", kind: "text", text: "hi" });
 
     const messages = store.messagesFor(bot.threadId);
-    expect(user.parentId).toBe(messages[0].id); // follows the greeting
+    expect(messages).toHaveLength(3); // greeting, intro card (#1354), the user's line
+    expect(user.parentId).toBe(messages[1].id); // follows the intro card
     expect(store.activeLeaf(bot.threadId)).toBe(user.id);
     expect(store.activePath(bot.threadId).map((m) => m.id)).toEqual(messages.map((m) => m.id));
   });
@@ -1883,6 +1884,8 @@ describe("Store change stream", () => {
   it("emits a card patch after a user message hides an open options card", () => {
     const store = new Store(selection);
     const bot = store.createBot();
+    // The seeded intro card (#1354) is dismissed by the first thing the person says.
+    store.appendMessage(bot.threadId, { role: "user", kind: "text", text: "past the intro" });
     const quiz = store.appendMessage(bot.threadId, {
       role: "bot",
       kind: "options",
@@ -1903,7 +1906,8 @@ describe("Store change stream", () => {
     const store = new Store(selection);
     const events = record(store);
     const bot = store.createBot();
-    expect(events.map((event) => event.type)).toEqual(["bot", "message"]);
+    // the greeting, then the intro card (#1354)
+    expect(events.map((event) => event.type)).toEqual(["bot", "message", "message"]);
     expect(events[0]).toEqual({ type: "bot", botId: bot.id });
     expect(events.slice(1).every((event) => event.threadId === bot.threadId)).toBe(true);
   });
@@ -2766,7 +2770,7 @@ describe("soul", () => {
       .mockImplementationOnce(() => { throw new Error("disk full"); });
     expect(() => store.deleteBot(bot.id, request)).toThrow("disk full");
     expect(store.bot(bot.id)).toBe(bot); expect(store.bot(chief.id)?.lastTeamSetupReceipt).toBeUndefined();
-    expect(existsSync(soulFile(bot.id))).toBe(true); expect(store.messagesFor(bot.threadId)).toHaveLength(1);
+    expect(existsSync(soulFile(bot.id))).toBe(true); expect(store.messagesFor(bot.threadId)).toHaveLength(2); // greeting and intro card (#1354)
     save.mockRestore(); expect(store.deleteBot(bot.id, request)).toBe(true);
     const reloaded = new Store(selection);
     expect(reloaded.bot(bot.id)).toBeNull();

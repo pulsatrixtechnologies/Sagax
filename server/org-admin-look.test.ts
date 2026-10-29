@@ -21,7 +21,8 @@ describe("a bot's look", () => {
 
   it("names the character, its family, skin and shape as stored", () => {
     expect(botLook({ name: "A", color: "tomato", mascotLook: { character: "shape", shape: "star", skins: { shape: "nebula" } } }, exists)).toMatchObject({
-      kind: "mascot", character: "shape", family: "shapes", color: "tomato", colorHex: "#E8483F", skin: "galaxy", shape: "hexagon",
+      // star is a shape of its own since the full shape set (#1513, 2026-10-28)
+      kind: "mascot", character: "shape", family: "shapes", color: "tomato", colorHex: "#E8483F", skin: "galaxy", shape: "star",
     });
     expect(botLook({ name: "A", color: "green", mascotLook: { character: "shiba", skins: { shiba: "sesame" } } }, exists)).toMatchObject({ kind: "mascot", family: "animals", skin: "sesame", shape: null });
     expect(botLook({ name: "A", color: "green", mascotLook: { character: "trombi" } }, exists)).toMatchObject({ kind: "mascot", family: "classics", skin: "classic" });

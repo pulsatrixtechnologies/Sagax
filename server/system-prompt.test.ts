@@ -37,6 +37,7 @@ import {
   type ComputerPromptKind,
 } from "./system-prompt.ts";
 import { WIDGET_KIT_CSS } from "../src/lib/widget-kit.ts";
+import { PAGE_BASE_CSS } from "../src/lib/page-theme.ts";
 
 describe("resolveComputerPromptKind", () => {
   // One ladder for the settings preview, a direct turn, and a room turn,
@@ -336,8 +337,11 @@ describe("RICH_OUTPUT_PROMPT", () => {
     }
     const named = new Set([...RICH_OUTPUT_PROMPT.matchAll(/(?<![\w-])\.([a-z][a-z0-9-]*)/g)].map((match) => match[1]!));
     const classes = [...named].filter((name) => !["md", "ts", "js"].includes(name));
-    expect(classes).toEqual(expect.arrayContaining(["card", "card-header", "card-title", "btn", "badge", "table", "input", "tabs-trigger", "eyebrow"]));
-    for (const name of classes) expect(WIDGET_KIT_CSS, name).toMatch(new RegExp(`\\.${name}(?![\\w-])`));
+    expect(classes).toEqual(expect.arrayContaining(["card", "card-header", "card-title", "btn", "badge", "table", "input", "tabs-trigger", "eyebrow", "page-header"]));
+    // #1551: a page carries the widget kit plus its own layout (PAGE_BASE_CSS); .page-header is the page's alone
+    const pageOnly = classes.filter((name) => !new RegExp(`\\.${name}(?![\\w-])`).test(WIDGET_KIT_CSS));
+    expect(pageOnly).toEqual(["page-header"]);
+    for (const name of pageOnly) expect(PAGE_BASE_CSS, name).toMatch(new RegExp(`\\.${name}(?![\\w-])`));
     const example = /Example: (<div class="card">.*?<\/div>)\./.exec(RICH_OUTPUT_PROMPT)?.[1] ?? "";
     expect(example).toContain("badge-warning");
     for (const match of example.matchAll(/class="([^"]+)"/g)) {

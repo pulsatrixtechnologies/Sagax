@@ -47,11 +47,15 @@ describe("an organization person's engines at first run (2026-10-18)", () => {
     expect(ids(orgEngineReadiness(more, org(mine)).connectable)).toEqual(["claude", "codex", "grok"]);
   });
 
-  it("an engine the admin hid is never offered to connect, even with the person's account on it", () => {
-    const mine = none.map((row) => (row.instanceId === "grok" ? { ...row, myTurns: "subscription" as const } : row));
-    const readiness = orgEngineReadiness(instances, org(mine, ["claude"]));
+  it("an engine the admin hid is never offered to connect; on the person's own subscription it answers (#1098, their bill)", () => {
+    const readiness = orgEngineReadiness(instances, org(none, ["claude"]));
     expect(readiness.state).toBe("connect");
     expect(ids(readiness.connectable)).toEqual(["claude"]);
+    // 2026-10-27 (#1098): outside the organization's list, the person's own subscription or key still runs it
+    const mine = none.map((row) => (row.instanceId === "grok" ? { ...row, myTurns: "subscription" as const, subscription: { supported: true, signedIn: true } } : row));
+    const paid = orgEngineReadiness(instances, org(mine, ["claude"]));
+    expect(paid.state).toBe("ready");
+    expect(ids(paid.working)).toEqual(["grok"]);
   });
 
   it("an engine paid by the organization but not given to the person can still be connected with their own account", () => {
