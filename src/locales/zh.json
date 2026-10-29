@@ -297,7 +297,6 @@
   "composer.goal.aria": "一起完成",
   "composer.goal.title": "一起完成——团队会一直工作到目标完成",
   "composer.goal.chip": "目标",
-  "composer.placeholder.approval": "先回应上面的批准请求才能继续",
   "composer.placeholder.attaching": "正在附加文件…",
   "composer.placeholder.listening": "正在聆听…",
   "composer.placeholder.goal": "描述 {name} 要一起完成什么",

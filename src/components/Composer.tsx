@@ -15,6 +15,7 @@ import { useMenuMotion } from "./MenuMotion";
 import { activeLocale, t } from "@/lib/i18n";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { composerPlaceholder } from "@/lib/composer-placeholder";
+import { useBoundedLock } from "@/lib/composer-lock";
 import { pendingQuestions } from "@/lib/pending-question";
 import { consumeRetroCommand, retroSignal } from "@/lib/retro98";
 import { reportAchievement } from "@/lib/achievements";
@@ -188,7 +189,13 @@ export function Composer({
   onRestoreReply?: (message: Message, threadId: string) => void;
 }) {
   const bot = profile ? currentTaskBot(profile) : undefined;
-  const locked = Boolean(bot?.awaitingThreadSnapshot);
+  // 2026-10-29: the box locks only while a thread's page is on its way, and
+  // for a bounded time (src/lib/composer-lock.ts): a page that never lands
+  // (a server restart, a dropped fetch) must not keep the person from
+  // writing. A pending approval never locks it either: the person answers
+  // the card or writes past it, and their words join the running turn at
+  // its next safe point or wait for it (server/busy-routing.ts).
+  const locked = useBoundedLock(Boolean(bot?.awaitingThreadSnapshot));
   // Slices of the store, so a dispatch elsewhere (an unread mark, another
   // bot's frame) does not render the composer while someone types.
   const dispatch = useStoreDispatch();
@@ -1590,8 +1597,9 @@ export function Composer({
           // an upload in flight must not disable the box: a disabled element
           // drops keyboard focus and never gets it back, so the writer had to
           // click the input again after every pasted image (#1014). send()
-          // already refuses while an attachment is pending.
-          disabled={Boolean(approval) || locked}
+          // already refuses while an attachment is pending. A pending
+          // approval does not disable it either (2026-10-29).
+          disabled={locked}
           aria-busy={bot?.awaitingThreadSnapshot || undefined}
           placeholder={composerPlaceholder({
             approval: Boolean(approval),

@@ -2371,7 +2371,7 @@
   "composer.mention.everyoneOne": "1 bot in this chat",
   "composer.mention.person": "Person",
   "composer.mention.personDetail": "Gets a notification",
-  "composer.placeholder.approval": "Answer the approval above to continue",
+  "composer.placeholder.approval": "Answer the approval above, or write something else: it stays open",
   "composer.placeholder.attaching": "Attaching files…",
   "composer.placeholder.bot": "Message {name}",
   "composer.placeholder.goal": "Describe what {name} should finish together",

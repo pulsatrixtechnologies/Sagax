@@ -211,6 +211,22 @@ own Grok or Claude account even when the bot's engine brings none
 bot's default. A refusal tells the bot not to offer the card again. A part's
 successful connector call proves the card of the conversation it came from.
 
+## The person can always write (2026-10-29)
+
+The composer's box is never disabled by a pending approval: the card waits
+in the chat (PendingApprovalBox), the placeholder says it stays open, and a
+message sent past it goes out as any message to a working bot (steered in at
+the turn's next safe point, routed or queued by the server, never a 409).
+The one lock left is a thread's page on its way after a switch
+(`Bot.awaitingThreadSnapshot`), bounded to `SNAPSHOT_LOCK_MAX_MS` (8 s) by
+`useBoundedLock` (src/lib/composer-lock.ts): a page that never lands (a
+server restart, a dropped fetch) gives the box back by itself. The other
+states only refuse the send and keep the draft: a certain "no" from the
+server (shared/send-state.ts, one line with the one thing to do, asked again
+every 15 s and on focus; never with Auto), an attachment still uploading, a
+dictation in progress. Tests: `src/components/Composer.approvalOpen.test.ts`,
+`src/lib/composer-lock.test.ts`.
+
 ## Every turn knows its approval level; Full never asks for a typed GO (2026-10-28)
 
 A bot in Full access answered "no sends without your typed GO": nothing in

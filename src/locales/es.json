@@ -297,7 +297,6 @@
   "composer.goal.aria": "Terminar en equipo",
   "composer.goal.title": "Terminar en equipo: el equipo sigue trabajando hasta completar el objetivo",
   "composer.goal.chip": "Objetivo",
-  "composer.placeholder.approval": "Responde a la aprobación de arriba para continuar",
   "composer.placeholder.attaching": "Adjuntando archivos…",
   "composer.placeholder.listening": "Escuchando…",
   "composer.placeholder.goal": "Describe qué debe completar {name} en equipo",

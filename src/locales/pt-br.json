@@ -799,7 +799,6 @@
   "composer.mention.aria": "Marcar um bot",
   "composer.mention.person": "Pessoa",
   "composer.mention.personDetail": "Recebe uma notificação",
-  "composer.placeholder.approval": "Responda à aprovação acima para continuar",
   "composer.placeholder.attaching": "Anexando arquivos…",
   "composer.placeholder.bot": "Mensagem para {name}",
   "composer.placeholder.goal": "Descreva o que {name} deve concluir junto",
