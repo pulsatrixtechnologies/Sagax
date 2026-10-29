@@ -15,7 +15,7 @@ import { PLACE_PHONE_CALL_TOOL } from "../../shared/outbound-call.ts";
 import type { ToolCallContext, ToolCallResult } from "./agents-call.ts";
 import type { Json } from "./agents-client.ts";
 
-export const CARD_TOOL_NAMES: ReadonlySet<string> = new Set(["create_options_card", ASK_CHOICE_TOOL, "check_widget", "show_widget", "update_widget", "show_html", "update_html", "propose_page", PLACE_PHONE_CALL_TOOL]);
+export const CARD_TOOL_NAMES: ReadonlySet<string> = new Set(["create_options_card", ASK_CHOICE_TOOL, "check_widget", "show_widget", "update_widget", "show_html", "update_html", "propose_page", "page_comments", PLACE_PHONE_CALL_TOOL]);
 
 const CARD_ROUTE = "/api/internal/options-card";
 
@@ -64,6 +64,14 @@ export async function callCardTool(name: string, args: Json, context: ToolCallCo
     const { ok, body } = await apiResponse("/api/internal/phone-call", { method: "POST", body: JSON.stringify(args) });
     if (!ok) return { text: String(body.error ?? "The call could not be prepared. Nothing was placed."), isError: true };
     return { text: String(body.text ?? ""), ...(body.isError === true ? { isError: true } : {}) };
+  }
+
+  // page_comments (2026-10-28): the page's annotations, read and answered
+  // through the harness, which checks the page is this bot's for this person
+  if (name === "page_comments") {
+    const { ok, body } = await apiResponse("/api/internal/page-comments", { method: "POST", body: JSON.stringify(args) });
+    if (!ok) return { text: String(body.error ?? "Could not reach that page's comments."), isError: true };
+    return { text: JSON.stringify(body) };
   }
 
   if (name === "propose_page") {

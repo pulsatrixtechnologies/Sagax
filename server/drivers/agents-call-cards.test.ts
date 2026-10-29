@@ -197,3 +197,16 @@ describe("update_html", () => {
     expect(apiResponse).not.toHaveBeenCalled();
   });
 });
+
+describe("page_comments (2026-10-28, Annotate)", () => {
+  it("is offered outside rooms only, and goes to the harness, which checks the page is this bot's", async () => {
+    expect(availableTools(PROFILE).some((tool) => tool.name === "page_comments")).toBe(true);
+    const { apiResponse, context } = harness({ ok: true, status: 200, body: { pageId: "page_12345678", comments: [] } });
+    const result = await callTool("page_comments", { page_id: "page_12345678", action: "reply", thread_id: "t1", text: "Fait" }, context);
+    expect(apiResponse).toHaveBeenCalledWith("/api/internal/page-comments", { method: "POST", body: JSON.stringify({ page_id: "page_12345678", action: "reply", thread_id: "t1", text: "Fait" }) });
+    expect(JSON.parse(result.text!)).toEqual({ pageId: "page_12345678", comments: [] });
+    const refused = harness({ ok: false, status: 404, body: { error: "page_id: no page of yours for this person has that id." } });
+    const answer = await callTool("page_comments", { page_id: "x", action: "list" }, refused.context);
+    expect(answer).toMatchObject({ isError: true, text: "page_id: no page of yours for this person has that id." });
+  });
+});

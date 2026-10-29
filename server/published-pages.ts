@@ -119,6 +119,9 @@ export interface PageRecord {
   /** Annotations of the people who read it (2026-10-28): threads anchored
    * on the page, with replies; seen by everyone who may read it. */
   threads?: PageThread[];
+  /** When the page's bot last read its annotations (page context or
+   * page_comments): what came after is new to it. */
+  botReadAt?: number;
 }
 
 export type PageError = { ok: false; status: 400 | 404 | 409; error: string; code: string };
@@ -500,6 +503,14 @@ export class PublishedPages {
       return page;
     }, false);
     return "ok" in result ? result : { ok: true, ...answer! };
+  }
+
+  /** The page's bot read its annotations now. */
+  markBotRead(id: string): void {
+    this.mutate(id, (page, now) => {
+      page.botReadAt = now;
+      return page;
+    }, false);
   }
 
   /** Resolve or open again; anyone who may annotate. */

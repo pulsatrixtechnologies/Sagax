@@ -1801,7 +1801,7 @@ const ROOM_REPLACED_TOOLS = new Set(["ask_bot", "delegate_bot", "check_delegatio
 // chat-apps.ts refuse a room): offered where they work, not where they fail.
 // run_with_engine starts a thread of the bot itself, which a room turn cannot
 // (startTurn: the bot is already working in that room).
-const ROOM_ABSENT_TOOLS = new Set(["propose_page", "show_widget", "update_widget", "show_html", "update_html", "run_with_engine"]);
+const ROOM_ABSENT_TOOLS = new Set(["propose_page", "page_comments", "show_widget", "update_widget", "show_html", "update_html", "run_with_engine"]);
 // 2026-10-28: what a teammate's turn one hop away (profile.peerHop) is not
 // shown: every tool that would start another bot's turn, a job of its own,
 // or an agent-API prompt. The routes refuse these past one hop
@@ -1834,7 +1834,7 @@ const CLOUD_HOME_SURFACE = {
 export const DEFERRED_AGENT_TOOL_NAMES: ReadonlySet<string> = new Set([
   "propose_routine", "propose_routine_action", "list_routines", "run_routine",
   "propose_team_setup", "list_team_setup", "propose_profile", "propose_model", "propose_bot_deletion", "archive_bot",
-  "propose_team_memory", "propose_page", "create_room", "manage_room", "create_bot",
+  "propose_team_memory", "propose_page", "page_comments", "create_room", "manage_room", "create_bot",
   "add_mcp_server", "skill_manage", "skills_list", "rules_update", "docs_update",
   "launch_cloud_agent", "list_cloud_agents", "get_cloud_agent", "cancel_cloud_agent", "archive_cloud_agent",
   "cloud_agent_follow_up", "cloud_agent_transcript", "find_cloud_agent_by_pr", "list_cloud_agent_artifacts",
