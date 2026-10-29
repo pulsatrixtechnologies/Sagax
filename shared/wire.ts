@@ -1467,6 +1467,9 @@ export type ServerFrame =
   | { kind: "preferences"; audience: string; preferences: Record<string, string>; updatedAt: number | null }
   /** A screen or button for one person's open desktop app. iOS and Android ignore this kind. */
   | { kind: "bot-act"; audience: string; action: string; input?: Record<string, unknown> }
+  /** #1545: a bot reads or changes a setting kept on this person's device;
+   * their open apps fetch /api/me/device-settings/requests (no data here). */
+  | { kind: "device-settings"; audience: string }
   /** Shake this person's desktop window. Their streams only (server/nudge.ts). */
   | { kind: "nudge"; audience: string; id?: string; fromId: string; fromName: string; at: number; open?: { groupId: string; threadId: string } }
   /** The nudge this person just sent, to their own streams only, so each of

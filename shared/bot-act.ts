@@ -288,6 +288,11 @@ export function decideBotAct(input: {
   if (target.kind === "ui" && target.command === "setPreference") {
     return { ok: false, status: 403, error: "Use sagax_settings to change a preference." };
   }
+  // #1545: the device channel is sagax_settings' own (its policy, its card),
+  // and an app's answer is never a bot's to give
+  if (target.kind === "route" && (target.path === "/api/me/device-settings" || target.path.startsWith("/api/me/device-settings/"))) {
+    return { ok: false, status: 403, error: "Use sagax_settings to read or change a setting kept on the person's device." };
+  }
   if (escalatesApproval(target)) {
     return { ok: false, status: 403, error: "act does not change approval levels, rules or grants, nor answer a card: use sagax_settings (bot.approvalMode, rules.*), which asks the person when it must." };
   }

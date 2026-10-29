@@ -1475,6 +1475,10 @@ final class Session: ObservableObject {
                     if case let .unknown(kind) = frame.frame, kind == "phone-tools" {
                         Task { await PhoneToolCenter.shared.refresh() }
                     }
+                    // a bot reads or changes a setting this phone keeps (#1545)
+                    if case let .unknown(kind) = frame.frame, kind == "device-settings" {
+                        Task { await self.answerDeviceSettings() }
+                    }
                     // a routine changed or ran: the account's routines badge
                     if case let .unknown(kind) = frame.frame, kind.hasPrefix("routine") {
                         Task { await AccountRowModel.shared.refresh(self) }

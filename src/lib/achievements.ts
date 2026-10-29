@@ -73,6 +73,11 @@ export function useUnlocks(): Unlocks {
   return useSyncExternalStore(subscribe, () => state.unlocks, () => state.unlocks);
 }
 
+/** The unlocks now, outside a component (a bot's app icon change, #1545). */
+export function currentUnlocks(): Unlocks {
+  return state.unlocks;
+}
+
 /** Test seam: start over. */
 export function resetAchievementsForTests(next: Partial<State> = {}): void {
   state = { status: "idle", snapshot: null, unlocks: LOCKED_UNTIL_LOADED, ...next };

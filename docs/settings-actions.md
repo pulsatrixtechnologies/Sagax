@@ -106,9 +106,20 @@ parties hors tableau du script.
 - Une carte autorisée rejoue la route avec un jeton à usage unique
   (`x-sagax-act-confirmed`, 60 s, lié à la méthode et au chemin) : la route
   sait que la personne a dit Allow et que sa clé a couvert ces classes.
-- Préférences de l'appareil (apparence, notifications) : la commande
-  d'écran `setPreference` les écrit dans l'app ouverte de la personne ; sur
-  un serveur d'organisation elles suivent la personne comme à la main.
+- Réglages gardés sur l'appareil (#1545, 2026-10-28) : préférences locales
+  (apparence, notifications) et réglages de l'app elle-même (ouverture à la
+  connexion, canal de mise à jour, icône, micro, accès du téléphone,
+  jumelage, partage de cet ordinateur, mode serveur, réglages de l'iPhone).
+  Lecture et changement par le canal vers l'app ouverte : `sagax_settings`
+  rejoue `POST /api/me/device-settings/apply` avec la session de la
+  personne ; le serveur avertit ses apps ouvertes (cadre
+  `device-settings`), chacune lit `GET /api/me/device-settings/requests`
+  et répond `POST /api/me/device-settings/requests/:id` ; la première qui
+  garde le réglage répond (5 s au plus). Aucune app ouverte : le bot le dit
+  clairement, rien n'attend ; une préférence synchronisée d'un serveur
+  d'organisation est alors enregistrée pour la personne. Un code de
+  jumelage reste à l'écran ; un nouveau dossier partagé se choisit par la
+  personne et l'app de bureau confirme un partage sur son propre écran.
 
 ## Inventaire
 
@@ -440,6 +451,24 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | This computer's Local VMs (read only: status and instances) | Settings > Computer > Bot's computer | `sagax_settings` get, set `computer.localVm` | simple |
 | A Local VM step (pull: prepare, run: create, start, stop, remove, ensure: set it up) | Settings > Computer > Bot's computer | `sagax_settings` set `computer.localVmAction` | simple; organisation : organisation |
 
+### Appareil (app ouverte de la personne)
+
+| Réglage | Où dans l'UI | Outil du bot | Classe |
+|---|---|---|---|
+| Open Sagax when the person signs in to this computer (desktop app) | Settings > Account > Open at login | `sagax_settings` get, set `device.openAtLogin` | simple |
+| Update channel of the desktop app (stable, or nightly: versions still in testing) | Settings > Updates > Channel | `sagax_settings` get, set `device.updateChannel` | simple |
+| Install a downloaded update while the person is away and no bot works (desktop app) | Settings > Updates | `sagax_settings` get, set `device.updateWhenAway` | simple |
+| App icon of the desktop app (an icon's id: sagax for the default, sagax-owl, owl:<skin>, primary...; get gives the one shown) | Settings > Appearance > App icon | `sagax_settings` get, set `device.appIcon` | simple |
+| Microphone used for voice on this device (get lists them; set an id, a name, or default) | Settings > Voice > Microphone | `sagax_settings` get, set `device.microphone` | simple |
+| Keep this computer awake for scheduled routines (desktop app) | Settings > Routines > Keep awake | `sagax_settings` get, set `device.keepAwake` | simple |
+| Phone access to this computer (the desktop app's companion: on or off; get lists the paired devices) | Settings > Phone > This computer | `sagax_settings` get, set `device.remoteAccess` | simple |
+| Open or close pairing for a new phone (the code stays on the person's screen; get says whether it is open) | Settings > Phone > Pair a phone | `sagax_settings` get, set `device.pairing` | simple |
+| Remove a paired phone (its id, from device.remoteAccess) | Settings > Phone > paired device > Remove | `sagax_settings` get, set `device.pairedDeviceRemove` | simple + suppression |
+| Share this computer with a saved organization server ({server, terminal?, computer?, folders?: [{path, write}]}, or {server, revoke: true}; get lists each server's sharing). A new folder is chosen by the person; the desktop app confirms the change on its own screen | Settings > Servers > server > Computer access | `sagax_settings` get, set `device.computerSharing` | simple |
+| Server mode of the desktop app (get: the server it is locked to; leave signs out of it and returns to the launch screen) | Settings > General > Server > Change | `sagax_settings` get, set `device.serverMode` | simple |
+| Haptic feedback (iPhone app) | iPhone: Settings > Appearance > Haptics | `sagax_settings` get, set `device.haptics` | simple |
+| Vibrate on a nudge (iPhone app) | iPhone: Settings > Notifications > Nudges | `sagax_settings` get, set `device.nudgeHaptic` | simple |
+
 ## Hors de sagax_settings
 
 | Réglage | Où | Pourquoi |
@@ -450,7 +479,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Clés de sécurité (ajout, retrait, classes) | Réglages > Sécurité | la clé physique de la personne : l'outil ouvre l'écran (`act` ui toggleAppSettings section security) |
 | Export et import du coffre | Réglages > Identifiants | la personne seule (données en clair) ; les éléments du coffre restent modifiables (`credentials.*`) |
 | Full ou Custom sur un serveur personnel | Éditeur du bot > Permissions | canal de confirmation de l'app de bureau ; sur un serveur d'organisation `bot.approvalMode` full passe tout de suite à la demande de la personne à son bot principal (`quote`), sinon par une carte |
-| Mode serveur, mises à jour, icône, diagnostics | Réglages > Système, Mises à jour | IPC de l'app de bureau, pas de route |
+| Diagnostics | Réglages > Système | IPC de l'app de bureau, pas de route |
 | Répondre à une carte | conversation | la personne, ou un bot qu'elle possède à sa demande (`sagax_approvals`), fil confidentiel compris ; jamais le texte d'un autre agent ou d'un outil ; une carte à clé de sécurité reste à la personne |
 
 ## Console Perspicax (exposée à Sagax)

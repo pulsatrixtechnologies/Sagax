@@ -876,7 +876,11 @@ import { supportFolderOwner, supportOwnersOfId } from "./remote-session-probe.ts
 import { createRemoteSessionInternalRoutes, createRemoteSessionRoutes } from "./routes/remote-sessions.ts";
 import { createRemoteSessionsAdminRoutes } from "./routes/remote-sessions-admin.ts";
 import { createRemoteControlRoutes, isRemoteControlPath } from "./routes/remote-control.ts";
-import { BOT_ACT_ROUTE_HEADER, createRemoteSessionFileRoutes } from "./routes/remote-session-files.ts";
+import { BOT_ACT_ROUTE_HEADER, createRemoteSessionFileRoutes, remoteCallerIsAgent } from "./routes/remote-session-files.ts";
+import { createDeviceSettingsBroker } from "./device-settings.ts";
+import { createDeviceSettingRoutes } from "./routes/device-settings.ts";
+import { DEVICE_SETTINGS_FRAME, deviceSettingsFrameAllowed } from "../shared/device-settings.ts";
+import { DEVICE_REQUEST_KEYS, isSyncedPreference } from "../shared/settings-actions.ts";
 import { installResourceUsage } from "./resource-usage/install.ts";
 import { grokAccountReach } from "./drivers/acp/grok-tool-catalog.ts";
 import { createConnectorSetupInternalRoutes, createConnectorSetupProofs, createConnectorSetupRoutes, type ConnectorSetupContext } from "./routes/connector-setup.ts";
@@ -13555,6 +13559,8 @@ function sseFrameFor(
   if (payload?.kind === "achievements" && !achievementFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   // a person's phone tool requests reach that person's own streams only
   if (payload?.kind === PHONE_TOOLS_FRAME && !phoneToolsFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
+  // a person's device settings requests reach that person's own streams only (#1545)
+  if (payload?.kind === DEVICE_SETTINGS_FRAME && !deviceSettingsFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   // a person's preferences reach that person's own devices only
   if (payload?.kind === "preferences" && !preferencesFrameAllowed(payload, client.viewerId)) return null;
   // a person left a group: that person's own streams only (server/group-leave.ts)
@@ -37172,6 +37178,39 @@ ROUTES.push(createPhoneToolRoutes({
     return { person, deviceId: `session:${auth.session.id}`, transport };
   },
   botName: (botId) => store.bot(botId)?.name,
+}));
+// #1545 (2026-10-28): the settings kept on the person's device, read and
+// changed by a bot through their open Sagax app (server/device-settings.ts)
+const deviceSettings = createDeviceSettingsBroker({
+  notify: (person) => broadcast({ kind: DEVICE_SETTINGS_FRAME, audience: person }),
+  openApps: (person) => {
+    let count = 0;
+    for (const client of sseClients) {
+      if ((client.viewerId ?? localPrincipalId()) !== person) continue;
+      // a person's own page or app, never a service loopback
+      if (client.approvalUserId === undefined && client.viewerId === undefined && !client.identity) continue;
+      count += 1;
+    }
+    return count;
+  },
+});
+ROUTES.push(createDeviceSettingRoutes({
+  broker: () => deviceSettings,
+  // the person's own app: never a bot's act replay, a short-lived copy or a service
+  app: (req, auth) => {
+    if (remoteCallerIsAgent(req, auth)) return null;
+    if (auth.kind === "session" && isBotActSession(auth.session)) return null;
+    const person = actorPrincipalId(auth);
+    if (!person) return null;
+    return { person, appId: auth.kind === "session" ? `session:${auth.session.id}` : "loopback" };
+  },
+  person: (auth) => actorPrincipalId(auth) || null,
+  isKey: (key) => DEVICE_REQUEST_KEYS.has(key),
+  saveSynced: (person, key, value) => {
+    if (IDENTITY.kind !== "perspicax" || !isSyncedPreference(key)) return false;
+    savePersonPreferences(person, () => userPreferenceStore.merge(person, { [key]: value }, []));
+    return true;
+  },
 }));
 // "Scanner avec l'iPhone" (row 84): the person at their own computer asks
 // their phone to read a card; told apart by the session (cardScanRequester),

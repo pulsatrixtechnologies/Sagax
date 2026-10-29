@@ -96,6 +96,9 @@ import type { OnboardingStatus } from "@/lib/onboarding";
 import { openLiveEvents, publishLiveFrame, publishMissedFrames } from "@/lib/live-events";
 import { receiveAchievementsFrame } from "@/lib/achievements";
 import { announceServerPreferences, applyBotPreference } from "@/lib/user-preferences-sync";
+import { receiveDeviceSettingsFrame } from "@/lib/device-settings-app";
+import { isViewersPrimaryBot } from "@/lib/primary-bot";
+import { viewerActorId } from "@/lib/viewer";
 import { applyPersonLabel } from "@/lib/person-labels";
 import { announcePersonAvatar, withViewerAvatar } from "@/lib/person-avatars";
 import { StoreSourceContext, usePublishedStoreSource } from "./store-source";
@@ -5761,6 +5764,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (framed) flushSync(() => rawDispatch({ type: "liveCall", call: framed.call }));
           break;
         }
+        // #1545: a bot reads or changes a setting kept on this device
+        case "device-settings":
+          receiveDeviceSettingsFrame(() => {
+            const now = stateRef.current;
+            const viewer = viewerActorId(now.config);
+            return { bots: now.bots, primary: now.bots.find((bot) => isViewersPrimaryBot(bot, viewer)) ?? null };
+          });
+          break;
         case "bot-act": {
           const command = uiCommandToAction(frame.action, frame.input);
           // a preference on this device (sagax_settings): written where its

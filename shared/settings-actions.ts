@@ -13,6 +13,7 @@
 // shared/settings-actions.test.ts fails when an entry has no doc row.
 
 import { parseBotWorkplace } from "./bot-workplace.ts";
+import { DEVICE_ONLY_SETTINGS } from "./device-settings.ts";
 import { DESKTOP_APPEARANCE_KEYS } from "./desktop-appearance.ts";
 import type { SettingClass } from "./settings-actions-policy.ts";
 import { USER_PREFERENCE_KEYS } from "./user-preferences.ts";
@@ -25,7 +26,7 @@ export type SettingClassContext = { organization: boolean; self?: boolean; share
 
 export const SETTING_FAMILIES = [
   "bot", "thread", "routine", "group", "section", "rules", "account", "appearance",
-  "notifications", "models", "connections", "credentials", "server", "organization", "computer",
+  "notifications", "models", "connections", "credentials", "server", "organization", "computer", "device",
 ] as const;
 export type SettingFamily = (typeof SETTING_FAMILIES)[number];
 
@@ -48,6 +49,11 @@ export type SettingRoute = {
 /** #1545: a card the bot posts in the conversation for a step the person
  * takes themselves (an OAuth sign-in), never the step itself. */
 export type SettingCard = { card: "engineSignIn"; input: { instanceId: string } };
+
+/** #1545 (2026-10-28): a setting kept in the person's open app (desktop or
+ * iPhone), read and changed there through the device channel
+ * (shared/device-settings.ts); `value` travels as text. */
+export type SettingDevice = { device: string; value: string };
 
 /** The ids a change resolved: the bot of a thread or routine included. */
 export type SettingIds = { target?: string; botId?: string };
@@ -73,6 +79,9 @@ export type SettingRead = {
   shape?: (value: unknown) => unknown;
   /** A read the screen makes with POST (the vault's listing), never a change. */
   method?: "POST";
+  /** #1545: a setting kept only in the person's open app, read there through
+   * the device channel (`path` is then ignored). */
+  device?: string;
 };
 
 export interface SettingSpec {
@@ -86,9 +95,9 @@ export interface SettingSpec {
   read?: (ids: SettingIds) => SettingRead;
   /** The route the screen calls, or the screen command for a preference
    * kept on the person's device, or a card the bot posts for a step only the
-   * person takes (#1545: an engine's sign-in). A string is a refusal to
-   * relay. */
-  write: (ids: SettingIds, value: unknown) => SettingRoute | { ui: string; input: Record<string, unknown> } | SettingCard | string;
+   * person takes (#1545: an engine's sign-in), or a setting kept only in the
+   * person's open app (`device`). A string is a refusal to relay. */
+  write: (ids: SettingIds, value: unknown) => SettingRoute | { ui: string; input: Record<string, unknown> } | SettingCard | SettingDevice | string;
   /** What makes the change more than a simple application. Default: own. */
   classes?: (value: unknown, ctx: SettingClassContext) => SettingClass[];
   /** The approval level a change sets, for "up to the bot's own level". */
@@ -973,6 +982,34 @@ add({
   classes: always("delete", "secret"),
 });
 
+// ── #1545 (2026-10-28): what lives only in the person's open app ──────
+// Read and changed in the app itself through the device channel
+// (shared/device-settings.ts, server/device-settings.ts): the server asks the
+// person's open Sagax apps and the one that keeps the setting answers. No app
+// open: the bot is told so, nothing waits for later.
+const asText = (v: unknown): string => typeof v === "string" ? v : JSON.stringify(v);
+function deviceSetting(key: keyof typeof DEVICE_ONLY_SETTINGS, value: SettingValue, label: string, where: string, classes?: SettingSpec["classes"]): void {
+  add({
+    key, family: "device", target: "none", label, where, value,
+    ...(classes ? { classes } : {}),
+    read: () => ({ path: "/api/me/device-settings/apply", device: key }),
+    write: (_ids, v) => ({ device: key, value: asText(v) }),
+  });
+}
+deviceSetting("device.openAtLogin", "enum:on|off", "Open Sagax when the person signs in to this computer (desktop app)", "Settings > Account > Open at login");
+deviceSetting("device.updateChannel", "enum:stable|nightly", "Update channel of the desktop app (stable, or nightly: versions still in testing)", "Settings > Updates > Channel");
+deviceSetting("device.updateWhenAway", "boolean", "Install a downloaded update while the person is away and no bot works (desktop app)", "Settings > Updates");
+deviceSetting("device.appIcon", "string", "App icon of the desktop app (an icon's id: sagax for the default, sagax-owl, owl:<skin>, primary...; get gives the one shown)", "Settings > Appearance > App icon");
+deviceSetting("device.microphone", "string", "Microphone used for voice on this device (get lists them; set an id, a name, or default)", "Settings > Voice > Microphone");
+deviceSetting("device.keepAwake", "boolean", "Keep this computer awake for scheduled routines (desktop app)", "Settings > Routines > Keep awake");
+deviceSetting("device.remoteAccess", "boolean", "Phone access to this computer (the desktop app's companion: on or off; get lists the paired devices)", "Settings > Phone > This computer");
+deviceSetting("device.pairing", "boolean", "Open or close pairing for a new phone (the code stays on the person's screen; get says whether it is open)", "Settings > Phone > Pair a phone");
+deviceSetting("device.pairedDeviceRemove", "string", "Remove a paired phone (its id, from device.remoteAccess)", "Settings > Phone > paired device > Remove", always("own", "delete"));
+deviceSetting("device.computerSharing", "object", "Share this computer with a saved organization server ({server, terminal?, computer?, folders?: [{path, write}]}, or {server, revoke: true}; get lists each server's sharing). A new folder is chosen by the person; the desktop app confirms the change on its own screen", "Settings > Servers > server > Computer access");
+deviceSetting("device.serverMode", "enum:leave", "Server mode of the desktop app (get: the server it is locked to; leave signs out of it and returns to the launch screen)", "Settings > General > Server > Change");
+deviceSetting("device.haptics", "boolean", "Haptic feedback (iPhone app)", "iPhone: Settings > Appearance > Haptics");
+deviceSetting("device.nudgeHaptic", "boolean", "Vibrate on a nudge (iPhone app)", "iPhone: Settings > Notifications > Nudges");
+
 // ── #1545: the rest of what Settings shows ──────────────────────────────
 // sidebar teams: the list
 add({
@@ -1295,3 +1332,7 @@ export function isAppearancePreference(storage: string): boolean {
 export const DEVICE_PREFERENCE_KEYS: ReadonlySet<string> = new Set(
   SPECS.map((spec) => spec.write({}, "x")).flatMap((route) => (typeof route === "object" && "ui" in route && route.ui === "setPreference" ? [String(route.input.key)] : [])),
 );
+
+/** #1545: every key the device channel carries: the preferences kept on the
+ * person's device and the settings that live only in their open app. */
+export const DEVICE_REQUEST_KEYS: ReadonlySet<string> = new Set([...DEVICE_PREFERENCE_KEYS, ...Object.keys(DEVICE_ONLY_SETTINGS)]);

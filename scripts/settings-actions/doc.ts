@@ -12,7 +12,7 @@ const FAMILY_FR: Record<string, string> = {
   bot: "Bots", thread: "Conversations", routine: "Routines", group: "Groupes et salles", section: "Équipes (sections)",
   rules: "Règles d'approbation", account: "Compte", appearance: "Apparence", notifications: "Notifications et confidentialité",
   models: "Modèles et voix", connections: "Connexions", credentials: "Coffre et clés", server: "Serveur",
-  organization: "Organisation", computer: "Ordinateur",
+  organization: "Organisation", computer: "Ordinateur", device: "Appareil (app ouverte de la personne)",
 };
 
 const CLASS_FR: Record<string, string> = {
@@ -151,9 +151,20 @@ parties hors tableau du script.
 - Une carte autorisée rejoue la route avec un jeton à usage unique
   (\`x-sagax-act-confirmed\`, 60 s, lié à la méthode et au chemin) : la route
   sait que la personne a dit Allow et que sa clé a couvert ces classes.
-- Préférences de l'appareil (apparence, notifications) : la commande
-  d'écran \`setPreference\` les écrit dans l'app ouverte de la personne ; sur
-  un serveur d'organisation elles suivent la personne comme à la main.
+- Réglages gardés sur l'appareil (#1545, 2026-10-28) : préférences locales
+  (apparence, notifications) et réglages de l'app elle-même (ouverture à la
+  connexion, canal de mise à jour, icône, micro, accès du téléphone,
+  jumelage, partage de cet ordinateur, mode serveur, réglages de l'iPhone).
+  Lecture et changement par le canal vers l'app ouverte : \`sagax_settings\`
+  rejoue \`POST /api/me/device-settings/apply\` avec la session de la
+  personne ; le serveur avertit ses apps ouvertes (cadre
+  \`device-settings\`), chacune lit \`GET /api/me/device-settings/requests\`
+  et répond \`POST /api/me/device-settings/requests/:id\` ; la première qui
+  garde le réglage répond (5 s au plus). Aucune app ouverte : le bot le dit
+  clairement, rien n'attend ; une préférence synchronisée d'un serveur
+  d'organisation est alors enregistrée pour la personne. Un code de
+  jumelage reste à l'écran ; un nouveau dossier partagé se choisit par la
+  personne et l'app de bureau confirme un partage sur son propre écran.
 
 ## Inventaire
 
@@ -173,7 +184,7 @@ const TAIL = `
 | Clés de sécurité (ajout, retrait, classes) | Réglages > Sécurité | la clé physique de la personne : l'outil ouvre l'écran (\`act\` ui toggleAppSettings section security) |
 | Export et import du coffre | Réglages > Identifiants | la personne seule (données en clair) ; les éléments du coffre restent modifiables (\`credentials.*\`) |
 | Full ou Custom sur un serveur personnel | Éditeur du bot > Permissions | canal de confirmation de l'app de bureau ; sur un serveur d'organisation \`bot.approvalMode\` full passe tout de suite à la demande de la personne à son bot principal (\`quote\`), sinon par une carte |
-| Mode serveur, mises à jour, icône, diagnostics | Réglages > Système, Mises à jour | IPC de l'app de bureau, pas de route |
+| Diagnostics | Réglages > Système | IPC de l'app de bureau, pas de route |
 | Répondre à une carte | conversation | la personne, ou un bot qu'elle possède à sa demande (\`sagax_approvals\`), fil confidentiel compris ; jamais le texte d'un autre agent ou d'un outil ; une carte à clé de sécurité reste à la personne |
 
 ## Console Perspicax (exposée à Sagax)
