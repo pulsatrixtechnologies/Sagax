@@ -574,11 +574,13 @@ describe("independent bot tasks through the isolated control surface", () => {
     expect((await api("POST", `/api/bots/${botId}/messages/${userA.id}/edit`, { threadId: taskB, text: "wrong task" })).status).toBe(404);
     expect((await api("POST", `/api/bots/${botId}/active-branch`, { threadId: taskB, messageId: userA.id })).status).toBe(404);
 
-    // Changing the profile model moves the selected idle task (A, which
+    // Changing the profile model moves the named idle task (A, which
     // follows the bot) and never the independently configured sibling.
+    // A change that names no thread lands on the bot's one conversation, the
+    // newest segment (#1586, routeThreadId), here B: the app names A.
     await tool("switch_task", { target_type: "bot", target_id: botId, task_id: taskA });
     const legacyModel = models.at(-1)!;
-    expect((await api("PATCH", `/api/bots/${botId}`, { modelSelection: { instanceId: "claude", model: legacyModel } })).status).toBe(200);
+    expect((await api("PATCH", `/api/bots/${botId}`, { threadId: taskA, modelSelection: { instanceId: "claude", model: legacyModel } })).status).toBe(200);
     const final = await botState(botId);
     expect(final.tasks.find((task: any) => task.taskId === taskA).modelSelection.model).toBe(legacyModel);
     expect(final.tasks.find((task: any) => task.taskId === taskB).modelSelection.model).toBe(models[1]);
