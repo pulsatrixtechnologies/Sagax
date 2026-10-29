@@ -13,7 +13,7 @@ import type { TurnFacts } from "../shared/bot-act.ts";
 import { acceptablePath, actorForTurn } from "../shared/bot-act.ts";
 import { checkPersonQuote, messageNamesCard, normalizeWords, personWrote } from "../shared/primary-request.ts";
 import { decideSettingEffect, HOLD_TEXT, type SettingClass } from "../shared/settings-actions-policy.ts";
-import { decodePreference, isAppearancePreference, pickValue, SETTING_FAMILIES, SETTINGS, settingSpec, valueFits, type SettingIds, type SettingSpec } from "../shared/settings-actions.ts";
+import { decodePreference, isAppearancePreference, isSyncedPreference, pickValue, SETTING_FAMILIES, SETTINGS, settingSpec, valueFits, type SettingIds, type SettingSpec } from "../shared/settings-actions.ts";
 import { STEP_UP_CLASSES, botActClasses, type StepUpClass } from "../shared/step-up.ts";
 import { valueDigest, type ActRuleCandidate, type BotActResult, type BotActService } from "./bot-act.ts";
 
@@ -333,10 +333,11 @@ export function createSettingsActions(deps: SettingsActionDeps) {
   }
 
   /** One value read with the person's own rights, or undefined. */
-  async function readValue(facts: TurnFacts, input: SettingsActionInput, path: string, query: Record<string, string> | undefined, list: string | undefined, id: string | undefined, field: string | undefined, match = "id"): Promise<unknown> {
+  async function readValue(facts: TurnFacts, input: SettingsActionInput, path: string, query: Record<string, string> | undefined, list: string | undefined, id: string | undefined, field: string | undefined, match = "id", method: "GET" | "POST" = "GET"): Promise<unknown> {
     const answer = await deps.acts().handlePlanned({
       facts,
-      target: { kind: "route", method: "GET", path, ...(query ? { query } : {}) },
+      // a read the screen makes with POST (the vault's listing) carries an empty body
+      target: { kind: "route", method, path, ...(query ? { query } : {}), ...(method === "POST" ? { body: {} } : {}) },
       plan: { effect: "run", summary: "Read a setting", stepUpClasses: [] },
       threadId: input.threadId, botId: input.botId, botName: input.botName, botColor: input.botColor,
       maxChars: 4_000_000,
@@ -377,8 +378,8 @@ export function createSettingsActions(deps: SettingsActionDeps) {
       // anything else lives only in the person's open app
       if (read.preference) {
         const organization = deps.organization();
-        if (!organization && !isAppearancePreference(read.preference)) {
-          return text(200, JSON.stringify({ key: spec.key, value: null, note: `Kept only in the person's open Sagax app on this computer; ask them, or set it (set works). They see it at ${spec.where}.` }));
+        if (organization ? !isSyncedPreference(read.preference) : !isAppearancePreference(read.preference)) {
+          return text(200, JSON.stringify({ key: spec.key, value: null, note: `Kept only in the person's open Sagax app on their device; ask them, or set it (set works). They see it at ${spec.where}.` }));
         }
         let stored: unknown;
         try {
@@ -395,7 +396,7 @@ export function createSettingsActions(deps: SettingsActionDeps) {
       if (!acceptablePath(read.path)) return text(400, `${spec.key}: that target cannot name a record.`);
       let value: unknown;
       try {
-        value = await readValue(facts, input, read.path, read.query, read.list, spec.target === "thread" ? ids.botId : ids.target, read.field, read.match);
+        value = await readValue(facts, input, read.path, read.query, read.list, spec.target === "thread" ? ids.botId : ids.target, read.field, read.match, read.method);
       } catch (error) {
         const status = (error as { status?: number }).status ?? 502;
         return text(status, error instanceof Error ? error.message : "The setting could not be read.");

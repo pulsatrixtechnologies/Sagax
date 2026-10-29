@@ -593,6 +593,16 @@ permission `settings:change`, member scope `own-setup`, deferred on Claude):
   against the person's own subscription) (`SettingCard`, access card
   `reason: "sign_in"`, for the speaker only): the person signs in, the bot
   never sees it. Test matrix: `server/settings-actions.test.ts` (#1545).
+  Lot 2: every preference has a get (a device-only one answers a note, never
+  a refusal); a read the screen makes with POST is `SettingRead.method`
+  (the vault listing, names and sites only); `models.providerKey` writes each
+  key where Settings > Models > Keys does (ElevenLabs and Fish Audio under
+  `tts`, image keys under `imageGen`) and reads only which are saved; new
+  keys for the person's computers, Mac models, voice keys, custom voice
+  server, tests, profile, learned facts, usage meter, spend limit, tool
+  access, blocked people, experiments, phone calls, custom domain, team
+  secrets' names, where a bot runs and its email address. A test fails when
+  a setting has no get and is not an action.
 - Tests: `shared/settings-actions*.test.ts`, `server/settings-actions.test.ts`,
   `server/settings-actions.e2e.test.ts`.
 

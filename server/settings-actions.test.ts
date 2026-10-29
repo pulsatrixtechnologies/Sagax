@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { TurnFacts } from "../shared/bot-act.ts";
 import type { BotActService } from "./bot-act.ts";
 import { sagaxInternalTool } from "./sagax-internal-tools.ts";
+import { SETTINGS } from "../shared/settings-actions.ts";
 import { createSettingsActions, settingStepUpClasses, type SettingsActionDeps } from "./settings-actions.ts";
 
 const PERSON: TurnFacts = { automation: false, guest: false, requestUsable: true, senderUnproven: false, provenPerson: "pr_owner", sharedServer: true };
@@ -16,7 +17,7 @@ function harness(over: Partial<SettingsActionDeps> & { mode?: "ask" | "auto" | "
       const target = input.target.kind === "route" ? input.target : { method: "UI", path: `ui:${input.target.command}`, body: input.target.input };
       planned.push({ effect: input.plan.effect, path: target.path, method: target.method, body: target.body, stepUpClasses: input.plan.stepUpClasses, ...(input.plan.primary ? { primary: input.plan.primary } : {}), ...(input.plan.rule ? { rule: input.plan.rule } : {}), ...(input.plan.noRule ? { noRule: true } : {}) });
       const routeStatus = typeof over.routeStatus === "function" ? over.routeStatus(target.method, target.path) : over.routeStatus ?? 200;
-      if (target.method === "GET") {
+      if (target.method === "GET" || input.plan.summary === "Read a setting") {
         if (routeStatus >= 400) return { status: routeStatus, body: { error: "forbidden: not yours" } };
         return { status: 200, body: { text: JSON.stringify(typeof over.answer === "function" ? (over.answer as (path: string) => unknown)(target.path) : over.answer ?? {}) } };
       }
@@ -434,5 +435,64 @@ describe("sagax_settings engine sign-in on an organization server (#1545)", () =
     const out = harness({ organization: () => true, mode: "auto" });
     await out.call({ action: "set", key: "models.mySignOut", target: "claude", value: true });
     expect(out.planned.at(-1)).toMatchObject({ effect: "run", method: "POST", path: "/api/me/engines/claude/login/sign-out" });
+  });
+});
+
+describe("sagax_settings: the rest of Settings (#1545, lot 2)", () => {
+  it("writes each provider key where the screen does, and reads only which are saved", async () => {
+    const h = harness({ mode: "full", answer: { anthropic: { configured: true }, tts: { keys: { elevenlabs: true, fish: false } }, imageGen: { openaiConfigured: false } } });
+    await h.call({ action: "set", key: "models.providerKey", value: { anthropic: { key: "sk-a" }, elevenlabs: { key: "el" }, fishAudio: { key: "fa" } } });
+    expect(h.planned.at(-1)).toMatchObject({ method: "PATCH", path: "/api/config", body: { anthropic: { key: "sk-a" }, tts: { key: "el", fishKey: "fa" } } });
+    const saved = JSON.parse(String((await h.call({ action: "get", key: "models.providerKey" })).body.text));
+    expect(saved.value).toMatchObject({ anthropic: true, elevenlabs: true, fishAudio: false, openaiImage: false });
+    expect(JSON.stringify(saved)).not.toMatch(/sk-a|"el"/);
+    expect((await h.call({ action: "set", key: "models.providerKey", value: { nope: { key: "x" } } })).body.error).toMatch(/not a provider key/);
+  });
+
+  it("lists the vault with the person's own POST listing, names and sites only", async () => {
+    const items = [{ id: "v1", kind: "login", name: "Shop", username: "me@example.com", domains: ["shop.example"], hasPassword: true, source: "local", grants: [{ botId: "b1" }], card: { last4: "4242" } }];
+    const h = harness({ answer: { items } });
+    const all = JSON.parse(String((await h.call({ action: "get", key: "credentials.item" })).body.text));
+    expect(all.value).toEqual([{ id: "v1", kind: "login", name: "Shop", domains: ["shop.example"], hasPassword: true, source: "local", grants: [{ botId: "b1" }] }]);
+    expect(h.planned[0]).toMatchObject({ effect: "run", method: "POST", path: "/api/me/credentials/list", body: {} });
+    const one = JSON.parse(String((await h.call({ action: "get", key: "credentials.item", target: "v1" })).body.text));
+    expect(one.value).not.toHaveProperty("username");
+    const access = JSON.parse(String((await h.call({ action: "get", key: "credentials.botAccess", target: "v1" })).body.text));
+    expect(access.value).toEqual([{ botId: "b1" }]);
+  });
+
+  it("every setting has a get, or is an action the screen offers (create, delete, run, test, sign-in)", () => {
+    const actions = /(?:create|delete|remove|Delete|Remove|run|Run|Test|SignIn|SignOut|Install|Refresh|Update|Account|Disconnect|Telegram|WhatsApp|commandAllow|template\.|section\.bots|account\.avatar|computer\.rename|liveKeyRemove)/;
+    const missing = SETTINGS.filter((spec) => !spec.read && !actions.test(spec.key)).map((spec) => spec.key);
+    expect(missing).toEqual([]);
+  });
+
+  it("reads a device-only preference as a note, never a refusal", async () => {
+    for (const organization of [true, false]) {
+      const h = harness({ organization: () => organization });
+      const read = await h.call({ action: "get", key: "appearance.sendKey" });
+      expect(read.status).toBe(200);
+      expect(JSON.parse(String(read.body.text))).toMatchObject({ value: null, note: expect.stringMatching(/open Sagax app/) });
+    }
+  });
+
+  it("matrix for the new keys: the level decides on a personal server, the organization keeps its card", async () => {
+    const cases: Array<{ key: string; value: unknown; target?: string; card?: true }> = [
+      { key: "account.usageMeter", value: true },
+      { key: "notifications.blocks", value: { unblock: "pr_x" } },
+      { key: "account.experimental", value: { features: { browser: true } } },
+      { key: "bot.inboundMail", value: "scout" },
+      { key: "bot.host", value: null },
+      { key: "models.ttsModel", value: "v2" },
+      { key: "org.phoneCalls", value: { enabled: true }, card: true },
+      { key: "models.myVoiceKeys", value: { fish: { key: "k" } }, card: true },
+    ];
+    for (const mode of ["ask", "auto", "full"] as const) {
+      for (const { key, value, target, card } of cases) {
+        const h = harness({ mode });
+        await h.call({ action: "set", key, value, ...(target ? { target } : {}) });
+        expect(h.planned.at(-1)?.effect, `${key} ${mode}`).toBe(mode === "ask" || card ? "hold" : "run");
+      }
+    }
   });
 });

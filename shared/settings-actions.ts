@@ -68,6 +68,8 @@ export type SettingRead = {
   /** Shapes the value read for the bot (a default filled in, a list made
    * short). */
   shape?: (value: unknown) => unknown;
+  /** A read the screen makes with POST (the vault's listing), never a change. */
+  method?: "POST";
 };
 
 export interface SettingSpec {
@@ -109,6 +111,17 @@ const secretWhenKeyed = (value: unknown, ctx: SettingClassContext): SettingClass
 /** One path segment: a plain id as it is (a grant's `user:pr_…` keeps its
  * colon), anything else encoded, which act's path check then refuses. */
 const enc = (value: string): string => /^[\w.:@+-]+$/.test(value) ? value : encodeURIComponent(value);
+
+/** A vault listing as a bot reads it (#1545): names, sites, what it holds
+ * and which bots may use it; never a user name, a card, an address or a
+ * contact. */
+function vaultListing(value: unknown): unknown {
+  const one = (row: unknown) => {
+    const r = (row ?? {}) as Record<string, unknown>;
+    return { id: r.id, kind: r.kind, name: r.name, domains: r.domains, hasPassword: r.hasPassword, hasTotp: r.hasTotp, hasApiKey: r.hasApiKey, hasNotes: r.hasNotes, source: r.source, grants: r.grants };
+  };
+  return Array.isArray(value) ? value.map(one) : value && typeof value === "object" ? one(value) : value;
+}
 
 function nest(path: string, value: unknown): Record<string, unknown> {
   const parts = path.split(".");
@@ -208,7 +221,7 @@ add({
 });
 add({
   key: "bot.runtime", family: "bot", target: "bot", value: "object",
-  label: "Parallel work and recovery ({maxConcurrentThreads, maxParallelPerPerson, busySend, automaticRecovery})", where: "Bot editor > Behaviour > Parallel tasks",
+  label: "Parallel work, recovery and turn limits ({maxConcurrentThreads, maxParallelPerPerson, busySend, automaticRecovery, turnLimits})", where: "Bot editor > Behaviour > Parallel tasks",
   read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/runtime-settings` }),
   write: (ids, v) => ({ method: "PATCH", path: `/api/bots/${enc(ids.target!)}/runtime-settings`, body: v }),
 });
@@ -253,6 +266,7 @@ add({
 });
 add({
   key: "bot.toolGrant", family: "bot", target: "bot", value: "object", label: "Tool access grant ({scope: area:read|write|admin, expiresAt})", where: "Bot editor > Tool access",
+  read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/tool-grants`, field: "grants" }),
   write: (ids, v) => ({ method: "POST", path: `/api/bots/${enc(ids.target!)}/tool-grants`, body: v }),
   classes: always("rule-change"),
 });
@@ -441,6 +455,7 @@ add({
 });
 add({
   key: "section.name", family: "section", target: "section", value: "string", label: "Rename a team", where: "Sidebar > team menu > Rename",
+  read: () => ({ path: "/api/sidebar-sections", field: "sections" }),
   write: (ids, v) => ({ method: "PATCH", path: "/api/sidebar-sections", query: { section: ids.target! }, body: { name: v } }), classes: serverWide,
 });
 add({
@@ -469,6 +484,7 @@ add({
 });
 add({
   key: "rules.customUpdate", family: "rules", target: "rule", value: "object", label: "Change a custom rule ({when?, behavior?, enabled?, riskScope?})", where: "Bot editor > Permissions > Custom rules",
+  read: () => ({ path: "/api/custom-rules", list: "rules", match: "id" }),
   write: (ids, v) => ({ method: "PATCH", path: `/api/custom-rules/${enc(ids.target!)}`, body: v }),
   classes: always("rule-change"),
 });
@@ -497,6 +513,7 @@ add({
 // ── account (the person) ───────────────────────────────────────────────
 add({
   key: "account.label", family: "account", target: "self", value: "string", label: "How people see your name", where: "Settings > Account",
+  read: (ids) => ({ path: "/api/people/labels", field: `labels.${ids.target!}` }),
   write: (ids, v) => ({ method: "PUT", path: `/api/people/${enc(ids.target!)}/label`, body: { label: v } }),
 });
 add({
@@ -512,6 +529,7 @@ add({
 });
 add({
   key: "account.botOverride", family: "account", target: "bot", value: "object", label: "Your own model and notifications for a shared bot", where: "Shared bot > Model / Notifications",
+  read: (ids) => ({ path: "/api/me/bot-overrides", field: `overrides.${ids.target!}` }),
   write: (ids, v) => ({ method: "PUT", path: `/api/me/bot-overrides/${enc(ids.target!)}`, body: v }),
 });
 // 2026-10-26 "Me joindre": how this bot reaches the person speaking outside
@@ -565,14 +583,12 @@ add({
 
 // ── preferences kept on the person's device (and per person on an
 // organization server): the screen command writes them in the app ─────
-/** The preferences a server keeps for the person (organization server), or
- * this computer's look (personal server): a bot reads them back (#1545). */
-const SYNCED_PREFERENCES: ReadonlySet<string> = new Set<string>([...USER_PREFERENCE_KEYS, ...DESKTOP_APPEARANCE_KEYS]);
 function pref(key: string, family: SettingFamily, storage: string, value: SettingValue, label: string, where: string, classes?: SettingSpec["classes"], shape?: (value: unknown) => unknown): void {
   add({
     key, family, target: "none", label, where, value,
     ...(classes ? { classes } : {}),
-    ...(SYNCED_PREFERENCES.has(storage) ? { read: () => ({ path: "/api/me/preferences", preference: storage, ...(shape ? { shape } : {}) }) } : {}),
+    // #1545: every preference reads back; one kept only on the device says so
+    read: () => ({ path: "/api/me/preferences", preference: storage, ...(shape ? { shape } : {}) }),
     write: (_ids, v) => ({ ui: "setPreference", input: { key: storage, value: typeof v === "string" ? v : JSON.stringify(v) } }),
   });
 }
@@ -603,6 +619,9 @@ pref("appearance.routinesBadge", "appearance", "sagax-show-routines-badge", "boo
 pref("appearance.sidebarDensity", "appearance", "openmausbot.sidebarDensity", "string", "Sidebar density", "Settings > Appearance");
 pref("appearance.freshTopicAfter", "appearance", "sagax.freshTopicAfter.v1", "string", "Fresh topic after", "Settings > Appearance");
 pref("appearance.floatingBots", "appearance", "omb.floatingBots.prefs.v1", "object", "Desktop mascot", "Settings > Appearance > Floating bots");
+// #1545: the open bot's colour as the accent, and what the person hid from the sidebar
+pref("appearance.botAccent", "appearance", "sagax.botAccent.v1", "enum:1|0", "The open bot's colour as the accent (1 on, 0 off)", "Settings > Appearance");
+pref("appearance.sidebarHidden", "appearance", "sagax.sidebarHidden.v1", "object", "Rows hidden from the sidebar ({items: [{kind, id, at}], unhideOnMessage: {people, bots}})", "Settings > Appearance > Hidden from the sidebar");
 pref("appearance.busySend", "appearance", "sagax.busySend.v1", "string", "Sending to a busy bot", "Settings > Appearance");
 pref("notifications.sounds", "notifications", "omb-notification-sounds", "boolean", "Notification sounds", "Settings > Notifications");
 pref("notifications.soundChoice", "notifications", "sagax.notificationSound.v1", "enum:system|tick|double-tick|chime-a|chime-b|blip", "Notification sound (the system's, Tick, Double tick, Chime A, Chime B, Blip)", "Settings > Notifications");
@@ -651,7 +670,28 @@ add({
   classes: always("rule-change"),
 });
 
-const PROVIDER_KEYS: ReadonlySet<string> = new Set(["anthropic", "openai", "openrouter", "xai", "mistral", "cerebras", "groq", "elevenlabs", "fishAudio"]);
+/** Each provider key row of Settings > Models > Keys and the config field
+ * the screen writes it to (src/components/ApiKeys.tsx). #1545: ElevenLabs
+ * and Fish Audio are kept under tts, the image keys under imageGen. */
+const PROVIDER_KEY_FIELDS: Readonly<Record<string, readonly [string, string]>> = {
+  anthropic: ["anthropic", "key"], openai: ["openai", "key"], openrouter: ["openrouter", "key"], xai: ["xai", "key"],
+  mistral: ["mistral", "key"], cerebras: ["cerebras", "key"], groq: ["groq", "key"], openaiCompat: ["openaiCompat", "key"],
+  elevenlabs: ["tts", "key"], fishAudio: ["tts", "fishKey"], openaiImage: ["imageGen", "key"], customImage: ["imageGen", "customApiKey"],
+};
+const PROVIDER_KEYS: ReadonlySet<string> = new Set(Object.keys(PROVIDER_KEY_FIELDS));
+type ConfigKeys = { tts?: { keys?: Record<string, unknown> }; imageGen?: { openaiConfigured?: unknown; customKeyConfigured?: unknown }; opencodeGo?: { configured?: unknown; providerKeys?: unknown[] } } & Record<string, { configured?: unknown } | undefined>;
+/** Which keys are saved, as the Keys rows say it; never a key. */
+function savedKeys(config: unknown): Record<string, boolean> {
+  const c = (config ?? {}) as ConfigKeys;
+  const flag = (name: string) => c[name]?.configured === true;
+  return {
+    anthropic: flag("anthropic"), openai: flag("openai"), openrouter: flag("openrouter"), xai: flag("xai"), mistral: flag("mistral"),
+    cerebras: flag("cerebras"), groq: flag("groq"), openaiCompat: flag("openaiCompat"),
+    opencodeGo: flag("opencodeGo") || (Array.isArray(c.opencodeGo?.providerKeys) && c.opencodeGo.providerKeys.length > 0),
+    elevenlabs: c.tts?.keys?.elevenlabs === true, fishAudio: c.tts?.keys?.fish === true,
+    openaiImage: c.imageGen?.openaiConfigured === true, customImage: c.imageGen?.customKeyConfigured === true,
+  };
+}
 
 // ── server configuration (PATCH /api/config) ──────────────────────────
 function config(key: string, family: SettingFamily, path: string, value: SettingValue, label: string, where: string, classes: SettingSpec["classes"] = serverWide): void {
@@ -667,7 +707,7 @@ config("server.newBotDefaults", "server", "newBotDefaults", "object", "New bot d
   (v, ctx) => /"(approvalMode|alwaysAllow|routines|toolScope|mcpServers|fullAccess)"/.test(JSON.stringify(v ?? null)) ? ["rule-change"] : serverWide(v, ctx));
 config("server.threads", "server", "threads", "object", "Conversation cleanup", "Settings > General > Advanced > Threads");
 config("server.showToolCalls", "server", "features.showToolCalls", "boolean", "Show tool calls", "Settings > Appearance");
-config("server.feature", "server", "features", "object", "Experimental features ({skillAuthoring, browser, connectedApps, decisionModel, dataWindow, meetingNotetaker})", "Settings > Experimental");
+config("server.feature", "server", "features", "object", "Experimental features ({skillAuthoring, browser, connectedApps, decisionModel, dataWindow, meetingNotetaker, llmThreadTitles})", "Settings > Experimental");
 config("server.routinesInConversation", "server", "features.routinesInConversation", "boolean", "Routines in conversation", "Settings > Organization > Bots");
 config("server.roomTurnTimeout", "server", "rooms.turnTimeoutMinutes", "number", "Room turn limit", "Settings > Organization > Rooms");
 config("server.mcpCallTimeout", "server", "mcp.callTimeoutMinutes", "number", "MCP call time limit", "Settings > Organization");
@@ -678,17 +718,22 @@ config("models.imageGen", "models", "imageGen", "object", "Image generation", "S
 config("models.decider", "models", "decider", "object", "Decision model", "Settings > Models > Decision model", secretWhenKeyed);
 config("models.everyClaudeBot", "models", "anthropic.everyClaudeBot", "boolean", "Anthropic key for every Claude bot", "Settings > Models > Keys");
 add({
-  key: "models.providerKey", family: "credentials", target: "none", value: "object", label: "A provider key ({<provider>: {key}})", where: "Settings > Models > Keys",
-  // known providers, each holding its key only: nothing else rides along
+  key: "models.providerKey", family: "credentials", target: "none", value: "object", label: "A provider key ({<provider>: {key}}; get says which are saved, never a key)", where: "Settings > Models > Keys",
+  read: () => ({ path: "/api/config", shape: savedKeys }),
+  // known providers, each holding its key only: nothing else rides along;
+  // each goes where the screen writes it
   write: (_ids, v) => {
     const entries = Object.entries(v as Record<string, unknown>);
     if (!entries.length) return "value is {<provider>: {key}}.";
+    const body: Record<string, Record<string, string>> = {};
     for (const [provider, block] of entries) {
       if (!PROVIDER_KEYS.has(provider)) return `${provider} is not a provider key (${[...PROVIDER_KEYS].join(", ")}).`;
       const fields = block && typeof block === "object" && !Array.isArray(block) ? Object.keys(block) : [];
       if (fields.length !== 1 || fields[0] !== "key" || typeof (block as { key?: unknown }).key !== "string") return `${provider} takes {key} only.`;
+      const [section, field] = PROVIDER_KEY_FIELDS[provider]!;
+      body[section] = { ...body[section], [field]: (block as { key: string }).key };
     }
-    return { method: "PATCH", path: "/api/config", body: v };
+    return { method: "PATCH", path: "/api/config", body };
   },
   classes: (_v, ctx) => ctx.organization ? ["secret", "org"] : ["secret"],
 });
@@ -843,6 +888,7 @@ add({
 });
 add({
   key: "connections.mcpServerEnabled", family: "connections", target: "none", value: "object", label: "Your MCP server on or off ({name, enabled})", where: "Connect apps > Providers",
+  read: () => ({ path: "/api/me/mcp/servers" }),
   write: (_ids, v) => {
     const s = v as { name?: unknown; enabled?: unknown } | null;
     if (!s || typeof s.name !== "string" || typeof s.enabled !== "boolean") return "value is {name, enabled}.";
@@ -859,7 +905,8 @@ add({
   write: (_ids, v) => v === true ? { method: "DELETE", path: "/api/me/github" } : "value is true.", classes: always("delete", "secret"),
 });
 add({
-  key: "connections.cloudAgentKey", family: "credentials", target: "none", value: "object", label: "Cloud coding agent key ({provider: cursor|claude|codex, token}, token null removes)", where: "Settings > Models > Cloud coding agents",
+  key: "connections.cloudAgentKey", family: "credentials", target: "none", value: "object", label: "Cloud coding agent key ({provider: cursor|claude|codex, token}, token null removes; get says which are saved)", where: "Settings > Models > Cloud coding agents",
+  read: () => ({ path: "/api/me/cloud-agent-providers", field: "providers" }),
   write: (_ids, v) => {
     const k = v as { provider?: unknown; token?: unknown } | null;
     if (!k || typeof k.provider !== "string") return "value is {provider, token}.";
@@ -887,6 +934,9 @@ add({
 // ── credentials (the person's vault; export and import stay theirs) ───
 add({
   key: "credentials.item", family: "credentials", target: "credential", value: "object",
+  // #1545: the person's own listing, names and sites only (never a user name,
+  // a card, an address or a secret); no target lists them all
+  read: (ids) => ({ path: "/api/me/credentials/list", method: "POST", ...(ids.target ? { list: "items", match: "id" } : { field: "items" }), shape: vaultListing }),
   label: "A vault item ({name, username, password, apiKey, notes, domains}); no target creates one", where: "Settings > Vault",
   write: (ids, v) => ids.target
     ? { method: "PATCH", path: `/api/me/credentials/${enc(ids.target)}`, body: v }
@@ -895,6 +945,7 @@ add({
 });
 add({
   key: "credentials.botAccess", family: "credentials", target: "credential", value: "object", label: "Let a bot use an item ({botId, allow: true|false})", where: "Settings > Vault > item",
+  read: () => ({ path: "/api/me/credentials/list", method: "POST", list: "items", match: "id", field: "grants" }),
   write: (ids, v) => {
     const g = v as { botId?: unknown; allow?: unknown } | null;
     if (!ids.target) return "target is the vault item's id.";
@@ -909,6 +960,133 @@ add({
   key: "credentials.delete", family: "credentials", target: "credential", value: "boolean", label: "Delete a vault item (true)", where: "Settings > Vault",
   write: (ids, v) => !ids.target ? "target is the vault item's id." : v === true ? { method: "DELETE", path: `/api/me/credentials/${enc(ids.target)}` } : "value is true.",
   classes: always("delete", "secret"),
+});
+
+// ── #1545: the rest of what Settings shows ──────────────────────────────
+// sidebar teams: the list
+add({
+  key: "section.list", family: "section", target: "none", value: "array", label: "The teams of the sidebar (read only)", where: "Sidebar",
+  read: () => ({ path: "/api/sidebar-sections", field: "sections" }),
+  write: () => "section.list is read only: section.create, section.name, section.bots, section.delete change it.",
+});
+// the person's other computers (organization server)
+add({
+  key: "computer.computers", family: "computer", target: "none", value: "object",
+  label: "The person's computers and where bots work (read only: connected, desktops, workplace)", where: "Settings > Computer > Other computers",
+  read: () => ({ path: "/api/me/desktop-bridge", shape: (v) => { const r = (v ?? {}) as Record<string, unknown>; return { connected: r.connected, tunnel: r.tunnel, desktops: r.desktops, workplace: r.workplace }; } }),
+  write: () => "computer.computers is read only: computer.rename, computer.remove, computer.botWorkplace change it.",
+});
+add({
+  key: "computer.localModels", family: "computer", target: "none", value: "object", label: "This Mac's models for the person's bots ({expose, share, endpoints})", where: "Settings > Computer > Mac models",
+  read: () => ({ path: "/api/me/local-models" }),
+  write: (_ids, v) => ({ method: "PUT", path: "/api/me/local-models", body: v }),
+  classes: (v) => (v as { share?: unknown } | null)?.share === true ? ["others"] : ["own"],
+});
+// voice: the person's own keys (organization server), a custom TTS server, the Live key
+add({
+  key: "models.myVoiceKeys", family: "credentials", target: "none", value: "object",
+  label: "The person's own voice keys ({<elevenlabs|fish|xai>: {key}}, key null removes; get says which are saved, never a key)", where: "Settings > Voice > Your voice keys",
+  read: () => ({ path: "/api/me/voice-keys" }),
+  write: (_ids, v) => {
+    const entries = Object.entries((v ?? {}) as Record<string, unknown>);
+    if (entries.length !== 1) return "value is {<elevenlabs|fish|xai>: {key}} for one provider.";
+    const [provider, block] = entries[0]!;
+    if (!["elevenlabs", "fish", "xai"].includes(provider)) return "provider is elevenlabs, fish or xai.";
+    const key = (block as { key?: unknown } | null)?.key;
+    if (key === null) return { method: "DELETE", path: `/api/me/voice-keys/${provider}` };
+    if (typeof key !== "string") return "value is {<provider>: {key}}.";
+    return { method: "PUT", path: `/api/me/voice-keys/${provider}`, body: { key } };
+  },
+  classes: (v) => Object.values((v ?? {}) as Record<string, { key?: unknown }>)[0]?.key === null ? ["delete"] : ["secret"],
+});
+config("models.ttsServer", "models", "tts.baseUrl", "string", "Custom voice server address (the voice engine's own server)", "Settings > Voice > Voice engine", secretWhenKeyed);
+config("models.ttsModel", "models", "tts.model", "string", "Custom voice server model", "Settings > Voice > Voice engine");
+add({
+  key: "models.liveKeyRemove", family: "credentials", target: "none", value: "boolean", label: "Remove the OpenAI Live key (value true)", where: "Settings > Voice > Live calls",
+  write: (_ids, v) => v === true ? { method: "PATCH", path: "/api/config", body: { live: { key: "" } } } : "value is true.",
+  classes: (_v, ctx) => ctx.organization ? ["delete", "org"] : ["delete"],
+});
+config("server.vpsAlias", "server", "vps.sshAlias", "string", "VPS computer SSH alias", "Settings > Models > Integrations > VPS");
+// tests the screen offers: one real call, nothing saved
+add({
+  key: "models.deciderTest", family: "models", target: "none", value: "boolean", label: "Test the decision model (value true)", where: "Settings > Models > Decision model > Test",
+  write: (_ids, v) => v === true ? { method: "POST", path: "/api/decider/test", body: {} } : "value is true.",
+});
+add({
+  key: "connections.webSearchTest", family: "connections", target: "none", value: "boolean", label: "Test web search with the saved settings (value true)", where: "Settings > Models > Web search > Test",
+  write: (_ids, v) => v === true ? { method: "POST", path: "/api/me/web-search/test", body: {} } : "value is true.",
+});
+// account
+config("account.profile", "account", "profile", "object", "Your name, email and photo on this computer ({name, email, avatarUrl})", "Settings > Account");
+add({
+  key: "account.learned", family: "account", target: "none", value: "string", label: "What upkeep learned about you (get lists them; set with a fact's id removes it)", where: "Settings > Account > About me",
+  read: () => ({ path: "/api/profile/learned", field: "learned" }),
+  write: (_ids, v) => typeof v === "string" && v ? { method: "POST", path: `/api/profile/learned/${enc(v)}/remove`, body: {} } : "value is the id of a learned fact.",
+  classes: always("delete"),
+});
+add({
+  key: "account.usageMeter", family: "account", target: "none", value: "boolean", label: "Anonymous usage counts to this server", where: "Settings > Account > Advanced > Usage meter",
+  read: () => ({ path: "/api/me/usage-meter", field: "enabled" }),
+  write: (_ids, v) => ({ method: "PUT", path: "/api/me/usage-meter", body: { enabled: v === true } }),
+});
+add({
+  key: "account.spendCap", family: "account", target: "none", value: "number?", label: "Your monthly spend limit in USD (null removes; personal server)", where: "Settings > Usage > Monthly limit",
+  read: () => ({ path: "/api/me/spend-cap" }),
+  write: (_ids, v) => ({ method: "PUT", path: "/api/me/spend-cap", body: { monthlyUsd: v } }),
+});
+// security: the person's own tool access
+add({
+  key: "security.myToolGrants", family: "rules", target: "none", value: "string", label: "Your tool access (get lists it; set with a grant's id revokes it)", where: "Settings > Security > My tool access",
+  read: () => ({ path: "/api/me/tool-grants", field: "grants" }),
+  write: (_ids, v) => typeof v === "string" && v ? { method: "POST", path: `/api/me/tool-grants/${enc(v)}/revoke`, body: {} } : "value is a grant's id.",
+  classes: always("delete"),
+});
+// privacy: blocked people
+add({
+  key: "notifications.blocks", family: "notifications", target: "none", value: "object", label: "People you blocked ({block: {id, name}} or {unblock: id}; get lists them)", where: "Settings > Notifications > Privacy > Blocked people",
+  read: () => ({ path: "/api/me/blocks" }),
+  write: (_ids, v) => {
+    const r = (v ?? {}) as { block?: { id?: unknown; name?: unknown }; unblock?: unknown };
+    if (typeof r.unblock === "string" && r.unblock) return { method: "DELETE", path: `/api/me/blocks/${enc(r.unblock)}` };
+    if (r.block && typeof r.block.id === "string") return { method: "POST", path: "/api/me/blocks", body: { id: r.block.id, ...(typeof r.block.name === "string" ? { name: r.block.name } : {}) } };
+    return "value is {block: {id, name}} or {unblock: id}.";
+  },
+});
+// experimental: an organization member's own switches
+add({
+  key: "account.experimental", family: "account", target: "none", value: "object", label: "Your own experiments and tool calls shown ({features: {<key>: true|false|null}})", where: "Settings > Experimental; Settings > Appearance > Show tool calls",
+  read: () => ({ path: "/api/me/experimental" }),
+  write: (_ids, v) => ({ method: "PATCH", path: "/api/me/experimental", body: v }),
+});
+// organization
+add({
+  key: "org.phoneCalls", family: "organization", target: "none", value: "object", label: "Phone calls ({enabled, callbackNumber, addDoNotCall, removeDoNotCall})", where: "Settings > Experimental > Phone calls",
+  read: () => ({ path: "/api/org/phone-calls", field: "settings" }),
+  write: (_ids, v) => ({ method: "PUT", path: "/api/org/phone-calls", body: v }),
+  classes: always("org"),
+});
+add({
+  key: "server.customDomain", family: "server", target: "none", value: "string?", label: "Custom domain (null removes)", where: "Settings > Organization > Servers > Custom domain",
+  read: () => ({ path: "/api/settings/custom-domain" }),
+  write: (_ids, v) => v === null ? { method: "DELETE", path: "/api/settings/custom-domain" } : { method: "POST", path: "/api/settings/custom-domain", body: { domain: v } },
+  classes: (v, ctx) => v === null ? [...serverWide(v, ctx), "delete"] : serverWide(v, ctx),
+});
+add({
+  key: "org.botSecrets", family: "organization", target: "none", value: "object", label: "Organization bot secrets (read only: their names; a secret is entered by the person)", where: "Settings > Organization > Bots > Team secrets",
+  read: () => ({ path: "/api/org/bot-secrets", shape: (v) => { const rows = (v as { secrets?: unknown } | null)?.secrets; return Array.isArray(rows) ? rows.map((row) => { const r = (row ?? {}) as Record<string, unknown>; return { name: r.name, ...(r.description ? { description: r.description } : {}) }; }) : v; } }),
+  write: () => "A secret is the person's to enter: ask them to open Settings > Organization > Bots > Team secrets.",
+});
+// bot editor
+botField("bot.host", "host", "any", "Where the bot runs (null: this server; {kind: machine, deviceId}; workers list the machines)", "Bot editor > Behaviour > Runs on");
+add({
+  key: "bot.workers", family: "bot", target: "none", value: "array", label: "Machines a bot may run on (read only)", where: "Bot editor > Behaviour > Runs on",
+  read: () => ({ path: "/api/workers", field: "workers" }),
+  write: () => "bot.workers is read only: bot.host chooses one.",
+});
+add({
+  key: "bot.inboundMail", family: "bot", target: "bot", value: "string", label: "The bot's email address (its local part)", where: "Bot panel > Overview > Email address",
+  read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/inbound-mail` }),
+  write: (ids, v) => ({ method: "PUT", path: `/api/bots/${enc(ids.target!)}/inbound-mail`, body: { localPart: v } }),
 });
 
 export const SETTINGS: readonly SettingSpec[] = SPECS;
@@ -961,6 +1139,12 @@ export function decodePreference(raw: unknown): unknown {
   } catch {
     return raw;
   }
+}
+
+/** Whether a server keeps this preference for the person (organization
+ * server, /api/me/preferences). */
+export function isSyncedPreference(storage: string): boolean {
+  return (USER_PREFERENCE_KEYS as readonly string[]).includes(storage);
 }
 
 /** Whether a preference is one of this computer's look keys, kept by a
