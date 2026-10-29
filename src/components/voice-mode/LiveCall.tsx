@@ -43,7 +43,7 @@ import { callBarLines } from "@/lib/voice-call-transcript";
 import { activeLocale, t, tIn } from "@/lib/i18n";
 import { CallProgress, progressLocale, progressText, turnTools } from "@/lib/voice-mode/progress";
 import { CallFailure, callFailureKey, voiceErrorNote, voiceKeyFallbackNote } from "@/lib/voice-mode/failure";
-import { onVoiceKeyEvent, VoiceModeRefused, voiceFailureKind } from "@/lib/voice-mode/api";
+import { onVoiceKeyEvent, voiceCallHeard, VoiceModeRefused, voiceFailureKind } from "@/lib/voice-mode/api";
 import { looksFrench } from "@/lib/voice-mode/turns";
 import { announceTopic, callHasBackgroundWork, howToSpeakTopicResult, sourceUserId, topicLabel } from "@/lib/voice-mode/voice-topics";
 import { nextSpeakSlot, type SpeakItem, type SpeakPriority } from "@/lib/voice-mode/voice-speak-queue";
@@ -111,6 +111,8 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
   // call's tools stay the same from turn to turn (call-mark.ts, shared with
   // the older call in CallView)
   const callId = useVoiceCallMark(bot.id, bot.threadId);
+  const callIdRef = useRef(callId);
+  callIdRef.current = callId;
   // A call is said in the conversation as it is: a fresh topic drafted over
   // it (src/lib/fresh-topic.ts) gives way, so the words typed after the
   // call stay in the same context as the call.
@@ -247,6 +249,16 @@ export function LiveCallEngine({ bot }: { bot: Bot }) {
         if (reason === "transcribe-failed") void live.say(t("voiceMode.sendFailed"));
       }),
       live.on("metrics", (turn: TurnMetrics | null, barge: BargeInMetrics | null) => {
+        // the turn's audio stages go to the thread's Events lens
+        if (turn?.firstAudioAt !== undefined && turn.utteranceId) {
+          const stages = stageDurations(turn);
+          void voiceCallHeard(bot.id, { callId: callIdRef.current, threadId: threadRef.current }, {
+            ...(stages.firstSentence !== undefined ? { firstSentenceMs: stages.firstSentence } : {}),
+            ...(stages.tts !== undefined ? { ttsMs: stages.tts } : {}),
+            ...(stages.playback !== undefined ? { playbackMs: stages.playback } : {}),
+            ...(stages.total !== undefined ? { totalMs: stages.total } : {}),
+          });
+        }
         setMetrics({
           ...(turn?.firstAudioAt !== undefined ? { firstAudioMs: Math.round(turn.firstAudioAt - turn.stoppedAt) } : {}),
           ...(turn?.sentAt !== undefined ? { sentMs: Math.round(turn.sentAt - turn.stoppedAt) } : {}),

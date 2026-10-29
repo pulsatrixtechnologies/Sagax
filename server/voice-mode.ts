@@ -10,6 +10,7 @@
 //   GET  /api/bots/<id>/voice/listen      WebSocket (?language=&locale=&threadId=): PCM frames in, transcripts out
 //   GET  /api/bots/<id>/voice/speech      WebSocket (?voice=&speed=&language=&threadId=): clauses in, PCM out
 //   POST /api/bots/<id>/voice/call        {threadId, callId, state: start|alive|end, language?}: the thread is on a call
+//                                         {threadId, callId, state: heard, audio}: a call turn's audio stages (ms)
 //
 // A live call (src/lib/voice-mode/call.ts) uses the last two: the person's
 // audio streams to xAI's streaming speech to text while they speak, and each
@@ -72,7 +73,7 @@ import { speakableDelta } from "./tts/speech-text.ts";
 import { createListenSession } from "./voice-listen-session.ts";
 import { grokVoiceFailure, type GrokVoiceFailure, type SpeechStream, type SpeechStreamHandlers, type SynthesizeOptions, type TranscriptionHandlers, type TranscriptionStream } from "./tts/grok.ts";
 import { createSpeechSession } from "./voice-speech-session.ts";
-import { streamedTranscriptNotice, uploadedTranscriptNotice } from "./voice-timing.ts";
+import { parseVoiceAudioTiming, streamedTranscriptNotice, uploadedTranscriptNotice, type VoiceAudioTiming } from "./voice-timing.ts";
 import {
   describeVoiceKey,
   keyLast4,
@@ -196,6 +197,9 @@ export interface VoiceModeDeps {
     /** `heartbeat`: the page's "alive", which never reopens a call that ended */
     start(target: VoiceTarget, callId: string, language?: string, auth?: RequestAuth, heartbeat?: boolean): void;
     end(target: VoiceTarget, callId: string, auth?: RequestAuth): void;
+    /** The page heard the first words of a call turn's answer: its audio
+     * stages (numbers only) for the Events lens. */
+    heard?(target: VoiceTarget, callId: string, audio: VoiceAudioTiming): void;
   };
   now?: () => number;
 }
@@ -599,7 +603,13 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
       const callId = record.callId;
       const state = record.state;
       if (typeof callId !== "string" || !CALL_ID.test(callId)) return json(res, 400, { error: "callId must be a call id" });
-      if (state !== "start" && state !== "alive" && state !== "end") return json(res, 400, { error: "state must be start, alive or end" });
+      if (state !== "start" && state !== "alive" && state !== "end" && state !== "heard") return json(res, 400, { error: "state must be start, alive, end or heard" });
+      if (state === "heard") {
+        const audio = parseVoiceAudioTiming(record.audio);
+        if (!audio) return json(res, 400, { error: "audio must carry the stages in milliseconds" });
+        deps.callSession?.heard?.(target, callId, audio);
+        return json(res, 200, { ok: true });
+      }
       const language = record.language === undefined ? undefined : record.language;
       if (language !== undefined && !isVoiceModeLanguage(language)) return json(res, 400, { error: "unknown language" });
       if (!deps.callSession) return json(res, 404, { error: "call sessions are not available" });

@@ -49,6 +49,22 @@ iOS already drew it (`ChatLiveTail`); it now follows the same key
 `server/streaming-reply.e2e.test.ts` (fake CLI deltas end to end),
 `PersonPreferencesTests`. Captures `node scripts/capture-live-reply.mjs`.
 
+## A call turn runs fast (2026-10-29)
+
+On a live call every turn (and the warm at call start) runs on a fast model
+(`pickVoiceModel`: the bot's fast model, else its engine's fast tier, else
+another engine's), in a session of its own started from a short view of the
+conversation (summary plus the latest 12 messages, 6,000 bytes,
+`server/voice-turn.ts`) and kept warm turn to turn. The call never resumes
+or writes the conversation's cursor (`VoiceTurnSessions.noteSession` takes
+the call's `session.started`); the next written turn gets the call's lines
+(unseen messages, or `callLinesBlock`). Real work goes to `start_thread`
+`report_back` on the main model with the conversation in its brief. Call
+lines waiting in the queue drain as one turn answering the newest. Events
+lines name the model and context; the page posts `state: "heard"` audio
+stages. Details: docs/voice-mode-xai.md, "A call turn runs fast". Tests:
+`server/voice-turn.test.ts`, `server/voice-fast-turn.e2e.test.ts`.
+
 ## Edit routine, redone (2026-10-29)
 
 The routine editor (`EventEditor`, `kind === "routine"`) is titled "Edit

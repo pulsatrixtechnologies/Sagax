@@ -59,6 +59,7 @@ export function callTurnNotice(input: {
   engineMs?: number;
   warm?: boolean;
   firstTokenMs?: number;
+  run?: { model?: string; contextBytes?: number; session?: "new" | "resumed" };
 }): string {
   const parts: string[] = [];
   const { client } = input;
@@ -70,5 +71,48 @@ export function callTurnNotice(input: {
   if (input.firstTokenMs !== undefined) parts.push(`first words ${seconds(input.firstTokenMs)}`);
   const total = [client?.endpointMs, client?.sttMs, client?.dispatchMs, input.dispatchMs, input.engineMs, input.firstTokenMs]
     .reduce<number>((sum, ms) => sum + (ms ?? 0), 0);
-  return `Voice turn: ${parts.join(", ")}; ${seconds(total)} from the end of speech to the first words`;
+  const run = input.run;
+  const ran = run ? [run.model ? `on ${run.model}` : "", run.contextBytes !== undefined ? `${kilobytes(run.contextBytes)} of context` : "",
+    run.session === "new" ? "new call session" : run.session === "resumed" ? "call session resumed" : ""].filter(Boolean) : [];
+  return `Voice turn: ${parts.join(", ")}; ${seconds(total)} from the end of speech to the first words${ran.length ? ` (${ran.join(", ")})` : ""}`;
+}
+
+function kilobytes(bytes: number): string {
+  return bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${Math.round(bytes)} B`;
+}
+
+/** The page's audio stages of one call turn (ms): from the answer's first
+ * text to its first audible word. */
+export interface VoiceAudioTiming {
+  /** first streamed text -> a speakable first clause */
+  firstSentenceMs?: number;
+  /** -> its first audio bytes from text to speech */
+  ttsMs?: number;
+  /** -> audible */
+  playbackMs?: number;
+  /** end of speech -> the first audible word of the answer */
+  totalMs?: number;
+}
+
+/** The page's report (POST /voice/call "heard"), kept only when every field
+ * is a sane number of milliseconds. */
+export function parseVoiceAudioTiming(value: unknown): VoiceAudioTiming | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const out: VoiceAudioTiming = {};
+  for (const key of ["firstSentenceMs", "ttsMs", "playbackMs", "totalMs"] as const) {
+    const ms = record[key];
+    if (typeof ms === "number" && Number.isFinite(ms) && ms >= 0 && ms <= MAX_STAGE_MS) out[key] = Math.round(ms);
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+/** One call turn's audio, as the page heard it. */
+export function audioTurnNotice(audio: VoiceAudioTiming): string {
+  const parts: string[] = [];
+  if (audio.firstSentenceMs !== undefined) parts.push(`first sentence ${seconds(audio.firstSentenceMs)}`);
+  if (audio.ttsMs !== undefined) parts.push(`text to speech ${seconds(audio.ttsMs)}`);
+  if (audio.playbackMs !== undefined) parts.push(`playback ${seconds(audio.playbackMs)}`);
+  const total = audio.totalMs !== undefined ? `; first words heard ${seconds(audio.totalMs)} after the end of speech` : "";
+  return `Voice audio: ${parts.join(", ") || "first words heard"}${total}`;
 }

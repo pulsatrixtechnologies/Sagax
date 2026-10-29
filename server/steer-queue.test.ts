@@ -82,6 +82,33 @@ function fakeStore(bots: BotRecord[]): SteerStore & { messages: Message[] } {
 }
 
 describe("steer-queue module", () => {
+  it("drains every waiting line of one call as one turn that answers the newest", () => {
+    const bot = fakeBot("bot-call-queue", "thread-call-queue", true);
+    const store = fakeStore([bot]);
+    const call = { callId: "call-queue-0001" };
+    queueSteeredMessage(bot.id, bot.threadId, "what about the printer", { voiceCall: { ...call, utteranceId: "utt-queue-0001" } });
+    queueSteeredMessage(bot.id, bot.threadId, "the one on the second floor", { voiceCall: { ...call, utteranceId: "utt-queue-0002" } });
+    // a gap far past the coalescing window still joins the same turn
+    vi.useFakeTimers({ now: Date.now() + 60_000 });
+    try {
+      queueSteeredMessage(bot.id, bot.threadId, "actually, is it fixed?", { voiceCall: { ...call, utteranceId: "utt-queue-0003" } });
+    } finally {
+      vi.useRealTimers();
+    }
+    bot.busy = false;
+    const run = vi.fn();
+    drainSteeredMessages(store, run);
+    expect(run).toHaveBeenCalledTimes(1);
+    const prompt = run.mock.calls[0][2] as string;
+    expect(prompt).toMatch(/^\[Before you could answer, they also said this on the call/);
+    expect(prompt).toContain('- "what about the printer"');
+    expect(prompt.trim().endsWith("actually, is it fixed?")).toBe(true);
+    // every line stays in the conversation, the newest starts the turn
+    expect(store.messages.map((m) => m.text)).toEqual(["what about the printer", "the one on the second floor", "actually, is it fixed?"]);
+    expect(run.mock.calls[0][3].text).toBe("actually, is it fixed?");
+    expect(hasQueuedSteeredMessages(bot.id, bot.threadId)).toBe(false);
+  });
+
   it("keeps readable citation prompts byte-for-byte through queue, hold, and drain", () => {
     const bot = fakeBot("bot-citation-queue", "thread-citation-queue", true);
     const store = fakeStore([bot]);

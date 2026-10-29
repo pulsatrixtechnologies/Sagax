@@ -11,7 +11,7 @@
 // warm process, or a cold start); first-token: the first streamed text of the
 // answer. Ids and milliseconds only: never the words.
 
-import { callTurnNotice, type VoiceClientTiming } from "./voice-timing.ts";
+import { audioTurnNotice, callTurnNotice, type VoiceAudioTiming, type VoiceClientTiming } from "./voice-timing.ts";
 
 export type VoiceLatencyStage = "dispatch" | "engine" | "firstToken";
 
@@ -23,6 +23,17 @@ interface Timeline {
   warm?: boolean;
   /** the page's own stages of the turn (voiceCall.timing) */
   client?: VoiceClientTiming;
+  /** what the turn ran on and from (server/voice-turn.ts) */
+  run?: VoiceTurnRun;
+}
+
+/** The model and context of a call turn, for its Events line. */
+export interface VoiceTurnRun {
+  model?: string;
+  /** bytes of context in front of the words */
+  contextBytes?: number;
+  /** the call's session was started by this turn, or resumed */
+  session?: "new" | "resumed";
 }
 
 /** A turn that never streams is forgotten after this long. */
@@ -47,11 +58,12 @@ export class VoiceLatencyLog {
   }
 
   /** A stage of the thread's current call turn (the first time only). */
-  mark(threadId: string, stage: VoiceLatencyStage, detail?: { warm?: boolean }): void {
+  mark(threadId: string, stage: VoiceLatencyStage, detail?: { warm?: boolean; run?: VoiceTurnRun }): void {
     const turn = this.turns.get(threadId);
     if (!turn || turn.marks[stage] !== undefined) return;
     turn.marks[stage] = this.now();
     if (detail?.warm !== undefined) turn.warm = detail.warm;
+    if (detail?.run) turn.run = detail.run;
     if (stage === "firstToken") {
       this.log(voiceLatencyLine(turn));
       // the same turn in the thread's Events lens, the page's stages first
@@ -63,9 +75,16 @@ export class VoiceLatencyLog {
         engineMs: span(dispatch, engine),
         firstTokenMs: span(engine ?? dispatch ?? turn.receivedAt, firstToken),
         ...(turn.warm !== undefined ? { warm: turn.warm } : {}),
+        ...(turn.run ? { run: turn.run } : {}),
       }));
       this.turns.delete(threadId);
     }
+  }
+
+  /** The page heard the answer's first words (POST /voice/call "heard"):
+   * its own audio stages, after the server's line of the same turn. */
+  heard(threadId: string, audio: VoiceAudioTiming): void {
+    this.notice?.(threadId, audioTurnNotice(audio));
   }
 
   /** The thread's turn ended without streaming text (a tool-only turn, an error). */

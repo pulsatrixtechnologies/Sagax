@@ -441,7 +441,7 @@ import { isTechnicalNoticeName } from "../shared/chat-notices.ts";
 import { renewalPrompt, type RenewalStep } from "./context-renewal.ts";
 import { ModelCatalogStore } from "./model-catalog/catalog.ts";
 import { turnRunFor, type TurnRun } from "./turn-run.ts";
-import { attachmentsInText, autoModelRecord, bareModelId, concrete as concreteSelection, explainPick, familyOfModel, isModelRefusal, nextInChain, pickEquivalentModel, pickOrchestrationModel, pickWorkerModel, tierOfModel, type AutoChainEntry, type AutoEngine, type AutoPick, type CatalogFacts } from "./model-auto.ts";
+import { attachmentsInText, autoModelRecord, bareModelId, concrete as concreteSelection, explainPick, familyOfModel, isModelRefusal, nextInChain, pickEquivalentModel, pickOrchestrationModel, pickVoiceModel, pickWorkerModel, tierOfModel, type AutoChainEntry, type AutoEngine, type AutoPick, type CatalogFacts } from "./model-auto.ts";
 import type { AutoModelRecord } from "../shared/auto-model.ts";
 import { decodeGeneratedImage } from "./generated-image.ts";
 import {
@@ -938,6 +938,7 @@ import { VoiceCallSessions, voiceCallTurnSettle } from "./voice-call-session.ts"
 import { VoiceCallWarmup } from "./voice-call-warmup.ts";
 import { namedTeammates, prewarmWindowMs, ThreadPrewarm } from "./thread-prewarm.ts";
 import { callTurnEffort } from "./voice-call-effort.ts";
+import { VoiceTurnSessions, callLinesBlock, voiceBriefText, voiceTranscript, voiceUnseenBlock } from "./voice-turn.ts";
 import { effortAcceptedByEngine, resolveEngineTurnEffort } from "../shared/ultracode-effort.ts";
 import { routeTurnModel, type TurnModelSwitch } from "./turn-model-routing.ts";
 import { effortAcceptedByModel, effortForModel } from "../shared/model-capabilities.ts";
@@ -16623,7 +16624,8 @@ bus.subscribe((event: RuntimeEvent) => {
       break;
     }
     case "session.started":
-      if (bot && event.sessionId && event.providerInstanceId) {
+      // a call's own session never becomes the conversation's cursor
+      if (bot && event.sessionId && event.providerInstanceId && !(voiceCalls.active(event.threadId) && voiceSessions.noteSession(event.threadId, event.providerInstanceId, event.sessionId))) {
         store.setResumeCursor(bot.id, event.providerInstanceId, event.sessionId, event.threadId);
       }
       if (typeof event.model === "string" && event.model) sessionModelByThread.set(event.threadId, event.model);
@@ -18872,6 +18874,26 @@ function isExternalContextMarker(value: string | undefined): boolean {
   return Boolean(value?.startsWith(EXTERNAL_CONTEXT_MARKER_PREFIX));
 }
 
+/** thread -> the last context message before its call's first turn: the
+ * conversation's own session resumes after the call with the call's lines
+ * in front of its next written turn (server/voice-turn.ts). Memory only. */
+const callLinesSince = new Map<string, string>();
+
+/** A call turn ran beside the conversation's own session: that session
+ * learns what the call said on its next written turn. An engine that
+ * records what its session was handed sends it the unseen lines by itself;
+ * another gets them in front of that turn (callLinesSince). Never an
+ * unread mark: the person was on the call. */
+function noteCallBesideConversation(bot: BotRecord, threadId: string, beforeId: string | undefined): void {
+  const task = store.taskByThread(bot.id, threadId);
+  if (!task || !beforeId || callLinesSince.has(threadId)) return;
+  const owner = task.lastInstanceId;
+  const record = owner ? task.handedMessages?.[owner] : undefined;
+  if (owner && record?.session !== undefined && record.session === task.resumeCursors[owner] &&
+    registry.get(owner)?.adapter.capabilities.strictResume) return;
+  callLinesSince.set(threadId, beforeId);
+}
+
 function markTaskContextExternallyUpdated(bot: BotRecord, threadId: string): void {
   const task = store.taskByThread(bot.id, threadId);
   if (!task) return;
@@ -19109,12 +19131,17 @@ async function compactConversation(input: {
 /** Threads on a live voice call (server/voice-call-session.ts). */
 const voiceCalls = new VoiceCallSessions();
 const voiceWarmup = new VoiceCallWarmup();
+/** Each call's own engine session (server/voice-turn.ts). */
+const voiceSessions = new VoiceTurnSessions();
 const voiceFirstSentences = new VoiceFirstSentenceJobs();
 /** Close the idle engine a call warmed. A process a turn already owns stays. */
 function releaseWarmEngine(threadId: string): void {
   const bot = store.botByThread(threadId);
   if (!bot) return;
   const live = store.projectBotForTask(bot.id, threadId) ?? bot;
+  // the call's session may run on another engine than the conversation's
+  const voiceInstance = voiceSessions.end(threadId);
+  if (voiceInstance && voiceInstance !== live.modelSelection.instanceId) registry.get(voiceInstance)?.adapter.releaseWarmSession?.(threadId);
   registry.get(live.modelSelection.instanceId)?.adapter.releaseWarmSession?.(threadId);
 }
 
@@ -20174,6 +20201,18 @@ function patchParallelCard(parentThreadId: string, cardId: string | undefined, p
   store.patchMessage(parentThreadId, cardId, { parallelTask: { ...card.parallelTask, ...patch } });
 }
 
+/** The conversation a call hands work off from (server/voice-turn.ts): its
+ * summary and latest turns, as a written turn would rebuild them. */
+function callHandoffHistory(bot: BotRecord, threadId: string, anchorId: string): string {
+  const messages = store.activePath(threadId);
+  const task = store.taskByThread(bot.id, threadId);
+  const record = latestCompaction(messages, task);
+  const selection = selectReplay(directContext(bot, threadId, messages), {
+    budgetBytes: cfg.context?.rebuildBytes ?? DEFAULT_REBUILD_BYTES, excludedIds: new Set([anchorId]), ...(record ? { compaction: record } : {}),
+  });
+  return selection.transcript.map((m) => `${m.role === "user" ? "User" : "You"}: ${m.text}`).join("\n");
+}
+
 /** Start (or queue) a parallel task for `text`, asked in `threadId`. */
 async function startParallelTask(input: {
   botId: string;
@@ -20308,6 +20347,7 @@ async function startParallelTask(input: {
     workspace,
     personName: input.sender?.name || cfg.profile?.name?.trim() || "The person",
     byBot: input.byBot,
+    ...(voiceCalls.active(input.threadId) ? { history: callHandoffHistory(bot, input.threadId, anchorId) } : {}),
   });
   const reply = (state: ParallelTaskState) => ({
     ok: true as const, threadId: input.threadId, message: store.messagesFor(input.threadId).find((m) => m.id === anchorId) ?? request ?? card,
@@ -21510,6 +21550,34 @@ async function startTurn(
       bot = { ...bot, modelSelection: { instanceId: connectorSwitch.instanceId, model: connectorSwitch.model, ...(connectorSwitch.effort ? { effort: connectorSwitch.effort } : {}), ...(connectorSwitch.account ? { account: connectorSwitch.account } : {}) } };
     }
   }
+  // A turn said on a live call, and the warm that prepares its process, run
+  // on a fast model (server/voice-turn.ts): the person waits in silence for
+  // the first word. Pinned or Auto alike; a request that needed another
+  // engine's connector keeps it. Heavy work is handed to a parallel task on
+  // the bot's main model by the call turn itself.
+  let voiceTurnPick: AutoPick | null = null;
+  /** The turn runs in the call's own session, from a short view of the
+   * conversation (server/voice-turn.ts), not in the conversation's session. */
+  let voiceCallTurn = false;
+  if (!connectorSwitch && voiceCalls.active(threadId) && !opts?.commsDepth && !opts?.coordination && !opts?.automationSource
+    && !opts?.compactOnly && !opts?.unattended && !(opts?.peerAsk ?? (opts?.editedMessageId ? undefined : opts?.userMessage?.peerAsk))) {
+    const voiceSpeaker = resolveTurnSpeaker({
+      speaker: opts?.speaker,
+      sender: opts?.sender ?? (opts?.editedMessageId ? undefined : opts?.userMessage?.sender),
+      trigger: opts?.trigger,
+      automationSource: opts?.automationSource,
+    });
+    voiceCallTurn = true;
+    voiceTurnPick = voicePickForTurn(bot, autoBaseSelection, voiceSpeaker,
+      cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(opts?.coordination?.id) || botmailConfined(threadId));
+    if (voiceTurnPick) {
+      bot = { ...bot, modelSelection: voiceTurnPick.selection };
+      autoTurn = null;
+    }
+  } else if (!voiceCalls.active(threadId) && voiceSessions.has(threadId)) {
+    // the call expired without a hang-up: its session is gone with it
+    voiceSessions.end(threadId);
+  }
   // Routines and legacy peer delivery already have their own completion
   // owners. Only ordinary chats opt into this scheduler; its child turns
   // carry an exact node id rather than inheriting a routine's lifetime.
@@ -22078,7 +22146,9 @@ async function startTurn(
         }
         if (!readiness.ready) throw new Error(readiness.reason ?? "The cloud computer is not ready");
       }
-      await compactConversation({ bot, threadId, generation: dispatchClaimId, instance, model,
+      // A call turn starts its own short session: the conversation's fold
+      // waits for its next written turn, off the person's silence.
+      if (!voiceCallTurn) await compactConversation({ bot, threadId, generation: dispatchClaimId, instance, model,
         excludedIds: new Set([userMessage.id, ...(opts?.excludeMessageIds ?? [])]), manual: opts?.compactOnly === true });
       turnTrace(threadId, "compacted");
       if (!directTurnClaimIsCurrent(bot.id, dispatchClaimId, threadId)) throw new DirectTurnSetupCancelled("turn stopped during context setup");
@@ -22123,7 +22193,7 @@ async function startTurn(
       const cursorsBeforeReset = task.resumeCursors;
       // The record is durable even if a crash occurs before this bookkeeping.
       // A retry then sees the unapplied record again and rebuilds safely.
-      if (contextReset && !warmOnly) store.patchTask(bot.id, threadId, { resumeCursors: {} });
+      if (contextReset && !warmOnly && !voiceCallTurn) store.patchTask(bot.id, threadId, { resumeCursors: {} });
       // A fold of a stale session reads as a pause, never "continue where you left off".
       const pausedFold = contextReset && Boolean(record && task.contextSummaries?.some(entry => entry.id === record.id && entry.stale));
 
@@ -22250,6 +22320,61 @@ async function startTurn(
         };
       };
       let dispatchContext = decideContext(plannedConfig);
+      // A call turn (server/voice-turn.ts) runs in the call's own session,
+      // never the conversation's: no conversation cursor, no handed-message
+      // record. Its first dispatch (the warm, or the first spoken turn) closes
+      // an idle process the thread kept, so the call never reuses the long
+      // session; the first spoken turn carries the short view of the
+      // conversation; the later ones resume the call session, with what it
+      // has not seen (a task's result) in front of the words.
+      // The conversation's session resumes after a call: the call's lines go
+      // in front of the words (a rebuild or a replaying engine has them).
+      const callSince = !voiceCallTurn && !warmOnly ? callLinesSince.get(threadId) : undefined;
+      if (callSince !== undefined) {
+        const from = contextOrder.indexOf(callSince);
+        if (dispatchContext.resumeCursor !== undefined && !dispatchContext.sessionReset && from >= 0 && !replaysNatively(instance.driverKind)) {
+          const lines = replayable.filter((m) => contextOrder.indexOf(m.id) > from);
+          dispatchContext = { ...dispatchContext, turnText: withUnseenMessages(callLinesBlock(lines), dispatchContext.turnText) };
+        }
+        callLinesSince.delete(threadId);
+      }
+      const liveCall = voiceCallTurn ? voiceCalls.active(threadId) : undefined;
+      const voiceView = liveCall ? voiceTranscript(context, { excludedIds: skipTranscript, ...(record ? { compaction: record } : {}) }) : null;
+      let voiceHanded: string[] = [];
+      let voiceAnchor: string | undefined;
+      let voiceBriefed = false;
+      if (liveCall && voiceView) {
+        const plan = voiceSessions.plan(threadId, { callId: liveCall.callId, instanceId, model: String(model ?? "") });
+        if (plan.fresh) {
+          // the idle process may hold the conversation's session: never reuse it
+          try { instance.adapter.releaseWarmSession?.(threadId); } catch { /* already closed */ }
+        }
+        // the warm starts the call's process: the first spoken turn takes it as is
+        if (warmOnly) voiceSessions.dispatched(threadId, []);
+        const byId = new Map(activeMessages.map((message) => [message.id, message]));
+        const ownReply = (id: string) => {
+          const source = byId.get(byId.get(id)?.requestMessageId ?? "");
+          return Boolean(source?.voiceCall);
+        };
+        const unseen = plan.brief ? [] : voiceSessions.unseen(threadId, replayable)
+          .filter((m) => !(m.role === "user" && (m.spoken || byId.get(m.id)?.voiceCall)) && !(m.role === "assistant" && ownReply(m.id)));
+        const natively = replaysNatively(instance.driverKind);
+        const brief = voiceBriefText(voiceView.transcript, userTurnText);
+        const text = warmOnly ? "" : natively ? userTurnText
+          : plan.brief ? brief : withUnseenMessages(voiceUnseenBlock(unseen), userTurnText);
+        voiceHanded = warmOnly ? [] : [...(plan.brief ? voiceView.representedIds : unseen.map((m) => m.id)), ...skipTranscript];
+        voiceAnchor = warmOnly ? undefined : (contextOrder.at(-1) ?? userMessage.id);
+        voiceBriefed = plan.brief;
+        dispatchContext = {
+          turnText: text,
+          resumeCursor: plan.cursor,
+          sessionReset: false,
+          // a call session the engine no longer has starts again from the short view
+          ...(plan.cursor !== undefined && !natively ? { recoveryText: brief } : {}),
+          handoff: undefined,
+        } as typeof dispatchContext;
+        console.log(`[voice-turn] thread ${threadId}: ${warmOnly ? "warm" : plan.brief ? "new call session" : "call session resumed"} on ${instanceId}/${String(model ?? "")}, ${Buffer.byteLength(text)} bytes of context`);
+      }
 
       const persona = [
         `You are ${bot.name}, a personal bot in Sagax.`,
@@ -23156,7 +23281,7 @@ async function startTurn(
       // person-facing delegated return still re-decides here: that turn is
       // the one the person watches.
       const dispatchedConfig = sessionConfig(liveBot?.soul ?? bot.soul);
-      if (strictResume && !(opts?.cardContinuation && continuingRoutine) && dispatchedConfig !== plannedConfig) dispatchContext = decideContext(dispatchedConfig);
+      if (strictResume && !voiceView && !(opts?.cardContinuation && continuingRoutine) && dispatchedConfig !== plannedConfig) dispatchContext = decideContext(dispatchedConfig);
       // Before sendTurn: an adapter may emit the whole turn before it resolves.
       if (!warmOnly) handoffs.dispatching(threadId, dispatchClaimId, dispatchContext.handoff);
       // Read receipts (server/read-receipts.ts): the person's words this turn
@@ -23194,7 +23319,11 @@ async function startTurn(
       // bookkeeping that would mark the context delivered is left for it.
       const contextStillPending = Boolean(engineCommand && dispatchContext.sessionReset && transcript.length > 0 &&
         !replaysNatively(instance.driverKind));
-      if (!warmOnly) voiceLatency.mark(threadId, "dispatch");
+      if (!warmOnly) voiceLatency.mark(threadId, "dispatch", voiceView ? { run: {
+        model: voiceTurnPick?.modelLabel ?? String(model ?? ""),
+        contextBytes: Buffer.byteLength(dispatchContext.turnText),
+        session: voiceBriefed ? "new" : "resumed",
+      } } : undefined);
       // A call turn (and the warm that prepares its process, so the two share
       // one spawn contract) runs at the engine's low effort: the person is
       // waiting for the first word (server/voice-call-effort.ts).
@@ -23252,7 +23381,7 @@ async function startTurn(
         resumeCursor: dispatchContext.resumeCursor,
         sessionReset: dispatchContext.sessionReset,
         ...(dispatchContext.recoveryText !== undefined && !engineCommand ? { recoveryText: dispatchContext.recoveryText } : {}),
-        transcript,
+        transcript: voiceView ? voiceView.transcript : transcript,
         // #1276: a compact prompt sends the stable half first and what differs
         // between conversations last, for an engine that takes the prompt
         // whole (pi without a session); same sections, nothing dropped.
@@ -23334,13 +23463,19 @@ async function startTurn(
       }
       clearDirectTurnDispatch(threadId, dispatchClaimId);
       // dispatched: the rewind is spent, and the old cursors are dead
-      if (rewound && !contextStillPending) store.patchTask(bot.id, threadId, { rewound: false, resumeCursors: {} });
-      if (contextReset && record && !contextStillPending) store.patchTask(bot.id, threadId, { appliedCompactionId: record.id, contextFloor: undefined });
+      // A call turn ran in its own session: the conversation's session keeps
+      // its pending rebuild and learns what the call said on its next turn.
+      if (voiceView) {
+        voiceSessions.dispatched(threadId, voiceHanded, voiceAnchor);
+        if (!warmOnly) noteCallBesideConversation(bot, threadId, contextOrder[contextOrder.indexOf(userMessage.id) - 1]);
+      }
+      if (rewound && !contextStillPending && !voiceView) store.patchTask(bot.id, threadId, { rewound: false, resumeCursors: {} });
+      if (contextReset && record && !contextStillPending && !voiceView) store.patchTask(bot.id, threadId, { appliedCompactionId: record.id, contextFloor: undefined });
       // and this engine now owns the thread's most recent turn
       // Consume exactly the external-update generation this turn replayed.
       // If a newer delegated result landed during setup, its unique marker
       // differs and must survive so the next turn also receives that update.
-      if (!contextStillPending && (!isExternalContextMarker(task.lastInstanceId) || task.lastInstanceId === externalContextMarker)) {
+      if (!contextStillPending && !voiceView && (!isExternalContextMarker(task.lastInstanceId) || task.lastInstanceId === externalContextMarker)) {
         store.markTaskDispatched(bot.id, threadId, instanceId);
       }
       // a turn can settle before dispatch returns, and a poller started
@@ -30181,6 +30316,16 @@ function autoPickForTurn(input: {
   }
   const quick = parsedQuickTask(input.text);
   return { payer, pick: pickOrchestrationModel(request, quick) };
+}
+/** The fast model of a call turn (server/voice-turn.ts), on the engines the
+ * payer can use now; null when none has one (the turn keeps its model). */
+function voicePickForTurn(bot: BotRecord, base: ModelSelection, speaker: TurnSpeaker, guestConfined: boolean): AutoPick | null {
+  const payer = autoPayerKey(bot, speaker);
+  const offered = autoEnginesFor({ ...bot, modelSelection: base }, speaker, guestConfined);
+  const limited = limitFailover.autoExcluded(payer, offered);
+  const engines = offered.filter((engine) => !limited.has(engine.instanceId));
+  if (!engines.length) return null;
+  return pickVoiceModel({ base, engines, catalog: autoCatalogLookup, skip: autoRefusalsFor(payer) });
 }
 /** The words of a turn as Auto reads them to tell a quick one (#1209). */
 function parsedQuickTask(text: string): { text: string; attachments: Array<{ kind: "image" | "file"; name?: string }> } {
@@ -38687,6 +38832,10 @@ const voiceModeDeps: VoiceModeDeps = {
       releaseWarmEngine(target.threadId);
       void perspicaxMcp?.endWarm(target.threadId);
       broadcastVoiceCallEnded(target.threadId, callId, "person", auth);
+    },
+    heard: (target, callId, audio) => {
+      if (voiceCalls.active(target.threadId)?.callId !== callId) return;
+      voiceLatency.heard(target.threadId, audio);
     },
   },
   assertWithinBudget: () => assertWithinBudget(cfg, DATA_DIR),

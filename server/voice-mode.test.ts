@@ -353,6 +353,16 @@ describe("voice mode routes", () => {
     expect(out).toMatchObject({ status: 200, body: { ok: true, keyterms: [] } });
   });
 
+  it("hands a call turn's audio stages to the Events lens, numbers only", async () => {
+    const callSession = { start: vi.fn(), end: vi.fn(), heard: vi.fn() };
+    const { call } = harness({ callSession });
+    const heard = await call({ method: "POST", path: "/api/bots/b-quasar/voice/call", body: { callId: "call-12345678", state: "heard", threadId: "t-ada", audio: { firstSentenceMs: 120, ttsMs: 310, playbackMs: 70, totalMs: 1_480, words: "never" } } });
+    expect(heard).toMatchObject({ status: 200, body: { ok: true } });
+    expect(callSession.heard).toHaveBeenCalledWith(expect.objectContaining({ threadId: "t-ada" }), "call-12345678", { firstSentenceMs: 120, ttsMs: 310, playbackMs: 70, totalMs: 1_480 });
+    const malformed = await call({ method: "POST", path: "/api/bots/b-quasar/voice/call", body: { callId: "call-12345678", state: "heard", threadId: "t-ada", audio: { totalMs: "slow" } } });
+    expect(malformed.status).toBe(400);
+  });
+
   it("reads auto on a French computer as French with formatting, ignores a malformed locale, and hands back the words without fillers", async () => {
     const { call, xai } = harness();
     xai.transcribe.mockResolvedValueOnce({ text: "Euh, peux-tu regarder le billet euh de CONTOSO?" });

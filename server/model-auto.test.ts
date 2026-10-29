@@ -17,6 +17,7 @@ import {
   orderEngines,
   pickEquivalentModel,
   pickOrchestrationModel,
+  pickVoiceModel,
   pickWorkerModel,
   tierOfModel,
   type AutoEngine,
@@ -494,5 +495,25 @@ describe("#1154: the same tier on another engine", () => {
     const fast = pickEquivalentModel({ base, engines: [claude], catalog }, "fast");
     expect(fast?.selection.model).toBe("claude-haiku-4-5");
     expect(pickEquivalentModel({ base, engines: [], catalog }, "top")).toBeNull();
+  });
+});
+
+describe("pickVoiceModel", () => {
+  it("runs a call turn on the fast tier of the bot's own engine, pinned or Auto", () => {
+    const pinned = { instanceId: "claude", model: "claude-fable-5-1", effort: "high" as const };
+    expect(pickVoiceModel({ base: pinned, engines: [codex, grok, claude], catalog })?.selection).toEqual({ instanceId: "claude", model: "claude-haiku-4-5", effort: "high" });
+    expect(pickVoiceModel({ base: claudeBase, engines: [claude], catalog })?.tier).toBe("fast");
+  });
+
+  it("takes the bot's own fast model first", () => {
+    const base = { ...claudeBase, fast: { instanceId: "grok-build", model: "grok-4-fast" } };
+    const engines = [claude, { ...grok, fast: { id: "grok-4-fast", label: "Grok 4 Fast" } }];
+    expect(pickVoiceModel({ base, engines, catalog })?.selection).toEqual({ instanceId: "grok-build", model: "grok-4-fast" });
+  });
+
+  it("goes to another engine's fast model only when its own has none, and keeps the model when none has one", () => {
+    const noFast: AutoEngine = { ...claude, models: { default: "claude-fable-5-1", options: [{ id: "claude-fable-5-1", label: "Claude Fable 5.1" }] } };
+    expect(pickVoiceModel({ base: claudeBase, engines: [noFast, grok], catalog })?.selection.model).toBe("grok-4-fast");
+    expect(pickVoiceModel({ base: claudeBase, engines: [noFast], catalog })).toBeNull();
   });
 });

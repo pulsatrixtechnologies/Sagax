@@ -5,8 +5,8 @@
 // its own: it turns reasoning off, which is a different answer, not a
 // faster one. A bot already set below that keeps its own level.
 //
-// TODO(#153): the model tier for a call (a faster model, not only a lower
-// effort) belongs to the Auto mode of PR #153; only the effort changes here.
+// The model of a call turn (a fast one) is picked in server/voice-turn.ts
+// (pickVoiceModel); only the effort is decided here.
 import { EFFORT_LEVELS, type EffortLevel } from "../shared/wire.ts";
 
 const rank = (level: EffortLevel) => EFFORT_LEVELS.indexOf(level);
