@@ -481,7 +481,8 @@ export function buildMcpServers(turn: SendTurnInput): Record<string, unknown> | 
     // #1276: in a compact prompt the gate searches the bot's own big catalogs,
     // listing whole only the tools the person's bots use.
     const botOwned = name in (turn.integrations?.custom ?? {});
-    const search = turn.compactPrompt && botOwned && !directory ? { pinned: turn.compactPrompt.pinned[name] ?? [] } : undefined;
+    // a server may be named like an Object property ("constructor"): own keys only
+    const search = turn.compactPrompt && botOwned && !directory ? { pinned: Object.hasOwn(turn.compactPrompt.pinned, name) ? turn.compactPrompt.pinned[name]! : [] } : undefined;
     const gated = gateServer({ name, server, toolScope: parsed.scope, threadId: turn.threadId, nodeEnv: NODE_ENV_FLAG, directory, ...(search ? { search } : {}), ...customServerGate(name, botOwned, turn.integrations?.customResultBudgets) });
     const stdio = gated ?? mcpStdioServer(server, { nodeEnv: NODE_ENV_FLAG, ...(directory ? { directory: { name } } : {}) });
     if (!stdio) throw new Error("Pi MCP server configuration is invalid");

@@ -76,6 +76,11 @@ it("keeps the selected API model for direct, group and scheduled Boat turns and 
     const { bot } = await control(["new-bot", "--name", "Boat API fixture"]);
     await control(["set-model", "--bot", bot.id, "--instance", "openaiCompat", "--model", "chosen-vision-model"]);
     await api("PATCH", `/api/bots/${bot.id}`, { computer: "cloud", browser: false });
+    // Ask: new bots start on Approve for me, where the person's own cloud
+    // computer is used unasked; human control over the screenshot is the
+    // point of the scenarios below.
+    await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "ask" });
+    await api("PATCH", `/api/bots/${bot.id}/tasks/${bot.activeTaskId}`, { approvalMode: "ask" });
     let group: any;
     for (const scenario of ["direct", "held", "group"]) {
       if (scenario === "group") ({ group } = await api("POST", "/api/groups", { name: "Boat fixture room", memberIds: [bot.id], setup: { bulletin: "", defaultResponder: { kind: "member", botId: bot.id } } }));
@@ -113,6 +118,9 @@ it("keeps the selected API model for direct, group and scheduled Boat turns and 
       }
       expect(nativePrompts).toBe(0);
     }
+    // Back to Approve for me: the owner's own routine on their own cloud
+    // computer runs without a card at that level (server/owner-autonomy.ts).
+    await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "auto" });
     const beforeRoutine = requests.length;
     const { routine } = await api("POST", "/api/routines", { name: "Cloud fixture", botId: bot.id,
       prompt: "Inspect the assigned cloud desktop.", runOn: "cloud", enabled: false,

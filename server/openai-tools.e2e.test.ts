@@ -147,6 +147,10 @@ it.each(["openaiCompat", "groq"] as const)("%s runs structured MCP calls through
       const { bot } = await control(["new-bot", "--name", `API tool ${mode}`]);
       await control(["set-model", "--bot", bot.id, "--instance", instanceId, "--model", "fixture-model"]);
       await api("PATCH", `/api/bots/${bot.id}`, { mcpServers: [mode], description: "Verification assistant", soul: "Use structured tools when an operation is requested." });
+      // Ask: new bots start on Approve for me, where a call in the person's
+      // own environment runs unasked; the card path is what is exercised here.
+      await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "ask" });
+      await api("PATCH", `/api/bots/${bot.id}/tasks/${bot.activeTaskId}`, { approvalMode: "ask" });
       if (mode === "selected" || mode === "scope-empty") {
         await api("PATCH", `/api/bots/${bot.id}`, { toolScope: { allow: mode === "selected" ? [`mcp:${mode}:write_file`] : [] } });
       }
@@ -220,7 +224,8 @@ it.each(["openaiCompat", "groq"] as const)("%s runs structured MCP calls through
           expect(first.all).not.toContain("session_search tool");
           expect(first.all).not.toContain("The user also added an MCP server");
         }
-        expect(messages.messages.some((message: any) => message.tool || message.card)).toBe(false);
+        // no tool row and no approval card (the intro card of a new bot, #1354, is not one)
+        expect(messages.messages.some((message: any) => message.tool || message.card?.requestId)).toBe(false);
       }
       evidence.push({ scenario: mode, status: settled.status, artifactExists: existsSync(artifact), completionRequests: requests.length - before, mcpStarted: existsSync(startupMarker) });
       if (mode === "ordinary" || mode === "tools-off") {

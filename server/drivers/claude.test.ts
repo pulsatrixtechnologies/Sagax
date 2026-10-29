@@ -553,11 +553,15 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(JSON.parse(seen.mcpConfig.mcpServers.agents.env.SAGAX_GATE_TOOL_SCOPE)).toEqual({ allow: ["native:*", "mcp:agents:list_bots"] });
   });
 
-  it("refuses native MCP inheritance when a bot has an explicit selection", async () => {
+  it("never inherits native MCP servers when a bot has an explicit selection: the selection wins", async () => {
+    // The person's own Claude MCP servers are on by default on a solo server
+    // (claudeUserMcpEnabled, #1282); a turn with a tool selection still gets
+    // only the selected servers, under a strict MCP config.
     const dump = join(scratch, "scope-inherited-mcp.json"); process.env.FAKE_CLAUDE_DUMP = dump;
     await create();
-    await expect(instance.adapter.sendTurn({ threadId: "scope-inherited-mcp", text: "Must not run", mcpFromUserConfig: true, toolScope: { allow: ["native:*"] } })).rejects.toThrow(/restricted MCP configuration/);
-    expect(existsSync(dump)).toBe(false);
+    await instance.adapter.sendTurn({ threadId: "scope-inherited-mcp", text: "Runs with the selection only", mcpFromUserConfig: true, toolScope: { allow: ["native:*"] } });
+    await expect.poll(() => existsSync(dump), { timeout: 15_000 }).toBe(true);
+    expect(JSON.parse(readFileSync(dump, "utf8")).argv).toContain("--strict-mcp-config");
   });
 
   afterEach(async () => {

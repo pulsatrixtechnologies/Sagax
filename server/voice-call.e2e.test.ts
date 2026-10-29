@@ -182,7 +182,8 @@ describe("voice mode live call (streaming)", () => {
   it("streaming voice: one xAI socket for the call, each clause's PCM between start and done", async () => {
     const { ws, frames, audio } = await open("/api/bots/b-quasar/voice/speech?language=fr&voice=ara&speed=1.25&threadId=t-1");
     await until("ready", () => frames.find((f) => f.type === "ready"));
-    expect(frames[0]).toEqual({ type: "ready", sampleRate: 24_000 });
+    // the ready frame names the key in use by its last four characters (#1573)
+    expect(frames[0]).toEqual({ type: "ready", sampleRate: 24_000, key: { last4: KEY.slice(-4), source: "server" } });
     const started = Date.now();
     ws.send(JSON.stringify({ type: "say", id: "c1", text: "**Bonjour** Ada," }));
     ws.send(JSON.stringify({ type: "say", id: "c2", text: "voici la suite." }));
@@ -236,6 +237,7 @@ describe("voice mode live call (streaming)", () => {
   });
 
   it("streaming voice: an xAI socket that does not open is refused (502), so the page speaks over POST", async () => {
+    const logged = speechLog.length;
     xai.speech.refuse = true;
     try {
       await expect(open("/api/bots/b-quasar/voice/speech?language=en")).rejects.toThrow(/502/);
@@ -243,7 +245,10 @@ describe("voice mode live call (streaming)", () => {
       xai.speech.refuse = false;
     }
     await expect(open("/api/bots/b-quasar/voice/speech?language=en", { origin: "https://evil.example" })).rejects.toThrow(/403/);
-    expect(speechLog).toEqual([]);
+    // the refusal is logged with the source of the key (#1573), never the key
+    const refused = speechLog.slice(logged);
+    expect(refused.some((line) => line.includes(`server's key ···${KEY.slice(-4)}`))).toBe(true);
+    expect(refused.join("\n")).not.toContain(KEY.slice(6, 14));
   });
 
   it("never asks xAI to answer: only speech to text and text to speech endpoints were called", () => {

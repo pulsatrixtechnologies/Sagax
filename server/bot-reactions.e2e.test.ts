@@ -36,7 +36,9 @@ it("a bot that only reacts settles its turn without a reply bubble", async () =>
   expect((await f.cli("wait", "--bot", bot.id, "--task", bot.activeTaskId, "--timeout", "30")).status).toBe("settled");
 
   const turn = f.evidence().find((entry: any) => entry.botId === bot.id);
-  expect(turn.evidence[0].result.tools.map((tool: any) => tool.name)).toEqual(expect.arrayContaining(["react_to_message", "remove_reaction"]));
+  // react_to_message is listed whole; remove_reaction is one of the rare
+  // tools found with search_tools (#1604), still callable (see below).
+  expect(turn.evidence[0].result.tools.map((tool: any) => tool.name)).toEqual(expect.arrayContaining(["react_to_message", "search_tools"]));
   const step = turn.evidence.find((entry: any) => entry.step?.tool === "react_to_message");
   expect(step.response.result.isError).toBeFalsy();
   expect(step.response.result.content[0].text).toContain("Reacted 👍");

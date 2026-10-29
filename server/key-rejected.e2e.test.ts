@@ -98,8 +98,14 @@ it("a key the provider rejects stops showing Ready until it changes or works aga
     expect(await snapshot()).toMatchObject({ authenticated: true });
 
     // ...and so does a later turn that works.
+    // The same refusal again, with no reply in between: the row is not
+    // written twice (shared/failure-dedup.ts), so the turn ends quietly;
+    // the mark is back all the same.
+    const refusals = async () => (JSON.stringify(await control(["messages", "--bot", bot.id, "--limit", "20"])).match(/upstream HTTP 401/g) ?? []).length;
+    expect(await refusals()).toBe(1);
     accepted.delete(`Bearer ${BAD}`);
-    expect((await turn()).status).toBe("failed");
+    expect((await turn()).status).toBe("settled");
+    expect(await refusals()).toBe(1);
     expect(await snapshot()).toMatchObject({ authenticated: false });
     accepted.add(`Bearer ${BAD}`);
     expect((await turn()).status).toBe("settled");
