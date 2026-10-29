@@ -1056,7 +1056,12 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           // unattended Chief's job died when the card timed out. A teammate's
           // own work still follows its own level; computer, browser,
           // connector and custom servers keep their approvals.
-          mountSelected("agents", "agents", turn.integrations.agents, "approve");
+          // The whole catalog, with each family of tools as one tool
+          // (agents-merged.ts). Not under a tool selection: there Codex asks
+          // about agents tools by name and could not read a family call.
+          mountSelected("agents", "agents", turn.toolScope === undefined
+            ? { ...turn.integrations.agents, env: { ...turn.integrations.agents.env, SAGAX_MERGED_TOOLS: "1" } }
+            : turn.integrations.agents, "approve");
         }
         if (turn.integrations?.localComputer) {
           // The host daemon and isolated Local VM both arrive as a direct Cua

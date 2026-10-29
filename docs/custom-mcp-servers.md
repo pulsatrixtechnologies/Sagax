@@ -219,6 +219,15 @@ connectors from your Claude Code config on every message; skills, hooks and
 the personal `CLAUDE.md` still stay out. More tools means more tokens per
 message: turn it off if you do not need those servers.
 
+Those servers cost less with tool search. Outside a compact prompt, Sagax
+starts Claude Code with `ENABLE_TOOL_SEARCH=true` (unless you set the variable
+yourself): a server Sagax does not load up front, yours included, shows only
+its tool names, and a tool's schema loads when the bot searches for it. The
+CLI's own default sent every schema on a model with a 1M-token window. Codex
+bots, and Claude bots outside a compact prompt, also see Sagax's own tools by
+family: one tool per family (`cloud_agents`, `artifacts`, `routines`, …) whose
+`tool` argument names the tool to run, approved as that tool.
+
 The switch drops the CLI flag `--strict-mcp-config` (Claude Code 1.0.60+)
 while keeping `--setting-sources project` (1.0.122+). The environment variable
 `SAGAX_CLAUDE_INHERIT_USER_CONFIG=1` on the Sagax process remains the full

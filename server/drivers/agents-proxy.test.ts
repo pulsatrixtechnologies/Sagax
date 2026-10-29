@@ -2760,3 +2760,53 @@ describe("permissions in enforce mode", () => {
     expect(list.result.content[0].text).not.toMatch(/Permission denied/);
   });
 });
+
+describe("the whole catalog listed by family (SAGAX_MERGED_TOOLS)", () => {
+  let merged: ChildProcess;
+  const responses = new Map<number, (message: any) => void>();
+  let nextMergedId = 1;
+  const mergedRpc = (method: string, params?: unknown): Promise<any> => new Promise((resolve, reject) => {
+    const id = nextMergedId++;
+    responses.set(id, resolve);
+    merged.stdin!.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+    setTimeout(() => { if (responses.delete(id)) reject(new Error(`${method} timed out`)); }, 10_000).unref?.();
+  });
+
+  beforeAll(async () => {
+    merged = spawn(process.execPath, [PROXY], {
+      env: { ...childEnv(), SAGAX_HARNESS_URL: `http://127.0.0.1:${stubPort}`, SAGAX_BOT_ID: "bot-asker",
+        SAGAX_THREAD_ID: "thread-asker-routine", SAGAX_COMMS_TOKEN: TOKEN, SAGAX_TURN_DEPTH: "0",
+        SAGAX_SKILL_AUTHORING_ENABLED: "1", SAGAX_SHARED_COMPUTERS_ENABLED: "1", SAGAX_CHIEF_OF_STAFF: "1",
+        SAGAX_CATALOG_BRIDGE: "0", SAGAX_MERGED_TOOLS: "1" },
+      stdio: ["pipe", "pipe", "inherit"],
+    });
+    let buffer = "";
+    merged.stdout!.on("data", chunk => {
+      buffer += chunk;
+      let newline;
+      while ((newline = buffer.indexOf("\n")) !== -1) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        if (!line.trim()) continue;
+        const message = JSON.parse(line);
+        responses.get(message.id)?.(message);
+        responses.delete(message.id);
+      }
+    });
+    await mergedRpc("initialize", { protocolVersion: "2024-11-05" });
+  });
+  afterAll(async () => { if (merged) await waitForExit(merged, { signal: "SIGTERM" }); });
+
+  it("lists each family as one tool and runs the tool its family call names", async () => {
+    const names = (await mergedRpc("tools/list")).result.tools.map((tool: { name: string }) => tool.name);
+    expect(names).toContain("rooms");
+    expect(names).not.toContain("list_rooms");
+    roomsResponse = { rooms: [{ id: "room-launch", name: "Launch", members: ["Asker", "Helper"] }] };
+    const res = await mergedRpc("tools/call", { name: "rooms", arguments: { tool: "list_rooms" } });
+    expect(res.result.content[0].text).toContain("room-launch");
+    // a family call that names none of its tools runs nothing
+    const refused = await mergedRpc("tools/call", { name: "rooms", arguments: { tool: "list_bots" } });
+    expect(refused.result.isError).toBe(true);
+    expect(refused.result.content[0].text).toContain("rooms needs tool");
+  });
+});

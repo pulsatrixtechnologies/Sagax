@@ -23,6 +23,8 @@ import readline from "node:readline";
 
 import { availableTools, catalogProfileFromEnv, compactListed, compactToolsFromEnv, withDeferredRareTools } from "./agents-catalog.ts";
 import { catalogBridgeDefinitions, catalogBridgeOn, routeBridgeCall } from "./catalog-bridge.ts";
+import { mergeByAction } from "./agents-merged.ts";
+import { readMergedCall } from "../../shared/merged-agent-tools.ts";
 import { CALL_TOOL, DESCRIBE_TOOL, SEARCH_TOOL, ToolDirectory, isDirectoryTool, type CatalogTool } from "../mcp-directory.ts";
 import { callTool, capResult, toolCallContextFromEnv } from "./agents-call.ts";
 import { harnessClientFromEnv, type Json } from "./agents-client.ts";
@@ -69,7 +71,13 @@ const LISTED_TOOLS = BRIDGE
     ...AVAILABLE_TOOLS.filter((tool) => compactListed(tool.name, { ...COMPACT, coordinating: PROFILE.coordinating })),
     ...(SEARCHED!.tools.length ? SEARCHED!.listed({ server: "agents", title: "Sagax", instructions: "Sagax's own tools: teammates, rooms, routines, settings, artifacts, transcripts, cloud agents, skills and the person's phone." }) : []),
   ]
-  : process.env.SAGAX_DEFER_RARE_TOOLS === "1" ? withDeferredRareTools(AVAILABLE_TOOLS, PROFILE) : AVAILABLE_TOOLS;
+  : mergedListing(process.env.SAGAX_DEFER_RARE_TOOLS === "1" ? withDeferredRareTools(AVAILABLE_TOOLS, PROFILE) : AVAILABLE_TOOLS);
+/** SAGAX_MERGED_TOOLS=1, set by a driver whose engine is shown the whole
+ * catalog and reads a family call as the tool it runs: each family of tools
+ * is listed as one tool (agents-merged.ts, shared/merged-agent-tools.ts). */
+function mergedListing<T extends { name: string }>(tools: T[]) {
+  return process.env.SAGAX_MERGED_TOOLS === "1" ? mergeByAction(tools) : tools;
+}
 // A warm engine keeps this process across its turns; the harness keeps
 // every per-turn limit, so nothing here counts.
 const CONTEXT = toolCallContextFromEnv(process.env);
@@ -141,6 +149,14 @@ async function handle(msg: Json) {
           name = call.name;
           args = call.arguments as Json;
         }
+      }
+      // A family tool runs the tool its action names, with that tool's own
+      // arguments, through the same checks as a direct call.
+      const family = readMergedCall(name, args);
+      if (family?.kind === "refused") return textResult(id, family.reason, true);
+      if (family?.kind === "call") {
+        name = family.tool;
+        args = family.arguments as Json;
       }
       if (!AVAILABLE_TOOLS.some((t) => t.name === name)) return rpcErr(id, -32602, `Unknown tool: ${name}`);
       try {
