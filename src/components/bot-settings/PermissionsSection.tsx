@@ -61,7 +61,7 @@ export function PermissionsSection({
   const { patch, engine, canCoordinate, approvalMode, trustedModesAvailable, sectionName, currentChief } = derived;
   const { state, dispatch } = useStore();
   const ownerOrAdmin = useOwnerOrAdmin();
-  const { draft } = useBotEditor();
+  const { draft, bulk } = useBotEditor();
   const [localAutoWarning, setLocalAutoWarning] = useState<string | null>(null);
   const [fullAccessTarget, setFullAccessTarget] = useState<string | null>(null);
   const [commandAllowlistTarget, setCommandAllowlistTarget] = useState<{ botId: string; botName: string } | null>(null);
@@ -148,7 +148,8 @@ export function PermissionsSection({
   // this pane shows the role only while the bot holds it (to leave it and
   // pick the teams it coordinates), and on a draft.
   const only = part === "approval";
-  const showPrimaryUi = !only && advanced && showPrimary && (draft || Boolean(bot.chiefOfStaff));
+  // one Primary Bot per person: never set on several bots at once
+  const showPrimaryUi = !only && !bulk && advanced && showPrimary && (draft || Boolean(bot.chiefOfStaff));
   const showContactUi = !only && advanced && showContact;
   const showOutboundUi = !only && advanced && showOutbound;
   // 2026-10-21 (parité 1C): who it writes to without a card
@@ -185,7 +186,7 @@ export function PermissionsSection({
       {showApproval && (
         <DescribedRow
           label={t("botPanel.permissions.approval")}
-          help={draft ? t("botPanel.permissions.approvalDraft") : t("botPanel.permissions.approvalHelp")}
+          help={draft && !bulk ? t("botPanel.permissions.approvalDraft") : t("botPanel.permissions.approvalHelp")}
           rowId="approvalLevel"
           // Simple draws its two choices under the label.
           below={!advanced && <div className="mt-2">{approvalSelector}</div>}

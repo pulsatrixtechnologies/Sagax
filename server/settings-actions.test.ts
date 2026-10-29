@@ -976,3 +976,38 @@ describe("sagax_settings: plugins, MCP servers and a routine's webhook (2026-10-
     }
   });
 });
+
+describe("sagax_settings: several bots in one call (2026-10-29, Edit N bots)", () => {
+  it("changes each bot in turn, as one call each, and answers one line per bot", async () => {
+    const h = harness({ routeStatus: (_method, path) => path === "/api/bots/b3" ? 409 : 200, targetName: (_kind, id) => ({ b2: "Atlas", b3: "Iris", b4: "Lina" })[id] });
+    const result = await h.call({ action: "set", key: "bot.approvalMode", target: "b2, b3,b4", value: "auto" });
+    expect(h.planned.map((row) => row.path)).toEqual(["/api/bots/b2", "/api/bots/b3", "/api/bots/b4"]);
+    const text = String(result.body.text);
+    expect(text).toMatch(/^2 of 3 bots changed\./);
+    expect(text).toContain("Atlas: Done");
+    expect(text).toContain("Iris: refused:");
+    // each bot is journaled as its own change
+    expect(h.audits).toHaveLength(2);
+  });
+
+  it("keeps each bot's own card: another person's bot waits, the person's own runs", async () => {
+    const h = harness();
+    await h.call({ action: "set", key: "bot.approvalMode", target: "b2,theirs", value: "auto" });
+    expect(h.planned.map((row) => row.effect)).toEqual(["run", "hold"]);
+  });
+
+  it("refuses when every bot refuses, and past the limit", async () => {
+    const h = harness({ routeStatus: 403 });
+    const result = await h.call({ action: "set", key: "bot.approvalMode", target: "b2,b3", value: "auto" });
+    expect(result.status).toBe(400);
+    const many = Array.from({ length: 26 }, (_, index) => `b${index + 10}`).join(",");
+    expect((await harness().call({ action: "set", key: "bot.approvalMode", target: many, value: "auto" })).body.error).toMatch(/At most 25/);
+  });
+
+  it("splits only a bot key's target", async () => {
+    const h = harness();
+    const result = await h.call({ action: "set", key: "routine.thread", target: "r1,r2", value: "th1" });
+    expect(result.status).toBe(400);
+    expect(h.planned).toEqual([]);
+  });
+});

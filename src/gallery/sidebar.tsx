@@ -6,7 +6,10 @@
  * beside the bots, for the row alignment check)
  * &sharing=1: an organization with bots shared by Ada and Bob (their faces on
  * the avatar), the viewer's own bot, working bots and two people with their
- * presence (the capture script serves /api/people/<id>/avatar). */
+ * presence (the capture script serves /api/people/<id>/avatar).
+ * &bulk=1: an organization where Atlas, Iris and Lina differ (model, works
+ * on, Perspicax profiles) for Edit N bots; Lina's engine refuses a change
+ * (scripts/capture-bulk-edit-bots.mjs). */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { setLocale } from "../lib/i18n";
@@ -113,6 +116,21 @@ if (params.get("rooms") === "1") dmGroups.push(
     messages: [message("dm3", "Parfait, merci.", minutes(35))] } as never,
 );
 
+const bulk = params.get("bulk") === "1";
+if (bulk) {
+  const set = (id: string, extra: Partial<Bot>) => Object.assign(team.find((entry) => entry.id === id)!, { ownerUserId: "pr_me", ...extra });
+  set("atlas", { computer: "local", modelSelection: { instanceId: "claude", model: "claude-sonnet" }, grants: [{ target: "user:pr_ada", level: "use", by: "pr_me", at: 0 }] });
+  set("iris", { computer: "cloud", modelSelection: { instanceId: "claude", model: "claude-opus" }, grants: [{ target: "user:pr_ada", level: "use", by: "pr_me", at: 0 }] });
+  set("lina", { modelSelection: { instanceId: "grok", model: "grok-4" }, grants: [{ target: "user:pr_ada", level: "use", by: "pr_me", at: 0 }, { target: "user:pr_bob", level: "edit", by: "pr_me", at: 0 }] });
+  for (const member of team) member.ownerUserId ??= "pr_me";
+}
+const PROFILES = [
+  { id: "pf_cw", slug: "connectwise", name: "ConnectWise", description: "Billets et temps" },
+  { id: "pf_s1", slug: "sentinelone", name: "SentinelOne", description: "Postes et menaces" },
+  { id: "pf_bs", slug: "bookstack", name: "BookStack", description: "Documentation" },
+];
+const botProfiles: Record<string, string[]> = { atlas: ["pf_cw"], iris: ["pf_cw", "pf_s1"], lina: ["pf_cw"] };
+
 // ?character=<id> dresses the whole team as that mascot (shape, frog...)
 const characterParam = params.get("character");
 if (characterParam && (MASCOT_CHARACTERS as readonly string[]).includes(characterParam)) {
@@ -134,13 +152,41 @@ window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
   if (!path.startsWith("/api/")) return realFetch(input, init);
   const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
   if (path === "/api/bots") return json({ bots: team, groups: dmGroups, sections: ["My team"], computerControl: {} });
+  if (bulk) {
+    const method = init?.method ?? "GET";
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+    const one = /^\/api\/bots\/([\w-]+)(\/.*)?$/.exec(path);
+    const target = one ? team.find((entry) => entry.id === one[1]) : undefined;
+    if (path === "/api/org") return json({ org: { identity: { kind: "perspicax" }, name: "Organisation" } });
+    if (path === "/api/org/directory") return json({ people: [
+      { principalId: "pr_ada", name: "Ada Lovelace", login: "ada", role: "member", disabled: false },
+      { principalId: "pr_bob", name: "Bob Martin", login: "bob", role: "member", disabled: false },
+    ], teams: [] });
+    if (path === "/api/instances") return json({ instances: [
+      { instanceId: "claude", driverKind: "claudeAgent", displayName: "Claude", access: "subscription", snapshot: { state: "available", authenticated: true }, models: { options: [{ id: "claude-sonnet", label: "Sonnet" }, { id: "claude-opus", label: "Opus" }] } },
+      { instanceId: "grok", driverKind: "grokAgent", displayName: "Grok", access: "subscription", snapshot: { state: "available", authenticated: true }, models: { options: [{ id: "grok-4", label: "Grok 4" }] } },
+    ] });
+    if (path === "/api/mcp/servers") return json({ servers: [{ name: "github", enabled: true }, { name: "filesystem", enabled: true }] });
+    if (target && one![2] === "/perspicax") {
+      if (method === "PUT") botProfiles[target.id] = body.profiles;
+      const mine = botProfiles[target.id] ?? [];
+      return json({ selected: PROFILES.filter((profile) => mine.includes(profile.id)).map((profile) => ({ ...profile, heldByMe: true })), available: PROFILES, canEdit: true });
+    }
+    if (target && one![2] === undefined && method === "PATCH") {
+      // Lina's engine is not available to take the change
+      if (target.id === "lina" && body.computer !== undefined) return json({ error: "Grok n'est pas disponible pour ce Bot : reconnectez le moteur." }, 409);
+      Object.assign(target, body);
+      return json({ bot: target });
+    }
+    if (target && one![2]?.startsWith("/grants")) return json({ grants: target.grants ?? [], administer: { any: true, teamIds: [], maxLevel: "manage", canAdd: true } });
+  }
   if (sharing && path === "/api/org") return json({ org: { identity: { kind: "perspicax" }, name: "GOX" } });
   if (sharing && path === "/api/org/directory") return json({ people: [
     { principalId: "pr_ada", name: "Ada Lovelace", login: "ada", role: "member", disabled: false, avatarUrl: "/api/people/pr_ada/avatar" },
     { principalId: "pr_bob", name: "Bob Martin", login: "bob", role: "member", disabled: false },
   ] });
   if (path === "/api/code/status") return json({ available: true });
-  if (path === "/api/config") return json({ profile: { name: "Alex Gagnon" }, ...(sharing || params.get("org") === "1" ? { viewer: { principalId: "pr_me" } } : {}) });
+  if (path === "/api/config") return json({ profile: { name: "Alex Gagnon" }, ...(sharing || bulk || params.get("org") === "1" ? { viewer: { principalId: "pr_me" } } : {}) });
   // the avatar menu's Usage › (a made-up plan, this month's cost)
   if (path === "/api/plan-usage") return json({ providers: [{
     id: "claude", name: "Claude", driver: "claude", plan: "Max", ok: true, error: null, state: "windows", access: "subscription",

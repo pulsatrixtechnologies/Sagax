@@ -59,6 +59,40 @@ the turn instead of a raw "HTTP 400" card. Gallery
 `src/gallery/reply-flagged-error.html`, captures
 `node scripts/capture-reply-flagged-error.mjs`.
 
+## Edit several bots at once (2026-10-29)
+
+The sidebar's selection bar has an Edit button (`data-sidebar-select-edit`,
+"Edit N selected bots") that opens `BulkEditBotsDialog`: the bot editor's
+own sections (Model, Shared with, Workspace, Access, Voice, Permissions,
+Perspicax Profiles), not copies of them.
+
+- Each section is "Do not change" until opened. Opened, the real section
+  component edits a draft bot in a scoped store and transport
+  (`BotEditorContext` with `draft` and `bulk`, `bulkSectionRequest`), the
+  same way New bot does, so nothing is written until Apply. `GrantEditor`
+  reads and writes through `useBotEditor().request` for this.
+- A value every bot shares shows beside the section; when they differ it
+  reads "Mixed values" with each bot's value behind its help.
+- Lists (Shared with, Access's MCP servers, Perspicax Profiles): Add, Remove
+  or Replace with; Replace starts from what every bot has.
+- Review shows one line ("3 bots · Workspace → Cloud · ..."), Apply runs
+  `runBulkEdit` (`src/lib/bulk-bot-edit.ts`): bot by bot, through the
+  editor's own routes (`persistBotUpdate`, the grants and Perspicax routes),
+  only the fields that differ for that bot. Each change is that bot's own
+  edit (its Changes, the journal) and refused for its own reasons; the
+  result lists each bot (changed, already set, or why it refused). A section
+  the editor locks for a bot (`botSectionLock`) is skipped for it, with the
+  reason. Undo (`undoBulkEdit`) puts back the values kept before, the same
+  way; the last bulk change can still be undone after the dialog closed.
+- Rules shared with iOS: `shared/bulk-bot-edit.ts` (CompanionCore mirrors it).
+- The Primary Bot: `sagax_settings` set on a bot key takes several ids in
+  `target` ("a,b,c", at most 25); each bot is its own call (rights, policy,
+  card, quote, journal), one answer line per bot (`server/settings-actions.ts`
+  `handleMany`).
+- Tests: `shared/bulk-bot-edit.test.ts`, `src/lib/bulk-bot-edit.test.ts`,
+  `server/settings-actions.test.ts` ("several bots"). Captures:
+  `node scripts/capture-bulk-edit-bots.mjs` (sidebar gallery `?bulk=1`).
+
 ## The task sheet, redone (2026-10-29)
 
 The window that opens on a sub-agent, a parallel task or a run
