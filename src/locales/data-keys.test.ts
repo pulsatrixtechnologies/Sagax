@@ -19,12 +19,34 @@ function sources(dir: string): string[] {
   });
 }
 
+// One pass over the sources: every dotted name right after a quote, and
+// every template prefix (`parent.${…}`). A lookup per key is then O(1) where
+// `code.includes` per key was a scan of the whole tree, 11 000 times: over
+// 20 s under load, which made the merge gate time out.
+const read = (() => {
+  let cached: { literals: Set<string>; prefixes: Set<string> } | null = null;
+  return () => {
+    if (cached) return cached;
+    const literals = new Set<string>();
+    const prefixes = new Set<string>();
+    for (const code of sources(root)) {
+      for (const match of code.matchAll(/["'`](?=([\w][\w.-]{0,199})["'`])/g)) literals.add(match[1]!);
+      for (const match of code.matchAll(/`([\w.-]+\.)\$\{/g)) prefixes.add(match[1]!);
+    }
+    cached = { literals, prefixes };
+    return cached;
+  };
+})();
+
+function isRead(key: string): boolean {
+  const { literals, prefixes } = read();
+  const dot = key.lastIndexOf(".");
+  const parent = dot === -1 ? "" : key.slice(0, dot + 1);
+  return literals.has(key) || (parent.length > 0 && prefixes.has(parent));
+}
+
 it("keeps no Data string that nothing reads", () => {
-  const code = sources(root).join("\n");
-  const unread = Object.keys(en).filter((key) => key.startsWith("data.")).filter((key) => {
-    const parent = key.slice(0, key.lastIndexOf(".") + 1);
-    return !code.includes(`"${key}"`) && !code.includes(`\`${parent}\${`);
-  });
+  const unread = Object.keys(en).filter((key) => key.startsWith("data.")).filter((key) => !isRead(key));
   expect(unread).toEqual([]);
 });
 
@@ -46,12 +68,6 @@ const STILL_SORTING = new Set([
 ]);
 
 it("keeps no catalog string that nothing reads, outside the families still being sorted", () => {
-  const code = sources(root).join("\n");
-  const unread = Object.keys(en).filter((key) => !STILL_SORTING.has(key.split(".")[0])).filter((key) => {
-    const dot = key.lastIndexOf(".");
-    const parent = dot === -1 ? "" : key.slice(0, dot + 1);
-    const templated = parent.length > 0 && code.includes("`" + parent + "${");
-    return !code.includes(`"${key}"`) && !code.includes(`'${key}'`) && !templated;
-  });
+  const unread = Object.keys(en).filter((key) => !STILL_SORTING.has(key.split(".")[0])).filter((key) => !isRead(key));
   expect(unread).toEqual([]);
 });
