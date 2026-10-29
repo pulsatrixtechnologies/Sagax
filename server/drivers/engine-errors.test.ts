@@ -121,3 +121,17 @@ describe("localModelFailureMessage", () => {
     expect(localModelFailureMessage("This request is too large to send to the local model on your computer (1 MB at most).")).toBeNull();
   });
 });
+
+describe("a usage limit in its plural words", () => {
+  it("reads as a usage limit, never as a bare HTTP 400", () => {
+    const raw = "API Error: 400 You have reached your usage limits for this period.";
+    expect(engineFailureKind(raw)).toBe("usage_limit");
+    expect(classifyError({ text: raw }).reason).toBe("quota");
+    expect(engineFailureMessage("Claude", raw)).not.toMatch(/HTTP 400/);
+  });
+
+  it("leaves a context window or an unrelated limit alone", () => {
+    expect(engineFailureKind("You have reached your context limit")).not.toBe("usage_limit");
+    expect(engineFailureKind("You have reached the limit of 20 files")).toBeNull();
+  });
+});

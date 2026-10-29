@@ -4966,3 +4966,16 @@ describe("ClaudeDriver snapshot auth (fake CLI)", () => {
     expect(await instance.snapshot()).toMatchObject({ state: "available", authenticated: false });
   });
 });
+
+describe("an error result that only repeats the turn's reply", () => {
+  it("keeps the reply as the answer: never the error's cause", async () => {
+    const { claudeResultError, resultRepeatsReply } = await import("./claude.ts");
+    const reply = "Everyone answered.\n\n| Bot | Status |\n|---|---|\n| Alpha | ok |";
+    const frame = { subtype: "success", is_error: true, result: reply };
+    expect(resultRepeatsReply(frame, reply)).toBe(true);
+    expect(claudeResultError(frame, reply)).not.toContain("Everyone answered");
+    // a result with its own errors, or one that says something else, still fails the turn in its words
+    expect(resultRepeatsReply({ ...frame, errors: ["No conversation found"] }, reply)).toBe(false);
+    expect(claudeResultError({ subtype: "success", result: "API Error: 529 Overloaded" }, reply)).toMatch(/overloaded/i);
+  });
+});

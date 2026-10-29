@@ -101,4 +101,20 @@ final class FailureDedupTests: XCTestCase {
         }
         XCTAssertEqual(ids, ["u1", "u2", "e2"])
     }
+
+    // A turn the engine flagged after it answered stored its reply as the
+    // cause: that row is never drawn, the reply with its table is the answer.
+    func testFailedRowRepeatingTheReplyIsHidden() {
+        let table = "Everyone answered. Five bots synced their rules:\n\n| Bot | Status |\n|---|---|\n| Alpha | ok |\n| Beta | ok |"
+        var answer = Message(id: "r1", role: .bot, kind: .text, at: 0)
+        answer.text = table
+        XCTAssertEqual(FailureDedup.repeatedIds([user("u1"), answer, failed("e1", table)], threadBotId: "ada"), ["e1"])
+        let account = String(table.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ").prefix(90)) + "… No tool calls were seen before it stopped."
+        XCTAssertEqual(FailureDedup.repeatedIds([user("u1"), answer, failed("e2", account)], threadBotId: "ada"), ["e2"])
+    }
+
+    func testRealFailureWithoutReplyKeepsItsCard() {
+        let messages = [user("u1"), reply("r1"), user("u2"), failed("e1", "Claude is overloaded right now. Try again in a few minutes.")]
+        XCTAssertTrue(FailureDedup.repeatedIds(messages, threadBotId: "ada").isEmpty)
+    }
 }

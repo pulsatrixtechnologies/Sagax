@@ -24,6 +24,23 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## A reply is never an error (2026-10-29)
+
+A bot's reply always reads as a reply, its Markdown whole. Claude Code can
+flag a turn as an error after it answered in full; its `result` then holds
+the reply. The driver keeps that reply as the answer (`resultRepeatsReply`,
+`server/drivers/claude.ts`): the turn completes and the flag goes to the
+Events lens as a `runtime.notice`, never to `claudeResultError` as a cause.
+Rows stored before that ("error: <the reply>", or a requester's account that
+starts with it) are not drawn: `repeatedFailureIds` (`shared/failure-dedup.ts`,
+iOS `FailureDedup`) leaves out a failed row whose cause only repeats a bot
+reply of the thread (`failedTurnRepeatsReply`). The red card stays for a real
+failure without a reply. A usage limit in its plural words ("You have reached
+your usage limits") reads as one (`USAGE_LIMIT`), so the limit failover takes
+the turn instead of a raw "HTTP 400" card. Gallery
+`src/gallery/reply-flagged-error.html`, captures
+`node scripts/capture-reply-flagged-error.mjs`.
+
 ## The task sheet, redone (2026-10-29)
 
 The window that opens on a sub-agent, a parallel task or a run

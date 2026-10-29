@@ -47,3 +47,28 @@ export function failedTurnTool(
 export function failedTurnCause(name: string): string | null {
   return name.startsWith(MARKER) ? name.slice(MARKER.length).trim() : null;
 }
+
+/** Shortest start of a cause compared against the replies: a short phrase
+ * ("error", "timed out") could sit in any reply by chance. */
+const REPLY_PROBE_MIN = 24;
+const REPLY_PROBE_MAX = 160;
+
+function flat(text: string): string {
+  return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/** Whether a failed-turn row's cause is only the bot's own reply, already in
+ * the conversation as a message: a turn the engine flagged after it answered
+ * stored its reply as the cause (in full, cut at FAILED_TURN_MAX_CHARS, or as
+ * the start of a requester's account, server/turn-outcome.ts). The reply is
+ * the answer; the row repeats it as an error and is not drawn. Read at render,
+ * so rows stored that way read right without touching them. */
+export function failedTurnRepeatsReply(cause: string, replies: readonly string[]): boolean {
+  // A requester's account adds what the turn did and its last message after
+  // the cause: the cause is what comes before.
+  const head = cause
+    .split(/\nIts last message, quoted:|\s(?:No tool calls were seen before it stopped\.|Before it stopped it made \d+ tool calls?:)/, 1)[0]!;
+  const probe = flat(head).replace(/…$/, "").replace(/[.\s]+$/, "").slice(0, REPLY_PROBE_MAX);
+  if (probe.length < REPLY_PROBE_MIN) return false;
+  return replies.some((reply) => flat(reply).includes(probe));
+}

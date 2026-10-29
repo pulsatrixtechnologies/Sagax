@@ -367,11 +367,22 @@ export function claudeLimitMessage(limit: ClaudeLimit | null, said?: string, now
 /** What an error `result` says failed its turn: its `errors` (2.1.295:
  * "No conversation found with session ID: …"), else its text, else its
  * kind. */
-export function claudeResultError(frame: { errors?: unknown; result?: unknown; subtype?: unknown; terminal_reason?: unknown; api_error_status?: unknown }): string {
+export function claudeResultError(frame: { errors?: unknown; result?: unknown; subtype?: unknown; terminal_reason?: unknown; api_error_status?: unknown }, reply?: string): string {
   const errors = Array.isArray(frame.errors) ? frame.errors.filter((error): error is string => typeof error === "string" && error.trim() !== "") : [];
   if (errors.length) return errors.join("; ");
-  if (typeof frame.result === "string" && frame.result.trim()) return claudeApiErrorMessage(frame, frame.result);
+  // The result's text is the turn's own reply, not what failed it: never its cause.
+  if (typeof frame.result === "string" && frame.result.trim() && !resultRepeatsReply(frame, reply)) return claudeApiErrorMessage(frame, frame.result);
   return `Claude ended the turn with an error (${String((frame.subtype !== "success" && frame.subtype) || frame.terminal_reason || "unknown")}).`;
+}
+
+/** Whether an error `result` only repeats the reply the turn already gave
+ * (`reply`: the turn's latest text, its last 2 000 characters): no `errors`
+ * of its own, and its text is that reply. The reply then stands. */
+export function resultRepeatsReply(frame: { errors?: unknown; result?: unknown }, reply: string | undefined): boolean {
+  if (Array.isArray(frame.errors) && frame.errors.some((error) => typeof error === "string" && error.trim() !== "")) return false;
+  const said = reply?.trim();
+  const result = typeof frame.result === "string" ? frame.result.trim() : "";
+  return Boolean(said && result && (result === said || result.endsWith(said)));
 }
 
 /** Claude Code 2.1.295's api-error kinds (the assistant frame's `error`) that say the cause outright. */
@@ -3212,9 +3223,20 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             // Any other error result nothing has explained yet is a turn that
             // failed without an api-error frame: its own words say why, so a
             // failed turn is never an empty one. A Stop is no failure.
+            // An error result whose text is the reply the turn already gave
+            // (Claude Code can flag a turn that answered in full): the reply
+            // stands and the turn completes. The flag is a technical note for
+            // the Events lens, never the reply repainted as an error.
+            const replyStands = o.is_error === true && session.turn != null && !session.turn.settled && !session.turn.explained &&
+              !session.turn.stopRequested && resultRepeatsReply(o, session.turn.lastText);
+            if (replyStands && session.turn) {
+              session.turn.explained = true;
+              emit({ ...base(threadId, currentTurnId()), type: "runtime.notice",
+                message: `Claude flagged the turn as an error after its reply (${String((o.subtype !== "success" && o.subtype) || o.terminal_reason || "no reason given")}); the reply stands.` });
+            }
             if (o.is_error === true && session.turn && !session.turn.settled && !session.turn.explained && !session.turn.stopRequested) {
               session.turn.explained = true;
-              emit({ ...base(threadId, currentTurnId()), type: "runtime.error", message: claudeResultError(o) });
+              emit({ ...base(threadId, currentTurnId()), type: "runtime.error", message: claudeResultError(o, session.turn.lastText) });
             }
             // result.usage is this turn's own figure, "per-turn in
             // streaming-input sessions" (2.1.282) even on a retained process.
@@ -3230,7 +3252,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
               output: o.usage?.output_tokens || 0,
             });
             const native: NativeTurnResult = {
-              ok: o.is_error !== true,
+              ok: o.is_error !== true || replyStands,
               // An error result's stop_reason is its synthetic message's
               // ("stop_sequence") or none, which says nothing; its terminal
               // reason ("api_error") or kind ("error_during_execution") does.
@@ -3240,7 +3262,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
                   ? "quota"
                   : session.turn?.updateRequired
                     ? "update_required"
-                    : o.is_error === true
+                    : o.is_error === true && !replyStands
                       ? o.terminal_reason ?? (typeof o.subtype === "string" && o.subtype !== "success" ? o.subtype : null) ?? o.stop_reason ?? null
                       : o.stop_reason ?? o.terminal_reason ?? null,
               cost: o.total_cost_usd ?? null,
