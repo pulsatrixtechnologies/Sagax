@@ -1321,10 +1321,9 @@ export interface AppState {
   /** Signed-in Microsoft connectors a typed trigger can subscribe through. */
   webhookGraphConnectors: GraphConnectorOption[];
   settingsOpen: boolean;
-  /** The bot panel (settings or computer) opened from a split-view
-   * section's pill: that section's bot, docked at the window edge nearest
-   * the section (src/lib/split-view.ts splitLeafPanelSide). null: the panel
-   * is the main chat's, at the right. One panel at a time; it clears when
+  /** The panel opened from a split-view section's pill: that section's bot
+   * (settings or computer) or group, always at the window's right edge.
+   * null: the panel is the main chat's. One panel at a time; it clears when
    * the panel closes. */
   panelOwner: PanelOwner | null;
   /** The person whose details fill the right panel (principal id), or null.
@@ -2313,8 +2312,11 @@ export function closeBotCatalog(): Action {
   return { type: "closeBotCatalog" };
 }
 
-/** A split-view section's bot that owns the bot panel (AppState.panelOwner). */
-export type PanelOwner = { botId: string; leafId: string };
+/** The split-view section whose bot or group owns the panel
+ * (AppState.panelOwner). */
+export type PanelOwner =
+  | { leafId: string; botId: string; groupId?: undefined }
+  | { leafId: string; groupId: string; botId?: undefined };
 
 export function reducer(state: AppState, action: Action): AppState {
   const next = reduce(state, action);
@@ -2996,8 +2998,8 @@ function reduce(state: AppState, action: Action): AppState {
       // Only Details (and Routines) live in the bot panel. A deep link to any
       // other section opens the persona editor on that section's own page
       // over the panel.
-      // A split-view section's pill names its bot as the owner: the panel is
-      // that bot's and the main chat stays as it is. A link for another bot
+      // A split-view section's pill names its bot or group as the owner: the
+      // panel is that one's and the main chat stays as it is. A link for another bot
       // (or the main pill, owner null) gives the panel back to the main chat;
       // one without a bot, from inside the panel, stays with its owner.
       const owner = action.owner !== undefined
@@ -3011,7 +3013,8 @@ function reduce(state: AppState, action: Action): AppState {
         return reducer(opened, { type: "openPersonaEditor", botId: targetId, section: category });
       }
       if (action.botId !== undefined && !state.bots.some((bot) => bot.id === action.botId && !bot.hidden)) return state;
-      if (owner && !state.bots.some((bot) => bot.id === owner.botId && !bot.hidden)) return state;
+      if (owner?.botId !== undefined && !state.bots.some((bot) => bot.id === owner.botId && !bot.hidden)) return state;
+      if (owner?.groupId !== undefined && !state.groups.some((group) => group.id === owner.groupId)) return state;
       const selectedId = owner ? state.selectedId : action.botId ?? state.selectedId;
       // A targeted settings link opens that bot without navigating to chat
       // or marking its conversations read, even when another panel is open.

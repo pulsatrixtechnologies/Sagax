@@ -238,7 +238,6 @@
   --color-confidential-ink: #ffffff;
   --color-confidential-edge: #f2c14e;
   --animate-panel-in: panel-in 240ms var(--ease-out-quint);
-  --animate-panel-in-left: panel-in-left 240ms var(--ease-out-quint);
   --animate-workspace-in: workspace-in 180ms var(--ease-out-quint);
   /* menus and popovers (MenuMotion.tsx): in at `fast`, out quicker still */
   --animate-pop-in: pop-in var(--transition-duration-fast) var(--ease-out-quint);
@@ -1454,7 +1453,7 @@
     flex-shrink: 1;
   }
   .app-content-frame:has(~ .app-docked-panel),
-  .app-docked-panel ~ .app-content-frame {
+  .app-content-frame:has(~ [data-split-panel-slot] > .app-docked-panel) {
     min-width: var(--app-chat-min-width);
   }
 }
@@ -2078,11 +2077,6 @@ button[aria-haspopup="menu"]:has(> [data-sidebar-account-pill]):focus-visible {
 
 @keyframes panel-in {
   from { transform: translateX(28px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-/* A split-view section's bot panel docked at the left edge slides in from there. */
-@keyframes panel-in-left {
-  from { transform: translateX(-28px); opacity: 0; }
   to { transform: translateX(0); opacity: 1; }
 }
 @keyframes workspace-in {

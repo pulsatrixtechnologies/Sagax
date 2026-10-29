@@ -17,7 +17,6 @@ import {
   setSplitLayout,
   splitBesideMain,
   splitDragData,
-  splitLeafPanelSide,
   splitLeaves,
   SPLIT_LAYOUT_KEY,
   SPLIT_MIN_SHARE,
@@ -155,27 +154,5 @@ describe("a sidebar row dragged into the window", () => {
     expect(edgeAt({ x: 200, y: 5 }, box)).toBe("top");
     expect(edgeAt({ x: 200, y: 190 }, box)).toBe("bottom");
     expect(edgeAt({ x: 200, y: 100 }, box)).toBeNull();
-  });
-});
-
-describe("the side a section's bot panel opens on", () => {
-  it("docks to the window edge nearest the section, the right one on a tie", () => {
-    const left = insertSection(MAIN_LEAF, scout, "left");
-    expect(splitLeafPanelSide(left.layout, left.leafId)).toBe("left");
-    expect(splitLeafPanelSide(left.layout, MAIN_LEAF_ID)).toBe("right");
-    const right = insertSection(MAIN_LEAF, scout, "right");
-    expect(splitLeafPanelSide(right.layout, right.leafId)).toBe("right");
-    // Three in a row: the middle one sits on the window's middle, right.
-    const three = insertSection(left.layout, pepper, "right");
-    expect(splitLeafPanelSide(three.layout, left.leafId)).toBe("left");
-    expect(splitLeafPanelSide(three.layout, MAIN_LEAF_ID)).toBe("right");
-    expect(splitLeafPanelSide(three.layout, three.leafId)).toBe("right");
-    // Stacked over the whole width: the usual right edge.
-    const below = insertSection(MAIN_LEAF, room, "bottom");
-    expect(splitLeafPanelSide(below.layout, below.leafId)).toBe("right");
-    // Inside a column on the left half: still the left edge.
-    const nested = insertSection(left.layout, room, "bottom", left.leafId);
-    expect(splitLeafPanelSide(nested.layout, nested.leafId)).toBe("left");
-    expect(splitLeafPanelSide(nested.layout, "gone")).toBeNull();
   });
 });

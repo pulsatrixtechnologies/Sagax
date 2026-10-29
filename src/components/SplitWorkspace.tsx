@@ -12,13 +12,14 @@
 // section shows it instead (the main chat's middle opens it there).
 // Below the md breakpoint only the main chat shows; the layout stays.
 //
-// A bot section's header is the main chat's bot pill (mascot, name,
-// chevron). Its click opens that bot's panel (Details, Library, Computer),
-// docked at the window edge nearest the section (splitLeafPanelSide): a
-// section on the left opens it at the left edge, past the sidebar. One
-// panel at a time (AppState.panelOwner): opening one closes the other, and
-// closing the section, or showing another bot in it, closes its panel.
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+// Every section's header, a bot's or a group's, carries the main chat's
+// pill (mascot or member faces, name, chevron), centered at the top of the
+// section as in a normal chat; Open in main and Close stay in the corner.
+// Its click opens that bot's or group's panel, always at the window's right
+// edge. One panel at a time (AppState.panelOwner): opening one closes the
+// other, and closing the section, or showing another conversation in it,
+// closes its panel. A group's panel portals into App's panel slot.
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Loader2, Maximize2, X } from "lucide-react";
 import { api, openBotThread, peopleDmReadTarget, useStore, type Bot, type Group } from "@/state/store";
 import { useShowThreads } from "@/lib/thread-preferences";
@@ -35,7 +36,6 @@ import {
   replaceSection,
   resizeSplit,
   SPLIT_DRAG_TYPE,
-  splitLeafPanelSide,
   splitLeaves,
   updateSplitLayout,
   useSplitLayout,
@@ -77,7 +77,11 @@ function edgeRect(box: DropZone["rect"], edge: SplitEdge | null, share: number):
   return { ...box, top: box.top + box.height * (1 - share), height: box.height * share };
 }
 
-export function SplitWorkspace({ main }: { main: ReactNode }) {
+/** App's slot at the window's right edge, past the content frame, where a
+ * group section's panel portals to. */
+const PanelSlot = createContext<HTMLElement | null>(null);
+
+export function SplitWorkspace({ main, panelSlot = null }: { main: ReactNode; panelSlot?: HTMLElement | null }) {
   const layout = useSplitLayout();
   const { state, dispatch } = useStore();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -85,12 +89,13 @@ export function SplitWorkspace({ main }: { main: ReactNode }) {
   const showThreads = useShowThreads();
 
   // A section's panel goes with its section: closed, or showing another
-  // bot, the panel closes too.
+  // conversation, the panel closes too.
   const owner = state.panelOwner;
   useEffect(() => {
     if (!owner) return;
-    const leaf = splitLeaves(layout).find((candidate) => candidate.id === owner.leafId);
-    if (leaf?.target?.kind === "bot" && leaf.target.botId === owner.botId) return;
+    const target = splitLeaves(layout).find((candidate) => candidate.id === owner.leafId)?.target;
+    if (target?.kind === "bot" && target.botId === owner.botId) return;
+    if (target?.kind === "group" && target.groupId === owner.groupId) return;
     for (const action of botPillActions(true)) dispatch(action);
   }, [owner, layout, dispatch]);
 
@@ -157,6 +162,7 @@ export function SplitWorkspace({ main }: { main: ReactNode }) {
   };
 
   return (
+    <PanelSlot.Provider value={panelSlot}>
     <div
       ref={rootRef}
       data-split-workspace={layout.type === "split" ? "split" : ""}
@@ -178,21 +184,30 @@ export function SplitWorkspace({ main }: { main: ReactNode }) {
         />
       )}
     </div>
+    </PanelSlot.Provider>
   );
 }
 
-/** Whose bot panel shows and on which window edge: the main chat's bot at
- * the right, or the bot of the section whose pill opened it (panelOwner)
- * at the edge nearest that section. App.tsx draws the one panel there. */
-export function useBotPanelPlacement(mainBot: Bot | undefined): { bot: Bot | undefined; dock: "left" | "right" } {
+/** Whose bot panel App.tsx draws at the window's right edge: the main
+ * chat's bot, or the bot of the section whose pill opened it (panelOwner).
+ * undefined while a group section holds the one panel. */
+export function useBotPanelBot(mainBot: Bot | undefined): Bot | undefined {
   const { state } = useStore();
-  const layout = useSplitLayout();
   const owner = state.panelOwner;
-  if (!owner) return { bot: mainBot, dock: "right" };
-  return {
-    bot: state.bots.find((candidate) => candidate.id === owner.botId),
-    dock: splitLeafPanelSide(layout, owner.leafId) ?? "right",
+  if (!owner) return mainBot;
+  return owner.botId === undefined ? undefined : state.bots.find((candidate) => candidate.id === owner.botId);
+}
+
+/** A section's pill: open when this section owns the one panel; a click
+ * closes it, or opens it for this section's bot or group. */
+function useSectionPanel(leafId: string, owner: { botId: string } | { groupId: string }) {
+  const { state, dispatch } = useStore();
+  const open = (state.settingsOpen || state.computerOpen) && state.panelOwner?.leafId === leafId;
+  const onToggle = () => {
+    if (open) for (const action of botPillActions(true)) dispatch(action);
+    else dispatch({ type: "toggleSettings", open: true, owner: { leafId, ...owner } });
   };
+  return { open, onToggle, slot: useContext(PanelSlot) };
 }
 
 /** Opens a section's conversation in the main chat. A bot's thread goes
@@ -327,7 +342,7 @@ function SplitPane({ leaf }: { leaf: SplitLeaf }) {
     body = <BotPane key={`bot:${bot.id}:${threadId}`} leafId={leaf.id} bot={bot} threadId={threadId} target={target} onClose={close} />;
   } else if (target && group) {
     const threadId = target.threadId ?? group.threadId;
-    body = <GroupPane key={`group:${group.id}:${threadId}`} group={group} threadId={threadId} target={target} onClose={close} />;
+    body = <GroupPane key={`group:${group.id}:${threadId}`} leafId={leaf.id} group={group} threadId={threadId} target={target} onClose={close} />;
   } else {
     // Its bot or group is gone (or not loaded yet): say so, with Close.
     body = (
@@ -347,26 +362,20 @@ function SplitPane({ leaf }: { leaf: SplitLeaf }) {
 }
 
 /** A section's header. A bot's floats over its transcript (the chat view
- * pads for it); a group's sits in the flow, above its own banners. */
-function PaneHeader({ avatar, pill, title, subtitle, onOpenMain, onClose, inFlow = false }: { avatar?: ReactNode; pill?: ReactNode; title: string; subtitle?: string; onOpenMain?: () => void; onClose: () => void; inFlow?: boolean }) {
+ * pads for it); a group's sits in the flow, above its own banners. The
+ * pill sits centered as in a normal chat; a pinned thread's title stays
+ * on its left, Open in main and Close in the corner. */
+function PaneHeader({ pill, title, subtitle, onOpenMain, onClose, inFlow = false }: { pill?: ReactNode; title: string; subtitle?: string; onOpenMain?: () => void; onClose: () => void; inFlow?: boolean }) {
   return (
     <div data-split-pane-header className={cn("content-topbar z-[3] flex min-h-[52px] items-center gap-2 px-3 py-2.5", inFlow ? "relative shrink-0" : "absolute inset-x-0 top-0")}>
       {pill ? (
         <>
-          {/* The main chat's pill, centered as there; a pinned thread's
-              title stays on its left. */}
-          <span dir="auto" className="min-w-0 flex-1 basis-0 truncate text-[12.5px] leading-5 text-ink-secondary">{subtitle ? title : ""}</span>
-          <span className="flex min-w-0 max-w-[60%] shrink items-center">{pill}</span>
-          <span aria-hidden className="flex-1 basis-0" />
+          <span dir="auto" className="min-w-0 max-w-[calc(25%-1rem)] truncate text-[12.5px] leading-5 text-ink-secondary">{subtitle ? title : ""}</span>
+          <div data-split-pane-pill="" className="absolute left-1/2 top-1/2 flex max-w-[50%] -translate-x-1/2 -translate-y-1/2 items-center">{pill}</div>
+          <span aria-hidden className="flex-1" />
         </>
       ) : (
-        <>
-          {avatar}
-          <span className="flex min-w-0 flex-1 flex-col">
-            <span dir="auto" className="truncate text-[13.5px] font-medium leading-5 text-ink">{title}</span>
-            {subtitle && <span className="truncate text-[11.5px] leading-4 text-ink-secondary">{subtitle}</span>}
-          </span>
-        </>
+        <span dir="auto" className="min-w-0 flex-1 truncate text-[13.5px] font-medium leading-5 text-ink">{title}</span>
       )}
       {onOpenMain && (
         <button type="button" data-split-open-main onClick={onOpenMain} aria-label={t("splitView.openInMain")} title={t("splitView.openInMain")} className={CIRCLE_BUTTON}>
@@ -393,12 +402,8 @@ function PaneLoading({ header, failed }: { header: ReactNode; failed: boolean })
 
 function BotPane({ leafId, bot, threadId, target, onClose }: { leafId: string; bot: Bot; threadId: string; target: SplitTarget; onClose: () => void }) {
   const { state, dispatch } = useStore();
-  // This section's pill opens this bot's panel, docked on the section's side.
-  const panelOpen = (state.settingsOpen || state.computerOpen) && state.panelOwner?.leafId === leafId;
-  const togglePanel = () => {
-    if (panelOpen) for (const action of botPillActions(true)) dispatch(action);
-    else dispatch({ type: "toggleSettings", open: true, owner: { botId: bot.id, leafId } });
-  };
+  // This section's pill opens this bot's panel at the window's right edge.
+  const panel = useSectionPanel(leafId, { botId: bot.id });
   const showThreads = useShowThreads();
   const transcript = useSideTranscript(threadId);
   const task = bot.tasks?.find((candidate) => candidate.threadId === threadId);
@@ -428,16 +433,18 @@ function BotPane({ leafId, bot, threadId, target, onClose }: { leafId: string; b
     />
   );
   // Until the thread loads, the same pill with a still mascot.
-  const loadingPill = <BotHeaderPill name={bot.name} panelOpen={panelOpen} onToggle={togglePanel} avatar={<BotAvatar bot={bot} state="idle" size={24} animated={false} />} />;
+  const loadingPill = <BotHeaderPill name={bot.name} panelOpen={panel.open} onToggle={panel.onToggle} avatar={<BotAvatar bot={bot} state="idle" size={24} animated={false} />} />;
   return (
     <section aria-label={label} data-split-pane={`bot:${bot.id}`} className="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-app">
-      {transcript.loaded ? <ChatView bot={paneBot} side={{ header, label, panel: { open: panelOpen, onToggle: togglePanel } }} /> : <PaneLoading header={header(loadingPill)} failed={transcript.failed} />}
+      {transcript.loaded ? <ChatView bot={paneBot} side={{ header, label, panel }} /> : <PaneLoading header={header(loadingPill)} failed={transcript.failed} />}
     </section>
   );
 }
 
-function GroupPane({ group, threadId, target, onClose }: { group: Group; threadId: string; target: SplitTarget; onClose: () => void }) {
+function GroupPane({ leafId, group, threadId, target, onClose }: { leafId: string; group: Group; threadId: string; target: SplitTarget; onClose: () => void }) {
   const { state, dispatch } = useStore();
+  // This section's pill opens this group's panel at the window's right edge.
+  const panel = useSectionPanel(leafId, { groupId: group.id });
   const showThreads = useShowThreads();
   const transcript = useSideTranscript(threadId);
   // On screen in a section is read, as in the main chat (a person's
@@ -459,9 +466,9 @@ function GroupPane({ group, threadId, target, onClose }: { group: Group; threadI
   const task = group.tasks?.find((candidate) => candidate.threadId === threadId);
   const title = target.threadId && task ? task.title?.trim() || t("task.newShort") : group.name;
   const label = t("splitView.aria", { name: group.name });
-  const header = (
+  const header = (pill: ReactNode) => (
     <PaneHeader
-      avatar={<GroupAvatarStack members={members} size={24} />}
+      pill={pill}
       title={title}
       {...(target.threadId && task ? { subtitle: group.name } : {})}
       inFlow
@@ -469,9 +476,12 @@ function GroupPane({ group, threadId, target, onClose }: { group: Group; threadI
       onClose={onClose}
     />
   );
+  // Until the thread loads, the same pill. A one-to-one room (dm) has no
+  // panel: its pill is the plain chip, as in the main chat.
+  const loadingPill = group.dm ? null : <BotHeaderPill name={group.name} panelOpen={panel.open} onToggle={panel.onToggle} avatar={<GroupAvatarStack members={members} size={24} />} />;
   return (
     <section aria-label={label} data-split-pane={`group:${group.id}`} className="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-app">
-      {transcript.loaded ? <GroupView group={paneGroup} pane={{ header, label }} /> : <PaneLoading header={header} failed={transcript.failed} />}
+      {transcript.loaded ? <GroupView group={paneGroup} pane={{ header, label, panel }} /> : <PaneLoading header={header(loadingPill)} failed={transcript.failed} />}
     </section>
   );
 }
