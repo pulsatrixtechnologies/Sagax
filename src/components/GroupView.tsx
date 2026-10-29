@@ -2,7 +2,8 @@
 // carry the personality; avatars inside the room stay still so a busy group
 // does not become a wall of competing motion. Plain messages go to the room's
 // default responder; @mentions override that routing.
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { t, activeLocale } from "@/lib/i18n";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { ArrowDown, ChevronDown, FolderOpen, Pin, X } from "lucide-react";
@@ -106,6 +107,7 @@ import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { groupHumanLabel } from "@/lib/private-threads";
 import { addableRosterBots } from "@/lib/room-members";
 import { GroupAvatarStack, GroupPanel, PanelSection } from "./GroupPanel";
+import { BotHeaderPill } from "./BotHeaderPill";
 import { NudgeLine } from "./NudgeLine";
 import { RosterLine } from "./RosterLine";
 import { LeaveGroupDialog } from "./LeaveGroupDialog";
@@ -1192,8 +1194,12 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
   // Inline roster pickers (#1240, #1260): People, Bots, or both under Manage members.
   const [rosterPick, setRosterPick] = useState<null | "people" | "bots" | "both">(null);
   // The group panel shares the bot panel's slot: one open flag in the store.
-  // A split-view section's bot panel (panelOwner) holds the slot instead.
-  const panelOpen = !pane && state.settingsOpen && !state.panelOwner && !group.dm;
+  // A split-view section's panel (panelOwner) holds the slot instead. A
+  // group section's own panel (pane.panel) portals to the window's right
+  // edge (App's panel slot), where every panel opens.
+  const panelOpen = !group.dm && (pane ? pane.panel?.open === true : state.settingsOpen && !state.panelOwner);
+  const panelSlot = pane?.panel?.slot ?? null;
+  const placePanel = (node: ReactNode) => (panelSlot ? createPortal(node, panelSlot) : node);
   // Organization server: a group's people come from the Perspicax directory
   // (by principal id) and read by their names.
   const perspicaxOrg = usePerspicaxOrg();
@@ -1438,6 +1444,39 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
     );
   });
 
+  // The centered pill: a person's name, a one-to-one room's chip, or the
+  // group's pill. A split-view section's header shows the same one.
+  const groupPill = (peer ? (
+    // A person: their name opens their panel, the way a bot's does.
+    <button
+      type="button"
+      data-open-person={peer.id}
+      onClick={() => dispatch({ type: "openPersonPanel", personId: state.personPanelId === peer.id ? null : peer.id })}
+      className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px] transition-colors duration-[120ms] hover:bg-elevated-hover"
+      title={t("personPanel.open", { name: peer.name })}
+      aria-label={t("personPanel.open", { name: peer.name })}
+    >
+      <PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={24} presenceId={peer.id} presenceRing="border-elevated" />
+      <span className="truncate text-[14px] font-medium leading-5 text-ink">{peer.name}</span>
+      <PersonLabelTag principalId={peer.id} tone="surface" className="max-w-[40%] shrink" />
+    </button>
+  ) : group.dm ? (
+    <span className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px]">
+      <GroupAvatarStack members={members} size={24} />
+      <span className="truncate text-[14px] font-medium leading-5 text-ink">{group.name}</span>
+    </span>
+  ) : (
+    // The bot chat's pill (member faces, name, chevron): it opens
+    // the group panel, a split-view section's at the right edge too.
+    <BotHeaderPill
+      name={group.name}
+      panelOpen={panelOpen}
+      onToggle={pane?.panel ? pane.panel.onToggle : () => dispatch(panelOpen
+        ? { type: "toggleSettings", open: false }
+        : { type: "toggleSettings", open: true, owner: null })}
+      avatar={<GroupAvatarStack members={members} size={24} />}
+    />
+  ));
   const Root = pane ? "section" : "main";
   return (
     // data-room-view: a navigation into or out of a room never animates
@@ -1454,7 +1493,7 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
       {/* Header: laid out like a bot chat's. The centered chip (stacked
           member faces + name) opens the group panel; the right-hand
           controls move into the panel's top bar while it is open. */}
-      {pane ? (typeof pane.header === "function" ? pane.header(null) : pane.header) : <div
+      {pane ? (typeof pane.header === "function" ? pane.header(groupPill) : pane.header) : <div
         {...headerDragProps}
         className={cn(
           "content-topbar",
@@ -1464,37 +1503,7 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
         )}
       >
         <div className="absolute left-1/2 top-1/2 flex max-w-[50%] -translate-x-1/2 -translate-y-1/2 items-center gap-2" style={headerNoDragStyle}>
-          {peer ? (
-            // A person: their name opens their panel, the way a bot's does.
-            <button
-              type="button"
-              data-open-person={peer.id}
-              onClick={() => dispatch({ type: "openPersonPanel", personId: state.personPanelId === peer.id ? null : peer.id })}
-              className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px] transition-colors duration-[120ms] hover:bg-elevated-hover"
-              title={t("personPanel.open", { name: peer.name })}
-              aria-label={t("personPanel.open", { name: peer.name })}
-            >
-              <PersonAvatar avatarUrl={peer.avatarUrl} initials={peer.initials} size={24} presenceId={peer.id} presenceRing="border-elevated" />
-              <span className="truncate text-[14px] font-medium leading-5 text-ink">{peer.name}</span>
-              <PersonLabelTag principalId={peer.id} tone="surface" className="max-w-[40%] shrink" />
-            </button>
-          ) : group.dm ? (
-            <span className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px]">
-              <GroupAvatarStack members={members} size={24} />
-              <span className="truncate text-[14px] font-medium leading-5 text-ink">{group.name}</span>
-            </span>
-          ) : (
-            <button
-              type="button"
-              onClick={() => dispatch({ type: "toggleSettings", open: true, owner: null })}
-              className="flex min-w-0 items-center gap-2 rounded-full border-[0.5px] border-hairline-weak bg-elevated py-[7.5px] pl-[7.5px] pr-[13.5px] transition-colors duration-[120ms] hover:bg-elevated-hover"
-              title={t("chat.openGroupPanel")}
-              aria-label={t("chat.openPanelAria", { name: group.name })}
-            >
-              <GroupAvatarStack members={members} size={24} />
-              <span className="truncate text-[14px] font-medium leading-5 text-ink">{group.name}</span>
-            </button>
-          )}
+          {groupPill}
         </div>
         <div
           className="flex shrink-0 items-center gap-2"
@@ -1760,7 +1769,7 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
       </div>
       </div>
       </ExchangeColumnProvider>
-      {panelOpen && (
+      {panelOpen && placePanel(
         <GroupPanel
           key={`panel:${group.id}`}
           arriving={!panelOpenedWithRoom}

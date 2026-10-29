@@ -1542,12 +1542,13 @@ function PinnedBanner({
  * (calls, ⌘F, the app's error and notice banners), which stay with the
  * main chat. */
 /** A chat drawn compact beside the main one. A split-view section passes
- * `panel` and a header that takes the bot pill: the same pill as the main
- * chat's, which opens this bot's panel (AppState.panelOwner). */
+ * `panel` and a header that takes the pill: the same pill as the main
+ * chat's, which opens this bot's or group's panel at the window's right
+ * edge (AppState.panelOwner). `slot`: where a group's panel portals to. */
 export type SideChat = {
   header: ReactNode | ((pill: ReactNode) => ReactNode);
   label: string;
-  panel?: { open: boolean; onToggle: () => void };
+  panel?: { open: boolean; onToggle: () => void; slot?: HTMLElement | null };
 };
 
 // ── single stream (Show threads off, docs/single-stream-orchestration.md) ──

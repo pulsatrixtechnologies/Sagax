@@ -1,8 +1,8 @@
-// Headless captures of the split view's bot pill against a disposable
-// fake-engine server: two sections side by side (a bot section on the left,
-// the main chat on the right), the left section's pill opening its bot's
-// panel at the window's left edge, then the main chat's pill taking the one
-// panel back to the right. Nothing opens a window.
+// Headless captures of the split view's pills against a disposable
+// fake-engine server: a bot section on the left, the main chat in the
+// middle, a group section on the right. The bot section's pill opens its
+// bot's panel, then the group section's pill opens the group's: each time
+// the one panel sits at the window's right edge. Nothing opens a window.
 //   node --experimental-strip-types scripts/testing/capture-split-panel.ts <outDir> [prefix] [skin] [lang]
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
@@ -28,21 +28,28 @@ try {
   const cli = (...args: string[]) => runControlOmb([...args, "--url", url]) as Promise<any>;
   const { bot: main } = await cli("new-bot", "--name", "Pepper");
   const { bot: side } = await cli("new-bot", "--name", "Scout");
+  const { bot: third } = await cli("new-bot", "--name", "Juniper");
   const say = async (bot: any, text: string) => {
     await api("POST", `/api/bots/${bot.id}/messages`, { threadId: bot.activeTaskId, text, singleStream: true });
     await cli("wait", "--bot", bot.id, "--task", bot.activeTaskId, "--timeout", "30");
   };
   await say(main, "Summarize today's open tasks.");
   await say(side, "Draft the weekly backup check list.");
+  const created = await api("POST", "/api/groups", { name: "Crew", memberIds: [side.id, third.id], setup: { bulletin: "", defaultResponder: { kind: "member", botId: side.id } } });
+  const group = created.group ?? created;
   const terms = await api("GET", "/api/me/terms");
   if (terms?.current) await api("POST", "/api/me/terms", { version: terms.current });
 
   const layout = {
-    type: "split", id: "split-capture", dir: "row", sizes: [0.5, 0.5],
-    children: [{ type: "leaf", id: "pane-capture", target: { kind: "bot", botId: side.id } }, { type: "leaf", id: "main", target: null }],
+    type: "split", id: "split-capture", dir: "row", sizes: [0.34, 0.33, 0.33],
+    children: [
+      { type: "leaf", id: "pane-bot", target: { kind: "bot", botId: side.id } },
+      { type: "leaf", id: "main", target: null },
+      { type: "leaf", id: "pane-group", target: { kind: "group", groupId: group.id } },
+    ],
   };
   ui = await mountPreview(fixture, { entry: "/scripts/testing/threads-preview.tsx", route: "/__split.html", title: "Split view", logLevel: "error" });
-  const page = await browser.newPage({ viewport: { width: 1440, height: 860 }, deviceScaleFactor: 2 });
+  const page = await browser.newPage({ viewport: { width: 1600, height: 860 }, deviceScaleFactor: 2 });
   await page.addInitScript(([skinName, language, stored]) => {
     localStorage.setItem("omb-show-threads", "0");
     localStorage.setItem("omb-skin", skinName);
@@ -74,18 +81,23 @@ try {
     await page.screenshot({ path: file });
     console.log(`wrote ${file}`);
   };
-  await shot("01-two-sections");
-  // the left section's pill (after) or its name (before)
-  const sidePill = page.locator(`[data-split-pane="bot:${side.id}"] [data-bot-header-pill]`);
-  if (await sidePill.count()) {
-    await sidePill.click();
-    await shot("02-panel-left");
+  await shot("01-sections");
+  // the bot section's pill (on the left): its panel
+  const botPill = page.locator(`[data-split-pane="bot:${side.id}"] [data-bot-header-pill]`);
+  if (await botPill.count()) {
+    await botPill.click();
+    await shot("02-bot-panel");
   } else {
-    console.log("no pill in the section: the left panel capture is skipped");
+    console.log("no pill in the bot section: its panel capture is skipped");
   }
-  // the main chat's pill: the one panel goes back to the right edge
-  await page.locator(`[data-split-leaf="main"] [data-bot-header-pill]`).first().click();
-  await shot("03-panel-right");
+  // the group section's pill (on the right): the group's panel
+  const groupPill = page.locator(`[data-split-pane="group:${group.id}"] [data-bot-header-pill]`);
+  if (await groupPill.count()) {
+    await groupPill.click();
+    await shot("03-group-panel");
+  } else {
+    console.log("no pill in the group section: its panel capture is skipped");
+  }
 } finally {
   await ui?.close();
   await fixture.close();

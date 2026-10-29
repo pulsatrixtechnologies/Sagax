@@ -5,7 +5,6 @@
 // Another column (the side thread) passes its own key and bounds, so its
 // width is remembered apart from the panels'.
 import { useRef, useState } from "react";
-import { cn } from "@/lib/cn";
 
 export const DOCKED_PANEL_WIDTH_KEY = "omb-settings-panel-width";
 export const DOCKED_PANEL_MIN_WIDTH = 320;
@@ -42,12 +41,8 @@ export function useDockedPanelWidth(bounds: DockedPanelBounds = DOCKED_PANEL_BOU
   return { width, setWidth, drag, bounds };
 }
 
-/** `dock`: the window edge the column sits on. Docked left (a split-view
- * section's bot panel), its handle is on its right edge and the drag and
- * the arrow keys go the other way. */
-export function DockedPanelResizeHandle({ label, panel, dock = "right" }: { label: string; panel: ReturnType<typeof useDockedPanelWidth>; dock?: "left" | "right" }) {
+export function DockedPanelResizeHandle({ label, panel }: { label: string; panel: ReturnType<typeof useDockedPanelWidth> }) {
   const { width, setWidth, drag, bounds } = panel;
-  const sign = dock === "left" ? -1 : 1;
   return (
     <div
       role="separator"
@@ -64,7 +59,7 @@ export function DockedPanelResizeHandle({ label, panel, dock = "right" }: { labe
       onPointerMove={(event) => {
         const from = drag.current;
         if (!from) return;
-        const next = clampWidth(from.width + sign * (from.x - event.clientX), bounds);
+        const next = clampWidth(from.width + (from.x - event.clientX), bounds);
         drag.current = { ...from, current: next };
         setWidth(next);
       }}
@@ -76,7 +71,7 @@ export function DockedPanelResizeHandle({ label, panel, dock = "right" }: { labe
         storeWidth(finished, bounds);
       }}
       onKeyDown={(event) => {
-        const delta = sign * (event.key === "ArrowLeft" ? KEY_STEP : event.key === "ArrowRight" ? -KEY_STEP : 0);
+        const delta = event.key === "ArrowLeft" ? KEY_STEP : event.key === "ArrowRight" ? -KEY_STEP : 0;
         if (!delta) return;
         event.preventDefault();
         setWidth((current) => {
@@ -85,7 +80,7 @@ export function DockedPanelResizeHandle({ label, panel, dock = "right" }: { labe
           return next;
         });
       }}
-      className={cn("app-resize-handle hidden lg:block", dock === "left" ? "-right-[3px]" : "-left-[3px]")}
+      className="app-resize-handle -left-[3px] hidden lg:block"
     />
   );
 }

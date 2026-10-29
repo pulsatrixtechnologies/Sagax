@@ -1,10 +1,10 @@
-// A split-view section's bot panel (AppState.panelOwner): its pill opens
-// that bot's panel without touching the main chat, one panel at a time.
+// A split-view section's panel (AppState.panelOwner): its pill opens that
+// bot's or group's panel without touching the main chat, one panel at a time.
 import { describe, expect, it } from "vitest";
 import { initialState, reducer, type AppState, type Bot } from "./store";
 
 const bot = (id: string) => ({ id, name: id, threadId: `t-${id}`, title: "", description: "", unread: false, messages: [], color: "green" } as unknown as Bot);
-const base: AppState = { ...initialState, bots: [bot("main"), bot("side")], selectedId: "main" };
+const base: AppState = { ...initialState, bots: [bot("main"), bot("side")], groups: [{ id: "crew", name: "Crew" } as never], selectedId: "main" };
 const owner = { botId: "side", leafId: "pane-1" };
 
 describe("the bot panel opened from a split-view section", () => {
@@ -40,5 +40,14 @@ describe("the bot panel opened from a split-view section", () => {
     expect(linked).toMatchObject({ panelOwner: null, selectedId: "main", settingsOpen: true });
     const same = reducer(opened, { type: "toggleSettings", open: true, botId: "side" });
     expect(same).toMatchObject({ panelOwner: owner, selectedId: "main" });
+  });
+
+  it("opens a group section's panel the same way, and only for a group that exists", () => {
+    const crew = { groupId: "crew", leafId: "pane-3" };
+    const opened = reducer(reducer(base, { type: "toggleSettings", open: true, owner }), { type: "toggleSettings", open: true, owner: crew });
+    expect(opened).toMatchObject({ settingsOpen: true, selectedId: "main", panelOwner: crew });
+    // a link that names a bot gives the panel back to the main chat
+    expect(reducer(opened, { type: "toggleSettings", open: true, botId: "main" }).panelOwner).toBeNull();
+    expect(reducer(base, { type: "toggleSettings", open: true, owner: { groupId: "gone", leafId: "pane-3" } })).toBe(base);
   });
 });

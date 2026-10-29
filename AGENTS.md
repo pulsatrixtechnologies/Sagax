@@ -105,28 +105,29 @@ endpoint and `GET /api/bots/:id/memory/semantic`. Tests:
 - The layout is this device's (`sagax.splitView.layout.v1`, try/catch, a
   damaged copy opens whole), not a synced preference: it depends on the
   screen. Below md only the main chat shows; the layout stays.
-- A bot section's header is the main chat's `BotHeaderPill` (mascot, name,
-  chevron; ChatView builds it, `SideChat.header` takes it, `SideChat.panel`
-  drives it), then Open in main and Close. Its click opens that bot's panel
-  (Details, Library, Computer) with `toggleSettings` `owner: { botId,
-  leafId }` (`AppState.panelOwner`): the main selection does not move. The
-  panel docks at the window edge nearest the section's horizontal middle
-  (`splitLeafPanelSide`, by the tree's shares): left of the window's middle,
-  the left edge (past the sidebar, `BotSettingsDialog dock="left"`, its
-  resize handle on its right); on or right of it (the middle one of three, a
-  full-width stacked section), the right edge as usual. One panel at a
-  time: the slot is shared, so a section's pill takes it from the main
+- Every section's header, a bot's and a group's, is the main chat's
+  `BotHeaderPill` (mascot or member faces, name, chevron; ChatView or
+  GroupView builds it, `SideChat.header` takes it, `SideChat.panel` drives
+  it), centered at the top of the section as in a normal chat; Open in main
+  and Close stay in the corner. Its click opens that bot's panel (Details,
+  Library, Computer) or that group's panel with `toggleSettings` `owner:
+  { leafId, botId }` or `{ leafId, groupId }` (`AppState.panelOwner`): the
+  main selection does not move. The panel always opens at the window's
+  right edge, wherever the section sits: App.tsx draws the bot's
+  (`useBotPanelBot`), a group section's GroupView portals its GroupPanel
+  into App's `[data-split-panel-slot]`, past the content frame. One panel
+  at a time: the slot is shared, so a section's pill takes it from the main
   chat's and the other sections' (their pills read closed), the main pill
-  (`owner: null`) takes it back, a link naming another bot gives it back to
-  the main chat, a link without a bot (from inside the panel) stays with the
-  owner. Closing the panel clears the owner (the `reducer` wrapper);
-  closing the section or showing another bot in it closes its panel
-  (SplitWorkspace effect). Group sections keep their own header.
+  (`owner: null`) takes it back, a link naming a bot other than the owner
+  gives it back to the main chat, a link without a bot (from inside the
+  panel) stays with the owner. Closing the panel clears the owner (the
+  `reducer` wrapper); closing the section or showing another conversation
+  in it closes its panel (SplitWorkspace effect).
 - Tests: `src/lib/split-view.test.ts`, `SplitWorkspace.test.ts`,
-  `SplitWorkspace.panel.dom.test.ts` (pill in every section, panel side, one
-  panel), `src/state/panel-owner.reducer.test.ts`,
+  `SplitWorkspace.panel.dom.test.ts` (pill centered in every bot and group
+  section, panel at the right edge, one panel), `src/state/panel-owner.reducer.test.ts`,
   `ExportTranscriptMenu.test.ts`, `GroupView.test.ts` (pane case).
-  Captures: `docs/screenshots/split-view/` (pill and panel side:
+  Captures: `docs/screenshots/split-view/` (pill and panel:
   `scripts/testing/capture-split-panel.ts`).
 ## Web work stays out of sight; this computer's screen is announced (2026-10-28)
 
