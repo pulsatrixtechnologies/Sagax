@@ -4,7 +4,9 @@ import { t } from "@/lib/i18n";
 import type { Routine, RoutineRun } from "@/lib/routines";
 import type { RoutineSuspendReason } from "../../../shared/routines";
 import { scheduleLabelCompact, scheduleRawCron } from "@/lib/schedule-label";
-import { routineAutoPausedText, routineNextRunPhrase, routineScheduleState, routineUpcomingState, routineWhenLabel } from "@/lib/routine-display";
+import { routineAutoPausedText, routineNextRunPhrase, routineRunAgo, routineRunLabel, routineRunPreview, routineRunTime, routineRunTone, routineScheduleState, routineUpcomingState, routineWhenLabel } from "@/lib/routine-display";
+import { ActivityStatusIcon } from "../bot-settings/ActivityCard";
+import { runActivityStatus } from "./RoutineRunDetail";
 import type { Bot } from "@/state/store";
 import { BotAvatar } from "@/components/Avatar";
 import { PILL_INFO } from "@/lib/status-tones";
@@ -104,6 +106,11 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
           // in the tooltip). A finished one-shot keeps its word.
           const pausedWithSwitch = toggle && !upcoming && !routine.enabled && routineScheduleState(routine) === t("routines.pausedSchedule");
           const whenLine = upcoming ? when : routine.schedule.type !== "once" || routine.enabled || routine.nextRunAt != null ? scheduleLabelCompact(routine.schedule) : when;
+          // 2026-10-29: the row says how the last run went and when the next
+          // one is, as cloud routines list them.
+          const lastRun = upcoming ? undefined : runs.filter((run) => run.routineId === routine.id && run.status !== "queued").sort((a, b) => routineRunTime(b) - routineRunTime(a))[0];
+          const lastPreview = lastRun && !lastRun.redacted && !lastRun.quiet ? routineRunPreview(lastRun) : "";
+          const nextLine = !upcoming && routine.enabled && routine.nextRunAt != null ? routineNextRunPhrase(routine.nextRunAt) : undefined;
           const whenTitle = [pausedWithSwitch ? routineWhenLabel(routine) : when, rawCron].filter(Boolean).join("\n");
           return (
             <div key={routine.id} data-routine-row data-routine-id={routine.id}
@@ -134,7 +141,16 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
                     {botName && <span aria-hidden="true" className="shrink-0">·</span>}
                     <span className="max-w-full shrink-0 truncate">{when}</span>
                   </span>
-                ) : <span data-routine-when={whenLine} title={whenTitle} className="block truncate text-[12px] leading-4 text-ink-secondary">{whenLine}</span>}
+                ) : <span data-routine-when={whenLine} title={whenTitle} className="block truncate text-[12px] leading-4 text-ink-secondary">{whenLine}{nextLine && <span data-routine-next> · {t("routines.list.next", { when: nextLine })}</span>}</span>}
+                {lastRun && (
+                  <span data-routine-last-run={lastRun.status} title={lastPreview || undefined} className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[12px] leading-4 text-ink-secondary">
+                    <ActivityStatusIcon status={runActivityStatus(lastRun)} size={12} />
+                    <span className={cn("shrink-0", routineRunTone(lastRun))}>{routineRunLabel(lastRun)}</span>
+                    <span aria-hidden="true" className="shrink-0">·</span>
+                    <span className="shrink-0">{routineRunAgo(routineRunTime(lastRun))}</span>
+                    {lastPreview && <><span aria-hidden="true" className="shrink-0">·</span><span className="min-w-0 truncate">{lastPreview}</span></>}
+                  </span>
+                )}
                 {(showPaused || routine.suspended || otherOwner || autoPaused) && (
                   <span className="mt-0.5 flex flex-wrap gap-1.5">
                     {otherOwner && <RoutineOwnerBadge owner={otherOwner} size={14} className="max-w-full rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary" />}

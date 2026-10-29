@@ -25,13 +25,16 @@ afterEach(() => vi.useRealTimers());
 // switch. Latest results, skips and failure streaks stay in the detail
 // and in the run logs.
 describe("routine list", () => {
-  it("shows each routine's name, when it runs and a pause switch, nothing more", () => {
+  // 2026-10-29 (owner): as cloud routines list them, a row also says how
+  // the last run went (with its first line) and when the next one is.
+  it("shows each routine's name, when it runs, its last run and a pause switch", () => {
     const markup = list({ routines: [{ ...routine, skippedRuns: 3, lastSkippedAt: 100, failureStreak: 2 }] });
     expect(markup).toContain("Morning brief");
     expect(markup).toContain('data-routine-when="Every hour"');
     expect(markup).not.toContain(">Active<");
     expect(markup).toContain('aria-label="Pause"');
-    expect(markup).not.toContain("Brief prepared.");
+    expect(markup).toContain("Brief prepared.");
+    expect(markup).toContain('data-routine-last-run="completed"');
     expect(markup).not.toContain("Scheduled occurrences skipped while busy");
   });
 
@@ -126,7 +129,7 @@ describe("central routine logs", () => {
     function visit(node: ReactNode) {
       Children.forEach(node, (child) => {
         if (!isValidElement<{ onChange?: (event: { target: { value: string } }) => void; children?: ReactNode }>(child)) return;
-        if (child.type === "select") select = child.props;
+        if (child.type === "select" && !select) select = child.props; // the status filter comes first
         visit(child.props.children);
       });
     }
