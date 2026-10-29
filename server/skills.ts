@@ -1475,6 +1475,14 @@ export function enabledSkillText(botId: string, name: string, assignedLibrary?: 
   return readManifest(botId)[name] ? readSkillFile(botId, name) : readLibrarySkillFile(name);
 }
 
+/** Whether a `/name` turn carries the skill's instructions in the turn
+ * (expandSkillCommandTurnText's `inline`): an engine without file tools,
+ * and every engine on an organization server, where a turn's files are the
+ * person's own environment and the bot's skills stay on the server (#1508). */
+export function skillCommandInline(input: { workspaceFiles: boolean; organization: boolean }): boolean {
+  return !input.workspaceFiles || input.organization;
+}
+
 /** The text the engine reads for a `/name` turn (shared/skill-command.ts).
  * Any other message, or a name that is not an enabled skill of this bot,
  * passes through unchanged, so an engine's own slash commands still work.

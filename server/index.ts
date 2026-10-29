@@ -656,6 +656,7 @@ import {
   skillPackageStamps,
   skillsSystemPrompt,
   expandSkillCommandTurnText,
+  skillCommandInline,
   stageSkillWrite,
   undoSkillWrite,
 } from "./skills.ts";
@@ -21624,12 +21625,14 @@ async function startTurn(
       // engine: one with workspace files is pointed at the file, one without
       // (Grok, OpenAI-compatible and the other API engines) gets the skill's
       // instructions in the turn, since it can neither see the skills index
-      // nor open the file.
+      // nor open the file. On an organization server every engine gets the
+      // instructions: the turn's files are the person's own environment,
+      // where the bot's SKILL.md is not.
       const skillCommandText = expandSkillCommandTurnText(
         bot.id,
         providerText,
         skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined,
-        { inline: !supportsWorkspaceFiles(instance.driverKind) },
+        { inline: skillCommandInline({ workspaceFiles: supportsWorkspaceFiles(instance.driverKind), organization: IDENTITY.kind === "perspicax" }) },
       );
       const setupText = peerToolsMounted ? expandSetupTurnText(skillCommandText) : skillCommandText;
       const userTurnText = promptWithReply(

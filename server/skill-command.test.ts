@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
 
-import { enabledSkillFile, expandSkillCommandTurnText, installSkill, setSkillEnabled } from "./skills.ts";
+import { enabledSkillFile, expandSkillCommandTurnText, installSkill, setSkillEnabled, skillCommandInline } from "./skills.ts";
 import { workspaceDir } from "./workspace.ts";
 import { BUILT_IN_SLASH_COMMANDS, offersSkillCommand, parseSkillCommand } from "../shared/skill-command.ts";
 
@@ -79,5 +79,19 @@ describe("expandSkillCommandTurnText for an engine without file tools", () => {
     const on = botWith("standup");
     expect(expandSkillCommandTurnText(on, "/review now", undefined, { inline: true })).toBe("/review now");
     expect(expandSkillCommandTurnText(on, "standup please", undefined, { inline: true })).toBe("standup please");
+  });
+});
+
+describe("a /name turn on an organization server", () => {
+  it("carries the skill's instructions for every engine, since the bot cannot reach the server's SKILL.md (#1508)", () => {
+    expect(skillCommandInline({ workspaceFiles: true, organization: true })).toBe(true);
+    expect(skillCommandInline({ workspaceFiles: false, organization: true })).toBe(true);
+    expect(skillCommandInline({ workspaceFiles: false, organization: false })).toBe(true);
+    // a solo server still points an engine with file tools at the file
+    expect(skillCommandInline({ workspaceFiles: true, organization: false })).toBe(false);
+    const bot = botWith("standup");
+    const text = expandSkillCommandTurnText(bot, "/standup", undefined, { inline: skillCommandInline({ workspaceFiles: true, organization: true }) });
+    expect(text).toContain("Summarize {input} as three bullets.");
+    expect(text).not.toContain("file tools");
   });
 });
