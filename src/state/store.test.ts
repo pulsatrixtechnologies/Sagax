@@ -226,11 +226,17 @@ describe("independent bot threads", () => {
     } finally {
       setShowThreads(false);
     }
-    // One conversation (the default): the person reads the bot's whole
-    // conversation, its earlier topics with it (threadsReadOnScreen).
+    // One conversation (the default, #1586): the person reads the thread on
+    // screen and the earlier topics drawn above it (threadsReadOnScreen),
+    // never a newer segment: "second" is newer than "first" and stays unread.
     const one = reducer(patched, { type: "select", id: bot.id });
-    expect(one.bots[0]?.unread).toBe(false);
-    expect(one.bots[0]?.tasks?.[1]?.unread).toBe(false);
+    expect(one.bots[0]?.unread).toBe(true);
+    expect(one.bots[0]?.tasks?.[1]?.unread).toBe(true);
+    // On the newest segment, the earlier unread one is read with it.
+    const newest: Bot = { ...bot, threadId: "second", tasks: [{ ...bot.tasks![0]!, unread: true }, { ...bot.tasks![1]! }] };
+    const onNewest = reducer({ ...initialState, bots: [newest], selectedId: "elsewhere" }, { type: "select", id: bot.id });
+    expect(onNewest.bots[0]?.unread).toBe(false);
+    expect(onNewest.bots[0]?.tasks?.map((task) => task.unread)).toEqual([false, false]);
   });
 
   it("drops deleted-thread approvals before a slim deletion frame is followed by its transcript", () => {
