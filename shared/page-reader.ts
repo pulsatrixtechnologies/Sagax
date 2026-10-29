@@ -10,6 +10,7 @@
 // (the browser prints the page's whole height; Save as PDF writes it);
 // anyone signed in who may read the page also gets Annotate; the page's own
 // person also gets Share.
+import { MASCOT_COLOR_NAMES } from "./mascot-colors.ts";
 import type { PageKind } from "./published-pages.ts";
 
 export type ReaderLang = "fr" | "en";
@@ -31,13 +32,36 @@ export interface ReaderBoot {
   /** The page's person, as the Share popover names them (Owner). */
   owner?: { name: string };
   can: { share: boolean; annotate: boolean };
+  /** The bot that published it, as its mascot is drawn in the bar
+   * (2026-10-29): its name, its color (a mascot color name or #rrggbb) and
+   * its character (shared/mascot-look.ts, checked again when drawn). */
+  bot?: { name: string; color: string; look?: Record<string, unknown> };
 }
 
 /** The id of the JSON block and of the bar's actions. */
 export const READER_BOOT_ID = "sagax-reader-boot";
 export const READER_ACTIONS_ID = "sagax-reader-actions";
+/** The box of the bot's mascot in the bar's byline. */
+export const READER_MASCOT_ID = "sagax-reader-mascot";
 
 const PAGE_ID = /^[A-Za-z0-9_-]{8,40}$/;
+const BOT_COLOR_NAMES: ReadonlySet<string> = new Set(MASCOT_COLOR_NAMES);
+
+/** A bot color the bar may draw: a known mascot color name or #rrggbb. Pure. */
+export function readerBotColor(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  if (BOT_COLOR_NAMES.has(value)) return value;
+  return /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : null;
+}
+
+function readerBot(value: unknown): ReaderBoot["bot"] | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const color = readerBotColor(record.color);
+  if (typeof record.name !== "string" || !color) return undefined;
+  const look = record.look && typeof record.look === "object" && !Array.isArray(record.look) ? record.look as Record<string, unknown> : undefined;
+  return { name: record.name.slice(0, 80), color, ...(look ? { look } : {}) };
+}
 
 /** The boot block as the script reads it: checked, or null. Pure. */
 export function parseReaderBoot(value: unknown): ReaderBoot | null {
@@ -61,6 +85,7 @@ export function parseReaderBoot(value: unknown): ReaderBoot | null {
     ...(owner && typeof owner.name === "string" ? { owner: { name: owner.name } } : {}),
     // a right without the page's id is no right
     can: { share: can.share === true && Boolean(pageId), annotate: can.annotate === true && Boolean(pageId) },
+    ...(readerBot(record.bot) ? { bot: readerBot(record.bot)! } : {}),
   };
 }
 
@@ -71,6 +96,17 @@ export function readerNotice(input: { bot: string; person: string; lang: ReaderL
   return input.lang === "fr"
     ? { who: `Page publiée par ${input.bot} pour ${input.person}`, warning: "Ceci n'est pas un écran Sagax, n'y entrez jamais de mot de passe." }
     : { who: `Page published by ${input.bot} for ${input.person}`, warning: "This is not a Sagax screen, never enter a password here." };
+}
+
+/** The bar's two lines under the title (2026-10-29): who published it
+ * (with the bot's name apart, drawn in semibold beside its mascot) and the
+ * warning, word for word the notice's. Pure. */
+export function readerByline(input: { bot: string; person: string; lang: ReaderLang }): { before: string; bot: string; after: string; warning: string } {
+  const notice = readerNotice(input);
+  const at = notice.who.indexOf(input.bot);
+  return at < 0
+    ? { before: notice.who, bot: "", after: "", warning: notice.warning }
+    : { before: notice.who.slice(0, at), bot: input.bot, after: notice.who.slice(at + input.bot.length), warning: notice.warning };
 }
 
 const STRINGS = {

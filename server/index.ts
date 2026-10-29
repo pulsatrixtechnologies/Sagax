@@ -8513,6 +8513,11 @@ function publishedPageOptions(): PublicPageOptions {
     teamsOf: (principalId) => IDENTITY.kind === "perspicax" ? (principals.byId(principalId)?.teams ?? []).map((team) => team.id) : [],
     // the reader's bar around a reading link: this server's built script
     readerAssets: () => readerAssetsFrom(STATIC_DIR),
+    // its byline draws the publishing bot's mascot (2026-10-29)
+    bot: (page) => {
+      const bot = store.bot(page.botId);
+      return bot ? { color: bot.color, ...(bot.mascotLook ? { look: bot.mascotLook } : {}) } : null;
+    },
     // #1486: a reader who is not signed in signs in and lands back on the link
     signInPath: (viewPath) => IDENTITY.kind === "perspicax" ? `${OIDC_START_PATH}?client=web&return=${encodeURIComponent(viewPath)}` : undefined,
     personName: (principalId) => {

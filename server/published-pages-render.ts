@@ -13,7 +13,8 @@
 // `frame-src` limits to the page's own frame path.
 import { pageThemeStyle } from "../src/lib/page-theme.ts";
 import type { WidgetThemeTokens } from "../src/lib/widget-kit.ts";
-import { READER_ACTIONS_ID, READER_BOOT_ID, readerNotice, type ReaderBoot } from "../shared/page-reader.ts";
+import { READER_ACTIONS_ID, READER_BOOT_ID, READER_MASCOT_ID, readerByline, type ReaderBoot } from "../shared/page-reader.ts";
+import { readerBarThemeCss, type PageLook } from "../src/lib/page-look.ts";
 import { STATE_ASK_MESSAGE, STATE_MESSAGE, STATE_RESULT_MESSAGE, STATE_SET_MESSAGE } from "../shared/page-state.ts";
 import { ANNOTATE_FOCUS_MESSAGE, ANNOTATE_FOUND_MESSAGE, ANNOTATE_MARKS_MESSAGE, ANNOTATE_MODE_MESSAGE, ANNOTATE_SELECT_MESSAGE, THREAD_LIMITS } from "../shared/page-threads.ts";
 import { PAGE_ANNOTATION_MESSAGE, PAGE_BANNER_NAME_MAX, PAGE_HEIGHT_MAX, PAGE_LIMITS, PAGE_SCROLL_MAX, PAGE_SCROLL_MESSAGE, PAGE_SIZE_ASK, PAGE_SIZE_MESSAGE, pageCsp, pageFrameSandbox, type PageKind, type PageTheme, type ReaderComment } from "../shared/published-pages.ts";
@@ -399,10 +400,11 @@ export function markdownToHtml(markdown: string): string {
  * (the app's sandboxed preview, which has no response headers). Every kind
  * starts with the default theme (src/lib/page-theme.ts, 2026-10-28): the
  * app's theme and the person's skin tokens when the app's preview sent them
- * (`theme`, `skin`), light and dark by the reader's system otherwise, and
+ * (`theme`, `skin`), light and dark by the reader's system otherwise (in
+ * the page's person's own look when the server has it, `schemes`), and
  * the Geist face (`font`, an @font-face rule). An HTML page's own styles win
  * over it; a Markdown page or a presentation follows it entirely. Pure. */
-export function pageDocument(input: { kind: PageKind; title: string; content: string; lang?: string }, options: { meta?: boolean; annotateNonce?: string; keepScroll?: number; nonce?: string; theme?: PageTheme; skin?: WidgetThemeTokens; font?: string; reportSize?: boolean } = {}): string {
+export function pageDocument(input: { kind: PageKind; title: string; content: string; lang?: string }, options: { meta?: boolean; annotateNonce?: string; keepScroll?: number; nonce?: string; theme?: PageTheme; skin?: WidgetThemeTokens; schemes?: Partial<Record<PageTheme, WidgetThemeTokens>>; font?: string; reportSize?: boolean } = {}): string {
   const meta = options.meta ? `<meta http-equiv="Content-Security-Policy" content="${escapeHtml(pageCsp(input.kind, { meta: true }))}">` : "";
   // The app's own scripts (its preview only: annotation, keeping the place):
   // by their nonce on a page that otherwise runs no script, inline after the
@@ -414,7 +416,7 @@ export function pageDocument(input: { kind: PageKind; title: string; content: st
   const keep = (options.keepScroll === undefined ? "" : own(keepScrollSource(options.keepScroll)))
     + (options.reportSize ? own(REPORT_SIZE_SOURCE) + own(ANNOTATE_BRIDGE_SOURCE) : "");
   const scheme = `<meta name="color-scheme" content="${options.theme ?? "light dark"}">`;
-  const theme = pageThemeStyle({ kind: input.kind, ...(options.theme ? { scheme: options.theme } : {}), ...(options.theme && options.skin ? { tokens: options.skin } : {}), font: options.font ?? "",
+  const theme = pageThemeStyle({ kind: input.kind, ...(options.theme ? { scheme: options.theme } : {}), ...(options.theme && options.skin ? { tokens: options.skin } : {}), ...(!options.theme && options.schemes ? { schemes: options.schemes } : {}), font: options.font ?? "",
     ...(input.kind === "presentation" ? { extra: `@media print{html{scroll-snap-type:none}.slide{height:${SLIDE_PRINT_MM}mm;border:0;break-after:page}.nav{display:none}}` } : {}) });
   if (input.kind === "markdown" || input.kind === "presentation") {
     const presentation = input.kind === "presentation";
@@ -461,7 +463,7 @@ export interface WrapperInput {
   /** A reading link (2026-10-28): the bar instead of the banner, what the
    * bar's script is told, and that script's built tags (null when this
    * server has no built UI: the bar then shows the title and the notice). */
-  reader?: { boot: ReaderBoot; assets: ReaderAssets | null };
+  reader?: { boot: ReaderBoot; assets: ReaderAssets | null; look?: PageLook | null; botHex?: string | null };
   /** A presentation's slide count, for its printed sheets. */
   slides?: number;
 }
@@ -495,15 +497,24 @@ export function jsonBlock(id: string, value: unknown): string {
   return `<script type="application/json" id="${escapeHtml(id)}">${text}</script>`;
 }
 
-const INFO_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>';
+const SHIELD_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>';
 
-const READER_BAR_STYLE = ".sagax-bar{flex:none;position:relative;z-index:2;display:flex;align-items:center;gap:16px;min-height:52px;box-sizing:border-box;padding:8px 12px 8px 16px;background:#141519;color:#f2f3f5;border-bottom:1px solid #2b2d34;font:13px/1.35 system-ui,-apple-system,Segoe UI,sans-serif}"
-  + ".sagax-bar-main{min-width:0;flex:1;display:flex;flex-direction:column;gap:2px}"
-  + ".sagax-bar h1{margin:0;font-size:15px;font-weight:600;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#f2f3f5}"
-  + ".sagax-bar-note{margin:0;display:flex;align-items:flex-start;gap:6px;font-size:12px;color:#b9bdc6}"
-  + ".sagax-bar-note svg{flex:none;margin-top:1px;color:#e8c15a}.sagax-bar-note .warn{color:#e9d9a6}"
-  + ".sagax-bar-actions{flex:none;display:flex;align-items:center;gap:8px}"
-  + "@media (max-width:640px){.sagax-bar{flex-wrap:wrap;gap:8px}.sagax-bar-actions{width:100%;justify-content:flex-end}}";
+/** The reader's bar (2026-10-29): drawn in the page's person's look
+ * (src/lib/page-look.ts `--sb-*`, written before this sheet), the title in
+ * semibold, the byline with the bot's mascot, the warning as a quiet line
+ * with its shield, the actions on the right; on a phone the byline goes
+ * under the title and the actions keep their icons. */
+const READER_BAR_STYLE = "body{background:var(--sb-app)}iframe{background:transparent}"
+  + ".sagax-bar{flex:none;position:relative;z-index:2;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:'title actions' 'by actions';align-items:center;column-gap:16px;row-gap:2px;min-height:60px;box-sizing:border-box;padding:10px 14px 10px 20px;"
+  + "background:var(--sb-bg);color:var(--sb-ink);border-bottom:1px solid color-mix(in srgb,var(--sb-line) 70%,transparent);font:13px/1.4 var(--sb-font);-webkit-font-smoothing:antialiased}"
+  + ".sagax-bar h1{grid-area:title;align-self:end;margin:0;min-width:0;font-size:15px;font-weight:600;line-height:20px;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--sb-ink)}"
+  + ".sagax-bar-by{grid-area:by;align-self:start;margin:0;min-width:0;display:flex;flex-wrap:wrap;align-items:center;column-gap:14px;row-gap:2px;font-size:12px;line-height:18px;color:var(--sb-ink-2)}"
+  + ".sagax-bar-who{display:inline-flex;align-items:center;gap:6px;min-width:0}.sagax-bar-who b{font-weight:600;color:var(--sb-ink)}"
+  + ".sagax-bar-mascot{flex:none;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;overflow:visible}"
+  + ".sagax-bar-dot{display:block;width:10px;height:10px;border-radius:50%;box-shadow:inset 0 0 0 1px rgb(0 0 0/.12)}"
+  + ".sagax-bar-warn{display:inline-flex;align-items:center;gap:5px;color:var(--sb-ink-3)}.sagax-bar-warn svg{flex:none}"
+  + ".sagax-bar-actions{grid-area:actions;display:flex;align-items:center;gap:8px}"
+  + "@media (max-width:640px){.sagax-bar{grid-template-areas:'title actions' 'by by';column-gap:10px;row-gap:4px;padding:8px 12px 10px 14px}.sagax-bar h1{align-self:center}.sagax-bar-actions{gap:6px}}";
 
 /** Download PDF prints the wrapper: only the page, at its whole height
  * (--sagax-print-height, which the bar's script keeps from the frame's size
@@ -519,12 +530,18 @@ export function slidesPrintStyle(slides: number): string {
 }
 
 /** The reader's bar: the title, the notice (who published it for whom, not
- * a Sagax screen, never a password), always visible; the actions are drawn
- * by the bar's script into the empty box on the right. Pure. */
-export function readerBar(input: { title: string; botName: string; personName: string; lang: "fr" | "en" }): string {
-  const notice = readerNotice({ bot: bannerName(input.botName), person: bannerName(input.personName), lang: input.lang });
-  return `<header class="sagax-bar"><div class="sagax-bar-main"><h1 title="${escapeHtml(input.title)}">${escapeHtml(input.title)}</h1>`
-    + `<p class="sagax-bar-note" role="note">${INFO_ICON}<span>${escapeHtml(notice.who)} · <span class="warn">${escapeHtml(notice.warning)}</span></span></p></div>`
+ * a Sagax screen, never a password), always visible; the bot's mascot is
+ * drawn by the bar's script into its box (a dot in the bot's color until
+ * then, or without script); the actions are drawn into the empty box on the
+ * right. Pure. */
+export function readerBar(input: { title: string; botName: string; personName: string; lang: "fr" | "en"; botHex?: string | null }): string {
+  const line = readerByline({ bot: bannerName(input.botName), person: bannerName(input.personName), lang: input.lang });
+  const hex = input.botHex && /^#[0-9a-f]{6}$/i.test(input.botHex) ? input.botHex : null;
+  const mascot = `<span class="sagax-bar-mascot" id="${READER_MASCOT_ID}" aria-hidden="true">${hex ? `<span class="sagax-bar-dot" style="background:${hex}"></span>` : ""}</span>`;
+  const who = line.bot ? `${escapeHtml(line.before)}<b>${escapeHtml(line.bot)}</b>${escapeHtml(line.after)}` : escapeHtml(line.before);
+  return `<header class="sagax-bar"><h1 title="${escapeHtml(input.title)}">${escapeHtml(input.title)}</h1>`
+    + `<p class="sagax-bar-by sagax-bar-note" role="note"><span class="sagax-bar-who">${mascot}<span>${who}</span></span>`
+    + `<span class="sagax-bar-warn">${SHIELD_ICON}<span>${escapeHtml(line.warning)}</span></span></p>`
     + `<div class="sagax-bar-actions" id="${READER_ACTIONS_ID}"></div></header>`;
 }
 
@@ -565,12 +582,12 @@ export function wrapperDocument(input: WrapperInput): string {
     + ".sagax-banner{flex:none;padding:8px 14px;background:#fff4ce;color:#3d2e00;border-bottom:2px solid #d4a600;font-weight:600}"
     + `iframe{flex:1;border:0;width:100%;background:${input.theme ? "transparent" : "#fff"}${input.theme ? `;color-scheme:${input.theme}` : ""}}`
     + (input.comments ? COMMENTS_STYLE : "")
-    + (reader ? READER_BAR_STYLE + READER_PRINT_STYLE + (input.kind === "presentation" ? slidesPrintStyle(input.slides ?? 1) : "") : "")
+    + (reader ? readerBarThemeCss(reader.look, reader.botHex) + READER_BAR_STYLE + READER_PRINT_STYLE + (input.kind === "presentation" ? slidesPrintStyle(input.slides ?? 1) : "") : "")
     + "</style>"
     + (reader?.assets ? reader.assets.styles.map((path) => `<link rel="stylesheet" href="${escapeHtml(path)}">`).join("")
       + reader.assets.preloads.map((path) => `<link rel="modulepreload" href="${escapeHtml(path)}">`).join("") : "")
     + "</head><body>"
-    + (reader ? readerBar(input) : bare ? "" : `<div class="sagax-banner" role="note">${escapeHtml(wrapperBanner(input))}</div>`)
+    + (reader ? readerBar({ ...input, botHex: reader.botHex ?? null }) : bare ? "" : `<div class="sagax-banner" role="note">${escapeHtml(wrapperBanner(input))}</div>`)
     + `<iframe src="${escapeHtml(input.frameUrl)}" sandbox="${sandbox}" referrerpolicy="no-referrer" allow="" title="${escapeHtml(input.title)}"></iframe>`
     + (input.comments ? commentsSection(input.comments, input.lang, input.personName) : "")
     + (reader ? jsonBlock(READER_BOOT_ID, reader.boot) : "")

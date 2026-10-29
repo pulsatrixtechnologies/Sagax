@@ -68,8 +68,9 @@ const PRESENTATION_CSS = "html{scroll-snap-type:y mandatory;scroll-behavior:smoo
 /** The `:root` rules of the theme. With a scheme: that scheme only, from
  * the person's skin tokens when the app sent them, else from the fallback
  * skin of that scheme. Without one (a reading link): light, and dark when
- * the reader's system is dark. */
-export function pageThemeVars(scheme?: PageScheme, tokens?: WidgetThemeTokens): string {
+ * the reader's system is dark, from the page's person's own look when the
+ * server has it (`schemes`, src/lib/page-look.ts, 2026-10-29). */
+export function pageThemeVars(scheme?: PageScheme, tokens?: WidgetThemeTokens, schemes?: Partial<Record<PageScheme, WidgetThemeTokens>>): string {
   const rule = (from: WidgetThemeTokens) => `:root{${cssDeclarations(contentThemeVars(from, "page").vars)}}`;
   // printed (Download PDF), a page is always on white, whatever the screen
   const print = `@media print{${rule(fallbackWidgetTokens("light"))}}`;
@@ -77,17 +78,20 @@ export function pageThemeVars(scheme?: PageScheme, tokens?: WidgetThemeTokens): 
     const skin = tokens ? sanitizeWidgetTokens(tokens) : {};
     return `${rule({ ...fallbackWidgetTokens(scheme), ...skin, "--code-color-scheme": scheme })}${print}`;
   }
-  return `${rule(fallbackWidgetTokens("light"))}@media screen and (prefers-color-scheme:dark){${rule(fallbackWidgetTokens("dark"))}}:root{color-scheme:light dark}${print}`;
+  const of = (which: PageScheme) => ({ ...fallbackWidgetTokens(which), ...sanitizeWidgetTokens(schemes?.[which] ?? {}), "--code-color-scheme": which });
+  return `${rule(of("light"))}@media screen and (prefers-color-scheme:dark){${rule(of("dark"))}}:root{color-scheme:light dark}${print}`;
 }
 
 /** The whole stylesheet of a page: the font, then the theme in its layer.
  * `font` is an @font-face rule (widgetFontFace), "" when none is there;
+ * `schemes` the page's person's own tokens for a reading link (light and
+ * dark, by the reader's system);
  * `extra` more rules of the server's own, in the layer (a presentation's
  * print sheet). */
-export function pageThemeCss(input: { kind: PageThemeKind; scheme?: PageScheme; tokens?: WidgetThemeTokens; font?: string; extra?: string }): string {
+export function pageThemeCss(input: { kind: PageThemeKind; scheme?: PageScheme; tokens?: WidgetThemeTokens; schemes?: Partial<Record<PageScheme, WidgetThemeTokens>>; font?: string; extra?: string }): string {
   const extra = input.kind === "markdown" ? `body{--page-width:720px}${MARKDOWN_CSS}`
     : input.kind === "presentation" ? `${MARKDOWN_CSS}${PRESENTATION_CSS}` : "";
-  return `${input.font ?? ""}@layer ${PAGE_THEME_LAYER}{${pageThemeVars(input.scheme, input.tokens)}${WIDGET_KIT_CSS}${PAGE_BASE_CSS}${extra}${input.extra ?? ""}}`;
+  return `${input.font ?? ""}@layer ${PAGE_THEME_LAYER}{${pageThemeVars(input.scheme, input.tokens, input.schemes)}${WIDGET_KIT_CSS}${PAGE_BASE_CSS}${extra}${input.extra ?? ""}}`;
 }
 
 /** The <style> element a page's document starts with. */

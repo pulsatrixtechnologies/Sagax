@@ -730,6 +730,34 @@ never ids; capped (200 keys, 4 KB a value, 64 KB a page, 60 writes a
 minute per person); erased on revoke. Captures:
 `scripts/capture-page-reader.ts`.
 
+## The reader's bar in its person's look (2026-10-29)
+
+A reading link's bar (and its page frame) wears the Sagax theme of the
+page's person, never a generic grey. Their app sends its look
+(`PUT /api/pages/look`, src/lib/page-look-sync.ts `usePageLookSync`, at start
+and on each skin or bot-accent change, only when it changed): the tokens of
+the skin worn, read from a hidden probe wearing its light and its dark
+sibling with the person's variant (one scheme only for a skin without a
+sibling, worn in both), and the "Use bot color as accent" choice. The server
+keeps known tokens with safe values only (src/lib/page-look.ts
+`sanitizePageLook`, the #1551 rule) per person in
+`published-pages-looks.json`, and draws: the bar's `--sb-*` variables, light
+and dark by the reader's system (`readerBarThemeCss`, the bot's color as the
+accent when chosen, held to 3:1 and 4.5:1 on the panel,
+src/lib/bot-accent-colors.ts), and the frame's theme (`pageThemeCss
+schemes`). The bar: title semibold; byline with the publishing bot's mascot
+(a dot in its color, then src/page-reader/ReaderMascot.tsx in its own chunk,
+without the app's i18n) and its name in semibold; the warning "not a Sagax
+screen, never a password" as a quiet line with a shield, always visible
+(a themed bar looks more like the app, which is why it stays); PDF, Annotate,
+and Share in the accent; icons only on a phone. Popover and comments panel
+read the same variables. Sandbox and CSPs unchanged; the app's preview never
+takes it. No iOS change: the phone has no reader bar. Tests:
+`server/published-pages.test.ts` ("in its person's look"),
+`src/lib/page-look.test.ts`, `shared/page-reader.test.ts`. Captures:
+`node --experimental-strip-types scripts/capture-page-bar-theme.ts`,
+docs/screenshots/page-bar-theme.
+
 ## xAI Bot Marketplace in Browse Bots (2026-10-28)
 
 Browse Bots has a section **xAI Bot Marketplace** (docs/xai-marketplace.md):

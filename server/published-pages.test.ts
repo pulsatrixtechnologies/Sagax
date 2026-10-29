@@ -27,7 +27,9 @@ import {
 import type { Message } from "./store.ts";
 import { encodeSkinTokens, PAGE_THEME_LAYER, PAGE_THEME_STYLE_ID } from "../src/lib/page-theme.ts";
 import { PAGE_LIMITS, pageCsp, pageFrameSandbox, parsePageProposal, validExpiry } from "../shared/published-pages.ts";
-import { parseReaderBoot, READER_BOOT_ID, readerNotice } from "../shared/page-reader.ts";
+import { parseReaderBoot, READER_BOOT_ID, READER_MASCOT_ID, readerNotice } from "../shared/page-reader.ts";
+import { holdContrast } from "../src/lib/bot-accent-colors.ts";
+import { fallbackWidgetTokens } from "../src/lib/widget-kit.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -268,10 +270,12 @@ describe("wrapper and sandboxed frame", () => {
     expect(wrapper.status).toBe(200);
     // the yellow banner's words, all of them, now in the bar
     const notice = readerNotice({ bot: "Scout", person: "Alice", lang: "fr" });
-    expect(wrapper.body).toContain(escapeHtml(notice.who));
-    expect(wrapper.body).toContain(escapeHtml(notice.warning));
+    // the bot's name is set in semibold beside its mascot: the words read the same
+    const text = wrapper.body.replace(/<[^>]+>/g, "");
+    expect(text).toContain(escapeHtml(notice.who));
+    expect(text).toContain(escapeHtml(notice.warning));
     expect(wrapper.body).toContain("jamais de mot de passe");
-    expect(wrapper.body).toMatch(/<header class="sagax-bar"><div class="sagax-bar-main"><h1 title="Rapport">Rapport<\/h1>/);
+    expect(wrapper.body).toMatch(/<header class="sagax-bar"><h1 title="Rapport">Rapport<\/h1>/);
     // no built UI here: no script runs, only the JSON block the bar would read
     expect(wrapper.body).not.toMatch(/<script(?![^>]*type="application\/json")/);
     expect(wrapper.body).toMatch(/<iframe src="\/pages\/frame\/[^"]+\?t=[^"]+" sandbox="allow-scripts"/);
@@ -1332,5 +1336,121 @@ describe("a page's shared state (#1544)", () => {
     const preview = await hit(options(pages, { principalId: OWNER_ID, computerOwner: false }), `/pages/preview/${page.id}/1`);
     const previewFrame = await hit(options(pages, { principalId: OWNER_ID, computerOwner: false }), frameSrc(preview.body), { "sec-fetch-dest": "iframe" });
     expect(previewFrame.body).not.toContain("sagax-state-ask");
+  });
+});
+
+// The reader's bar in its person's look (2026-10-29): "ça devrait suivre le
+// thème de Sagax du user qui est le owner de la page".
+describe("a reading link in its person's look", () => {
+  const LIGHT = { "--code-color-scheme": "light", "--color-panel": "#fbf7ee", "--color-app": "#f3ecdc", "--color-ink": "#2b2418", "--color-accent": "#9a5b13", "--color-accent-ink": "#ffffff", "--radius-xl": "14px", "--font-sans": "\"Geist Variable\", system-ui, sans-serif" };
+  const DARK = { "--code-color-scheme": "dark", "--color-panel": "#1d1812", "--color-app": "#15110c", "--color-ink": "#f1e9da", "--color-accent": "#d9a441", "--color-accent-ink": "#1d1812", "--radius-xl": "14px" };
+
+  it("the person's app keeps its look (known tokens, safe values only); each person has their own", async () => {
+    const { pages } = store();
+    const handler = routes(pages);
+    const sent = await call(handler, session("pr_alice"), "PUT", "/api/pages/look", {
+      light: { ...LIGHT, "--color-card": "red;}</style><script>alert(1)</script>", "--color-raised": "url(https://evil.example/x)", "--not-a-token": "#000" },
+      dark: DARK, skin: "atelier", botAccent: true, extra: "dropped",
+    });
+    expect(sent.status).toBe(200);
+    const kept = (await call(handler, session("pr_alice"), "GET", "/api/pages/look")).body!.look;
+    expect(kept.light["--color-panel"]).toBe("#fbf7ee");
+    expect(kept.light["--color-card"]).toBeUndefined();
+    expect(kept.light["--color-raised"]).toBeUndefined();
+    expect(kept.light["--not-a-token"]).toBeUndefined();
+    expect(kept.dark["--color-accent"]).toBe("#d9a441");
+    expect(kept).toMatchObject({ skin: "atelier", botAccent: true });
+    expect(kept.extra).toBeUndefined();
+    // another person's look is theirs alone
+    expect((await call(handler, session("pr_bob"), "GET", "/api/pages/look")).body!.look).toBeNull();
+    // nothing usable: refused, the kept look unchanged
+    expect((await call(handler, session("pr_alice"), "PUT", "/api/pages/look", { light: { "--color-panel": "expression(x)" } })).status).toBe(400);
+    expect(pages.look("pr_alice")?.light?.["--color-panel"]).toBe("#fbf7ee");
+    // a bot's shell or a device that is not a person cannot set one
+    expect((await call(handler, serviceLoopback, "PUT", "/api/pages/look", { light: LIGHT })).status).toBe(403);
+  });
+
+  it("the bar and the frame wear the person's tokens, light and dark by the reader's system", async () => {
+    const { pages } = store();
+    pages.setLook("pr_alice", { light: LIGHT, dark: DARK });
+    const { path } = published(pages, "link", "pr_alice");
+    const { wrapper, frame } = await read(pages, path, null);
+    const style = /<style>([\s\S]*?)<\/style>/.exec(wrapper.body)![1]!;
+    const light = /:root\{color-scheme:light;([^}]*)\}/.exec(style)![1]!;
+    const dark = /@media \(prefers-color-scheme:dark\)\{:root\{color-scheme:dark;([^}]*)\}\}/.exec(style)![1]!;
+    expect(light).toContain("--sb-bg:#fbf7ee");
+    expect(light).toContain("--sb-app:#f3ecdc");
+    expect(light).toContain("--sb-accent:#9a5b13");
+    expect(light).toContain("--sb-radius-xl:14px");
+    expect(light).toContain('--sb-font:"Geist Variable", system-ui, sans-serif');
+    expect(dark).toContain("--sb-bg:#1d1812");
+    expect(dark).toContain("--sb-accent:#d9a441");
+    // the bar reads them
+    expect(style).toContain(".sagax-bar{");
+    expect(style).toContain("background:var(--sb-bg)");
+    // the page's frame too: its theme (#1551) in the person's colors
+    expect(frame!.body).toContain("--background:#fbf7ee");
+    expect(frame!.body).toMatch(/prefers-color-scheme:dark\)\{:root\{[^}]*--background:#1d1812/);
+    // the warning stays, word for word, in the bar
+    expect(wrapper.body).toContain("n&#39;y entrez jamais de mot de passe");
+  });
+
+  it("without a look the bar and the frame wear the default theme", async () => {
+    const { pages } = store();
+    const { path } = published(pages, "link", "pr_alice");
+    const { wrapper, frame } = await read(pages, path, null);
+    expect(wrapper.body).toContain(`--sb-bg:${fallbackWidgetTokens("light")["--color-panel"]}`);
+    expect(wrapper.body).toContain(`--sb-bg:${fallbackWidgetTokens("dark")["--color-panel"]}`);
+    expect(frame!.body).toContain(`--background:${fallbackWidgetTokens("light")["--color-panel"]}`);
+  });
+
+  it("a skin with one scheme (Hibou 98) is worn in both; square corners give square buttons", async () => {
+    const { pages } = store();
+    pages.setLook(undefined, { light: { ...LIGHT, "--radius-xl": "0px" } });
+    const { path } = published(pages);
+    const { wrapper } = await read(pages, path, null);
+    expect(wrapper.body.match(/--sb-bg:#fbf7ee/g)?.length).toBe(2);
+    expect(wrapper.body).toContain("--sb-pill:0px");
+  });
+
+  it("the bot's color as the accent when the person chose it, held to the app's contrast on their panel", async () => {
+    const { pages } = store();
+    pages.setLook("pr_alice", { light: LIGHT, dark: DARK, botAccent: true });
+    const { path } = published(pages, "link", "pr_alice");
+    const opts = { ...options(pages, null), bot: () => ({ color: "#ffd84d" }) };
+    const wrapper = await hit(opts, path);
+    expect(wrapper.body).toContain(`--sb-accent:${holdContrast("#ffd84d", "#fbf7ee", 3)}`);
+    expect(wrapper.body).toContain(`--sb-accent:${holdContrast("#ffd84d", "#1d1812", 3)}`);
+    expect(wrapper.body).not.toContain("--sb-accent:#9a5b13");
+    // off: the skin's own accent
+    pages.setLook("pr_alice", { light: LIGHT, dark: DARK });
+    expect((await hit(opts, path)).body).toContain("--sb-accent:#9a5b13");
+  });
+
+  it("the byline carries the publishing bot's mascot: a dot in its color, then its character", async () => {
+    const { pages } = store();
+    const { path } = published(pages, "link", "pr_alice");
+    const look = { character: "shape", shape: "star", skins: { shape: "glossy" } };
+    const wrapper = await hit({ ...options(pages, null), bot: () => ({ color: "green", look }) }, path);
+    expect(wrapper.body).toContain(`id="${READER_MASCOT_ID}"`);
+    expect(wrapper.body).toMatch(/<span class="sagax-bar-dot" style="background:#[0-9a-f]{6}"><\/span>/);
+    expect(wrapper.body).toContain("<b>Scout</b>");
+    const boot = parseReaderBoot(JSON.parse(new RegExp(`<script type="application/json" id="${READER_BOOT_ID}">([^<]*)</script>`).exec(wrapper.body)![1]!));
+    expect(boot?.bot).toEqual({ name: "Scout", color: "green", look });
+    // a color that is not a mascot color or #rrggbb: no dot, no bot
+    const odd = await hit({ ...options(pages, null), bot: () => ({ color: "red;background:url(x)" }) }, path);
+    expect(odd.body).not.toContain("<span class=\"sagax-bar-dot\"");
+    expect(parseReaderBoot(JSON.parse(new RegExp(`<script type="application/json" id="${READER_BOOT_ID}">([^<]*)</script>`).exec(odd.body)![1]!))?.bot).toBeUndefined();
+  });
+
+  it("the app's own preview never takes it: its theme and skin come from the app", async () => {
+    const { pages } = store();
+    pages.setLook(undefined, { light: LIGHT, dark: DARK });
+    const { page } = proposed(pages);
+    const wrapper = await hit(options(pages, OWNER), `/pages/preview/${page.id}/1?bare=1&theme=dark`);
+    expect(wrapper.status).toBe(200);
+    expect(wrapper.body).not.toContain("--sb-bg");
+    const frame = await hit(options(pages, OWNER), frameSrc(wrapper.body), { "sec-fetch-dest": "iframe" });
+    expect(frame.body).not.toContain("#fbf7ee");
   });
 });

@@ -71,6 +71,7 @@ import { navigate } from "@/lib/view-transitions";
 import { useScreenCaptureToBot } from "@/hooks/use-screen-capture-to-bot";
 import { MAUS_COLORS } from "@/lib/mascot";
 import { botSwitchActive, useBotAccent, useBotAccentEnabled, useBotSwitch } from "@/lib/bot-accent";
+import { usePageLookSync } from "@/lib/page-look-sync";
 
 function Shell() {
   const { state, dispatch } = useStore();
@@ -646,6 +647,14 @@ function Shell() {
   );
 }
 
+/** The person's look, for the bar and the frame of their published pages
+ * (src/lib/page-look-sync.ts). */
+function PageLookSync() {
+  const { state } = useStore();
+  usePageLookSync(state.connected);
+  return null;
+}
+
 /** The open bot's colour as the accent, when Settings > Appearance says so. */
 function BotAccentSync() {
   const { state } = useStore();
@@ -678,6 +687,7 @@ function Application() {
         <LiveCallHost />
         <DataWindowViewSync />
         <BotAccentSync />
+        <PageLookSync />
       </StoreProvider>
     </DesktopCapabilitiesProvider>
   );
