@@ -191,6 +191,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Undo a change of the memory (get lists the last changes; set with a change's id puts the file back) | Bot editor > Memory > History | `sagax_settings` get, set `bot.memoryUndo` | simple |
 | Perspicax tools (profiles) | Bot editor > Perspicax | `sagax_settings` get, set `bot.perspicaxProfiles` | simple (élargit les droits pour le bot qui parle lui-même) |
 | A skill on or off ({name, enabled}) | Bot editor > Skills | `sagax_settings` get, set `bot.skill` | simple |
+| Import a skill from GitHub onto a bot ({repo: owner/repo, path?: its folder, ref?: a branch or tag}, or a GitHub, SKILL.md or skills.sh link; then bot.skill {name, enabled} turns it on or off) | Bot editor > Persona > Skills > Import | `sagax_settings` get, set `bot.skillImport` | simple |
 | Share with a person or team ({target: user:<id>/team:<name>, level}, level null removes) | Bot editor > Visibility > Sharing | `sagax_settings` get, set `bot.share` | autrui |
 | Tool access grant ({scope: area:read/write/admin, expiresAt}) | Bot editor > Tool access | `sagax_settings` get, set `bot.toolGrant` | élargit les droits |
 | Delete the bot (true) | Bot editor > ... > Delete | `sagax_settings` set `bot.delete` | suppression |

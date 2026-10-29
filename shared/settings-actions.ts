@@ -158,6 +158,20 @@ function nest(path: string, value: unknown): Record<string, unknown> {
   return out as Record<string, unknown>;
 }
 
+/** A GitHub skill source from {repo, path?, ref?} or a link, as Persona >
+ * Skills takes it (server/skill-fetch.ts parseSkillSource). */
+export function skillSourceOf(value: unknown): string | undefined {
+  if (typeof value === "string") return value.trim() || undefined;
+  const r = value && typeof value === "object" ? value as { repo?: unknown; path?: unknown; ref?: unknown; source?: unknown } : {};
+  if (typeof r.source === "string" && r.source.trim()) return r.source.trim();
+  if (typeof r.repo !== "string" || !/^[\w.-]+\/[\w.-]+$/.test(r.repo.trim())) return undefined;
+  const repo = r.repo.trim();
+  const path = typeof r.path === "string" ? r.path.trim().replace(/^\/+|\/+$/g, "") : "";
+  const ref = typeof r.ref === "string" ? r.ref.trim() : "";
+  if (ref) return `https://github.com/${repo}/tree/${encodeURIComponent(ref)}${path ? `/${path}` : ""}`;
+  return path ? `${repo}/${path}` : repo;
+}
+
 const SPECS: SettingSpec[] = [];
 const add = (spec: SettingSpec) => SPECS.push(spec);
 
@@ -313,6 +327,17 @@ add({
     const skill = v as { name?: unknown; enabled?: unknown } | null;
     if (!skill || typeof skill.name !== "string" || typeof skill.enabled !== "boolean") return "value is {name, enabled}.";
     return { method: "PATCH", path: `/api/bots/${enc(ids.target!)}/skills/${enc(skill.name)}`, body: { enabled: skill.enabled } };
+  },
+});
+// 2026-10-29: import a skill from GitHub, as Persona > Skills does: the
+// person's own GitHub connection reads a private repository (#1558)
+add({
+  key: "bot.skillImport", family: "bot", target: "bot", value: "any",
+  label: "Import a skill from GitHub onto a bot ({repo: owner/repo, path?: its folder, ref?: a branch or tag}, or a GitHub, SKILL.md or skills.sh link; then bot.skill {name, enabled} turns it on or off)", where: "Bot editor > Persona > Skills > Import",
+  read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/skills` }),
+  write: (ids, v) => {
+    const source = skillSourceOf(v);
+    return source ? { method: "POST", path: `/api/bots/${enc(ids.target!)}/skills`, body: { source } } : "value is {repo: owner/repo, path?, ref?} or a GitHub link.";
   },
 });
 add({

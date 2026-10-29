@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchSkillFromSource } from "./skill-fetch.ts";
+import { fetchSkillFromSource, parseSkillSource } from "./skill-fetch.ts";
 
 /** The host a faked request goes to, compared whole (never a substring of the URL). */
 const hostOf = (url: string) => new URL(url).hostname;
@@ -202,5 +202,18 @@ describe("skill sources", () => {
     }) as typeof fetch;
     const result = await fetchSkillFromSource("https://skills.sh/vercel-labs/skills/find-skills", fetcher);
     expect(result).toMatchObject({ skills: [{ source: "github.com/vercel-labs/skills/skills/find-skills" }] });
+  });
+});
+
+// 2026-10-29: a bot imports one skill folder of a repository (sagax_settings
+// bot.skillImport {repo, path})
+describe("owner/repo/<folder>", () => {
+  it("reads a folder of a repository, on its default branch", () => {
+    expect(parseSkillSource("acme/skills/skills/pdf")).toEqual({ owner: "acme", repo: "skills", path: "skills/pdf" });
+    expect(parseSkillSource("acme/skills")).toEqual({ owner: "acme", repo: "skills", path: "" });
+    expect(parseSkillSource("acme/skills/pdf/")).toEqual({ owner: "acme", repo: "skills", path: "pdf" });
+  });
+  it.each(["acme/skills/../x", "acme/../skills", "acme/skills/a//b"])("refuses a path that leaves the repository: %s", (source) => {
+    expect(parseSkillSource(source)).toEqual({ error: expect.stringContaining("does not look like") });
   });
 });
