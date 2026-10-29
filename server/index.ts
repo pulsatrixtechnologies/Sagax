@@ -949,6 +949,7 @@ import { noteFirstResponse, noteTurnQueued, setTurnTimingWriter, turnTrace } fro
 import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
 import { createOpenAiVoice } from "./tts/openai-voice.ts";
+import { createOpenAiStt } from "./tts/openai-stt.ts";
 import { createElevenLabsVoice } from "./tts/elevenlabs-voice.ts";
 import { accountConnectorsForTurn, ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, connectorPrincipalFor, createHarnessConnectorRoutes, engineConnectorsPrompt, grokCloudConnectorsForTurn, runClaudeCli, type ClaudeAiTurnInput, type ConnectorElsewhere } from "./harness-connectors.ts";
 import { connectorSwitchText, pickConnectorSwitch, type ConnectorSwitch, type SwitchEngine } from "./connector-switch.ts";
@@ -38719,7 +38720,9 @@ ROUTES.push(createMailSettingsRoutes({
   callerEmail: actorEmail,
 }));
 
-const openAiVoiceMode = createOpenAiVoice();
+const openAiStt = createOpenAiStt();
+// OpenAI speaks and, since the second step, listens too (server/tts/openai-stt.ts)
+const openAiVoiceMode = { ...createOpenAiVoice(), transcribe: openAiStt.transcribe, openTranscription: openAiStt.openTranscription };
 const elevenLabsVoiceMode = createElevenLabsVoice();
 
 /** The OpenAI or ElevenLabs keys that may serve one person's voice, in the

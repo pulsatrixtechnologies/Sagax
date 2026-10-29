@@ -67,8 +67,10 @@ stages. Details: docs/voice-mode-xai.md, "A call turn runs fast". Tests:
 ## Voice providers: OpenAI and ElevenLabs beside xAI (2026-10-29)
 
 Voice mode (calls, read aloud, dictation) is no longer xAI only. A person
-picks who speaks (xAI, OpenAI, ElevenLabs) and who listens (xAI; OpenAI
-comes next) in Settings > Voice (`VoiceProviderSettings`) and, per bot, in
+picks who speaks (xAI, OpenAI, ElevenLabs) and who listens (xAI, OpenAI:
+Realtime transcription `gpt-live-transcribe` for a call and the dictation,
+16 kHz resampled to 24 kHz, a commit per turn; `gpt-transcribe` for a whole
+recording, `server/tts/openai-stt.ts`) in Settings > Voice (`VoiceProviderSettings`) and, per bot, in
 Edit bot > Voice ("Same as my settings" by default). The choice lives in
 the synced `omb.voiceMode.v1` (`tts`, `stt`, `voices`, `bots[botId]`,
 `shared/voice-providers.ts`); every request sends it (`src/lib/voice-mode/api.ts`
