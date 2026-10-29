@@ -32,6 +32,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } 
 import { join } from "node:path";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { sanitizePageLook, type PageLook } from "../src/lib/page-look.ts";
 import { threadOwner } from "./thread-privacy.ts";
 import { pageAudienceOf, samePageAudience, type PageAudience } from "../shared/page-audience.ts";
 import { STATE_LIMITS, stateValueJson, type PageStateEntry } from "../shared/page-state.ts";
@@ -154,12 +155,16 @@ export class PublishedPages {
   private readonly stateWrites = new Map<string, number[]>();
   /** Reader comment posts per source address, for the rate limit. */
   private readonly readerPosts = new Map<string, number[]>();
+  /** Each person's look (src/lib/page-look.ts), kept apart from the index. */
+  private readonly looksFile: string;
+  private looksCache: Record<string, PageLook> | null = null;
 
   constructor(dataDir: string, clock: () => number = Date.now) {
     this.clock = clock;
     mkdirSync(dataDir, { recursive: true, mode: 0o700 });
     this.file = join(dataDir, "published-pages.json");
     this.contentDir = join(dataDir, "published-pages");
+    this.looksFile = join(dataDir, "published-pages-looks.json");
     const keyFile = join(dataDir, "published-pages.key");
     if (!existsSync(keyFile)) writeFileSync(keyFile, randomBytes(32), { mode: 0o600 });
     this.key = readFileSync(keyFile);
@@ -235,6 +240,45 @@ export class PublishedPages {
     }
     this.cached = { mtimeMs: stat.mtimeMs, size: stat.size, pages, policy };
     return pages;
+  }
+
+  private looks(): Record<string, PageLook> {
+    if (this.looksCache) return this.looksCache;
+    const out: Record<string, PageLook> = {};
+    try {
+      const raw = JSON.parse(readFileSync(this.looksFile, "utf8")) as unknown;
+      if (isRecord(raw) && isRecord(raw.looks)) {
+        for (const [key, value] of Object.entries(raw.looks)) {
+          const look = sanitizePageLook(value);
+          if (look) out[key] = look;
+        }
+      }
+    } catch {
+      // none yet: every page draws in the default look
+    }
+    this.looksCache = out;
+    return out;
+  }
+
+  /** A person's look, as their app last sent it (2026-10-29): what a
+   * reading link of their pages is drawn in. `owner` is the page's ownerId,
+   * "" for a one-person server's owner. */
+  look(owner: string | undefined): PageLook | null {
+    return this.looks()[(owner ?? "").toLowerCase()] ?? null;
+  }
+
+  /** Keep a person's look (checked again here); written only when it
+   * changed. Null when there is nothing usable in it. */
+  setLook(owner: string | undefined, value: unknown): PageLook | null {
+    const look = sanitizePageLook(value);
+    if (!look) return null;
+    const key = (owner ?? "").toLowerCase();
+    const all = { ...this.looks() };
+    if (JSON.stringify(all[key] ?? null) === JSON.stringify(look)) return look;
+    all[key] = look;
+    writeFileAtomic(this.looksFile, JSON.stringify({ version: 1, looks: all }), { mode: 0o600 });
+    this.looksCache = all;
+    return look;
   }
 
   /** The organization's switch for public links (on by default). */

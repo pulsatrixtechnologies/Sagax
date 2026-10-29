@@ -2,7 +2,7 @@
 // wrapper, and its words in both languages.
 import { describe, expect, it } from "vitest";
 
-import { parseReaderBoot, READER_STRING_KEYS, READER_STRINGS_FR_KEYS, readerNotice, readerText } from "./page-reader.ts";
+import { parseReaderBoot, readerBotColor, readerByline, READER_STRING_KEYS, READER_STRINGS_FR_KEYS, readerNotice, readerText } from "./page-reader.ts";
 
 const BOOT = { v: 1, lang: "fr", title: "Rapport", kind: "html", version: 2, pageId: "page_12345678", me: { id: "pr_x", name: "X" }, owner: { name: "X" }, can: { share: true, annotate: true } };
 
@@ -24,7 +24,30 @@ describe("parseReaderBoot", () => {
   });
 });
 
+describe("the publishing bot in the bar (2026-10-29)", () => {
+  it("keeps a mascot color name or #rrggbb and its character, drops anything else", () => {
+    const look = { character: "shape", shape: "star" };
+    expect(parseReaderBoot({ ...BOOT, bot: { name: "Scout", color: "green", look } })!.bot).toEqual({ name: "Scout", color: "green", look });
+    expect(parseReaderBoot({ ...BOOT, bot: { name: "Scout", color: "#A1B2C3" } })!.bot).toEqual({ name: "Scout", color: "#a1b2c3" });
+    for (const color of ["red;x", "url(x)", "#fff", "", 3]) {
+      expect(parseReaderBoot({ ...BOOT, bot: { name: "Scout", color } })!.bot).toBeUndefined();
+      expect(readerBotColor(color)).toBeNull();
+    }
+    expect(parseReaderBoot({ ...BOOT, bot: { name: "Scout", color: "green", look: [1] } })!.bot).toEqual({ name: "Scout", color: "green" });
+  });
+});
+
 describe("the bar's words", () => {
+  it("the byline sets the bot's name apart and keeps the notice's words", () => {
+    for (const lang of ["fr", "en"] as const) {
+      const line = readerByline({ bot: "Scout", person: "P", lang });
+      const notice = readerNotice({ bot: "Scout", person: "P", lang });
+      expect(`${line.before}${line.bot}${line.after}`).toBe(notice.who);
+      expect(line.bot).toBe("Scout");
+      expect(line.warning).toBe(notice.warning);
+    }
+  });
+
   it("the notice keeps every word of the old banner", () => {
     expect(readerNotice({ bot: "Scout", person: "P", lang: "en" })).toEqual({ who: "Page published by Scout for P", warning: "This is not a Sagax screen, never enter a password here." });
     expect(readerNotice({ bot: "Scout", person: "P", lang: "fr" }).warning).toBe("Ceci n'est pas un écran Sagax, n'y entrez jamais de mot de passe.");

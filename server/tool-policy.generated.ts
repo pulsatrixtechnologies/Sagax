@@ -269,6 +269,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"PATCH","kind":"exact","route":"/api/org/settings","tier":"admin","readOnly":false,"scope":"org:admin","defaultEnabled":false},
   {"method":"GET","kind":"exact","route":"/api/pages","tier":"read","readOnly":true,"scope":"pages:read","defaultEnabled":false},
   {"method":"GET","kind":"prefix","route":"/api/pages/","tier":"read","readOnly":true,"scope":"pages:read","defaultEnabled":false},
+  {"method":"GET","kind":"exact","route":"/api/pages/look","tier":"read","readOnly":true,"scope":"pages:read","defaultEnabled":true},
   {"method":"GET","kind":"exact","route":"/api/pages/policy","tier":"read","readOnly":true,"scope":"pages:read","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/pair","tier":"write","readOnly":false,"scope":"pair:write","defaultEnabled":true},
   {"method":"POST","kind":"exact","route":"/api/people-dms","tier":"write","readOnly":false,"scope":"people-dms:write","defaultEnabled":true},

@@ -5,7 +5,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { parseReaderBoot, READER_ACTIONS_ID, READER_BOOT_ID } from "../../shared/page-reader";
+import { parseReaderBoot, READER_ACTIONS_ID, READER_BOOT_ID, READER_MASCOT_ID } from "../../shared/page-reader";
 import { ReaderActions } from "./ReaderActions";
 import { watchPageSize } from "./print";
 import { watchPageState } from "./state";
@@ -28,4 +28,16 @@ watchPageState(document.querySelector("iframe"), config);
 const mount = document.getElementById(READER_ACTIONS_ID);
 if (config && mount) {
   createRoot(mount).render(<StrictMode><ReaderActions boot={config} /></StrictMode>);
+}
+
+// the publishing bot's mascot in the byline (2026-10-29), once the bar is
+// there: its own chunk, the dot in the bot's color stays until it draws
+const mascot = document.getElementById(READER_MASCOT_ID);
+if (config?.bot && mascot) {
+  const bot = config.bot;
+  void import("./ReaderMascot").then(({ ReaderMascot }) => {
+    createRoot(mascot).render(<StrictMode><ReaderMascot color={bot.color} look={bot.look} size={18} /></StrictMode>);
+  }).catch(() => {
+    // the dot stays
+  });
 }

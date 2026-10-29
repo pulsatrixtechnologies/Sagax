@@ -48,6 +48,10 @@
 //   GET    /pages/preview/<id>/<n>?annotate=1  the preview in annotation mode:
 //          its frame (?a=1) runs ANNOTATE_SOURCE, which only posts to the app
 //   GET    /api/pages/policy                { linkSharing } any person
+//   GET    /api/pages/look                  { look } the person's own look
+//   PUT    /api/pages/look                  { light?, dark?, skin?, botAccent? }
+//          (2026-10-29) the person's app: the tokens of their skin, light and
+//          dark; their reading links' bar and frames are drawn in them
 //   PUT    /api/admin/pages/policy          { linkSharing } organization admins (audited)
 //   POST   /api/pages/:id/invite            { people, teams } (2026-10-28, Share >
 //          Add people or groups): who else reads it while it is shared with
@@ -85,6 +89,9 @@ import { STATE_PREFIX, validStateKey, type PageStateEntry, type PageStateView } 
 import { applySuggestion, parsePageQuote, parseSuggestion, parseThreadText, suggestable, type PageThread, type PageThreadsAnswer } from "../../shared/page-threads.ts";
 import { geistFace } from "../geist-face.ts";
 import { decodeSkinTokens, encodeSkinTokens } from "../../src/lib/page-theme.ts";
+import { lookContentTokens } from "../../src/lib/page-look.ts";
+import { readerBotColor } from "../../shared/page-reader.ts";
+import { MASCOT_COLOR_HEX, type MascotColorName } from "../../shared/mascot-colors.ts";
 import type { WidgetThemeTokens } from "../../src/lib/widget-kit.ts";
 import { requestSource, type RequestAuth } from "../request-auth.ts";
 import { redactSecretsInText } from "../../shared/redact.ts";
@@ -185,6 +192,30 @@ export interface PublicPageOptions {
   /** Where a reader who is not signed in signs in and comes back to this
    * reading link (an organization server's web sign-in), or nothing. */
   signInPath?(viewPath: string): string | undefined;
+  /** The bot that published the page, as the bar draws its mascot
+   * (2026-10-29): its color and its character; null when it is gone. */
+  bot?(page: PageRecord): { color: string; look?: unknown } | null;
+}
+
+/** A bot color as #rrggbb, for the bar's dot and the bot accent. Pure. */
+export function botColorHex(color: string | null | undefined): string | null {
+  const known = readerBotColor(color);
+  if (!known) return null;
+  return known.startsWith("#") ? known : MASCOT_COLOR_HEX[known as MascotColorName] ?? null;
+}
+
+/** What a reading link is drawn in: its person's look (PUT /api/pages/look)
+ * and its bot, as checked values. */
+function readerLook(options: PublicPageOptions, page: PageRecord, botName: string) {
+  const look = options.pages?.look(page.ownerId) ?? null;
+  const bot = options.bot?.(page) ?? null;
+  const color = readerBotColor(bot?.color);
+  const character = bot?.look && typeof bot.look === "object" && !Array.isArray(bot.look) ? bot.look as Record<string, unknown> : undefined;
+  return {
+    look,
+    botHex: botColorHex(color),
+    bot: color ? { name: botName, color, ...(character ? { look: character } : {}) } : undefined,
+  };
 }
 
 const assetCache = new Map<string, { mtimeMs: number; assets: ReaderAssets | null }>();
@@ -210,7 +241,7 @@ export function readerAssetsFrom(staticDir: string | null): ReaderAssets | null 
 /** What the reader's bar is told: the page's id and Share only for the
  * page's own person; nothing about the page for a reader who is not signed
  * in beyond what the wrapper shows anyway. Pure. */
-export function readerBoot(input: { page: PageRecord; version: PageVersionRecord; viewer: PageViewer; lang: "fr" | "en"; personName: string; meName?: string; annotate?: boolean }): ReaderBoot {
+export function readerBoot(input: { page: PageRecord; version: PageVersionRecord; viewer: PageViewer; lang: "fr" | "en"; personName: string; meName?: string; annotate?: boolean; bot?: ReaderBoot["bot"] }): ReaderBoot {
   const owner = pageOwnedBy(input.page, input.viewer);
   const annotate = input.annotate === true;
   const me = input.viewer?.principalId
@@ -226,6 +257,7 @@ export function readerBoot(input: { page: PageRecord; version: PageVersionRecord
     ...(me ? { me } : {}),
     owner: { name: input.personName },
     can: { share: owner, annotate },
+    ...(input.bot ? { bot: input.bot } : {}),
   };
 }
 
@@ -326,6 +358,8 @@ function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: Serv
   const lang = language(req);
   const viewer = input.preview ? null : options.viewer(req);
   const meName = viewer?.principalId ? options.personName?.(viewer.principalId) : undefined;
+  // a reading link is drawn in its person's look, with its bot's mascot
+  const drawn = input.preview ? null : readerLook(options, input.page, names.botName);
   res.end(method === "HEAD" ? undefined : wrapperDocument({
     title: input.page.title ?? input.version.title,
     kind: input.version.kind,
@@ -339,7 +373,9 @@ function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: Serv
     preview: input.preview,
     ...(!input.preview && input.version.kind === "presentation" ? { slides: splitSlides(options.pages?.content(input.page.id, input.version.n) ?? "").length } : {}),
     ...(input.preview ? {} : { reader: { boot: readerBoot({ page: input.page, version: input.version, viewer, lang, personName: names.personName, ...(meName ? { meName } : {}),
-      annotate: pageAnnotator(input.page, viewer, { policy: options.pages!.policy(), now: Date.now(), ...(options.teamsOf ? { teamsOf: (id: string) => options.teamsOf!(id) } : {}) }) !== null }), assets } }),
+      ...(drawn?.bot ? { bot: drawn.bot } : {}),
+      annotate: pageAnnotator(input.page, viewer, { policy: options.pages!.policy(), now: Date.now(), ...(options.teamsOf ? { teamsOf: (id: string) => options.teamsOf!(id) } : {}) }) !== null }), assets,
+      look: drawn?.look ?? null, botHex: drawn?.botHex ?? null } }),
     annotate: input.annotate === true,
     ...(input.preview && input.look?.bare ? { bare: true } : {}),
     ...(input.preview && input.look?.theme ? { theme: input.look.theme } : {}),
@@ -538,6 +574,11 @@ function serveFrame(options: PublicPageOptions, req: IncomingMessage, res: Serve
   const skin = theme ? decodeSkinTokens(query(req, "s")) : undefined;
   // a reading link's frame reports its size to the wrapper (Download PDF)
   const reportSize = !preview;
+  // and is drawn in its person's look, light and dark by the reader's system
+  const schemes = preview ? undefined : (() => {
+    const drawn = readerLook(options, target.page, "");
+    return drawn.look ? lookContentTokens(drawn.look, drawn.botHex) : undefined;
+  })();
   const nonce = annotating || keepScroll !== undefined || reportSize ? randomBytes(16).toString("base64url") : undefined;
   res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": pageCsp(target.version.kind, { frameAncestors: ancestors, ...(nonce ? { annotateNonce: nonce } : {}) }) });
   res.end(method === "HEAD" ? undefined : pageDocument({ kind: target.version.kind, title: target.page.title ?? target.version.title, content, lang: language(req) }, {
@@ -547,6 +588,7 @@ function serveFrame(options: PublicPageOptions, req: IncomingMessage, res: Serve
     ...(reportSize ? { reportSize: true } : {}),
     ...(theme ? { theme } : {}),
     ...(skin ? { skin } : {}),
+    ...(schemes ? { schemes } : {}),
     font: geistFace(),
   }));
   return true;
@@ -715,6 +757,14 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
       return json(res, 200, { pages: deps.pages.list(deps.owner(auth)).map((page) => wire(page, req)) });
     }
     if (path === "/api/pages/policy") return method === "GET" ? json(res, 200, deps.pages.policy()) : PASS;
+    // the person's look (2026-10-29): their app sends it, a reading link of
+    // their pages is drawn in it (src/lib/page-look.ts); their own, no admin
+    if (path === "/api/pages/look") {
+      if (method === "GET") return json(res, 200, { look: deps.pages.look(deps.owner(auth)) });
+      if (method !== "PUT") return PASS;
+      const look = deps.pages.setLook(deps.owner(auth), await readBody(req));
+      return look ? json(res, 200, { look }) : json(res, 400, { error: "Send { light?, dark?, skin?, botAccent? } with the app's tokens.", code: "bad_body" });
+    }
     // one route per line with its method, so the tool policy sees each one
     const extra: Extra | null =
       (method === "GET" && /^\/api\/pages\/([\w-]+)\/versions\/(\d+)\/source$/.exec(path) && { route: "source", match: /^\/api\/pages\/([\w-]+)\/versions\/(\d+)\/source$/.exec(path)! })
