@@ -8,6 +8,26 @@
 import CompanionCore
 import SwiftUI
 
+/// A Perspicax profile's name and description (also Edit N bots).
+struct PerspicaxProfileLabel: View {
+    let profile: PerspicaxProfile
+    var notHeld = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text(verbatim: profile.name).foregroundStyle(Theme.textPrimary)
+                if notHeld {
+                    Text(String(localized: "Not held by you")).font(.caption).foregroundStyle(Theme.textSecondary)
+                }
+            }
+            if !profile.description.isEmpty {
+                Text(verbatim: profile.description).font(.footnote).foregroundStyle(Theme.textSecondary)
+            }
+        }
+    }
+}
+
 struct BotPerspicaxSection: View {
     @Environment(\.themePalette) var themePalette
     let bot: Bot
@@ -32,17 +52,7 @@ struct BotPerspicaxSection: View {
                 ForEach(rows) { row in
                     VStack(alignment: .leading, spacing: 4) {
                         Toggle(isOn: Binding(get: { row.checked }, set: { toggle(row.profile.id, $0) })) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                HStack(spacing: 6) {
-                                    Text(verbatim: row.profile.name).foregroundStyle(Theme.textPrimary)
-                                    if row.notHeld {
-                                        Text(String(localized: "Not held by you")).font(.caption).foregroundStyle(Theme.textSecondary)
-                                    }
-                                }
-                                if !row.profile.description.isEmpty {
-                                    Text(verbatim: row.profile.description).font(.footnote).foregroundStyle(Theme.textSecondary)
-                                }
-                            }
+                            PerspicaxProfileLabel(profile: row.profile, notHeld: row.notHeld)
                         }
                         .tint(Theme.toggleOn)
                         .disabled(row.disabled || saving)
