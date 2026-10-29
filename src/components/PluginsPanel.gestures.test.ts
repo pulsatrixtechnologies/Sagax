@@ -211,7 +211,8 @@ describe("Connect Apps, driven like the owner did", () => {
     await open();
     await click($('[data-plugins-tab="providers"]'));
     const pills = [...host.querySelectorAll("[data-accounts-service-pill]")].map((pill) => pill.textContent);
-    expect(pills.slice(0, 4)).toEqual(["All", "GitHub", "Claude", "Grok"]);
+    expect(pills.slice(0, 3)).toEqual(["All", "Claude", "Grok"]);
+    expect(pills).not.toContain("GitHub");
     expect([...host.querySelectorAll("[data-harness-group]")].map((group) => group.getAttribute("data-harness-group"))).toEqual(["claude", "grok"]);
     expect($('[data-harness-group="claude"]')?.textContent).toContain("Connectors of your Claude account");
     expect($('[data-harness-notice="not_signed_in"]')?.textContent).toContain("not signed in to Claude");
@@ -228,28 +229,78 @@ describe("Connect Apps, driven like the owner did", () => {
     expect($('[data-harness-group="claude"] [data-harness-notice]')).toBeNull();
   });
 
-  it("GitHub lives in Providers: Sources lists marketplaces only, and the GitHub plugin's page leads to the account it reads", async () => {
+  it("GitHub lives on the GitHub plugin's page: not in Providers; Sources and the plugin's server lead there", async () => {
     const servers = (API["/api/mcp/servers"] as { servers: Array<Record<string, unknown>> }).servers;
     const plugin = servers.find((server) => server.name === "github-github")!;
     plugin.github = "missing";
     try {
       await open();
-      await click($('[data-plugins-tab="sources"]'));
-      expect($("[data-plugins-marketplaces]")).not.toBeNull();
+      // Providers: the engines only, no GitHub card nor section
+      await click($('[data-plugins-tab="providers"]'));
+      expect($('[data-accounts-service-pill="github"]')).toBeNull();
+      expect($("[data-plugins-github-card]")).toBeNull();
       expect($("[data-accounts-github]")).toBeNull();
-      expect($("[data-github-credentials]")).toBeNull();
-      expect($('[data-plugins-manage="sources"]')?.textContent).not.toContain("Your GitHub account");
+      // Installed > GitHub: the plugin's page holds the connection, first
       await click($('[data-plugins-tab="installed"]'));
       const row = [...host.querySelectorAll<HTMLElement>("[data-installed-entry] button[aria-label]")].find((button) => button.textContent?.includes("GitHub"))!;
       await click(row);
-      expect($('[data-plugin-github-account="missing"]')?.textContent).toContain("It uses your GitHub account, which is not connected yet.");
-      await click($('[data-plugin-github-account] button'));
-      expect(tabs()).toEqual(["discover", "installed", "providers*", "pages", "sources"]);
-      expect($('[data-accounts-service-pill="github"]')?.getAttribute("aria-pressed")).toBe("true");
+      expect($("[data-plugins-detail]")?.getAttribute("data-plugins-detail")).toBe("plugin:github@claude-plugins-official");
+      expect($("[data-plugins-detail] [data-accounts-github]")).not.toBeNull();
+      // no link to itself
+      expect($("[data-plugin-github-account]")).toBeNull();
+      // Sources: one row that opens that same page, in Sources
+      await click($('[data-plugins-tab="sources"]'));
+      expect($("[data-plugins-marketplaces]")).not.toBeNull();
+      expect($('[data-plugins-manage="sources"] [data-accounts-github]')).toBeNull();
+      await click($("[data-plugins-sources-github-open]"));
+      expect(tabs()).toEqual(["discover", "installed", "providers", "pages", "sources*"]);
+      expect($("[data-plugins-detail]")?.getAttribute("data-plugins-detail")).toBe("plugin:github@claude-plugins-official");
       expect($("[data-accounts-github]")).not.toBeNull();
-      expect($("[data-harness-group]")).toBeNull();
+      // the plugin's server page: Open the GitHub plugin leads there too
+      await click($('[data-plugins-tab="installed"]'));
+      await click([...host.querySelectorAll<HTMLElement>("[data-installed-entry] button[aria-label]")].find((button) => button.textContent?.includes("GitHub"))!);
+      await click([...host.querySelectorAll<HTMLElement>("[data-plugins-detail] li button")].find((button) => button.textContent?.includes("github-github"))!);
+      expect($("[data-plugins-detail]")?.getAttribute("data-plugins-detail")).toBe("mcp:github-github");
+      expect($("[data-mcp-open-github]")?.textContent).toBe("Open the GitHub plugin");
+      await click($("[data-mcp-open-github]"));
+      expect($("[data-plugins-detail]")?.getAttribute("data-plugins-detail")).toBe("plugin:github@claude-plugins-official");
+      expect($("[data-accounts-github]")).not.toBeNull();
     } finally {
       delete plugin.github;
     }
+  });
+
+  it("no marketplace has the GitHub plugin: Sources opens a GitHub page of its own with the same connection", async () => {
+    const markets = API["/api/marketplaces"] as { marketplaces: Array<{ plugins: Array<{ name: string }> }> };
+    const saved = structuredClone(markets);
+    markets.marketplaces[0]!.plugins = markets.marketplaces[0]!.plugins.filter((entry) => entry.name !== "github");
+    try {
+      await open();
+      await click($('[data-plugins-tab="sources"]'));
+      await click($("[data-plugins-sources-github-open]"));
+      expect($("[data-plugins-github-page] [data-accounts-github]")).not.toBeNull();
+      expect($("[data-plugins-page-title]")?.textContent).toBe("GitHub");
+      await click($("[data-plugins-back]"));
+      expect($('[data-plugins-manage="sources"]')).not.toBeNull();
+    } finally {
+      Object.assign(markets, saved);
+    }
+  });
+});
+
+describe("githubPluginKey: the page that holds the GitHub connection", () => {
+  const item = (fields: Record<string, unknown>) => ({ kind: "plugin", name: "x", source: "m", status: "available", ...fields }) as never;
+  it("the plugin named github, an installed one first; else one whose server reads the GitHub account; else none", async () => {
+    const { githubPluginKey } = await import("./PluginsPanel");
+    expect(githubPluginKey([])).toBeNull();
+    expect(githubPluginKey([
+      item({ key: "plugin:github@b", id: "github@b", installed: false }),
+      item({ key: "plugin:github@a", id: "github@a", installed: true }),
+    ])).toBe("plugin:github@a");
+    expect(githubPluginKey([
+      item({ key: "plugin:tools@a", id: "tools@a", installed: true }),
+      { key: "mcp:tools-gh", kind: "mcp", id: "tools-gh", name: "tools-gh", parent: "plugin:tools@a", githubAccount: "connected" } as never,
+    ])).toBe("plugin:tools@a");
+    expect(githubPluginKey([item({ key: "plugin:tools@a", id: "tools@a", installed: true })])).toBeNull();
   });
 });

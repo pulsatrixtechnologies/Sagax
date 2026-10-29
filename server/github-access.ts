@@ -1,7 +1,7 @@
 // Reading a private GitHub repository for a bot's plugins and skills.
 //
 // Which credential, in order: the one this marketplace picks on this bot
-// (Connect apps > Providers > GitHub, server/github-credentials.ts), then
+// (the GitHub plugin's page in Connect apps, server/github-credentials.ts), then
 // Automatic: the acting person's own GitHub connection
 // (server/github-connect.ts), their other credentials, then the
 // organization's. Before a clone, GET /repos/{owner}/{repo} on api.github.com
@@ -113,7 +113,7 @@ export function githubAccessFailure(
     if (!credential) {
       return {
         code: "private_needs_token", status: 422, fix: "connect_or_token",
-        message: `GitHub answered 404 for ${repo}: it is private, or it does not exist. Connect your GitHub account in Connect apps > Providers > GitHub, ${context === "marketplace" ? "or add a credential there and pick it for this marketplace" : "or add a credential there for this repository's owner"}.`,
+        message: `GitHub answered 404 for ${repo}: it is private, or it does not exist. Connect your GitHub account on the GitHub plugin's page (Connect apps > Sources > GitHub connection), ${context === "marketplace" ? "or add a credential there and pick it for this marketplace" : "or add a credential there for this repository's owner"}.`,
       };
     }
     return {

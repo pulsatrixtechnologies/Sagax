@@ -1,4 +1,4 @@
-// Connect apps > Providers > GitHub (2026-10-28, owner: "one GitHub
+// the GitHub plugin's page in Connect apps (2026-10-28, owner: "one GitHub
 // connection, the one in Connect apps"). The person's GitHub account is the
 // one GitHub source of every use: private marketplaces, gh and git in their
 // bots, and the GitHub plugin's MCP server (its token placeholder is that
@@ -17,8 +17,8 @@
 //
 // Connect GitHub is every person's, with no admin step (owner, 2026-10-28):
 // the device flow when the server has a GitHub OAuth App, else a token.
-// In Providers > All, GitHub is one card (AccountsView); this is what
-// opening it shows.
+// It is shown on the GitHub plugin's page (PluginsPanel, `openGithub`), not
+// in Providers (owner, 2026-10-29).
 import { useState, type ReactNode } from "react";
 import { GitBranch } from "lucide-react";
 

@@ -1,4 +1,4 @@
-// Connect apps > Providers > GitHub (2026-10-28): the one list of
+// the GitHub plugin's page in Connect apps (2026-10-28): the one list of
 // credentials beside the GitHub account (server/routes/github-credentials.ts)
 // and each marketplace's pick of one in Sources. The list is shared by the
 // GitHub section and the marketplace rows through one small store, loaded

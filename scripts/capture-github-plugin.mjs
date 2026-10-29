@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 /**
- * Headless screenshots of Connect apps > Providers (Playwright, no window):
- * the list (All) and the GitHub card opened, for an organization member and
- * an admin, light and dark, on a server without a GitHub OAuth App
- * (Connect GitHub then takes a token).
- * Usage: node scripts/capture-providers-github.mjs --out DIR [--prefix before]
+ * Headless screenshots of the GitHub connection's place (Playwright, no
+ * window): Connect apps > Providers (engines and the person's servers
+ * only), the GitHub plugin's page (Installed > GitHub, where the GitHub
+ * connection is since 2026-10-29) with Connect GitHub opened, and Sources
+ * (its GitHub connection row), for an organization member and an admin,
+ * light and dark, on a server without a GitHub OAuth App.
+ * Usage: node scripts/capture-github-plugin.mjs --out DIR [--prefix before]
  *   [--root CHECKOUT] [--port N]
  */
 import { spawn } from "node:child_process";
@@ -15,7 +17,7 @@ import { fileURLToPath } from "node:url";
 const here = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const arg = (name) => { const index = process.argv.indexOf(name); return index >= 0 ? process.argv[index + 1] : undefined; };
 const root = resolve(arg("--root") ?? here);
-const outDir = resolve(arg("--out") ?? join(here, "docs", "screenshots", "providers-github"));
+const outDir = resolve(arg("--out") ?? join(here, "docs", "screenshots", "github-plugin"));
 const port = Number(arg("--port") ?? 5317);
 const prefix = arg("--prefix") ?? "after";
 const schemes = [{ skin: "pulsatrix-light", scheme: "light" }, { skin: "pulsatrix", scheme: "dark" }];
@@ -49,6 +51,9 @@ try {
       page.on("pageerror", (error) => console.error("page error:", error.stack));
       await page.goto(`${base}?view=manage&skin=${skin}&lang=en&role=${role}&app=none`, { waitUntil: "networkidle" });
       await page.waitForSelector("[data-plugins-manage]", { timeout: 30_000 });
+      // the panel mounts again once the bots arrive: let it settle first
+      await page.waitForSelector("[data-plugins-scope-bar]", { timeout: 30_000 });
+      await page.waitForTimeout(1000);
       const shot = async (name) => {
         await page.waitForTimeout(800);
         await page.locator('[role="dialog"]').first().screenshot({ path: join(outDir, `${prefix}-${role}-${name}-${scheme}.png`) });
@@ -56,11 +61,20 @@ try {
       await page.click('[data-plugins-tab="providers"]');
       await page.waitForSelector('[data-plugins-manage="providers"]');
       await shot("providers");
-      await page.click('[data-accounts-service-pill="github"]');
-      await shot("providers-github");
+      // the GitHub plugin's page, from its Installed row
+      await page.click('[data-plugins-tab="installed"]');
+      await page.locator("[data-installed-entry]", { hasText: "GitHub" }).first().locator("button").first().click();
+      await page.waitForSelector("[data-plugins-detail]");
+      await shot("github-plugin");
       // Connect GitHub with no OAuth App: the token form, for anyone
-      await page.click("[data-github-connect]");
-      await shot("providers-github-connect");
+      if (await page.locator("[data-github-connect]").count()) {
+        await page.click("[data-github-connect]");
+        await shot("github-plugin-connect");
+      }
+      if (await page.locator('[data-plugins-tab="sources"]').count()) {
+        await page.click('[data-plugins-tab="sources"]');
+        await shot("sources");
+      }
       await page.close();
     }
   }

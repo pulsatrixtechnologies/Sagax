@@ -1,8 +1,9 @@
 // A person's own connections on an organization server (it was Settings >
-// Mes connexions, then Connect apps > Manage > Your connections). Since
-// 2026-10-28 both are in Connect apps > Providers: their GitHub account
-// ("Connecter GitHub": a code to type at GitHub, or a token), the one GitHub
-// source of every use (GithubAccountSection), and their own MCP servers
+// Mes connexions, then Connect apps > Manage > Your connections). Their
+// GitHub account ("Connecter GitHub": a code to type at GitHub, or a
+// token), the one GitHub source of every use (GithubAccountSection), is on
+// the GitHub plugin's page since 2026-10-29; their own MCP servers, in
+// Connect apps > Providers
 // ("Ajouter un serveur MCP": an address with no sign-in, a token, OAuth
 // through this server, or their GitHub account; or a command that runs in
 // their server environment). Same routes, same storage. Only for them:
@@ -61,7 +62,7 @@ function Loading({ error }: { error: string | null }) {
     : <p className="text-[12.5px] text-ink-secondary">{t("myConnections.loading")}</p>;
 }
 
-/** Connect apps > Providers > GitHub: the person's own GitHub connection,
+/** the GitHub plugin's page in Connect apps: the person's own GitHub connection,
  * inside GithubAccountSection. Connect GitHub is everyone's, with no admin
  * step (owner, 2026-10-28): the device flow when the server has a GitHub
  * OAuth App, else a token the person pastes. */
@@ -76,7 +77,7 @@ export function MyGithubConnection({ initial }: { initial?: MyConnections }) {
   );
 }
 
-/** The GitHub card's account line in Connect apps > Providers (All):
+/** The GitHub connection row's account line in Connect apps > Sources:
  * connected as, or not connected. Nothing while it reads. */
 export function MyGithubSummary({ initial }: { initial?: MyConnections }) {
   const { data } = useMyConnections(initial, () => false);

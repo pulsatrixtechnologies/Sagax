@@ -103,7 +103,7 @@ const MANAGE_API: Record<string, unknown> = {
     { id: "bot-b", name: "Atlas", instanceId: "grok-main", model: "default", ownerUserId: "p-1", mcpServers: ["twilio-docs"], threads: [], messages: [] },
   ], groups: [], sections: [] },
   "/api/org": ORG,
-  // Providers > GitHub: the account, and one list of other credentials (2026-10-28)
+  // the GitHub plugin's page: the account, and one list of other credentials (2026-10-28)
   "/api/me/github/credentials": { canManageOrg: admin, deviceFlow, credentials: [
     { id: "gt_0000000000000011", label: "Second GitHub organization", hint: "9c1d", owner: "mine", chosenBy: 1 },
     { id: "gt_0000000000000001", label: "Private repositories", hint: "4f2a", owner: "org", chosenBy: 0 },

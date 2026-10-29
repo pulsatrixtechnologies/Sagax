@@ -5326,7 +5326,7 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   marketplace known only by its marketplace.json address cannot install on
   a bot (422 `manifest_only`). Added or fetched again through a bot, a
   private marketplace reads with the credential that bot picks for it (the
-  one list, Providers > GitHub), else the person's GitHub connection, then
+  one list, on the GitHub plugin's page), else the person's GitHub connection, then
   their other credentials and the organization's; the bot listing says
   `hasToken` (a pick), never the token, and `updateAvailable` when
   the marketplace offers another version or other files (Install again
@@ -5436,17 +5436,18 @@ gallery `connect-apps.html?view=manage|org-settings`).
   server); Claude Code on this computer (solo). The "What your engines
   reach" panel is gone. Providers was called My accounts until 2026-10-28
   (tab id `providers`; the old id `accounts`, in a `togglePlugins` page or
-  `normalizeConnectAppsTab`, still leads there). Since 2026-10-28 a
-  GitHub pill comes first: the person's GitHub account and the other
-  credentials (`GithubAccountSection`, see "Providers > GitHub" below).
+  `normalizeConnectAppsTab`, still leads there). GitHub is not a provider
+  (2026-10-29): no pill, no card; see "GitHub: on the GitHub plugin's
+  page" below.
 - Pages (`PublishedPagesSettings personal`, 2026-10-28, owner: pages get
   their own tab, nothing about pages stays in Providers): "Your pages" with
   Audience, Share, versions and Delete, and the empty line when there are
   none. A link to `togglePlugins` page `pages` (Settings search, old
   Settings > Pages links) opens it. iOS keeps the pages in Settings >
   Published pages.
-- Sources (`SourcesView`): the marketplaces only (add, list, fetch again,
-  remove, who sees each), then for an organization admin the allowed
+- Sources (`SourcesView`): a GitHub connection row first (a link to the
+  GitHub plugin's page, 2026-10-29), the marketplaces (add, list, fetch
+  again, remove, who sees each), then for an organization admin the allowed
   marketplaces (`OrgSourcesAccess`). The GitHub OAuth App's client id is in
   Settings > Organization (`OrgGithubApp`). Settings > Organization shows one
   link to Sources (`togglePlugins` page `sources`, also an old link to
@@ -5457,15 +5458,32 @@ gallery `connect-apps.html?view=manage|org-settings`).
   pills (All, Claude, Slack, My MCP servers); its GitHub card is under Your
   connections.
 
-## Providers > GitHub: one GitHub connection (2026-10-28)
+## GitHub: on the GitHub plugin's page (2026-10-28, moved 2026-10-29)
 
 Owner: Sources showed a GitHub section beside the GitHub plugin already
 Connected in Installed ("that should be only marketplaces"). One GitHub
 connection, the person's own (`server/person-connections.ts`,
-`/api/me/github/*`), in Connect apps > Providers > GitHub
-(`GithubAccountSection`, first pill), serves every use: private marketplace
-clones, gh and git in their environment, private skills, and the GitHub
-plugin's MCP server. Sources lists marketplaces only.
+`/api/me/github/*`), serves every use: private marketplace clones, gh and
+git in their environment, private skills, and the GitHub plugin's MCP
+server. It sat in Providers > GitHub (#1550) until the owner asked "Why is
+GitHub listed as a provider?" (2026-10-29): Providers keeps the engines'
+connectors and My MCP servers only.
+
+- Where: the GitHub plugin's page (`GithubAccountSection`, first on the
+  detail page of `githubPluginKey`: the marketplace plugin named github,
+  else one whose server reads the GitHub account, an installed one
+  first), in both scopes, installed or only listed in Discover. With no
+  such plugin in any marketplace, a page of its own (`{ page: "github" }`)
+  with the same section; it turns into the plugin's page once the
+  marketplaces answer. Connect GitHub, the account, More credentials, Add a
+  credential, Rename, Replace secret and Remove are all there.
+- Every link goes through `openGithub` (PluginsPanel): Sources' GitHub
+  connection row (`SourcesView`, shown whenever the connection is in
+  reach), the private marketplaces' "Open the GitHub plugin", the MCP
+  server page of a server that reads the account. Texts (UI, server errors,
+  the bot's prompt line when a GitHub server is withheld) say "the GitHub
+  plugin's page (Connect apps > Sources > GitHub connection)". iOS never
+  listed GitHub under Providers (its GitHub is in Sources).
 
 - The GitHub plugin (claude-plugins-official) ships its server with
   `Authorization: Bearer ${GITHUB_PERSONAL_ACCESS_TOKEN}`. Sagax never
@@ -5476,12 +5494,11 @@ plugin's MCP server. Sources lists marketplaces only.
   person's connection on an organization server, the operator's own
   credential solo, never the organization's), never in config.json. `GET
   /api/mcp/servers` says `github: "connected" | "missing"` for that viewer;
-  the Installed row and the server's page follow it, with "Open Providers >
-  GitHub".
+  the Installed row and the server's page follow it, with "Open the
+  GitHub plugin".
 - Connection (organization server): `MyGithubConnection`, one Connect
-  GitHub (device flow when the OAuth App is set, else a token); without the
-  app, "An admin can turn on Connect GitHub" (a link to Settings >
-  Organization `organization.githubApp` for an admin).
+  GitHub for everyone, with no admin step (device flow when the OAuth App
+  is set, else a token).
 - A load that meets a proxy's bare 502/503/504 (Sagax restarting behind
   Caddy during a deploy) is asked again (`retryTransient`); a failure is one
   plain line (`readableError`), never the raw status.
@@ -5502,7 +5519,7 @@ plugin's MCP server. Sources lists marketplaces only.
   `PUT /api/marketplaces/:name/credential`, the workspace's managers;
   `credential` on add). The listing carries `credential: { chosen?, used? }`
   (what read it last). The former token routes (`.../token`, `token` on add)
-  are gone: a credential is added in Providers > GitHub and picked.
+  are gone: a credential is added on the GitHub plugin's page and picked.
 - Migration at first use (`migrateGithubCredentials`): `org-github-tokens.enc`
   (ids and labels kept) and `marketplace-tokens.enc` (each token becomes an
   `onlyWhereChosen` credential of the person who added it, else the bot's
@@ -5512,7 +5529,9 @@ plugin's MCP server. Sources lists marketplaces only.
   `server/github-credentials.test.ts`, `server/routes/github-credentials.test.ts`,
   `server/bot-plugins.test.ts`, `server/github-mcp-token.test.ts`,
   `src/components/plugins/GithubAccountSection.test.ts`,
-  `src/components/PluginsPanel.gestures.test.ts`.
+  `src/components/PluginsPanel.gestures.test.ts`,
+  `src/components/plugins/ConnectAppsView.test.ts`. Captures:
+  `scripts/capture-github-plugin.mjs`, `docs/screenshots/github-plugin/`.
 
 ## Reserved MCP server names (2026-10-17)
 
