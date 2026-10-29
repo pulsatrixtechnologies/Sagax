@@ -290,6 +290,10 @@ posixOnly("Perspicax organization, slice 7: the console admin API", () => {
   }, 60_000);
 
   it("S7-E: approvals go to whoever Sagax lets decide; a console decision resumes the turn once", async () => {
+    // 2026-10-27 (#1098): a member's new bot starts on Approve for me, which
+    // answers a write in its own workspace by itself; the cards read below
+    // are the ones Ask shows
+    expect((await api("PATCH", `/api/bots/${bots.z!.id}/tasks/${bots.z!.threadId}`, carol, { approvalMode: "ask" })).status).toBe(200);
     expect((await api("POST", `/api/bots/${bots.z!.id}/messages`, carol, { text: "hold for cards" })).status).toBe(202);
     const holdDump = join(home, "hold-dump.json");
     await waitFor(async () => existsSync(holdDump), 20_000);

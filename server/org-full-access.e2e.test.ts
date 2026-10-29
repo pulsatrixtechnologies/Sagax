@@ -18,7 +18,7 @@
 //         that person chose for their own conversation stays theirs. Since
 //         #1169 the level is the bot's: the owner's threads follow it
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -81,10 +81,13 @@ async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms 
   }
 }
 
-function auditRows(): Array<{ action: string; category: string; after?: Record<string, unknown>; before?: Record<string, unknown>; target?: unknown }> {
-  const dir = join(home, ".openmausbot", "admin-activity");
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).flatMap((file) => readFileSync(join(dir, file), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)));
+/** The admin activity log of one category, as an admin reads it. The rows
+ * are sealed on disk (2026-10-27, #1263), so they are read through the
+ * route, not the files. */
+async function auditRows(as: Auth, what: "approval" | "org"): Promise<Array<{ action: string; what: string; after?: Record<string, unknown>; before?: Record<string, unknown>; target?: unknown }>> {
+  const got = await api("GET", `/api/admin-activity?what=${what}`, as);
+  expect(got.status, got.text).toBe(200);
+  return got.body.entries;
 }
 
 posixOnly("organization Full access", () => {
@@ -187,7 +190,7 @@ posixOnly("organization Full access", () => {
     expect(argv[argv.indexOf("--permission-mode") + 1]).toBe("bypassPermissions");
     const denied = argv[argv.indexOf("--disallowedTools") + 1]!.split(",");
     for (const tool of CLAUDE_HOST_TOOLS) expect(denied).toContain(tool);
-    await waitFor(async () => auditRows().some((row) => row.action === "approval.full_access_turn"));
+    await waitFor(async () => (await auditRows(alice, "approval")).some((row) => row.action === "approval.full_access_turn"));
   }, 60_000);
 
   it("FA-2: a saved allowFullAccess false takes nothing from the owner (2026-10-26); Ask still works", async () => {
@@ -209,9 +212,9 @@ posixOnly("organization Full access", () => {
   }, 60_000);
 
   it("FA-3: mode changes and the policy are in the admin activity log", async () => {
-    const rows = auditRows();
+    const rows = await auditRows(alice, "approval");
     expect(rows.some((row) => row.action === "approval.mode" && row.after?.approvalMode === "full")).toBe(true);
-    expect(rows.some((row) => row.action === "org.settings" && row.after?.allowFullAccess === false)).toBe(true);
+    expect((await auditRows(alice, "org")).some((row) => row.action === "org.settings" && row.after?.allowFullAccess === false)).toBe(true);
     const listed = await api("GET", "/api/admin-activity?what=approval", alice);
     expect(listed.status, listed.text).toBe(200);
     expect(listed.text).toContain("approval.full_access_turn");
@@ -249,7 +252,7 @@ posixOnly("organization Full access", () => {
     const self = await settings({ action: "set", key: "bot.approvalMode", value: "full", quote: "mets-toi en Full" });
     expect(self.body.text, JSON.stringify(self.body)).toMatch(/^Done/);
     // the audit line lands just after the reply
-    await waitFor(async () => auditRows().some((row) => row.action === "approval.mode" && row.after?.approvalMode === "full" && JSON.stringify(row.target ?? {}).includes(ivy.id)));
+    await waitFor(async () => (await auditRows(alice, "approval")).some((row) => row.action === "approval.mode" && row.after?.approvalMode === "full" && JSON.stringify(row.target ?? {}).includes(ivy.id)));
     // and this conversation, which keeps its own level
     const here = await settings({ action: "set", key: "thread.approvalMode", value: "full", quote: "mets-toi en Full" });
     expect(here.body.text, JSON.stringify(here.body)).toMatch(/^Done/);
@@ -282,20 +285,20 @@ posixOnly("organization Full access", () => {
     expect(foreign.status, foreign.text).toBe(200);
     expect(await botMode(erin)).toBe("full");
     expect(await threadOf(alice, aliceThread)).toMatchObject({ approvalMode: "ask", approvalOwn: "thread" });
-    expect(auditRows().some((row) => row.action === "approval.mode" && row.after?.approvalMode === "full" && row.after?.threadId === aliceThread)).toBe(false);
+    expect((await auditRows(alice, "approval")).some((row) => row.action === "approval.mode" && row.after?.approvalMode === "full" && row.after?.threadId === aliceThread)).toBe(false);
 
     // the owner's own open conversation follows and the change is audited with it
     const relowered = await api("PATCH", `/api/bots/${zed.id}/tasks/${zed.threadId}`, erin, { approvalMode: "ask" });
     expect(relowered.status, relowered.text).toBe(200);
     expect(await threadMode(erin, zed.threadId)).toBe("ask");
-    const threadRows = () => auditRows().filter((row) => row.action === "approval.mode" && row.after?.approvalMode === "full" && row.after?.threadId === zed.threadId).length;
-    const rowsBefore = threadRows();
+    const threadRows = async () => (await auditRows(alice, "approval")).filter((row) => row.action === "approval.mode" && row.after?.approvalMode === "full" && row.after?.threadId === zed.threadId).length;
+    const rowsBefore = await threadRows();
     const own = await api("PATCH", `/api/bots/${zed.id}`, erin, { approvalMode: "full", threadId: zed.threadId });
     expect(own.status, own.text).toBe(200);
     // its exception ends: it reads the bot's Full, live
     expect(await threadOf(erin, zed.threadId)).not.toHaveProperty("approvalOwn");
     expect(await threadMode(erin, zed.threadId)).toBeUndefined();
     expect(await botMode(erin)).toBe("full");
-    await waitFor(async () => threadRows() === rowsBefore + 1);
+    await waitFor(async () => (await threadRows()) === rowsBefore + 1);
   }, 60_000);
 });

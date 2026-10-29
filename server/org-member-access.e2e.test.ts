@@ -25,6 +25,7 @@
 //   MA-9  (2026-10-26) a member's bot on Full access adds a remote MCP server
 //         switched on; a command (it would run on the shared server) stays off
 import { spawn, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -384,10 +385,17 @@ posixOnly("Perspicax organization: a member's own engines and read-only bots", (
     // another person speaking to Uma's bot, or a turn nobody wrote, creates nothing
     expect((await create(maker, await capability(maker.id, maker.threadId, ids.bob), "Bob Asked")).body.code).toBe("not_owner_turn");
     expect((await create(maker, await capability(maker.id, maker.threadId), "Nobody Asked")).body.code).toBe("not_owner_turn");
-    // a member without the working-folder permission names no folder
+    // 2026-10-28 (#1098, member-folders.ts): a member names a working folder
+    // without any permission, as long as it is in her own roots on the
+    // server's disk; a folder outside them (the server's home) is refused
     const folder = await create(maker, await capability(maker.id, maker.threadId, ids.uma), "Uma Folder", { cwd: home });
     expect(folder.status, JSON.stringify(folder.body)).toBe(403);
-    expect(folder.body.code).toBe("permission_missing");
+    expect(folder.body.code).toBe("folder_outside_own_space");
+    const ownFolder = join(home, ".sagax", "person-folders", createHash("sha256").update(ids.uma!.trim().toLowerCase()).digest("hex").slice(0, 32));
+    mkdirSync(ownFolder, { recursive: true, mode: 0o700 });
+    const inOwn = await create(maker, await capability(maker.id, maker.threadId, ids.uma), "Uma Own Folder", { cwd: ownFolder });
+    expect(inOwn.status, JSON.stringify(inOwn.body)).toBe(201);
+    expect((await orgBots()).find((bot) => bot.name === "Uma Own Folder")?.ownerPrincipalId).toBe(ids.uma);
 
     // Uma's own request: the bot is hers, locked down like a Primary Bot's
     const made = await create(maker, await capability(maker.id, maker.threadId, ids.uma), "Uma Helper");

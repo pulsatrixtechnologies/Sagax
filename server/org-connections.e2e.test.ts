@@ -111,6 +111,23 @@ async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms 
 type Message = { role: string; kind: string; text?: string };
 const threadMessages = async (auth: Auth, threadId: string) => ((await api("GET", `/api/threads/${threadId}/messages`, auth)).body.messages ?? []) as Message[];
 
+/** The Authorization header a remote personal server is reached with: on
+ * the engine's own config, or inside Sagax's gate (2026-10-29, #1604: a
+ * custom server sits behind mcp-gate, a remote one through
+ * mcp-remote-proxy, which carries the server's headers in its own
+ * environment, never in the engine's argv). */
+function remoteAuthorization(server: { headers?: Record<string, string>; env?: Record<string, string> } | undefined): string | undefined {
+  if (!server) return undefined;
+  if (server.headers?.Authorization) return server.headers.Authorization;
+  try {
+    const upstream = JSON.parse(server.env?.SAGAX_GATE_UPSTREAM ?? "{}") as { env?: Record<string, string> };
+    const remote = JSON.parse(upstream.env?.SAGAX_REMOTE_MCP_SERVER ?? "{}") as { headers?: Record<string, string> };
+    return remote.headers?.Authorization;
+  } catch {
+    return undefined;
+  }
+}
+
 async function turn(auth: Auth, bot: { id: string; threadId: string }, text: string): Promise<string> {
   const before = (await threadMessages(auth, bot.threadId)).filter((m) => m.role === "bot" && m.kind === "text").length;
   if (existsSync(mcpDump)) rmSync(mcpDump);
@@ -366,8 +383,8 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     expect(call.text).toContain("user=1000:1000");
     const engine = JSON.parse(readFileSync(engineDump, "utf8")) as { mcpConfig: { mcpServers: Record<string, { url?: string; headers?: Record<string, string>; env?: Record<string, string> }> } };
     const servers = engine.mcpConfig.mcpServers;
-    expect(servers.github?.headers?.Authorization).toBe(`Bearer ${GITHUB_TOKEN}`);
-    expect(servers.notes?.headers?.Authorization).toMatch(/^Bearer /);
+    expect(remoteAuthorization(servers.github)).toBe(`Bearer ${GITHUB_TOKEN}`);
+    expect(remoteAuthorization(servers.notes)).toMatch(/^Bearer /);
     // the engine gets Sagax's stdio proxy, never the person's command or its variables
     expect(servers.mytools).toBeTruthy();
     expect(JSON.stringify(servers.mytools)).not.toContain("fake-mcp-server");
@@ -399,12 +416,18 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     expect(read.status, read.text).toBe(200);
     expect(read.body.canChange).toBe(false);
     expect((await api("PATCH", `/api/bots/${bobBot.id}/plugins/reviewer@acme-tools`, uma, { enabled: false })).body.code).toBe("plugins_owner_only");
-    // the admin keeps a list: acme/tools is no longer allowed
+    // the admin keeps a list: it binds what is shared with the whole
+    // organization, never a member's own marketplace (2026-10-27, #1098: a
+    // member's own bots are theirs, the organization's list does not limit
+    // them)
     const policy = await api("PATCH", "/api/org/settings", alice, { pluginMarketplaces: { mode: "list", allow: ["pulsatrixtechnologies/*"] } });
     expect(policy.status, policy.text).toBe(200);
     expect(policy.body.settings.pluginMarketplaces).toEqual({ mode: "list", allow: ["pulsatrixtechnologies/*"] });
-    const refused = await api("POST", `/api/bots/${bobBot.id}/plugins/marketplaces`, bob, { source: "acme/tools" });
-    expect(refused.status).toBe(403);
+    const own = await api("POST", `/api/bots/${bobBot.id}/plugins/marketplaces`, bob, { source: "acme/tools" });
+    expect(own.status, own.text).toBe(201);
+    const alba = await createBot(alice, "Alba Shared");
+    const refused = await api("POST", `/api/bots/${alba.id}/plugins/marketplaces`, alice, { source: "acme/shared-tools", visibility: "org" });
+    expect(refused.status, refused.text).toBe(403);
     expect(refused.body.code).toBe("marketplace_not_allowed");
     expect((await api("PATCH", "/api/org/settings", alice, { pluginMarketplaces: { mode: "any" } })).status).toBe(200);
   }, 120_000);
@@ -488,8 +511,8 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     expect((await api("POST", `/api/bots/${ritaBot.id}/plugins/marketplaces`, rita, { source: "acme/rita-tools" })).status).toBe(201);
     expect((await api("POST", `/api/bots/${ritaBot.id}/plugins/install`, rita, { marketplace: "rita-tools", plugin: "reviewer" })).status).toBe(201);
     await turn(rita, ritaBot, "before");
-    const before = JSON.parse(readFileSync(engineDump, "utf8")) as { argv: string[]; mcpConfig: { mcpServers: Record<string, { headers?: Record<string, string> }> } };
-    expect(before.mcpConfig.mcpServers.ritas?.headers?.Authorization).toBe("Bearer t-rita-000");
+    const before = JSON.parse(readFileSync(engineDump, "utf8")) as { argv: string[]; mcpConfig: { mcpServers: Record<string, { headers?: Record<string, string>; env?: Record<string, string> }> } };
+    expect(remoteAuthorization(before.mcpConfig.mcpServers.ritas)).toBe("Bearer t-rita-000");
     expect(before.argv).toContain("--plugin-dir");
 
     // an admin turns it off in Perspicax; the directory brings it here
@@ -510,8 +533,8 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     expect((await api("DELETE", `/api/bots/${ritaBot.id}/skills/more`, rita)).status).toBe(200);
     // what she saved stays usable: her server is mounted and her plugin loaded
     await turn(rita, ritaBot, "after");
-    const after = JSON.parse(readFileSync(engineDump, "utf8")) as { argv: string[]; mcpConfig: { mcpServers: Record<string, { headers?: Record<string, string> }> } };
-    expect(after.mcpConfig.mcpServers.ritas?.headers?.Authorization).toBe("Bearer t-rita-000");
+    const after = JSON.parse(readFileSync(engineDump, "utf8")) as { argv: string[]; mcpConfig: { mcpServers: Record<string, { headers?: Record<string, string>; env?: Record<string, string> }> } };
+    expect(remoteAuthorization(after.mcpConfig.mcpServers.ritas)).toBe("Bearer t-rita-000");
     expect(after.argv).toContain("--plugin-dir");
     expect((await api("DELETE", "/api/me/mcp/servers/ritas", rita)).status).toBe(200);
     expect((await api("PATCH", `/api/bots/${ritaBot.id}/plugins/reviewer@rita-tools`, rita, { enabled: false })).status).toBe(200);
