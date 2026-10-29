@@ -166,8 +166,8 @@ describe.skipIf(!CHROME)("Show a task in my Chrome, recorded and replayed (headl
     expect(recorded[7]).toMatchObject({ kind: "note", text: "Check that the confirmation shows" });
     // no step anywhere carries the password
     expect(JSON.stringify(recorded)).not.toContain(PASSWORD);
-    // the site is allowed for bots: the path is replayed in My Chrome unless the person changes it
-    expect(defaultReplay).toBe("my-chrome");
+    // replayed out of sight unless the person picks their own Chrome
+    expect(defaultReplay).toBe("background");
     // the tab is the person's again: no banner, no recorder
     await waitFor(async () => !(await person.evaluate<boolean>(sessionId, `Boolean(document.getElementById(${JSON.stringify(RECORDER_BANNER_ID)}))`)), 5_000, "the banner gone");
     expect(service.recordingStatus()).toBeNull();

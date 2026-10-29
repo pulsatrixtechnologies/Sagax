@@ -321,8 +321,8 @@ function replaySection(plan: TeachReplayPlan): string[] {
     return [
       "## Where to Replay",
       "",
-      "- In your own browser, in the background: nothing opens on the person's screen. Do not use My Chrome for this task.",
-      "- If a page asks for a sign-in, use fill_credential when the vault holds that site; otherwise stop and ask the person.",
+      "- In your own built-in browser, in the background: nothing opens on the person's screen. Do not use My Chrome or this computer's screen for this task.",
+      "- If a page asks for a sign-in, use fill_credential when the vault holds that site; otherwise stop and ask the person (they can switch this task to their own Chrome).",
       "",
     ];
   }

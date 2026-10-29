@@ -140,7 +140,7 @@ describe("a path shown in the person's Chrome (2026-10-29)", () => {
     expect(markdown).toContain('Click the button "Save" on https://other.example.org/done (page selector when it was shown: "#save").');
     expect(markdown.indexOf("I am about to drive your Chrome")).toBeLessThan(markdown.indexOf("## Procedure"));
     const background = buildTeachSkill({ title: "Change plan", description: "", steps, replay: "background" }).markdown;
-    expect(background).toContain("Do not use My Chrome for this task.");
+    expect(background).toContain("Do not use My Chrome or this computer's screen for this task.");
     // a path shown in the bot's own browser keeps its old wording
     const plain = buildTeachSkill({ title: "Change plan", description: "", steps }).markdown;
     expect(plain).not.toContain("Where to Replay");

@@ -135,12 +135,15 @@ turning it off ends it (steps kept until the person stops in Sagax).
   `POST /api/bots/:id/shown-path` with `replay`: "background" (the bot's own
   browser, no window on the person's screen, sign-ins from the vault's
   `fill_credential` or asked) or "my-chrome" (the person's signed-in
-  session). The default is "my-chrome" when a recorded site is one the
-  person allowed in My Chrome. The SKILL.md gets a "Where to Replay"
+  session). The default is "background" (web work stays out of sight,
+  2026-10-28 above); the person picks "my-chrome" when the task needs their
+  signed-in session. The SKILL.md gets a "Where to Replay"
   section (`teachReplayPlan` in shared/teach-recording.ts): for My Chrome
   the bot says the announce sentence in the conversation before the first
   step, and `MyChromeIndicator` plus the tab's banner (Stop) show for the
-  whole replay, as for every My Chrome drive. Approval cards and every My
+  whole replay, as for every My Chrome drive (no second indicator: My
+  Chrome's own, and `HostControlIndicator` stays for this computer's
+  screen). Approval cards and every My
   Chrome rule are unchanged; secret steps point to `fill_credential` first.
 - Routes: `POST /api/my-chrome/record/{start,status,note,stop,discard}`,
   same person-only check as the other My Chrome routes.

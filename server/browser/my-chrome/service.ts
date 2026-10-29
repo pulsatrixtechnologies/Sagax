@@ -7,11 +7,12 @@ import { MY_CHROME_SHELL_NOTE } from "./shell.ts";
 import { MY_CHROME_RECORDING_IDLE_MS, MyChromeRecording, type MyChromeRecordingStatus } from "./recorder.ts";
 import { MyChromeSettingsStore, type MyChromeSettings } from "./settings.ts";
 import { myChromeSiteAllows } from "./sites.ts";
-import { teachSites, type TeachReplay, type TeachStep } from "../../../shared/teach-recording.ts";
+import type { TeachReplay, TeachStep } from "../../../shared/teach-recording.ts";
 
 /** A recording handed back on Stop: the steps, and where the path is
- * replayed unless the person changes it (my-chrome when it went through a
- * site they allowed for bots, which is where they are signed in). */
+ * replayed unless the person changes it: out of sight in the bot's own
+ * browser (web work stays out of sight, AGENTS.md 2026-10-28); the person
+ * picks My Chrome when the task needs their signed-in session. */
 export interface MyChromeRecordingResult {
   steps: TeachStep[];
   recordedAt: string;
@@ -176,10 +177,7 @@ export class MyChromeService {
     this.recording = null;
     if (!recording) return null;
     await recording.stop("person");
-    const steps = recording.result();
-    const allowed = this.settings.get().sites.map((site) => site.origin);
-    const signedIn = teachSites(steps).some((origin) => myChromeSiteAllows(allowed, origin));
-    return { steps, recordedAt: recording.startedAt, replay: signedIn ? "my-chrome" : "background", ended: recording.ended };
+    return { steps: recording.result(), recordedAt: recording.startedAt, replay: "background", ended: recording.ended };
   }
 
   discardRecording(): void {
