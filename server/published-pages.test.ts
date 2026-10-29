@@ -13,6 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createAgentCard, type AgentCardStore } from "./chat-widgets.ts";
 import { json, readBody } from "./harness/http.ts";
 import { pageOwnerFor, PublishedPages } from "./published-pages.ts";
+import { PageLive } from "./page-live.ts";
 import { bannerName, escapeHtml, FRAME_PRELUDE, jsonBlock, markdownToHtml, pageDocument, parseReaderAssets, REPORT_SIZE_SOURCE, SLIDE_PRINT_MM, wrapperBanner, ANNOTATE_BRIDGE_SOURCE } from "./published-pages-render.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import {
@@ -977,8 +978,10 @@ describe("Download PDF (2026-10-28)", () => {
 describe("Annotate: threads on a published page (2026-10-28)", () => {
   const OWNER_ID = "pr_owner";
   const ANCHOR = { kind: "text", quote: "Rapport", prefix: "", suffix: "", path: "body > h1", tag: "h1" };
-  function threadRoutes(pages: PublishedPages, teams: Record<string, string[]> = {}) {
+  function threadRoutes(pages: PublishedPages, teams: Record<string, string[]> = {}, extra: { live?: PageLive; onComment?: (input: { by: string; text: string; reply: boolean }) => void } = {}) {
     return createPublishedPageRoutes({
+      ...(extra.live ? { live: extra.live } : {}),
+      ...(extra.onComment ? { onComment: extra.onComment } : {}),
       pages,
       owner: (auth) => auth.kind === "session" ? auth.session.principalId : undefined,
       isPerson: (auth) => auth.kind === "session" && Boolean(auth.session.principalId),
@@ -1072,5 +1075,61 @@ describe("Annotate: threads on a published page (2026-10-28)", () => {
     const { frame } = await read(pages, path, null);
     expect(frame!.body).toContain(ANNOTATE_BRIDGE_SOURCE);
     expect(String(frame!.headers["content-security-policy"])).toContain("connect-src 'none'");
+  });
+});
+
+describe("live annotations and presence (2026-10-28)", () => {
+  const ANCHOR = { kind: "text", quote: "Rapport", prefix: "", suffix: "", path: "body > h1", tag: "h1" };
+  function routesWith(pages: PublishedPages, live: PageLive, heard: Array<{ by: string; text: string; reply: boolean }>) {
+    return createPublishedPageRoutes({
+      pages,
+      owner: (auth) => auth.kind === "session" ? auth.session.principalId : undefined,
+      isPerson: (auth) => auth.kind === "session" && Boolean(auth.session.principalId),
+      origin: () => "https://sagax.example.com",
+      reachable: () => true,
+      now: () => now,
+      reader: (auth) => auth.kind === "session" && auth.session.principalId ? { principalId: auth.session.principalId, computerOwner: false } : null,
+      names: (ids) => Object.fromEntries(ids.map((id) => [id, `name of ${id}`])),
+      live,
+      onComment: ({ by, text, reply }) => heard.push({ by, text, reply }),
+    });
+  }
+
+  it("a reader who may annotate opens the stream and is seen; someone else gets the 404", async () => {
+    const { pages } = store();
+    const { id } = published(pages, "private", "pr_owner");
+    pages.setInvites(id, { people: ["pr_reader"], teams: [] }, "pr_owner");
+    const live = new PageLive();
+    const handler = routesWith(pages, live, []);
+    const { req, res } = request(`/api/pages/${id}/live`, "GET");
+    const frames: string[] = [];
+    res.write = ((chunk: unknown) => { frames.push(String(chunk)); return true; }) as typeof res.write;
+    await handler({ req, res, url: new URL(`http://x/api/pages/${id}/live`), path: `/api/pages/${id}/live`, method: "GET", auth: session("pr_reader"), json, readBody });
+    expect(res.getHeader("content-type")).toBe("text/event-stream");
+    expect(live.people(id)).toEqual([{ id: "pr_reader", name: "name of pr_reader" }]);
+    expect(frames.join("")).toContain("event: presence");
+    req.emit("close");
+    expect(live.people(id)).toEqual([]);
+    expect((await call(handler, session("pr_stranger"), "GET", `/api/pages/${id}/live`)).status).toBe(404);
+  });
+
+  it("a comment tells every open bar and the page's person, never for their own", async () => {
+    const { pages } = store();
+    const { id } = published(pages, "org", "pr_owner");
+    const live = new PageLive();
+    const heard: Array<{ by: string; text: string; reply: boolean }> = [];
+    const frames: string[] = [];
+    live.join(id, { id: "pr_owner", name: "O" }, { write: (frame: string) => { frames.push(frame); return true; }, end: () => undefined } as never);
+    const handler = routesWith(pages, live, heard);
+    const thread = (await call(handler, session("pr_reader"), "POST", `/api/pages/${id}/threads`, { anchor: ANCHOR, text: "À revoir" })).body!.threads[0];
+    expect(frames.at(-1)).toBe("event: threads\ndata: {}\n\n");
+    expect(heard).toEqual([{ by: "pr_reader", text: "À revoir", reply: false }]);
+    await call(handler, session("pr_owner"), "POST", `/api/pages/${id}/threads/${thread.id}/replies`, { text: "Fait" });
+    await call(handler, session("pr_reader"), "POST", `/api/pages/${id}/threads/${thread.id}/replies`, { text: "Merci" });
+    expect(heard.map((entry) => entry.text)).toEqual(["À revoir", "Merci"]);
+    expect(heard[1]!.reply).toBe(true);
+    const before = frames.length;
+    await call(handler, session("pr_reader"), "POST", `/api/pages/${id}/threads/${thread.id}/resolve`, { resolved: true });
+    expect(frames.length).toBe(before + 1);
   });
 });

@@ -50,7 +50,7 @@ function Quote({ anchor, text }: { anchor: PageQuote; text: (key: ReaderStringKe
   return <blockquote className="sr-quote">{anchor.kind === "text" ? words : `${text("onPart")}${words ? ` : ${words}` : ""}`}</blockquote>;
 }
 
-export function AnnotatePanel({ boot, pageId, frame, onClose }: { boot: ReaderBoot; pageId: string; frame: HTMLIFrameElement | null; onClose(): void }) {
+export function AnnotatePanel({ boot, pageId, frame, changes = 0, onClose }: { boot: ReaderBoot; pageId: string; frame: HTMLIFrameElement | null; changes?: number; onClose(): void }) {
   const text = useCallback((key: ReaderStringKey, values?: Record<string, string>) => readerText(boot.lang, key, values), [boot.lang]);
   const [answer, setAnswer] = useState<PageThreadsAnswer | null>(null);
   const [draft, setDraft] = useState<PageQuote | null>(null);
@@ -91,6 +91,15 @@ export function AnnotatePanel({ boot, pageId, frame, onClose }: { boot: ReaderBo
       send({ type: ANNOTATE_MARKS_MESSAGE, marks: [] });
     };
   }, [send, call]);
+
+  // someone changed the annotations (the live stream): read them again,
+  // quietly, keeping what this reader is writing
+  useEffect(() => {
+    if (!changes) return;
+    let live = true;
+    void readerApi<PageThreadsAnswer>(base).then((next) => { if (live) setAnswer(next); }, () => undefined);
+    return () => { live = false; };
+  }, [changes, base]);
 
   // what the frame tells: only from the page's own frame, every field checked
   useEffect(() => {

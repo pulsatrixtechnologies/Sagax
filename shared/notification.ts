@@ -30,7 +30,11 @@ export type NotifyKind =
   /** Someone reported a message another person wrote (App Store 1.2,
    * server/moderation.ts). Sent to the organization's admins, or a solo
    * server's owner, only (`audience`); `botId` and `threadId` are empty. */
-  | "report";
+  | "report"
+  /** Someone commented on, or replied on, a published page (2026-10-28,
+   * Annotate). Sent to the page's person only (`audience`), never for their
+   * own comment; opens the conversation the page came from. */
+  | "page-comment";
 
 export interface Notification {
   kind: NotifyKind;

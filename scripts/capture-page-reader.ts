@@ -20,6 +20,7 @@ import type { RequestAuth } from "../server/request-auth.ts";
 import * as routesModule from "../server/routes/published-pages.ts";
 import type { PageViewer, PublicPageOptions } from "../server/routes/published-pages.ts";
 import { PASS } from "../server/routes/table.ts";
+import { PageLive } from "../server/page-live.ts";
 
 const outDir = resolve(process.argv[2] ?? "captures");
 const prefix = process.argv[3] ?? "page-reader";
@@ -93,6 +94,7 @@ const apiRoutes = routesModule.createPublishedPageRoutes({
   origin: (req) => `http://${req.headers.host}`,
   reachable: () => true,
   ...({ reader: (auth: RequestAuth) => auth.kind === "session" && auth.session.principalId ? { principalId: auth.session.principalId, computerOwner: false } : null } as object),
+  live: new PageLive(),
   ...({ names: (ids: string[]) => Object.fromEntries(ids.map((id) => [id, id === OWNER ? "Page owner" : id === READER ? "Invited reader" : "Scout"])) } as object),
 } as Parameters<typeof routesModule.createPublishedPageRoutes>[0]);
 
@@ -150,7 +152,8 @@ try {
       const page = await context.newPage();
       page.on("pageerror", (error) => console.error(`[${person}/${scheme}] ${error.message}`));
       await page.goto(`${base}${viewPath}`);
-      await page.waitForLoadState("networkidle");
+      await page.waitForLoadState("load");
+      await page.waitForTimeout(500);
       await shot(page, `${person}-${scheme}`);
       if (person === "anon" && await page.locator("[data-reader-pdf]").count()) {
         // what Download PDF writes: the browser's print of the wrapper
@@ -174,6 +177,25 @@ try {
         await page.waitForSelector("[data-reader-draft]");
         await page.locator("[data-reader-draft] textarea").fill("Préciser l'échéancier.");
         await shot(page, `${person}-${scheme}-draft`);
+      }
+      if (person === "owner" && KIND === "html") {
+        // live: an invited reader has the page open and comments; the
+        // owner's bar shows them and the panel takes the comment at once
+        const other = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme: scheme, locale: "fr-CA", extraHTTPHeaders: { "accept-language": "fr-CA" } });
+        await other.addCookies([{ name: "who", value: "reader", url: base }]);
+        const readerPage = await other.newPage();
+        await readerPage.goto(`${base}${viewPath}`);
+        await page.waitForSelector("[data-reader-presence]");
+        await page.locator("[data-reader-annotate]").click();
+        await page.waitForSelector("[data-reader-panel] [data-thread]");
+        await readerPage.evaluate(async (id) => {
+          await fetch(`/api/pages/${id}/threads`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "Ajouter les chiffres de septembre ?",
+            anchor: { kind: "text", quote: "Demandes traitées", prefix: "128", suffix: "96 %", path: "body > div > div", tag: "div" } }) });
+        }, pageId);
+        await page.waitForFunction(() => document.querySelectorAll("[data-reader-panel] [data-thread]").length === 3);
+        await shot(page, `${person}-${scheme}-live`);
+        await other.close();
+        await page.locator("[data-reader-annotate]").click();
       }
       if (person === "owner") {
         const share = page.locator("[data-reader-share]");

@@ -1,12 +1,14 @@
-// The actions on the right of the reader's bar: Download PDF for every
-// reader; Annotate for anyone signed in who may read the page; Share only
-// for the page's own person (the server tells, shared/page-reader.ts
-// ReaderBoot.can).
+// The actions on the right of the reader's bar: who else has the page open
+// (avatars) and Annotate for anyone signed in who may read the page,
+// Download PDF for every reader, Share only for the page's own person (the
+// server tells, shared/page-reader.ts ReaderBoot.can).
 import { useCallback, useEffect, useState } from "react";
 import { FileDown, MessageSquareText, Share2 } from "lucide-react";
 
 import { readerText, type ReaderBoot } from "../../shared/page-reader";
+import { initialsOf } from "@/lib/page-share-plan";
 import { AnnotatePanel } from "./AnnotatePanel";
+import { othersHere, usePageLive } from "./live";
 import { downloadPdf } from "./print";
 import { ReaderShare } from "./ReaderShare";
 
@@ -32,8 +34,18 @@ export function ReaderActions({ boot }: { boot: ReaderBoot }) {
     document.body.classList.toggle("sr-panel-open", annotating);
   }, [annotating]);
   const closePanel = useCallback(() => setAnnotating(false), []);
+  const live = usePageLive(boot.can.annotate ? boot.pageId : undefined);
+  const others = othersHere(live.people, boot.me?.id);
   return (
     <>
+      {others.length > 0 && (
+        <div className="sr-presence" data-reader-presence aria-label={text("hereNow", { names: others.map((person) => person.name).join(", ") })}>
+          {others.slice(0, 4).map((person) => (
+            <span key={person.id} className="sr-presence-avatar" title={person.name}>{initialsOf(person.name)}</span>
+          ))}
+          {others.length > 4 && <span className="sr-presence-avatar sr-presence-more" title={others.slice(4).map((person) => person.name).join(", ")}>+{others.length - 4}</span>}
+        </div>
+      )}
       <button type="button" className="sr-bar-button" data-reader-pdf title={text("pdfHint")} onClick={downloadPdf}>
         <FileDown size={14} aria-hidden="true" />
         <span className="sr-bar-label">{text("pdf")}</span>
@@ -44,7 +56,7 @@ export function ReaderActions({ boot }: { boot: ReaderBoot }) {
           <span className="sr-bar-label">{text("annotate")}</span>
         </button>
       )}
-      {annotating && boot.pageId && <AnnotatePanel boot={boot} pageId={boot.pageId} frame={frame} onClose={closePanel} />}
+      {annotating && boot.pageId && <AnnotatePanel boot={boot} pageId={boot.pageId} frame={frame} changes={live.changes} onClose={closePanel} />}
       {boot.can.share && boot.pageId && (
         <div className="sr-anchor">
           <button type="button" className="sr-bar-button sr-bar-button-primary" data-reader-share aria-expanded={sharing} aria-haspopup="dialog" onClick={() => setSharing((open) => !open)}>
