@@ -20,12 +20,14 @@ const EXACT: Record<string, number> = {
   // 184: the organization library routes moved to server/routes/org-library.ts (#1388).
   // The file already had 188 of these guards (two over the previous pin of 186) before that move.
   // 185: +1 POST /api/internal/run-with-engine (#1477), kept in index.ts.
-  'path === "/': 185,
+  // 186: +1 POST /api/internal/page-comments (#1553), an internal route on the turn's capability, kept in index.ts.
+  'path === "/': 186,
   // 90: the package preview path moved with the organization library routes.
   // 91: the thread file pin and the bot history routes moved to server/routes (#1099), after the
   // library pin (#1112) and the history owner rule (#1107) had taken it over 93.
   // GET /api/bots/:id/send-state (#1259) lives in server/routes/bot-send-state.ts, so the count stays at 91.
-  "path.match(": 90,
+  // 91: +1 POST /api/groups/:id/leave (#1480, PR #1571), kept in index.ts with the group routes.
+  "path.match(": 91,
   "path.startsWith(": 14,
   ".exec(path)": 24,
   ".test(path)": 9,

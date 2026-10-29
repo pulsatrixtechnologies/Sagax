@@ -131,7 +131,7 @@ describe("navigate", () => {
 
   it("a room's column carries the marker the rule reads", () => {
     const group = readFileSync(new URL("../components/GroupView.tsx", import.meta.url), "utf8");
-    expect(group).toMatch(/<main data-room-view="" className="app-glow relative flex h-full/);
+    expect(group).toMatch(/<main data-room-view=""(?: data-[\w-]+="")* className="app-glow relative flex h-full/);
   });
 
   it("the in-app reduced-motion switch stops every animation and smooth scroll, as the system setting does", () => {
@@ -152,7 +152,8 @@ describe("navigate", () => {
     const read = (path: string) => readFileSync(new URL(path, import.meta.url), "utf8").replace(/\r\n/g, "\n");
     const sidebar = read("../components/Sidebar.tsx");
     expect(sidebar).toContain("const openConversation = () => navigate(() => {");
-    expect(sidebar).toContain('navigate(() => dispatch({ type: "switchTask", botId: bot.id, threadId }))');
+    // a thread row: the switch (or the plain select of the open thread) runs inside navigate
+    expect(sidebar).toMatch(/onSelect: \(task: Row\) => navigate\(\(\) => \{ if \(task\.threadId !== latest\.current\.threadId\) dispatch\(\{ type: "switchTask", botId, threadId: task\.threadId \}\);/);
     expect(sidebar).toContain('onClick={() => navigate(() => dispatch({ type: "select", id: group.id }))}');
     expect(read("../components/CommandPalette.tsx")).toContain("navigate(() => openBot(dispatch, action.bot, showThreads))");
     const app = read("../App.tsx");

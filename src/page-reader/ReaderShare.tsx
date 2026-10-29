@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Globe, Link2, Loader2, Lock, Users, X } from "lucide-react";
 
+import { copyText } from "@/lib/copy-text";
 import { initialsOf, needsLinkConfirm, pageReadingUrl, sharePlan, teamCandidates, withInvite, type ShareChange } from "@/lib/page-share-plan";
 import { groupPeopleCandidates } from "@/lib/private-threads";
 import type { OrgDirectory, OrgDirectoryPerson } from "@/lib/perspicax-org";
@@ -121,11 +122,12 @@ export function ReaderShare({ boot, pageId, onClose }: { boot: ReaderBoot; pageI
   const copy = async () => {
     const link = pageReadingUrl(page?.url) ?? pageReadingUrl(`${location.origin}${location.pathname}`);
     if (!link) return;
-    try {
-      await navigator.clipboard.writeText(link);
+    // copyText: the bridge fallback and a reported failure, never a silent
+    // direct clipboard write (src/lib/copy-text.guard.test.ts)
+    if (await copyText(link) === "copied") {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
-    } catch {
+    } else {
       setError(text("failed"));
     }
   };
