@@ -6,7 +6,9 @@
 // browser. The screen stays the person's to ask for: a turn that takes it is
 // announced in the conversation and shown with Stop across the app.
 // Real server, fake Claude CLI, a fake headless browser engine, a reachable
-// CUA descriptor and no Local VM, so Auto lands on this computer.
+// CUA connection handed over the desktop app's parent port (#1594) and no
+// Local VM, so Auto lands on this computer. The fake engine answers any
+// version: a mismatch with the pinned agent-browser only warns.
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,6 +20,7 @@ import { HOST_SCREEN_RULE } from "./surface.ts";
 import { HOST_CONTROL_NOTICE } from "../shared/host-control.ts";
 import { freePortBlock } from "./testing/ports.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { DESKTOP_PARENT_IMPORT, DESKTOP_PARENT_STDIO, handDesktopComputer } from "./testing/desktop-computer.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -72,16 +75,15 @@ describe("web work stays out of sight on this computer", () => {
     base = `http://127.0.0.1:${port}`;
     output = "";
     const browser = join(home, "agent-browser");
-    const proc = spawn(process.execPath, ["--import", pathToFileURL(join(ROOT, "server/testing/group-local-vm-hooks.mjs")).href, join(ROOT, "server/index.ts")], {
+    const proc = spawn(process.execPath, ["--import", pathToFileURL(join(ROOT, "server/testing/group-local-vm-hooks.mjs")).href, ...DESKTOP_PARENT_IMPORT, join(ROOT, "server/index.ts")], {
       cwd: ROOT, env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
         PATH: dirname(process.execPath), ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_DATA_DIR: data,
         APPDATA: join(home, "appdata"), LOCALAPPDATA: join(home, "localappdata"),
         TEMP: home, TMP: home, TMPDIR: home,
         SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1), SAGAX_STATIC_DIR: join(home, "static"), SAGAX_TEST_VM_STATE: stateFile,
-        SAGAX_USER_DATA: join(home, "user-data"),
         SAGAX_AGENT_BROWSER_PATH: browser, AGENT_BROWSER_EXECUTABLE_PATH: browser,
-      }, stdio: ["ignore", "pipe", "pipe"],
+      }, stdio: [...DESKTOP_PARENT_STDIO],
     });
     child = proc;
     proc.stdout!.on("data", chunk => { output += chunk; });
@@ -90,6 +92,11 @@ describe("web work stays out of sight on this computer", () => {
       if (proc.exitCode !== null) throw new Error(`server exited during boot:\n${output}`);
       try { return (await fetch(base + "/api/health")).ok; } catch { return false; }
     }, Boolean);
+    // This computer, as the desktop app hands it over once its CUA driver runs.
+    await handDesktopComputer(proc, {
+      mode: "embedded", status: "ready", socketPath: join(home, "cua.sock"),
+      mcpCommand: "/fixture/cua-driver", mcpArgs: ["mcp"], mcpEnv: {},
+    });
   }
   async function stop() {
     if (!child) return;
@@ -112,11 +119,6 @@ describe("web work stays out of sight on this computer", () => {
     mkdirSync(join(home, "static", "assets"), { recursive: true });
     writeFileSync(join(home, "static", "index.html"), "<title>Host screen web</title>");
     writeFileSync(join(home, "static", "assets", "test.css"), "body{}");
-    mkdirSync(join(home, "user-data"), { recursive: true });
-    writeFileSync(join(home, "user-data", "cua-connection.json"), JSON.stringify({
-      mode: "embedded", status: "ready", socketPath: join(home, "cua.sock"),
-      mcpCommand: "/fixture/cua-driver", mcpArgs: ["mcp"], mcpEnv: {},
-    }), { mode: 0o600 });
     // A headless browser engine that answers MCP and opens no window.
     writeFileSync(join(home, "agent-browser"), [
       "#!/usr/bin/env node",

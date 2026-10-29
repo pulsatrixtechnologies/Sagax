@@ -5,13 +5,14 @@
 // the fake ACP agent, (outside Windows) a stand-in browser engine and, for
 // Auto on macOS and Windows, a stand-in CUA driver for this computer.
 import { spawn, type ChildProcess } from "node:child_process";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, it } from "vitest";
 
 import { launchVerificationServer, runControlOmb, verificationServerEnvironment } from "../scripts/control-omb.ts";
 import { waitForExit } from "./testing/cleanup.ts";
+import { DESKTOP_PARENT_IMPORT, handDesktopComputer } from "./testing/desktop-computer.ts";
 
 const jsonl = (path: string) => existsSync(path)
   ? readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)) : [];
@@ -28,7 +29,6 @@ async function fixture(test: (f: any) => Promise<void>, { thisComputer = false }
     const launchesPath = join(dataDir, "launches.jsonl");
     const rpcPath = join(dataDir, "acp-rpc.jsonl");
     const acpDump = join(dataDir, "acp-dump.json");
-    const userData = join(dataDir, "user-data");
     const release = join(dataDir, "release");
     // Every Claude turn runs until `release` exists; record what each launch mounted.
     const claude = join(dataDir, "claude.mjs");
@@ -59,28 +59,28 @@ async function fixture(test: (f: any) => Promise<void>, { thisComputer = false }
       environment: { FAKE_ACP_MODELS: "fixture/warm", FAKE_ACP_RPC_APPEND_FILE: rpcPath, FAKE_ACP_DUMP: acpDump },
     };
     writeFileSync(configPath, JSON.stringify(config));
-    if (thisComputer) {
-      // What the desktop app publishes once its CUA driver is running.
-      mkdirSync(userData, { recursive: true });
-      writeFileSync(join(userData, "cua-connection.json"), JSON.stringify({
-        mode: "embedded", status: "ready", socketPath: join(dataDir, "cua.sock"),
-        mcpCommand: "/fixture/cua-driver", mcpArgs: ["mcp"], mcpEnv: {},
-      }), { mode: 0o600 });
-    }
     const log = openSync(logPath, "a", 0o600);
-    server = spawn(process.execPath, ["--experimental-strip-types", fileURLToPath(new URL("./index.ts", import.meta.url))], {
+    // This computer reaches the server the way the desktop app hands it over
+    // (#1594): a parent port, never a file or an environment variable.
+    server = spawn(process.execPath, ["--experimental-strip-types", ...(thisComputer ? DESKTOP_PARENT_IMPORT : []), fileURLToPath(new URL("./index.ts", import.meta.url))], {
       cwd: fileURLToPath(new URL("..", import.meta.url)),
       env: {
         ...verificationServerEnvironment({ FAKE_CLAUDE_MODE: "hang", FAKE_CLAUDE_RELEASE: release }, dataDir, Number(new URL(url).port)),
         ...(withBrowser ? { SAGAX_AGENT_BROWSER_PATH: browser } : {}),
-        ...(thisComputer ? { SAGAX_USER_DATA: userData } : {}),
       },
-      stdio: ["ignore", log, log],
+      stdio: thisComputer ? ["ignore", log, log, "ipc"] : ["ignore", log, log],
     });
     closeSync(log);
     await expect.poll(async () => {
       try { return (await fetch(url + "/api/health", { signal: AbortSignal.timeout(1_000) })).ok; } catch { return false; }
     }, { timeout: 20_000 }).toBe(true);
+    if (thisComputer) {
+      // What the desktop app hands over once its CUA driver is running.
+      await handDesktopComputer(server, {
+        mode: "embedded", status: "ready", socketPath: join(dataDir, "cua.sock"),
+        mcpCommand: "/fixture/cua-driver", mcpArgs: ["mcp"], mcpEnv: {},
+      });
+    }
 
     const cli = (...args: string[]) => runControlOmb([...args, "--url", url]) as Promise<any>;
     const api = async (method: string, path: string, body?: unknown, token?: string) => {
