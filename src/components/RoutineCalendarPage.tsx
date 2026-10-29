@@ -62,7 +62,7 @@ import { RoutineAwayBanner } from "@/components/routines/RoutineAwayBanner";
 import { canRunRoutineNow, routineRunInFlight } from "@/components/routines/RunNowButton";
 import { CronScheduleFields, CronSchedulePreview } from "@/components/routines/CronScheduleFields";
 import { cronChoiceFor, cronDraftFor, cronEditorValue, isCronChoice, type CronChoice } from "@/components/routines/cron-editor";
-import { routineAutoPauseChoices, routineAutoPausedText, routineAutoPauseOption, routineDateTime, routineRunError, routineRunLabel, upcomingRoutines } from "@/lib/routine-display";
+import { routineAutoPauseChoices, routineAutoPausedText, routineAutoPauseOption, routineDateTime, routineRunError, routineRunLabel, routineWeekRunsText, scheduleRepeatsEventDate, upcomingRoutines } from "@/lib/routine-display";
 import { ROUTINE_AUTO_PAUSE_DEFAULT, routineAutoPauseAfter } from "../../shared/routine-auto-pause";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { copyText } from "@/lib/copy-text";
@@ -1713,7 +1713,8 @@ export function EventDetails({
             <div className="text-[12.5px] text-ink-secondary">
               {niceDate(item.at)} · {niceTime(item.at)}{isCall ? ` - ${niceTime(item.at + item.durationMinutes * 60_000)}` : ""}
             </div>
-            {(routine || call) && <div className="mt-1 flex items-start gap-1.5">
+            {/* #1516: a one-time event's schedule is the date just above; say it once. */}
+            {(routine || call) && !scheduleRepeatsEventDate((routine ?? call)!.schedule, item.at) && <div className="mt-1 flex items-start gap-1.5">
               <div data-schedule-label title={scheduleRawCron((routine ?? call)!.schedule) ?? undefined} className="min-w-0 flex-1 text-[11.5px] text-ink-secondary">{scheduleLabel((routine ?? call)!.schedule)}</div>
               {routine?.schedule.type === "cron" && <button type="button" data-copy-cron title={t("routines.copyCron")} aria-label={t("routines.copyCron")} onClick={() => { if (routine.schedule.type === "cron") void copyText(routine.schedule.expression); }} className="shrink-0 rounded-md p-1 text-ink-secondary hover:bg-raised hover:text-ink"><Copy size={13} /></button>}
             </div>}
@@ -1744,7 +1745,7 @@ export function EventDetails({
           {attachments.length > 0 && <div className="flex items-start gap-3"><Paperclip size={17} className="mt-1 shrink-0 text-ink-secondary" /><div className="min-w-0 flex-1 space-y-2"><AttachmentChips attachments={attachments} />{call && <div className="text-[11px] leading-relaxed text-ink-secondary">{call.botIds.length > 1 ? t("routineCalendar.detailRefsShared") : t("routineCalendar.detailRefsStay")}</div>}</div></div>}
           {!isCall && <div className="flex items-start gap-3"><Clock3 size={17} className="mt-1 shrink-0 text-ink-secondary" /><div><div className="text-[11px] font-medium uppercase tracking-wider text-ink-secondary">{t("routines.drawer.runLimit")}</div><div className="mt-1 text-[12.5px] text-ink">{safetyLimit == null ? t("routineCalendar.noTimeLimit") : t("routineCalendar.stopsAfter", { duration: durationLabel(safetyLimit) })}</div></div></div>}
           {routine && !routine.enabled && routine.autoPaused && <div data-routine-auto-paused={routine.autoPaused.failures} className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2.5 text-[11.5px] text-warning"><CircleAlert size={15} className="mt-0.5 shrink-0" /><span className="min-w-0">{routineAutoPausedText(routine.autoPaused.failures)} · {routineDateTime(routine.autoPaused.at)}</span></div>}
-          {routine?.weekRuns && <div data-routine-week-runs className="text-[11.5px] text-ink-secondary">{t("routines.weekRuns", routine.weekRuns)}</div>}
+          {routine?.weekRuns && <div data-routine-week-runs className="text-[11.5px] text-ink-secondary">{routineWeekRunsText(routine.weekRuns)}</div>}
           {run && <div role="status" aria-live="polite" className="rounded-xl border border-hairline/40 bg-inset p-3"><div className="flex items-center gap-2 text-[12px] font-medium text-ink">{run.status === "running" && <Loader2 size={13} className="animate-spin text-accent" />}{routineRunLabel(run)}</div>{run.output && <div className="mt-2 whitespace-pre-wrap text-[11.5px] leading-relaxed text-ink-secondary">{run.output}</div>}{run.error && <div className="mt-2 text-[11.5px] text-danger">{routineRunError(run.error)}</div>}{run.autoPaused && <div data-run-auto-paused className="mt-2 text-[11.5px] font-medium text-warning">{routineAutoPausedText(run.autoPaused.failures)}</div>}</div>}
           {run?.attention && <div className="flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2.5 text-warning"><CircleAlert size={15} className="mt-0.5 shrink-0" /><div className="min-w-0 whitespace-pre-wrap text-[11.5px] leading-relaxed">{run.attention}</div></div>}
           {run?.status === "waiting" && !run.attention && <div className="rounded-xl border border-accent/30 bg-accent/10 px-3 py-2.5 text-[11.5px] text-accent-text">{t("routineCalendar.runWaiting")}</div>}

@@ -512,6 +512,38 @@ posixOnly("Perspicax organization, slice 6: routines in their person's name", ()
     expect(goal.body.routine.suspended).toBeUndefined();
   }, 60_000);
 
+  it("#1516: a member's team goal runs in the room's visible conversation and is in their run log", async () => {
+    bob = await signIn(BOB);
+    const lead = await api("POST", "/api/bots", bob, { name: "Pixel" });
+    expect(lead.status, lead.text).toBe(201);
+    const room = await api("POST", "/api/groups", bob, { name: "Greeting room", memberIds: [lead.body.bot.id], setup: { bulletin: "", defaultResponder: { kind: "everyone" } } });
+    expect(room.status, room.text).toBe(201);
+    const group = room.body.group as { id: string; threadId: string };
+    const schedule = { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 };
+    const goal = await api("POST", "/api/routines", bob, { name: "Say hello", botId: lead.body.bot.id, prompt: "Everyone say hello.", target: "room-goal", groupId: group.id, enabled: true, schedule });
+    expect(goal.status, goal.text).toBe(201);
+    const stream = await openStream(bob);
+    const started = await api("POST", `/api/routines/${goal.body.routine.id}/run`, bob);
+    expect(started.status, started.text).toBe(201);
+    const runId = started.body.run.id as string;
+    // the run works in the room's own conversation, where its people read it
+    await waitFor(async () => {
+      const runs = (await api("GET", "/api/routines", bob)).body.runs as Array<{ id: string; threadId?: string }>;
+      return runs.find((run) => run.id === runId)?.threadId === group.threadId;
+    });
+    const transcript = await api("GET", `/api/threads/${group.threadId}/messages`, bob);
+    expect(JSON.stringify(transcript.body)).toContain("Everyone say hello.");
+    // the member's live stream carries the run, so the run log shows it at once
+    const runFrames = stream.text().split("\n").filter((line) => line.startsWith("data: "))
+      .flatMap((line) => { try { return [JSON.parse(line.slice(6)) as { kind?: string; run?: { id?: string } }]; } catch { return []; } })
+      .filter((frame) => frame.kind === "routine.run" && frame.run?.id === runId);
+    stream.close();
+    expect(runFrames.length).toBeGreaterThan(0);
+    // and the run log lists it, for the member who owns the routine
+    const listed = (await api("GET", "/api/routines", bob)).body.runs as Array<{ id: string; routineId: string }>;
+    expect(listed.map((run) => run.id)).toContain(runId);
+  }, 120_000);
+
   it("a Perspicax that cannot issue a delegation only skips the run: never paused, no card", async () => {
     idp.tamper = { noDelegationExchange: true };
     try {

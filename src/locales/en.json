@@ -5685,6 +5685,7 @@
   "routines.searchLogs": "Search run logs",
   "routines.showAll": "Show all routines",
   "routines.weekRuns": "{ok} of {total} runs OK this week",
+  "routines.weekRunsOne": "{ok} of 1 run OK this week",
   "routines.retried.stalled": "Retried after the engine stalled · {status}",
   "routines.retried.restarted": "Retried after Sagax restarted · {status}",
   "routines.retried.rate_limited": "Retried after a rate limit · {status}",

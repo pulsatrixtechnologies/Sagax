@@ -141,3 +141,14 @@ export function routineAutoPauseOption(count: number): string {
   if (count === 0) return t("routines.autoPause.never");
   return count === 1 ? t("routines.autoPause.optionOne") : t("routines.autoPause.option", { count });
 }
+
+/** #1516: "1 run" in the singular, the count of its week otherwise. */
+export function routineWeekRunsText(weekRuns: { ok: number; total: number }): string {
+  return t(weekRuns.total === 1 ? "routines.weekRunsOne" : "routines.weekRuns", weekRuns);
+}
+
+/** #1516: a one-time event's schedule says the very date and time its
+ * details already show, so the details leave it out. */
+export function scheduleRepeatsEventDate(schedule: { type: string; at?: number }, at: number): boolean {
+  return schedule.type === "once" && schedule.at === at;
+}
