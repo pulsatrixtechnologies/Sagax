@@ -39,6 +39,8 @@ export function paysWithText(
   // "not connected" (the Grok lockout: a logout must not say "not installed").
   if (!engine.installed && !engineConnectable(engine)) return t("myEngines.notInstalled");
   if (engine.installed) {
+    // #1533: a sign-in the provider refused since is not "connected"
+    if (engine.subscription?.signedIn && engine.subscription.expired) return t("engineConnect.signInExpired");
     if (engine.myTurns === "subscription") return t("engineConnect.paysWith.subscription");
     if (engine.myTurns === "key") return t("engineConnect.paysWith.key");
     if (engine.myTurns === "org-key") return t("engineConnect.paysWith.orgKey");
@@ -55,14 +57,16 @@ export async function signOutMyEngine(instanceId: string): Promise<void> {
 /** The card has something to show besides the status line and Disconnect:
  * a Connect button, or the link to the person's keys in Perspicax. */
 export function engineConnectHasAction(engine: MyEngine): boolean {
-  const { supported, signedIn } = engine.subscription;
+  const { supported, signedIn, expired } = engine.subscription;
   if (engineUnavailable(engine)) return false;
+  if (signedIn && expired && supported) return true;
   return !signedIn && (supported || keyProviderDriver(engine.driver));
 }
 
 /** The `data-pays-with` marker for the status line. */
 function paysWithState(engine: MyEngine): string {
   if (engineUnavailable(engine)) return "not-available";
+  if (engine.installed && engine.subscription.signedIn && engine.subscription.expired) return "expired";
   if (!engine.installed && !(engine.subscription.supported || keyProviderDriver(engine.driver))) return "not-installed";
   return engine.installed ? engine.myTurns : "none";
 }
@@ -93,7 +97,7 @@ export function EngineConnect({ engine, issuer, onChanged, className, statusLine
   const [error, setError] = useState("");
   const loginBase = `/api/me/engines/${encodeURIComponent(engine.instanceId)}/login`;
   const name = connectName(engine);
-  const { supported, signedIn } = engine.subscription;
+  const { supported, signedIn, expired } = engine.subscription;
   const keysApply = !engineUnavailable(engine) && !signedIn && keyProviderDriver(engine.driver);
 
   const disconnect = async () => {
@@ -116,7 +120,28 @@ export function EngineConnect({ engine, issuer, onChanged, className, statusLine
           on the bare `installed` probe: a signed-out subscription engine must
           always offer an enabled Connect (the Grok lockout, where a logout read
           as "not installed" and disabled the only way back in). */}
-      {!engineUnavailable(engine) && supported && (signedIn ? showDisconnect && (
+      {/* #1533: the provider refused this sign-in since: say so and offer
+          the same sign-in again, Disconnect still there */}
+      {!engineUnavailable(engine) && supported && signedIn && expired && (
+        <div data-engine-expired className="flex min-w-0 flex-col gap-1.5">
+          <span role="status" className="text-[12.5px] text-warning">{t("engineConnect.signInExpiredHint", { name })}</span>
+          <div className="[&>div]:mt-0">
+            {engine.driver === "claudeAgent"
+              ? <ClaudeSignIn key={engine.instanceId} instanceId={engine.instanceId} base={loginBase} onSignedIn={onChanged} label={t("engineConnect.reconnect", { name })} />
+              : engine.driver === "codex"
+                ? <DeviceSignIn key={engine.instanceId} instanceId={engine.instanceId} base={loginBase} onSignedIn={onChanged} />
+                : <MyEngineAccess key={engine.instanceId} engine={engine} label={t("engineConnect.reconnect", { name })} onChanged={() => { void onChanged(); }} />}
+          </div>
+          {showDisconnect && (
+            <button type="button" disabled={busy} onClick={() => void disconnect()}
+              className="flex w-fit shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[12px] text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-50">
+              {busy ? <Loader2 size={12} className="animate-spin" aria-hidden="true" /> : <LogOut size={12} aria-hidden="true" />}
+              {t("engineConnect.disconnect")}
+            </button>
+          )}
+        </div>
+      )}
+      {!engineUnavailable(engine) && supported && !(signedIn && expired) && (signedIn ? showDisconnect && (
         <div data-engine-connected className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <span className="flex items-center gap-1.5 text-[12.5px] text-success"><Check size={13} aria-hidden="true" />{t("engineConnect.connected")}</span>
           <button type="button" disabled={busy} onClick={() => void disconnect()}

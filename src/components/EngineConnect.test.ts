@@ -70,6 +70,22 @@ describe("EngineConnect", () => {
     expect(html).not.toContain("data-engine-keys-link");
   });
 
+  it("#1533: a sign-in the provider refused reads Reconnection required with Reconnect Claude, never Connected", () => {
+    const expired = engine({ instanceId: "claude", driver: "claudeAgent", displayName: "Claude", subscription: { supported: true, signedIn: true, expired: true }, myTurns: "subscription" });
+    const html = render(expired);
+    expect(html).toContain('data-pays-with="expired"');
+    expect(html).toContain("Reconnection required");
+    expect(html).toContain("data-engine-expired");
+    expect(html).toContain("Reconnect Claude");
+    expect(html).toContain("Disconnect");
+    expect(html).not.toContain("data-engine-connected");
+    expect(html).not.toContain(">Connected<");
+    expect(engineConnectHasAction(expired)).toBe(true);
+    setLocale("fr");
+    expect(render(expired)).toContain("Reconnexion requise");
+    expect(render(expired)).toContain("Reconnecter Claude");
+  });
+
   it("in the model window: no status line and no Connected/Disconnect, which the window shows elsewhere (2026-10-15)", () => {
     const signedIn = engine({ subscription: { supported: true, signedIn: true }, myTurns: "subscription" });
     const bare = (value: MyEngine) => renderToStaticMarkup(createElement(EngineConnect, { engine: value, issuer, onChanged: () => {}, statusLine: false, disconnect: false }));

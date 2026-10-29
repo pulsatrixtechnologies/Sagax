@@ -46,6 +46,9 @@ export interface AccessCardLines {
   plain?: boolean;
   /** #1137: offer to choose a model the viewer can pay for. */
   chooseModel?: boolean;
+  /** The sign-in button's words, when not "Sign in with my subscription"
+   * (#1533: "Reconnect Claude"). */
+  signInLabel?: string;
 }
 
 const same = (a: string | null | undefined, b: string | null | undefined) => Boolean(a && b && a.toLowerCase() === b.toLowerCase());
@@ -84,6 +87,11 @@ export function accessCardLines(access: WireAccessCard, viewer: AccessViewer): A
   // routine; a card from before payerPrincipalId is the owner's (as on the server)
   const payer = access.payerPrincipalId || access.ownerPrincipalId;
   const mine = same(viewer.principalId, payer);
+  // #1533: the person's own subscription sign-in expired: they reconnect it
+  if (access.cause === "sign_in_expired") {
+    if (!mine) return { text: t("access.noAccess.other", { engine }) };
+    return { text: t("access.signInExpired", { bot, engine }), signIn: true, signInLabel: t("engineConnect.reconnect", { name: engine }) };
+  }
   const admin = viewer.admin ? { hint: t("access.noAccess.admin.orgKey") } : {};
   // the person it is about, an admin: the organization's key is theirs to set too
   const mineAdmin = viewer.admin ? { hint: t("access.noAccess.mine.admin") } : {};
@@ -145,7 +153,7 @@ export function AccessCard({ access, viewer, onSignIn }: { access: WireAccessCar
             )}
             {lines.signIn && onSignIn && (
               <button type="button" className="ui-button min-h-[44px] w-fit md:min-h-0" onClick={onSignIn} data-access-sign-in>
-                {t("access.signIn")}
+                {lines.signInLabel ?? t("access.signIn")}
               </button>
             )}
             {lines.link && (

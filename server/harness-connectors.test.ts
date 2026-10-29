@@ -275,6 +275,17 @@ describe("GET /api/me/harness-connectors", () => {
     const solo = harness({ organization: false });
     expect((await solo.call({ method: "GET", path: "/api/me/harness-connectors", auth: session(BOB, ["client"]) })).body.claude.reason).toBe("not_operator");
   });
+  it("#1533: a saved sign-in that Claude says is signed out is noted as expired (organization only)", async () => {
+    const signedOut: string[] = [];
+    const none = { read: async () => ({ auth: "none" as const, connectors: [], at: 1 }) };
+    const h = harness({ inventory: none, onSignedOut: (id) => signedOut.push(id) });
+    const answer = await h.call({ method: "GET", path: "/api/me/harness-connectors", auth: session(ADA, ["client"]) });
+    expect(answer.body.claude.reason).toBe("not_signed_in");
+    expect(signedOut).toEqual([ADA]);
+    // no sign-in of their own: nothing to note
+    await h.call({ method: "GET", path: "/api/me/harness-connectors", auth: session(BOB, ["client"]) });
+    expect(signedOut).toEqual([ADA]);
+  });
   it("refuses a caller who is not a person", async () => {
     const h = harness({ principalFor: () => "" });
     expect((await h.call({ method: "GET", path: "/api/me/harness-connectors", auth: session(ADA, ["client"]) })).status).toBe(403);

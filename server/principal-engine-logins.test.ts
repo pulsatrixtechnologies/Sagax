@@ -40,6 +40,26 @@ function harness(options: { onClaudeLinked?: (principalId: string) => void; prob
 }
 
 describe("PrincipalEngineLogins", () => {
+  it("#1533: a refused sign-in reads as expired until the person signs in again, and still pays", async () => {
+    const { logins, made } = harness();
+    // nothing to expire before a sign-in
+    logins.markExpired(A, "claudeAgent");
+    expect(logins.expired(A, "claudeAgent")).toBe(false);
+    await logins.start(A, "claude", "session-a");
+    await made[0]!.finish();
+    expect(logins.expired(A, "claudeAgent")).toBe(false);
+    logins.markExpired(A, "claudeAgent");
+    expect(logins.expired(A, "claudeAgent")).toBe(true);
+    // the payer order does not change by itself
+    expect(logins.signedIn(A, "claudeAgent")).toBe(true);
+    expect(logins.expired(B, "claudeAgent")).toBe(false);
+    // signing in again clears it
+    await logins.start(A, "claude", "session-a");
+    await made.at(-1)!.finish();
+    expect(logins.expired(A, "claudeAgent")).toBe(false);
+    expect(logins.signedIn(A, "claudeAgent")).toBe(true);
+  });
+
   it("signs a person in within their own directory, marks it, and signs out", async () => {
     const { dataDir, logins, made } = harness();
     expect(logins.signedIn(A, "codex")).toBe(false);
