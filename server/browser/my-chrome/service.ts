@@ -4,8 +4,21 @@ import { MyChromeGate, type MyChromeGateStatus } from "./gate.ts";
 import { locateChrome } from "./locate.ts";
 import { MyChromeMemory } from "./pilot.ts";
 import { MY_CHROME_SHELL_NOTE } from "./shell.ts";
+import { MY_CHROME_RECORDING_IDLE_MS, MyChromeRecording, type MyChromeRecordingStatus } from "./recorder.ts";
 import { MyChromeSettingsStore, type MyChromeSettings } from "./settings.ts";
 import { myChromeSiteAllows } from "./sites.ts";
+import type { TeachReplay, TeachStep } from "../../../shared/teach-recording.ts";
+
+/** A recording handed back on Stop: the steps, and where the path is
+ * replayed unless the person changes it: out of sight in the bot's own
+ * browser (web work stays out of sight, AGENTS.md 2026-10-28); the person
+ * picks My Chrome when the task needs their signed-in session. */
+export interface MyChromeRecordingResult {
+  steps: TeachStep[];
+  recordedAt: string;
+  replay: TeachReplay;
+  ended: MyChromeRecordingStatus["ended"];
+}
 
 export interface MyChromeStatus {
   /** This server offers My Chrome at all (desktop; an organization server only by hand). */
@@ -37,6 +50,8 @@ export class MyChromeService {
   private readonly options: MyChromeServiceOptions;
   private gate: MyChromeGate | null = null;
   private starting: Promise<MyChromeGate> | null = null;
+  /** The one recording of this computer's person (one Chrome, one person). */
+  private recording: MyChromeRecording | null = null;
 
   constructor(options: MyChromeServiceOptions) {
     this.options = options;
@@ -108,6 +123,69 @@ export class MyChromeService {
     return this.starting;
   }
 
+  /** Why the person cannot record in their Chrome now, or null. Sites are
+   * not needed: the person records their own work, on any site. */
+  recordingUnavailable(): string | null {
+    const settings = this.settings.get();
+    if (!this.offered) return "My Chrome is not offered on an organization server.";
+    if (!settings.enabled) return "My Chrome is off. Turn it on in Settings > Experimental > My Chrome.";
+    if (settings.stopped) return "My Chrome is stopped. Resume it in Settings first.";
+    return null;
+  }
+
+  private liveRecording(now = Date.now()): MyChromeRecording | null {
+    const recording = this.recording;
+    if (recording && recording.ended === null && now - recording.touchedAt > MY_CHROME_RECORDING_IDLE_MS) {
+      void recording.stop("idle");
+    }
+    // an idle recording is dropped whole: nothing is kept past the idle time
+    if (recording && recording.ended === "idle") { this.recording = null; return null; }
+    return recording;
+  }
+
+  /** Open a tab in the person's Chrome and record what they show there. A
+   * recording still open is replaced (its steps are dropped). */
+  async startRecording(url: unknown): Promise<MyChromeRecordingStatus> {
+    const reason = this.recordingUnavailable();
+    if (reason) throw new Error(reason);
+    const start = typeof url === "string" ? url.trim() : "";
+    if (start && !/^https?:\/\//i.test(start)) throw new Error("Start from an http or https address, or leave it empty.");
+    await this.recording?.stop("person");
+    this.recording = null;
+    const gate = await this.ensureGate();
+    const recording = new MyChromeRecording({ onChange: () => this.options.onChange?.() });
+    await recording.start((onEvent) => gate.openRecorderTab(onEvent), start);
+    this.recording = recording;
+    return recording.status();
+  }
+
+  recordingStatus(): MyChromeRecordingStatus | null {
+    return this.liveRecording()?.status() ?? null;
+  }
+
+  /** A narration note at this point of the recording. */
+  recordingNote(text: unknown): MyChromeRecordingStatus | null {
+    const recording = this.liveRecording();
+    if (!recording) return null;
+    recording.note(text);
+    return recording.status();
+  }
+
+  /** Stop: the steps once, and the recording is gone. */
+  async stopRecording(): Promise<MyChromeRecordingResult | null> {
+    const recording = this.liveRecording();
+    this.recording = null;
+    if (!recording) return null;
+    await recording.stop("person");
+    return { steps: recording.result(), recordedAt: recording.startedAt, replay: "background", ended: recording.ended };
+  }
+
+  discardRecording(): void {
+    const recording = this.recording;
+    this.recording = null;
+    void recording?.stop("person");
+  }
+
   /** The one-click Stop: every engine connection to the person's Chrome ends
    * now, and stays refused until they resume. */
   async stop(): Promise<MyChromeStatus> {
@@ -156,6 +234,7 @@ export class MyChromeService {
   }
 
   async close(): Promise<void> {
+    this.discardRecording();
     const gate = this.gate;
     this.gate = null;
     await gate?.close();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseSkillMd, scanSkillText } from "./skill-md.ts";
-import { buildTeachSkill, cleanPageText, cleanPoint, cleanWindowName, isSecretField, looksLikeSecret, sanitizeTeachUrl, teachSkillName, type TeachStep } from "./teach-recording.ts";
+import { buildTeachSkill, cleanPageText, cleanPoint, cleanSelector, cleanWindowName, isSecretField, looksLikeSecret, sanitizeTeachUrl, teachReplayPlan, teachSites, teachSkillName, type TeachStep } from "./teach-recording.ts";
 
 describe("teach recording privacy", () => {
   it("treats password, one-time code, card and unknown fields as secret", () => {
@@ -104,5 +104,46 @@ describe("a recording of the whole computer (parity R7, system 11)", () => {
     expect(cleanWindowName("Compte 4510 2233 8890 - Banque")).toBe("");
     expect(cleanWindowName("Client 00123456 - CRM")).toBe("");
     expect(cleanWindowName("Report 2026 - Calc")).toBe("Report 2026 - Calc");
+  });
+});
+
+describe("a path shown in the person's Chrome (2026-10-29)", () => {
+  const steps: TeachStep[] = [
+    { id: "1", kind: "open", url: "https://app.example.com/start" },
+    { id: "2", kind: "type", url: "https://app.example.com/form", target: { role: "combobox", name: "Plan", tag: "select", selector: "#plan" }, text: "Pro" },
+    { id: "3", kind: "type", url: "https://app.example.com/form", target: { role: "textbox", name: "Password", tag: "input", selector: "input[name=\"password\"]" }, secret: true },
+    { id: "4", kind: "click", url: "https://other.example.org/done", target: { role: "button", name: "Save", tag: "button", selector: "#save" } },
+  ];
+
+  it("keeps a recorded selector only when it is a plain bounded line", () => {
+    expect(cleanSelector("#save")).toBe("#save");
+    expect(cleanSelector("x".repeat(201))).toBe("");
+    expect(cleanSelector("a`b")).toBe("");
+    expect(cleanSelector("[data-token=\"ghp_abcdefghijklmnopqrstuvwxyz123456\"]")).toBe("");
+  });
+
+  it("lists the sites in order and plans the replay: background shows nothing, My Chrome is announced first with its banner", () => {
+    expect(teachSites(steps)).toEqual(["https://app.example.com", "https://other.example.org"]);
+    expect(teachReplayPlan("background", steps)).toEqual({ where: "background", announce: null, indicator: false, sites: ["https://app.example.com", "https://other.example.org"] });
+    const plan = teachReplayPlan("my-chrome", steps);
+    expect(plan.indicator).toBe(true);
+    expect(plan.announce).toContain("https://app.example.com, https://other.example.org");
+    expect(plan.announce).toContain("Stop");
+  });
+
+  it("writes where to replay, a choice for a list, selector hints and the vault for secrets", () => {
+    const { markdown } = buildTeachSkill({ title: "Change plan", description: "", steps, replay: "my-chrome" });
+    expect(markdown).toContain("in their own Chrome");
+    expect(markdown).toContain("## Where to Replay");
+    expect(markdown).toContain('In the list "Plan" (page selector when it was shown: "#plan"), choose "Pro".');
+    expect(markdown).toContain("use fill_credential when the vault holds this site's sign-in");
+    expect(markdown).toContain('Click the button "Save" on https://other.example.org/done (page selector when it was shown: "#save").');
+    expect(markdown.indexOf("I am about to drive your Chrome")).toBeLessThan(markdown.indexOf("## Procedure"));
+    const background = buildTeachSkill({ title: "Change plan", description: "", steps, replay: "background" }).markdown;
+    expect(background).toContain("Do not use My Chrome or this computer's screen for this task.");
+    // a path shown in the bot's own browser keeps its old wording
+    const plain = buildTeachSkill({ title: "Change plan", description: "", steps }).markdown;
+    expect(plain).not.toContain("Where to Replay");
+    expect(plain).toContain("ask the person for it now");
   });
 });

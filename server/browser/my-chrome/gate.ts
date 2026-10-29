@@ -98,6 +98,22 @@ export interface MyChromeGateStatus {
 
 class GateRefusal extends Error {}
 
+/** A tab the gate opened for Sagax's own recorder (recorder.ts), on the
+ * gate's connection to the person's Chrome. Never handed to an engine: no
+ * bot reaches it, and it is not in the status as a bot's tab. */
+export interface MyChromeRecorderTab {
+  targetId: string;
+  sessionId: string;
+  send(method: string, params?: Json): Promise<Json>;
+  /** Stop listening and detach. The tab stays open, the person's own. */
+  release(): void;
+}
+
+/** Events of a recorder tab: its session's events, its own
+ * Target.targetDestroyed, and "Sagax.closed" when the connection to Chrome
+ * ends (Stop, Chrome closed). */
+export type MyChromeRecorderEvent = (method: string, params: Json) => void;
+
 /** The banner, in an isolated world the page's own scripts cannot reach. Its
  * Stop button calls a binding that exists only in that world, and only a
  * person's real click (isTrusted) counts. Hidden from the accessibility tree,
@@ -171,6 +187,8 @@ export class MyChromeGate {
    * Chrome sends before its answer. */
   private readonly attaching = new Map<string, Client | "gate">();
   private readonly notes = new Map<string, string[]>();
+  /** Recorder tabs by their session (openRecorderTab). */
+  private readonly recorders = new Map<string, { targetId: string; onEvent: MyChromeRecorderEvent }>();
   private nextId = 1;
   private nextClient = 1;
   private stoppedFlag = false;
@@ -263,6 +281,32 @@ export class MyChromeGate {
   resume(): void {
     this.stoppedFlag = false;
     this.options.onChange?.();
+  }
+
+  /** A new tab in the person's Chrome for Sagax's recorder: it shows in
+   * front, blank, with one session of the gate's own. */
+  async openRecorderTab(onEvent: MyChromeRecorderEvent): Promise<MyChromeRecorderTab> {
+    if (this.stoppedFlag) throw new Error("The person stopped My Chrome.");
+    await this.chromeSocket();
+    const created = await this.gateSend("Target.createTarget", { url: "about:blank" });
+    const targetId = String(created.targetId ?? "");
+    if (!targetId) throw new Error("Chrome did not open a tab.");
+    this.attaching.set(targetId, "gate");
+    let attached: Json;
+    try { attached = await this.gateSend("Target.attachToTarget", { targetId, flatten: true }); }
+    finally { if (this.attaching.get(targetId) === "gate") this.attaching.delete(targetId); }
+    const sessionId = String(attached.sessionId ?? "");
+    if (!sessionId) throw new Error("Chrome did not attach to the tab.");
+    this.recorders.set(sessionId, { targetId, onEvent });
+    return {
+      targetId,
+      sessionId,
+      send: (method, params = {}) => this.gateSend(method, params, sessionId),
+      release: () => {
+        if (!this.recorders.delete(sessionId)) return;
+        if (this.chrome) this.gateSend("Target.detachFromTarget", { sessionId }).catch(() => undefined);
+      },
+    };
   }
 
   /** Close the listener and Chrome connection (server shutdown). */
@@ -530,6 +574,11 @@ export class MyChromeGate {
     this.sessions.clear();
     this.guards.clear();
     this.attaching.clear();
+    const recorders = [...this.recorders.values()];
+    this.recorders.clear();
+    for (const recorder of recorders) {
+      try { recorder.onEvent("Sagax.closed", {}); } catch { /* the recorder's own trouble */ }
+    }
     this.options.onChange?.();
   }
 
@@ -562,6 +611,8 @@ export class MyChromeGate {
     if (typeof message.method !== "string") return;
     const params = (message.params ?? {}) as Json;
     if (message.sessionId) {
+      const recorder = this.recorders.get(message.sessionId);
+      if (recorder) { recorder.onEvent(message.method, params); return; }
       const guarded = this.guards.get(message.sessionId);
       if (guarded) { this.guardEvent(guarded, message.method, params); return; }
       const session = this.sessions.get(message.sessionId);
@@ -614,6 +665,13 @@ export class MyChromeGate {
 
   private browserEvent(method: string, params: Json): void {
     if (method === "Target.attachedToTarget") { this.attachedAtBrowser(params); return; }
+    if (method === "Target.targetDestroyed" || method === "Target.detachedFromTarget") {
+      for (const [sessionId, recorder] of this.recorders) {
+        if (recorder.targetId !== String(params.targetId ?? "") && sessionId !== String(params.sessionId ?? "")) continue;
+        this.recorders.delete(sessionId);
+        recorder.onEvent("Target.targetDestroyed", params);
+      }
+    }
     if (method === "Target.detachedFromTarget") {
       const sessionId = String(params.sessionId ?? "");
       const session = this.sessions.get(sessionId);

@@ -24,16 +24,12 @@ export const TEACH_IDLE_MS = 30 * 60_000;
  * after this grace, which covers a reconnect but not a closed window. */
 export const TEACH_ORPHAN_MS = 2 * 60_000;
 
-/** What the page says about the element under a point (or the focused one).
- * Runs in the page through the engine's eval. It reads roles, names and the
- * field's kind, never a field's value. */
-export function teachDescribeScript(point?: { x: number; y: number }): string {
-  const at = point ? `[${Math.round(point.x)}, ${Math.round(point.y)}]` : "null";
-  return `(() => {
-  const at = ${at};
-  let el = at ? document.elementFromPoint(at[0], at[1]) : document.activeElement;
-  const base = { url: location.href };
-  if (!el || el === document.body || el === document.documentElement) return JSON.stringify(base);
+/** A page function (as source) that describes one element the way the
+ * recorders keep it: role, accessible name, tag and the field facts that
+ * decide whether typed text may be kept. It never reads a field's value.
+ * Shared by the live view's recorder (teachDescribeScript) and the My Chrome
+ * recorder (server/browser/my-chrome/recorder.ts). */
+export const TEACH_DESCRIBE_ELEMENT = `function (el) {
   const pick = 'a[href],button,input,select,textarea,summary,label,option,[role],[contenteditable=""],[contenteditable="true"],[onclick],[tabindex]';
   el = (el.closest && el.closest(pick)) || el;
   const tag = el.tagName.toLowerCase();
@@ -57,7 +53,21 @@ export function teachDescribeScript(point?: { x: number; y: number }): string {
   if (!name) name = el.getAttribute('alt') || el.getAttribute('title') || el.getAttribute('placeholder') || '';
   if (!name && (role === 'button' || role === 'link' || role === 'tab' || role === 'menuitem' || role === 'option' || role === 'heading' || tag === 'label')) name = text(el);
   if (!name && tag === 'input' && (type === 'submit' || type === 'button' || type === 'reset')) name = el.getAttribute('value') || '';
-  return JSON.stringify({ ...base, tag, role, name: String(name).slice(0, 300), type, autocomplete: el.getAttribute('autocomplete') || '', fieldName: el.getAttribute('name') || '', fieldId: el.id || '', sensitive: el.getAttribute('data-sensitive') });
+  return { el, tag, role, name: String(name).slice(0, 300), type, autocomplete: el.getAttribute('autocomplete') || '', fieldName: el.getAttribute('name') || '', fieldId: el.id || '', sensitive: el.getAttribute('data-sensitive') };
+}`;
+
+/** What the page says about the element under a point (or the focused one).
+ * Runs in the page through the engine's eval. It reads roles, names and the
+ * field's kind, never a field's value. */
+export function teachDescribeScript(point?: { x: number; y: number }): string {
+  const at = point ? `[${Math.round(point.x)}, ${Math.round(point.y)}]` : "null";
+  return `(() => {
+  const at = ${at};
+  let el = at ? document.elementFromPoint(at[0], at[1]) : document.activeElement;
+  const base = { url: location.href };
+  if (!el || el === document.body || el === document.documentElement) return JSON.stringify(base);
+  const { el: _el, ...described } = (${TEACH_DESCRIBE_ELEMENT})(el);
+  return JSON.stringify({ ...base, ...described });
 })()`;
 }
 

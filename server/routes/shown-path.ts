@@ -3,7 +3,9 @@
 // `replace` is true. Other skills, including uploaded ones, are not touched.
 //
 //   POST /api/bots/:id/shown-path
-//   { mode: "preview" | "save" | "refuse", title, description?, steps, recordedAt?, replace? }
+//   { mode: "preview" | "save" | "refuse", title, description?, steps, recordedAt?, replace?, replay? }
+//   replay ("background" | "my-chrome"): a path shown in the person's own
+//   Chrome (server/browser/my-chrome/recorder.ts), and where it is replayed.
 import type { IncomingMessage } from "node:http";
 import { z } from "zod";
 
@@ -29,6 +31,7 @@ const stepSchema = z.object({
     role: z.string().max(40),
     name: z.string().max(120),
     tag: z.string().max(20),
+    selector: z.string().max(200).optional(),
   }).optional(),
 }).strict();
 
@@ -39,6 +42,7 @@ const bodySchema = z.object({
   steps: z.array(stepSchema).max(200).default([]),
   recordedAt: z.string().max(40).optional(),
   replace: z.boolean().optional(),
+  replay: z.enum(["background", "my-chrome"]).optional(),
 }).strict();
 
 export interface ShownPathDeps {
@@ -76,6 +80,7 @@ export function createShownPathRoutes(deps: ShownPathDeps): RouteHandler {
       steps: body.steps as TeachStep[],
       recordedAt: body.recordedAt,
       replace: body.replace,
+      ...(body.replay ? { replay: body.replay } : {}),
     }, body.mode as ShownPathMode, new Set(deps.existingNames(botId)));
     if (plan.action === "invalid") return json(res, 400, { error: plan.error, code: "invalid" });
     if (plan.action === "refused") return json(res, 200, { ok: true, refused: true });

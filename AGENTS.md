@@ -107,6 +107,56 @@ queued). `SAGAX_HEADLESS_TASK_WAIT_MS` (1 h) bounds one task's turn. Tests:
 `server/headless-cli.test.ts`, `server/headless-task-runner.test.ts`,
 `server/headless-tasks.e2e.test.ts` (fake engine).
 
+## Show a task in my Chrome (2026-10-29)
+
+The person shows a task once in their own Chrome and a bot replays it.
+Teach a task (composer +) offers "Show it in my Chrome" where the server
+offers My Chrome to this person (`src/components/MyChromeRecordDialog.tsx`).
+No extension: Sagax opens one new tab in front through My Chrome's own
+connection (`MyChromeGate.openRecorderTab`, a session of the gate's own,
+never handed to an engine, not listed as a bot's tab) and records only that
+tab (`server/browser/my-chrome/recorder.ts`). A script in an isolated world
+reports trusted clicks (role, accessible name, a selector the page answered
+with one element: id, test id, field name, label or short path), the text
+typed in fields (on change, Enter or Tab), Enter and Escape, and the pages
+opened (typed, back, forward, reload; a page a click led to is not a step).
+A banner in the tab says Sagax records, with Stop. The person adds narration
+notes in Sagax, typed or dictated (the composer's dictation). Recording needs
+My Chrome on and not stopped, not an allowed site; My Chrome's Stop or
+turning it off ends it (steps kept until the person stops in Sagax).
+
+- Secrets: a password or secret field never sends its value from the page
+  (only "a secret goes here" and, on a secure page, a SHA-256 digest); the
+  server checks every field and text again (`isSecretField`,
+  `looksLikeSecret`) and masks a later text whose digest matches a secret
+  typed earlier. Addresses go through `sanitizeTeachUrl`. Memory only,
+  dropped after 30 minutes idle.
+- Stop gives the steps to `TeachStepsDialog`, saved through
+  `POST /api/bots/:id/shown-path` with `replay`: "background" (the bot's own
+  browser, no window on the person's screen, sign-ins from the vault's
+  `fill_credential` or asked) or "my-chrome" (the person's signed-in
+  session). The default is "background" (web work stays out of sight,
+  2026-10-28 above); the person picks "my-chrome" when the task needs their
+  signed-in session. The SKILL.md gets a "Where to Replay"
+  section (`teachReplayPlan` in shared/teach-recording.ts): for My Chrome
+  the bot says the announce sentence in the conversation before the first
+  step, and `MyChromeIndicator` plus the tab's banner (Stop) show for the
+  whole replay, as for every My Chrome drive (no second indicator: My
+  Chrome's own, and `HostControlIndicator` stays for this computer's
+  screen). Approval cards and every My
+  Chrome rule are unchanged; secret steps point to `fill_credential` first.
+- Routes: `POST /api/my-chrome/record/{start,status,note,stop,discard}`,
+  same person-only check as the other My Chrome routes.
+- Not followed: popups and other tabs the person opens from the recorded tab.
+
+Tests: `server/browser/my-chrome/recorder.test.ts`,
+`server/browser/my-chrome/recorder.e2e.test.ts` (headless test Chrome and a
+local page: record clicks and typing, save, replay through My Chrome with
+cards and banner, replay in the background with no gate, final page state),
+`shared/teach-recording.test.ts`, `server/routes/my-chrome.test.ts`,
+`src/components/MyChromeRecordDialog.dom.test.ts`. Captures:
+`scripts/capture-my-chrome-recorder.mjs`.
+
 ## Leave a group chat (#1480, 2026-10-28)
 
 On an organization server a person listed in a group in their own name
