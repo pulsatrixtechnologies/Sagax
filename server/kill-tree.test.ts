@@ -188,3 +188,24 @@ describe("killCliTree", () => {
     }
   });
 });
+
+describe.skipIf(process.platform === "win32")("a CLI that exits on its own", () => {
+  it("takes the sub-agents and helpers it started along", async () => {
+    // a stand-in CLI: starts a helper, reports it, then exits without
+    // stopping it (a crash, an error result, a usage limit)
+    const parent = spawnCli(
+      process.execPath,
+      ["-e", `const c = require("node:child_process").spawn(process.execPath, ["-e", ${JSON.stringify(IDLE)}], { stdio: "ignore" }); console.log(c.pid); setTimeout(() => process.exit(3), 100);`],
+      { stdio: ["pipe", "pipe", "pipe"] },
+    );
+    const helper = await reportedPid(parent.stdout);
+    try {
+      await once(parent, "exit");
+      expect(alive(helper)).toBe(true);
+      // nothing called killCliTree: the exit alone stops the group
+      await vi.waitFor(() => expect(alive(helper)).toBe(false), { timeout: 10_000, interval: 50 });
+    } finally {
+      if (alive(helper)) process.kill(helper, "SIGKILL");
+    }
+  }, 20_000);
+});
