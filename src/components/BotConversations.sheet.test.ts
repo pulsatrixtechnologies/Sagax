@@ -70,7 +70,7 @@ describe("bot-to-bot conversation sheet (#1502)", () => {
     await act(async () => { root.render(createElement(BotConversationLine, { self, row: agentRow, bots: [] })); });
     expect(host.querySelector("[data-testid=bot-exchange-chip] [data-agent-avatar]")).not.toBeNull();
     reply.next.push(async () => ({ messages: [
-      { id: "m1", role: "user", kind: "text", text: "What is on my calendar?", at: Date.now() - 1000 },
+      { id: "m1", role: "user", kind: "text", text: "What is on my calendar?", at: Date.now() - 1000, aiClient: true },
       { id: "m2", role: "bot", kind: "text", text: "Two meetings.", at: Date.now() },
     ] }));
     await act(async () => {
@@ -80,11 +80,14 @@ describe("bot-to-bot conversation sheet (#1502)", () => {
     const sheet = host.querySelector("[data-testid=bot-exchange-sheet]")!;
     expect(sheet.textContent).toContain("Voice assistant (phone)");
     expect(sheet.textContent).toContain("Ottoline");
-    // the header and the agent's line carry the icon, never a mascot
+    // the header and the agent's run label carry the icon, never a mascot;
+    // like a 1:1 chat the bot answers on the start side, the agent on the end
     expect(sheet.querySelectorAll("[data-agent-avatar]").length).toBe(2);
-    const question = sheet.querySelector("[data-mid=m1]")!;
-    expect(question.textContent).toContain("Voice assistant (phone)");
-    expect(question.querySelector("[data-agent-avatar]")).not.toBeNull();
-    expect(sheet.querySelector("[data-mid=m2] [data-agent-avatar]")).toBeNull();
+    expect(sheet.querySelector("[data-mid=m1]")!.getAttribute("data-side")).toBe("end");
+    expect(sheet.querySelector("[data-mid=m2]")!.getAttribute("data-side")).toBe("start");
+    const agentLabel = sheet.querySelector("[data-mid=m1]")!.previousElementSibling!;
+    expect(agentLabel.textContent).toContain("Voice assistant (phone)");
+    expect(agentLabel.querySelector("[data-agent-avatar]")).not.toBeNull();
+    expect(sheet.querySelector("[data-mid=m2]")!.previousElementSibling!.querySelector("[data-agent-avatar]")).toBeNull();
   });
 });

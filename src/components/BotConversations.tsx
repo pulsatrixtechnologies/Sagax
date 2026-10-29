@@ -11,6 +11,7 @@ import type { ExchangeRun } from "@/lib/bot-exchange";
 import { t } from "@/lib/i18n";
 import { ConversationLink } from "./ConversationLink";
 import { ExchangeSheet, avatarBot } from "./BotExchangeChip";
+import { isAgentParty } from "./PartyAvatar";
 
 export type BotConversationRow = NonNullable<Bot["botConversations"]>[number];
 
@@ -21,7 +22,13 @@ export function creditedLines(messages: readonly Message[], self: Pick<Bot, "id"
   const origin = direction === "in" ? other : self;
   const destination = direction === "in" ? self : other;
   const party = (bot: { id: string; name: string; color?: string }) => ({ botId: bot.id, name: bot.name, color: (bot.color ?? "blue") as NonNullable<Message["from"]>["color"] });
-  return messages.map((message) => message.from ? message : { ...message, from: party(message.role === "user" ? origin : destination) });
+  // An outside agent's conversation (2026-10-29): its lines are stamped as
+  // an AI client's (#291); here they are that agent's, named after it.
+  const agentLines = isAgentParty(other.id);
+  return messages.map((message) => {
+    if (agentLines && message.aiClient === true && !message.peerAsk) return { ...message, aiClient: undefined, from: party(other) };
+    return message.from ? message : { ...message, from: party(message.role === "user" ? origin : destination) };
+  });
 }
 
 /** Where each line goes: before the first row that starts after it. Rows
