@@ -44,7 +44,10 @@ export function when(at: number): string {
   return new Date(at).toLocaleString(activeLocale(), { dateStyle: "medium", timeStyle: "short" });
 }
 
-export function openPage(url: string) {
+/** A page's reading link, in the system browser (the desktop app sends a
+ * window.open of another page out: electron/main.mjs). Never a surface of
+ * the app: opening a page inside the app is openPage (src/lib/open-page.ts). */
+export function openReadingLink(url: string) {
   const link = pageReadingUrl(url);
   if (link) window.open(link, "_blank", "noopener,noreferrer");
 }
@@ -151,7 +154,7 @@ export function LinkRow({ page }: { page: PublishedPageSummary }) {
         className="rounded p-1 text-ink-secondary hover:bg-hover hover:text-ink">
         {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
       </button>
-      <button type="button" aria-label={t("pages.open")} title={t("pages.open")} onClick={() => openPage(page.url!)}
+      <button type="button" aria-label={t("pages.open")} title={t("pages.open")} onClick={() => openReadingLink(page.url!)}
         className="rounded p-1 text-ink-secondary hover:bg-hover hover:text-ink">
         <ExternalLink size={13} />
       </button>

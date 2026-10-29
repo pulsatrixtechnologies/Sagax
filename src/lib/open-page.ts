@@ -1,10 +1,30 @@
-// The page open over a conversation (2026-10-28, the reference design's page
-// view): one at a time per app window. The conversation stays mounted under
-// it, so closing the page puts the person back exactly where they were in
-// the conversation. Each page also keeps the place its reader last scrolled
-// to (only a number, in memory for this window), so a page the bot changes,
-// or a page opened again, is drawn at the same place.
-import { useSyncExternalStore } from "react";
+// Opening a published page: the one way (2026-10-28, after four fixes in two
+// days that each patched one path while another broke).
+//
+//   openPage(page)            over its conversation (the full panel), when
+//                             that conversation is on screen; else in a
+//                             window of its own
+//   openPage(page, "window")  in a window of its own (src/lib/page-windows.ts)
+//
+// Every place that opens a page calls openPage: the card in the chat, the
+// chip over a message, the Library, Settings > Pages, the open page's
+// « Open in a window ». Both destinations draw the same PageSurface
+// (src/components/PageViewer.tsx), so a page looks and closes the same
+// everywhere. The desktop app's single frame hook (electron/page-frames.mjs)
+// then serves the page in whichever window it lands in.
+//
+// The panel: one at a time per app window. The conversation stays mounted
+// under it, so closing the page puts the person back exactly where they were
+// in the conversation. A ChatView says it can host the panel for its bot
+// (registerPagePanelHost); without a host on screen, asking for the panel
+// would have shown nothing (the Library of a bot whose conversation is not
+// on screen), so the page opens in its own window instead. Each page also
+// keeps the place its reader last scrolled to (only a number, in memory for
+// this window), so a page the bot changes, or a page opened again, is drawn
+// at the same place.
+import { useEffect, useSyncExternalStore } from "react";
+
+import { openPageInOwnWindow } from "./page-windows";
 
 export interface OpenPage {
   pageId: string;
@@ -30,7 +50,64 @@ function emit(): void {
   for (const listener of listeners) listener();
 }
 
-/** Open a page over its conversation (another open page is replaced). */
+/** Where a page opens: over its conversation, or in a window of its own. */
+export type PageOpenWhere = "panel" | "window";
+
+/** Where a page ended up, or null when nothing could open. */
+export type PageOpened = PageOpenWhere | null;
+
+/** The conversations on screen that can draw the panel: botId -> how many
+ * (a bot's conversation and its side panel are two). */
+const hosts = new Map<string, number>();
+
+/** A conversation says it draws the page panel for this bot while mounted.
+ * Returns the function that takes it back. */
+export function registerPagePanelHost(botId: string): () => void {
+  hosts.set(botId, (hosts.get(botId) ?? 0) + 1);
+  let active = true;
+  return () => {
+    if (!active) return;
+    active = false;
+    const left = (hosts.get(botId) ?? 1) - 1;
+    if (left > 0) hosts.set(botId, left);
+    else hosts.delete(botId);
+  };
+}
+
+/** Whether a conversation on screen can draw the panel for this bot. */
+export function hasPagePanelHost(botId: string): boolean {
+  return (hosts.get(botId) ?? 0) > 0;
+}
+
+/** A conversation on screen: it hosts the page panel for its bot. */
+export function usePagePanelHost(botId: string, enabled = true): void {
+  useEffect(() => (enabled ? registerPagePanelHost(botId) : undefined), [botId, enabled]);
+}
+
+/** Which way a page opens, given where it was asked and whether its
+ * conversation is on screen. Pure. */
+export function pageOpenWay(where: PageOpenWhere, hosted: boolean): PageOpenWhere {
+  return where === "panel" && hosted ? "panel" : "window";
+}
+
+/**
+ * Open a page: over its conversation when asked so and that conversation is
+ * on screen, else in a window of its own. Resolves where it opened, or null
+ * when nothing could open (no desktop bridge and no window.open).
+ */
+export async function openPage(page: OpenPage, where: PageOpenWhere = "panel"): Promise<PageOpened> {
+  if (!ID.test(page.pageId)) return null;
+  const way = pageOpenWay(where, hasPagePanelHost(page.botId));
+  if (way === "panel") {
+    openPagePanel(page);
+    return "panel";
+  }
+  const opened = await openPageInOwnWindow({ id: page.pageId, botId: page.botId, title: page.title });
+  return opened ? "window" : null;
+}
+
+/** Open a page over its conversation (another open page is replaced).
+ * Callers open a page through openPage; this is the panel itself. */
 export function openPagePanel(page: OpenPage): void {
   if (!ID.test(page.pageId)) return;
   current = { ...page, openedAt: page.openedAt ?? Date.now() };
@@ -82,10 +159,11 @@ export function pagePlace(pageId: string): number {
   return places.get(pageId) ?? 0;
 }
 
-/** Tests: nothing open, no place kept. */
+/** Tests: nothing open, no place kept, no host on screen. */
 export function resetOpenPage(): void {
   current = null;
   places.clear();
+  hosts.clear();
   emit();
 }
 

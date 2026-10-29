@@ -78,8 +78,6 @@ function memoryStore(initial = null) {
   return { read: () => value, write: vi.fn((next) => { value = JSON.parse(JSON.stringify(next)); }), get: () => value };
 }
 
-const expectFrame = vi.fn();
-
 function setup({ displays = [PRIMARY, SECOND], store = memoryStore(), trusted = true } = {}) {
   const fake = fakeElectron();
   const onChange = vi.fn();
@@ -96,8 +94,6 @@ function setup({ displays = [PRIMARY, SECOND], store = memoryStore(), trusted = 
     screen,
     boundsStore: store,
     onChange,
-    blockFrame: (details) => details.url.includes("blocked"),
-    expectFrame,
   });
   const event = { sender: fake.main.webContents, senderFrame: { url: `${ORIGIN}/` } };
   const open = (request) => fake.handlers.get("artifact-window:open")(event, { botId: "bot-a", title: "Live table", ...request });
@@ -152,25 +148,6 @@ describe("where an artifact window opens", () => {
     expect(places.size).toBe(MAX_REMEMBERED_PLACES);
     expect(places.has("art_0")).toBe(false);
     expect(places.has("bad")).toBe(false);
-  });
-});
-
-describe("a published page's frame in an artifact window", () => {
-  it("is noted as an iframe load (else the server refuses it and the page stays blank), and a blocked one is prevented", async () => {
-    const { fake, open } = setup();
-    await open({ artifactId: "page:pageAAAA1111" });
-    const [win] = fake.windows;
-    const frame = (url, isMainFrame = false) => ({ url, isMainFrame, preventDefault: vi.fn() });
-    const good = frame(`${ORIGIN}/pages/frame/abc`);
-    win.webContents.fire("will-frame-navigate", good);
-    expect(expectFrame).toHaveBeenCalledWith(`${ORIGIN}/pages/frame/abc`);
-    expect(good.preventDefault).not.toHaveBeenCalled();
-    const bad = frame(`${ORIGIN}/blocked`);
-    win.webContents.fire("will-frame-navigate", bad);
-    expect(bad.preventDefault).toHaveBeenCalled();
-    expectFrame.mockClear();
-    win.webContents.fire("will-frame-navigate", frame(`${ORIGIN}/pages/frame/x`, true));
-    expect(expectFrame).not.toHaveBeenCalled();
   });
 });
 

@@ -124,8 +124,7 @@ import { PagePublishCard } from "./PublishedPages";
 import { PageSurface } from "./PageViewer";
 import { PageBotStatus, pageBotStatusLine, PageRefChip } from "./PageComposerParts";
 import { MenuItem } from "./bot-settings/FilesSection";
-import { openPageInOwnWindow } from "@/lib/page-windows";
-import { closePagePanel, latestPageVersionIn, openPageFor, renameOpenPage, useOpenPage } from "@/lib/open-page";
+import { closePagePanel, latestPageVersionIn, openPage as openPageAt, openPageFor, renameOpenPage, useOpenPage, usePagePanelHost } from "@/lib/open-page";
 import { OutboundCard } from "./OutboundCard";
 import { OwnerSettled, OwnerWait } from "./OwnerWait";
 import { Composer } from "./Composer";
@@ -2214,6 +2213,9 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   // same place on close); the composer floats over the page.
   const openPageAny = useOpenPage();
   const openPage = side ? null : openPageFor(openPageAny, bot.id, undefined);
+  // this conversation draws the panel for its bot (openPage picks the panel
+  // only while one is on screen; a side panel draws none)
+  usePagePanelHost(bot.id, !side);
   const latestPageVersion = useMemo(() => (openPage ? latestPageVersionIn(messages, openPage.pageId) : undefined), [openPage, messages]);
 
   const Root = side ? "section" : "main";
@@ -2551,7 +2553,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
             moreItems={(close) => (
               <MenuItem icon={<AppWindow size={14} />} label={t("pages.openWindow")} onClick={() => {
                 close();
-                void openPageInOwnWindow({ id: openPage.pageId, botId: openPage.botId, title: openPage.title });
+                void openPageAt({ pageId: openPage.pageId, botId: openPage.botId, threadId: openPage.threadId, title: openPage.title }, "window");
               }} />
             )}
           />

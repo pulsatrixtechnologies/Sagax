@@ -20,12 +20,11 @@ import {
   type PublishedPageSummary,
 } from "../../shared/published-pages";
 import { ACCESS_LABEL, expiryFromHours, pageErrorText, pageGone, previewSrc, usePagesPolicy, when } from "./page-controls";
-import { PageGlyph } from "./PageViewer";
-import { openPageInOwnWindow } from "@/lib/page-windows";
+import { PageFrame, PageGlyph } from "./PageViewer";
 import { PageSharePopover } from "./PageShare";
 import { useWidgetTheme } from "./WidgetFrame";
 import { encodeSkinTokens } from "@/lib/page-theme";
-import { openPagePanel } from "@/lib/open-page";
+import { openPage } from "@/lib/open-page";
 
 export { expiryFromHours, previewSrc };
 
@@ -122,15 +121,13 @@ export function PagePublishCard({ message }: { message: Message }) {
   const src = !deleted && previewPath ? previewSrc(previewPath, { bare: true, theme, skin }) : null;
   const unavailable = deleted || noPreview || (previewPath !== null && src === null);
   // the page names its own bot and conversation
-  const open = () => { if (page) openPagePanel({ pageId: ref.pageId, botId: page.botId, threadId: page.threadId, title, version: ref.version }); };
+  const open = () => { if (page) void openPage({ pageId: ref.pageId, botId: page.botId, threadId: page.threadId, title, version: ref.version }); };
   return (
     <article ref={cardRef} data-page-card={ref.pageId} aria-label={t("pages.cardAria", { title })}
       className="group relative my-2 w-full max-w-[420px] overflow-hidden rounded-2xl border border-hairline/50 bg-card shadow-sm transition-shadow hover:shadow-md">
       <div data-page-thumb aria-hidden="true" className="relative h-[200px] overflow-hidden bg-app">
         {src ? (
-          <iframe title="" tabIndex={-1} src={src} loading="lazy" referrerPolicy="no-referrer" allow=""
-            className="pointer-events-none absolute left-0 top-0 h-[400px] w-[200%] origin-top-left scale-50 border-0 bg-transparent"
-            style={{ colorScheme: theme }} />
+          <PageFrame src={src} theme={theme} thumbnail className="pointer-events-none absolute left-0 top-0 h-[400px] w-[200%] origin-top-left scale-50" />
         ) : unavailable ? (
           <div data-page-thumb-unavailable className="flex h-full items-center justify-center text-[12px] text-ink-tertiary">{deleted ? t("pages.card.deleted") : t("pages.previewUnavailableShort")}</div>
         ) : (
@@ -234,7 +231,7 @@ function PageRow({ page, linkOff, onChange, onRemoved }: { page: PublishedPageSu
           <Pin size={12} />{page.pinned ? t("pages.unpin") : t("pages.pin")}
         </button>
         <span className="rounded-full bg-raised px-2 py-0.5 text-[11px] text-ink-secondary">{status}</span>
-        <button type="button" data-page-open aria-label={t("pages.openWindow")} title={t("pages.openWindow")} onClick={() => void openPageInOwnWindow(page)}
+        <button type="button" data-page-open aria-label={t("pages.openWindow")} title={t("pages.openWindow")} onClick={() => void openPage({ pageId: page.id, botId: page.botId, threadId: page.threadId, title: page.title }, "window")}
           className="rounded p-1 text-ink-secondary hover:bg-hover hover:text-ink">
           <Maximize2 size={13} />
         </button>

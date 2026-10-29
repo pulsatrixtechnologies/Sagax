@@ -8,7 +8,7 @@ import { t } from "@/lib/i18n";
 import type { ArtifactPage } from "@/lib/rich-blocks";
 import { isSafeHttpUrl } from "../../shared/claude-chat-blocks";
 
-function openPage(url: string, event: { preventDefault(): void }) {
+function openLink(url: string, event: { preventDefault(): void }) {
   if (typeof window !== "undefined" && window.ogb) {
     event.preventDefault();
     window.open(url, "_blank", "noopener");
@@ -36,7 +36,7 @@ function ArtifactCardComponent({ page, pending = false }: { page: ArtifactPage; 
             href={url}
             target="_blank"
             rel="noreferrer"
-            onClick={(event) => openPage(url, event)}
+            onClick={(event) => openLink(url, event)}
             className="inline-flex min-h-8 items-center gap-1.5 rounded-lg border border-hairline/40 bg-panel px-2.5 text-[12px] text-ink hover:bg-raised focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
           >
             <SquareArrowOutUpRight size={13} aria-hidden="true" />

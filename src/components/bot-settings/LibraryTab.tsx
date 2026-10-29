@@ -23,7 +23,7 @@ import { ConfirmDialog } from "../ConfirmDialog";
 import { FileGlyph, PageRowGlyph } from "./LibraryGlyph";
 import { PageSharePopover } from "../PageShare";
 import { usePagesPolicy } from "../page-controls";
-import { openPagePanel } from "@/lib/open-page";
+import { openPage } from "@/lib/open-page";
 import type { PublishedPageSummary } from "../../../shared/published-pages";
 import { ArtifactDialogs, artifactStatus, useArtifactActions, type ArtifactActions } from "../artifacts/ArtifactsSection";
 import { canOpenArtifactInOwnWindow } from "../artifacts/artifact-windows";
@@ -376,8 +376,9 @@ function ArtifactLibraryRow({ artifact, actions, now, openMenus }: { artifact: A
   );
 }
 
-/** A page the bot made (2026-10-28): its icon and title; a click opens it in
- * the full panel over the conversation, like its card in the chat (src/lib/open-page.ts); « … » Open, Share…,
+/** A page the bot made (2026-10-28): its icon and title; a click opens it
+ * like its card in the chat does (openPage, src/lib/open-page.ts: the full
+ * panel over the conversation on screen, else a window of its own); « … » Open, Share…,
  * Pin or Unpin, Delete…. Share is the same popover as the open page's. */
 function PageLibraryRow({ page, linkOff, openMenus, onChange, onPin, onDelete }: {
   page: PublishedPageSummary;
@@ -390,7 +391,7 @@ function PageLibraryRow({ page, linkOff, openMenus, onChange, onPin, onDelete }:
   const [sharing, setSharing] = useState(false);
   const pinned = page.pinned === true;
   const pinLabel = pinned ? t("botPanel.library.unpin") : t("botPanel.library.pin");
-  const open = () => openPagePanel({ pageId: page.id, botId: page.botId, threadId: page.threadId, title: page.title });
+  const open = () => void openPage({ pageId: page.id, botId: page.botId, threadId: page.threadId, title: page.title });
   return (
     <LibraryRow
       attr={{ "data-library-page": page.id }}

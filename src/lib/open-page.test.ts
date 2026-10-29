@@ -3,9 +3,12 @@
 // so closing and opening it again (or a redraw) starts there.
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { closePagePanel, currentOpenPage, latestPageVersionIn, openPageFor, openPagePanel, pagePlace, rememberPagePlace, resetOpenPage } from "./open-page";
+const ownWindow = vi.hoisted(() => vi.fn(async () => true));
+vi.mock("./page-windows", () => ({ openPageInOwnWindow: ownWindow }));
 
-afterEach(() => resetOpenPage());
+import { closePagePanel, currentOpenPage, hasPagePanelHost, latestPageVersionIn, openPage, openPageFor, openPagePanel, pageOpenWay, pagePlace, registerPagePanelHost, rememberPagePlace, resetOpenPage } from "./open-page";
+
+afterEach(() => { resetOpenPage(); ownWindow.mockClear(); });
 
 const page = { pageId: "abcdefgh12345678", botId: "b1", threadId: "t1", title: "Bilan" };
 
@@ -40,6 +43,51 @@ describe("the open page", () => {
     const messages = [{}, { pagePublish: { pageId: page.pageId, version: 1 } }, { pagePublish: { pageId: "otherpage1234567", version: 9 } }, { pagePublish: { pageId: page.pageId, version: 3 } }];
     expect(latestPageVersionIn(messages, page.pageId)).toBe(3);
     expect(latestPageVersionIn([], page.pageId)).toBeUndefined();
+  });
+});
+
+describe("openPage, the one way a page opens", () => {
+  it("opens the panel while the page's conversation is on screen, else a window of its own", async () => {
+    // no conversation on screen (the Library of a bot whose chat is not open): a window
+    expect(await openPage(page)).toBe("window");
+    expect(ownWindow).toHaveBeenCalledWith({ id: page.pageId, botId: "b1", title: "Bilan" });
+    expect(currentOpenPage()).toBeNull();
+    // the conversation on screen: the panel, and nothing else opens
+    const leave = registerPagePanelHost("b1");
+    expect(hasPagePanelHost("b1")).toBe(true);
+    ownWindow.mockClear();
+    expect(await openPage(page)).toBe("panel");
+    expect(currentOpenPage()).toMatchObject(page);
+    expect(ownWindow).not.toHaveBeenCalled();
+    // asked for a window: a window, even with the conversation on screen
+    closePagePanel();
+    expect(await openPage(page, "window")).toBe("window");
+    expect(currentOpenPage()).toBeNull();
+    // the conversation left the screen
+    leave();
+    leave();
+    expect(hasPagePanelHost("b1")).toBe(false);
+  });
+
+  it("counts the conversations on screen for a bot, and never hosts another bot's page", async () => {
+    const first = registerPagePanelHost("b1");
+    const second = registerPagePanelHost("b1");
+    first();
+    expect(hasPagePanelHost("b1")).toBe(true);
+    expect(await openPage({ ...page, botId: "b2" })).toBe("window");
+    second();
+    expect(hasPagePanelHost("b1")).toBe(false);
+    expect(await openPage(page)).toBe("window");
+  });
+
+  it("says where a page goes (pure), and opens nothing for a bad id or when no window can open", async () => {
+    expect(pageOpenWay("panel", true)).toBe("panel");
+    expect(pageOpenWay("panel", false)).toBe("window");
+    expect(pageOpenWay("window", true)).toBe("window");
+    expect(await openPage({ ...page, pageId: "../x" })).toBeNull();
+    expect(ownWindow).not.toHaveBeenCalled();
+    ownWindow.mockResolvedValueOnce(false);
+    expect(await openPage(page)).toBeNull();
   });
 });
 

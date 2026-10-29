@@ -26,7 +26,7 @@ import { groupPeopleCandidates } from "@/lib/private-threads";
 import { api, useStore } from "@/state/store";
 import type { PageAccess, PublishedPageSummary } from "../../shared/published-pages";
 import { initialsOf, needsLinkConfirm, pageReadingUrl, sharePlan, teamCandidates, withInvite, type ShareChange } from "@/lib/page-share-plan";
-import { ExpirySelect, openPage, pageErrorText } from "./page-controls";
+import { ExpirySelect, openReadingLink, pageErrorText } from "./page-controls";
 import { useOrgDirectory } from "./GroupPeoplePicker";
 
 export { sharePlan, teamCandidates, withInvite, type ShareChange, type ShareStep } from "@/lib/page-share-plan";
@@ -270,7 +270,7 @@ export function PageSharePopover({ page, version, linkOff, onChange, onClose, cl
           className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full border border-hairline/60 bg-raised px-3 text-[13px] font-medium hover:bg-raised-hover disabled:opacity-40">
           {copied ? <Check size={14} className="text-success" /> : <Link2 size={14} />}{copied ? t("pages.share.copied") : t("pages.share.copy")}
         </button>
-        <button type="button" data-page-open-browser disabled={busy} onClick={() => void withLink(openPage)}
+        <button type="button" data-page-open-browser disabled={busy} onClick={() => void withLink(openReadingLink)}
           className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-full bg-ink px-3 text-[13px] font-medium text-app hover:opacity-90 disabled:opacity-40">
           <ExternalLink size={14} />{t("pages.share.browser")}
         </button>
