@@ -1413,10 +1413,14 @@ function withReminder(text: string, body: string): string {
  * when nothing changed, only the changed sections when they can say it,
  * else the whole half. */
 function volatileTurnMessage(
-  turn: Pick<SendTurnInput, "text" | "images" | "systemVolatile" | "systemVolatileSections" | "mentionTurn">,
+  turn: Pick<SendTurnInput, "text" | "images" | "systemVolatile" | "systemVolatileSections" | "mentionTurn" | "harnessCommand">,
   held: string,
   heldSections: Record<string, string> | undefined,
 ): ClaudeUserMessage {
+  // An engine slash command reaches the CLI verbatim: a note in front of
+  // it would make it an ordinary message (server/harness-commands.ts). The
+  // caller leaves the held copy as it was, so the next turn carries the note.
+  if (turn.harnessCommand) return claudeUserMessage(turn.text, turn.images);
   const volatile = turn.systemVolatile ?? "";
   const notHeld = held === COMPACTED_VOLATILE || held === UNDELIVERED_VOLATILE;
   const unchanged = volatile === held || (notHeld && !volatile.trim());
@@ -2085,8 +2089,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // rules still win, and nothing here pre-allows them. A turn with an
       // owner's tool selection gets only the selected servers, never them.
       const keepsClaudeAiConnectors = turn.claudeAiConnectors === true && !turn.guestConfined && turn.toolScope === undefined;
-      if (turn.toolScope !== undefined && (!isolated || turn.mcpFromUserConfig || cliVersion === null || !claudeCliSupports(cliVersion, "--strict-mcp-config"))) {
-        throw new Error("Claude cannot confirm a restricted MCP configuration for this account. Disable inherited Claude MCP servers and use a current, identifiable Claude CLI before using tool selection.");
+      // The person's own Claude MCP servers (claudeUserMcpEnabled, on by
+      // default on a solo server) ride every turn except one with a tool
+      // selection: that turn gets only the selected servers (strict config),
+      // since the harness gates nothing it did not mount.
+      const mcpFromUserConfig = turn.mcpFromUserConfig === true && turn.toolScope === undefined;
+      if (turn.toolScope !== undefined && (!isolated || cliVersion === null || !claudeCliSupports(cliVersion, "--strict-mcp-config"))) {
+        throw new Error("Claude cannot confirm a restricted MCP configuration for this account. Use a current, identifiable Claude CLI before using tool selection.");
       }
       if (isolated) {
         // A bot gets the tools and instructions its owner gave it, not
@@ -2107,7 +2116,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // need the same: --strict-mcp-config also drops them (measured on CLI
         // 2.1.287), while --setting-sources project still keeps the machine's
         // user-scope servers, skills and hooks out.
-        if (!turn.mcpFromUserConfig && !keepsClaudeAiConnectors && claudeCliSupports(cliVersion, "--strict-mcp-config")) args.push("--strict-mcp-config");
+        if (!mcpFromUserConfig && !keepsClaudeAiConnectors && claudeCliSupports(cliVersion, "--strict-mcp-config")) args.push("--strict-mcp-config");
         if (claudeCliSupports(cliVersion, "--setting-sources")) args.push("--setting-sources", "project");
       }
       // The bot's plugins (server/bot-plugins.ts): skills, commands and
@@ -2302,7 +2311,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       const searchedMounts = new Set<string>(turn.compactPrompt && turn.integrations?.agents ? ["agents"] : []);
       for (const name of turn.toolScope === undefined ? botOwned : Object.keys(mcpServers)) {
         if (!canUseMcpServer(turn.toolScope, name)) { delete mcpServers[name]; continue; }
-        const search = turn.compactPrompt && botOwned.has(name) ? { pinned: turn.compactPrompt.pinned[name] ?? [] } : undefined;
+        // a server may be named like an Object property ("constructor"): own keys only
+        const search = turn.compactPrompt && botOwned.has(name) ? { pinned: Object.hasOwn(turn.compactPrompt.pinned, name) ? turn.compactPrompt.pinned[name]! : [] } : undefined;
         if (search) searchedMounts.add(name);
         const gated = gateServer({ name, server: mcpServers[name], threadId, nodeEnv: NODE_ENV_FLAG, toolScope: turn.toolScope, ...(search ? { search } : {}), ...customServerGate(name, botOwned.has(name), turn.integrations?.customResultBudgets, turnEnvironment) });
         if (gated) mcpServers[name] = { ...gated, ...((mcpServers[name] as { alwaysLoad?: unknown })?.alwaysLoad === true ? { alwaysLoad: true } : {}) };
@@ -2355,7 +2365,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       const env = environment(turnModel, turn.access);
       // No claude.ai connector unless the turn asked for them: the docs say
       // --strict-mcp-config alone does not exclude them, so say it twice.
-      if (isolated && !turn.mcpFromUserConfig && !keepsClaudeAiConnectors) env.ENABLE_CLAUDEAI_MCP_SERVERS = "false";
+      if (isolated && !mcpFromUserConfig && !keepsClaudeAiConnectors) env.ENABLE_CLAUDEAI_MCP_SERVERS = "false";
       const authSettings = isolated && !injected.injected
         ? readClaudeAuthSettings(env, input.environment) : {};
       // Harness hooks (item 0.2): one helper command for the events the
@@ -2505,8 +2515,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         }
         const volatile = turn.systemVolatile ?? "";
         const message = volatileTurnMessage(turn, live.volatile, live.volatileSections);
-        live.volatile = volatile;
-        live.volatileSections = turn.systemVolatileSections ? sectionFingerprints(turn.systemVolatileSections) : undefined;
+        if (!turn.harnessCommand) {
+          live.volatile = volatile;
+          live.volatileSections = turn.systemVolatileSections ? sectionFingerprints(turn.systemVolatileSections) : undefined;
+        }
         const running = live.turn;
         // A warm process can end between turns just as the next one is
         // written: this driver learns of an exit only when the event loop
@@ -2715,9 +2727,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         searchedMounts,
         // Launched with the stable half only, a warm process holds no
         // volatile half until its first real turn delivers it.
-        ...(turn.warmOnly === true && held
+        // An engine slash command's launch message is the bare command, so
+        // the process holds no newer copy than the one it resumed with.
+        ...((turn.warmOnly === true || turn.harnessCommand) && held
           ? { volatile: held.volatile, ...(held.sections ? { volatileSections: held.sections } : {}) }
-          : launchVolatile && turn.warmOnly === true ? { volatile: UNDELIVERED_VOLATILE }
+          : launchVolatile && (turn.warmOnly === true || turn.harnessCommand) ? { volatile: UNDELIVERED_VOLATILE }
             : { volatile: turn.systemVolatile ?? "", ...(turn.systemVolatileSections ? { volatileSections: sectionFingerprints(turn.systemVolatileSections) } : {}) }),
         sessionId: sessionId ?? newSessionId,
         sawInit: false,
@@ -3475,8 +3489,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // prompt over stdin as a stream-json message — never argv (ARG_MAX).
       // stdin stays OPEN: that is what keeps the session alive for a
       // mid-turn steer or the next turn; closeSession() ends it.
-      const launchMessage = held ? volatileTurnMessage(turn, held.volatile, held.sections)
-        : launchVolatile ? claudeUserMessage(withVolatileNote(turn.text, launchVolatile, true), turn.images) : promptMsg;
+      const launchMessage = turn.harnessCommand ? promptMsg
+        : held ? volatileTurnMessage(turn, held.volatile, held.sections)
+          : launchVolatile ? claudeUserMessage(withVolatileNote(turn.text, launchVolatile, true), turn.images) : promptMsg;
       if (!(await writeUser(session, threadId, launchMessage))) {
         if (!session.turn?.stopRequested) settle(false, "stdin_write_failed");
         closeSession(threadId, "stdin write failed");

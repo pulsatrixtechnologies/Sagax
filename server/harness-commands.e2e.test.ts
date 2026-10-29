@@ -61,7 +61,7 @@ it("lists the engine's commands and passes a typed one through verbatim", async 
     await api(`/api/bots/${bot.id}/messages`, { text: "/engine:goal ship the release", threadId: thread });
     await wait();
     const turns = sent();
-    expect(turns).toContain("/compact keep the plan");
+    expect(turns, JSON.stringify(turns)).toContain("/compact keep the plan");
     expect(turns).toContain("/goal ship the release");
 
     // What the chat cannot run is refused before it is recorded.

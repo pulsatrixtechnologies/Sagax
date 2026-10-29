@@ -168,26 +168,24 @@ posixOnly("authorization decisions are logged", () => {
   });
 
   it(
-    "an Auto bot's card is logged as the provider's own request",
+    "an Auto bot's request in the person's own environment is approved and logged as such",
     async () => {
-      // Auto passes the provider's mode through; a request that still
-      // reaches the harness is the reviewer's to leave, and the row says so.
+      // Auto (Approve for me) on the owner's own bot: the provider's request
+      // runs without a card, approved by the bot's level (owner-auto,
+      // server/auto-approve.ts), and the row says so.
       const bot = await makePermissionBot({ name: "Granted", autoApprove: true });
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "run it" })).status).toBe(202);
 
-      const card = await waitForBotCard(bot.id);
-      expect(card, "no approval card ever appeared").not.toBeNull();
-      const row = await waitForDecision((r) => r.decision === "card-shown" && r.botId === bot.id);
-      expect(row, "the card never reached the decision log").not.toBeNull();
-      expect(row!.source).toBe("native-approval");
+      const row = await waitForDecision((r) => r.decision === "auto-approved" && r.botId === bot.id);
+      expect(row, "the approval never reached the decision log").not.toBeNull();
+      expect(row!.source).toBe("owner-auto");
       expect(row!.rule).toBeUndefined();
       expect(row!.tool).toBe("shell");
       expect(row!.summary).toBe("echo hi");
       expect(row!.botName).toBe("Granted");
       expect(row!.threadId).toBeTruthy();
       expect(row!.requestId).toBeTruthy();
-      expect(card.card.held).toBe("The provider requires your approval for this action.");
-      expect(card.card.allowSession).toBe(true);
+      expect(await waitForBotCard(bot.id, 1_000), "no card is shown for an approved request").toBeNull();
     },
     60_000,
   );
@@ -225,7 +223,7 @@ posixOnly("authorization decisions are logged", () => {
   it(
     "a human deny writes its row too",
     async () => {
-      const bot = await makePermissionBot({ name: "Refused" });
+      const bot = await makePermissionBot({ name: "Refused", approvalMode: "ask" }) /* new bots start on Approve for me */;
       expect((await api("POST", `/api/bots/${bot.id}/messages`, { text: "run it" })).status).toBe(202);
 
       const card = await waitForBotCard(bot.id);

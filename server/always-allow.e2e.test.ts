@@ -16,7 +16,7 @@
 //                 silence on the next turn, journaled
 import { spawn } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -55,10 +55,9 @@ function client(fixture: VerificationServer, owner?: string): { api: Api; call: 
   return { api, call };
 }
 
-function decisions(dataDir: string): any[] {
-  const dir = join(dataDir, "decisions");
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).flatMap((name) => readFileSync(join(dir, name), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)));
+/** The decision log, through its API: its files are sealed at rest (#1263). */
+async function decisions(api: (method: string, path: string) => Promise<any>): Promise<any[]> {
+  return (await api("GET", "/api/decisions")).decisions ?? [];
 }
 
 it("an engine's card: Always allow keeps the command's program, a security key still asks, bulk keeps each card's rule, revoking brings the card back", async () => {
@@ -121,7 +120,7 @@ it("an engine's card: Always allow keeps the command's program, a security key s
     const again = await ask("printf always-a");
     await expect.poll(() => again.answer()?.behavior, { timeout: 10_000 }).toBe("allow");
     expect(await card(again.id)).toBeUndefined();
-    await expect.poll(() => decisions(dataDir).find((row) => row.requestId === again.id), { timeout: 5_000 })
+    await expect.poll(async () => (await decisions(api)).find((row) => row.requestId === again.id), { timeout: 5_000 })
       .toMatchObject({ decision: "auto-approved", source: "owner-rule", rule: saved.id });
 
     // a chain with another program keeps its card
@@ -222,7 +221,7 @@ it("an act card (sagax_settings): Always allow keeps that setting of that bot, a
     expect((await settings({ action: "set", key: "bot.title", target: helper.id, value: "Day shift" })).text).toMatch(/^Done/);
     expect(await title()).toBe("Day shift");
     expect((await actCards()).length).toBe(before);
-    await expect.poll(() => decisions(dataDir).some((row) => row.tool === "act" && row.source === "owner-rule" && row.rule === rule.id), { timeout: 5_000 }).toBe(true);
+    await expect.poll(async () => (await decisions(api)).some((row) => row.tool === "act" && row.source === "owner-rule" && row.rule === rule.id), { timeout: 5_000 }).toBe(true);
 
     // another setting, or the same setting of another bot: its card
     expect((await settings({ action: "set", key: "bot.description", target: helper.id, value: "Night desk" })).text).toContain("Approval needed.");
@@ -289,7 +288,7 @@ it("every engine (#827): Codex and an ACP engine get the same Always allow, and 
       await expect.poll(async () => (await api("GET", "/api/bots?messages=0")).bots.find((row: any) => row.id === bot.id).busy, { timeout: 30_000 }).toBeFalsy();
       // the next turn asks the same: no new card, journaled with the rule
       await api("POST", `/api/bots/${bot.id}/messages`, { threadId: bot.threadId, text: "Again, please." }, 202);
-      await expect.poll(() => decisions(data).filter((row) => row.botId === bot.id && row.source === "owner-rule").length, { timeout: 30_000 }).toBeGreaterThan(0);
+      await expect.poll(async () => (await decisions(api)).filter((row) => row.botId === bot.id && row.source === "owner-rule").length, { timeout: 30_000 }).toBeGreaterThan(0);
       expect((await cards()).length, engine.instanceId).toBe(1);
       await expect.poll(async () => (await api("GET", "/api/bots?messages=0")).bots.find((row: any) => row.id === bot.id).busy, { timeout: 30_000 }).toBeFalsy();
     }
@@ -380,7 +379,7 @@ it("a proposal card (a routine for another bot): Always allow keeps that kind fo
     const second = await propose("Monthly B", helper.id);
     expect(second).toMatchObject({ state: "applied", appliedBy: "rule" });
     expect((await cardOf(second.requestId)).answered).toBe("allow");
-    await expect.poll(() => decisions(dataDir).some((row) => row.requestId === second.requestId && row.source === "owner-rule" && row.rule === rule.id), { timeout: 5_000 }).toBe(true);
+    await expect.poll(async () => (await decisions(api)).some((row) => row.requestId === second.requestId && row.source === "owner-rule" && row.rule === rule.id), { timeout: 5_000 }).toBe(true);
 
     const other = await propose("Monthly C", third.id);
     expect(other.state).not.toBe("applied");

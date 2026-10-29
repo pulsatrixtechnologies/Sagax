@@ -6,7 +6,7 @@
 // why, the journal names the rule and the reason); a deny refuses it; an
 // unsure answer leaves the card to the person.
 import { randomUUID } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { connect, type Socket } from "node:net";
 import { join } from "node:path";
 
@@ -29,10 +29,9 @@ function client(fixture: VerificationServer) {
   };
 }
 
-function decisions(dataDir: string): any[] {
-  const dir = join(dataDir, "decisions");
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).flatMap((name) => readFileSync(join(dir, name), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)));
+/** The decision log, through its API: its files are sealed at rest (#1263). */
+async function decisions(api: (method: string, path: string) => Promise<any>): Promise<any[]> {
+  return (await api("GET", "/api/decisions")).decisions ?? [];
 }
 
 it("judges a card against the person's free rules: allow answers it with the reason, deny refuses it, unsure leaves it", async () => {
@@ -49,7 +48,9 @@ it("judges a card against the person's free rules: allow answers it with the rea
     const threadId = bot.threadId as string;
     await api("PATCH", `/api/bots/${bot.id}/tasks/${threadId}`, { approvalMode: "ask" });
     const allowRule = (await api("POST", "/api/custom-rules", { when: "tout ce qui touche au projet Sagax", behavior: "allow", botId: bot.id, riskScope: [] }, 201)).rule;
-    const denyRule = (await api("POST", "/api/custom-rules", { when: "toucher aux factures du client Acme", behavior: "deny", botId: bot.id, riskScope: [] }, 201)).rule;
+    // the deny rule must not name the server (acme): a rule naming a product
+    // as the servers declare it is the matcher's call (#1285), not the model's
+    const denyRule = (await api("POST", "/api/custom-rules", { when: "toucher aux factures du client Globex", behavior: "deny", botId: bot.id, riskScope: [] }, 201)).rule;
     const dump = join(dataDir, "fake-claude-dump.json");
     rmSync(dump, { force: true });
     await api("POST", `/api/bots/${bot.id}/messages`, { threadId, text: "Hold this turn while its approvals are exercised." }, 202);
@@ -78,14 +79,14 @@ it("judges a card against the person's free rules: allow answers it with the rea
     await expect.poll(() => allowed.answer()?.behavior, { timeout: 20_000 }).toBe("allow");
     await expect.poll(async () => (await card(allowed.id))?.answeredBy?.via, { timeout: 10_000 }).toBe("auto-review");
     expect((await card(allowed.id)).customRule).toMatchObject({ id: allowRule.id, outcome: "approved", reviewer: "model", reason: "Le billet fait partie du projet Sagax." });
-    await expect.poll(() => decisions(dataDir).find((row) => row.requestId === allowed.id && row.source === "auto-review"), { timeout: 5_000 })
+    await expect.poll(async () => (await decisions(api)).find((row) => row.requestId === allowed.id && row.source === "auto-review"), { timeout: 5_000 })
       .toMatchObject({ decision: "auto-approved", rule: allowRule.id, reason: "Le billet fait partie du projet Sagax." });
 
     // deny: the reviewer names the deny rule
-    reply({ decision: "deny", rule: "R1", reason: "Facture du client Acme." });
-    const denied = await ask({ invoice: 7, client: "Acme" });
+    reply({ decision: "deny", rule: "R1", reason: "Facture du client Globex." });
+    const denied = await ask({ invoice: 7, client: "Globex" });
     await expect.poll(() => denied.answer()?.behavior, { timeout: 20_000 }).toBe("deny");
-    await expect.poll(() => decisions(dataDir).find((row) => row.requestId === denied.id && row.source === "auto-review"), { timeout: 5_000 })
+    await expect.poll(async () => (await decisions(api)).find((row) => row.requestId === denied.id && row.source === "auto-review"), { timeout: 5_000 })
       .toMatchObject({ decision: "auto-denied", rule: denyRule.id });
 
     // unsure: the card stays the person's

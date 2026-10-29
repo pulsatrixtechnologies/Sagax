@@ -46,7 +46,9 @@ it("keeps ordinary work out of setup and carries explicit bot defaults and file 
     writeFileSync(oldFile, "Water the garden on Friday. Fixture code: MOSS-42.\n");
     // The prompt JSON-encodes paths, including Windows backslashes.
     expect(ordinary.system).toContain(JSON.stringify(join(fixture.info.dataDir, "workspaces", bot.id)));
-    expect(ordinary.system).toContain(JSON.stringify(join(fixture.info.dataDir, "task-workspaces", bot.id, bot.threadId)));
+    // The stable prompt (#1276, every engine since #1314) gives the
+    // conversation's own folder on its own line, outside the JSON block.
+    expect(ordinary.system).toContain(`Current working folder (currentWorkingFolder) of this conversation, absolute path: ${join(fixture.info.dataDir, "task-workspaces", bot.id, bot.threadId)}`);
 
     const setup = await direct("/setup Help me track garden watering");
     expect(setup.system).toContain("The user explicitly asked you to set yourself up");

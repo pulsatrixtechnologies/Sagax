@@ -198,7 +198,7 @@ it("the desktop on an organization server (bundled UI, net.fetch): a Markdown an
         expect(csp).not.toContain("allow-same-origin");
         const body = await frame.text();
         expect(body).toContain(text);
-        if (id === md.page.id) expect(body).toMatch(/<style>[^<]*\S[^<]*<\/style>/);
+        if (id === md.page.id) expect(body).toMatch(/<style[^>]*>[^<]*\S[^<]*<\/style>/);
         else expect(body).toContain("background:#123456");
         // the same frame address not loaded as a frame (a top-level load, a fetch): still refused
         expect((await handle(navigation(frameUrl))).status).toBe(404);

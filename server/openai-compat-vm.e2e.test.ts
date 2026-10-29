@@ -151,7 +151,8 @@ beforeAll(async () => {
     join(ROOT, "server/index.ts"),
   ], {
     cwd: ROOT,
-    env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
+    // the native tee is read as plain lines below (sealed at rest by default, #1263)
+    env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1", SAGAX_CONTENT_ENCRYPTION: "off",
       PATH: [fakebin, dirname(process.execPath), "/usr/bin", "/bin"].join(delimiter),
       HOME: fixtureHome, USERPROFILE: fixtureHome, SAGAX_DATA_DIR: data,
       APPDATA: join(fixtureHome, "appdata"), LOCALAPPDATA: join(fixtureHome, "localappdata"),
@@ -225,7 +226,8 @@ describe("openai-compat Local VM tools", () => {
     expect(toolNames(continuation), JSON.stringify({ tools: toolNames(continuation), requests: requests.length })).toContain("computer_screenshot");
     expect(toolNames(continuation)).toContain("agents_select_computer");
     const shown = (await api("GET", "/api/bots")).bots.find((item: any) => item.id === bot.id).messages;
-    expect(shown.filter((message: any) => message.card)).toEqual([]);
+    // no approval card; the intro card of a new bot (#1354) is not one
+    expect(shown.filter((message: any) => message.card?.requestId)).toEqual([]);
   }, 60_000);
 
   it("mounts the Local VM for a claudeAgent control on the same surface", async () => {

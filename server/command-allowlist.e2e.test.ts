@@ -63,6 +63,9 @@ it("remembers real permission requests, scopes and revokes grants, and preserves
   const stop = (bot: any, thread = bot.threadId) => api("POST", `/api/bots/${bot.id}/interrupt`, { threadId: thread });
   try {
     const bot = (await api("POST", "/api/bots", { name: "Command rules fixture", modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } }, 201)).bot;
+    // Ask on the bot (every thread, the sibling folders below included):
+    // new bots start on Approve for me, where a harmless command runs unasked.
+    await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "ask" });
     await api("PATCH", `/api/bots/${bot.id}/tasks/${bot.threadId}`, { approvalMode: "ask" });
     const rulesPath = `/api/bots/${bot.id}/command-allowlist`;
     expect((await api("GET", rulesPath)).rules).toEqual([]);

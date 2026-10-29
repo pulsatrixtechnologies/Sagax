@@ -119,7 +119,8 @@ it("recalls, captures, suggests, forgets and tidies a bot's memory", async () =>
     await expect.poll(async () => (await memoryFile(bot.id)).text, { timeout: 20_000 }).toContain("The person is vegetarian");
     await api("/api/config", "PUT", { memory: { captureQuietMs: 1_000 } });
     const captured = (await memoryFile(bot.id)).text;
-    expect(captured).toMatch(/- \d{4}-\d{2}-\d{2} · from chat "[^"]*" \(noticed\) · The person is vegetarian/);
+    // a captured fact is stamped with who may read it (#1313)
+    expect(captured).toMatch(/- \d{4}-\d{2}-\d{2} · from chat "[^"]*" \(noticed\) · readers person · The person is vegetarian/);
     expect(captured).toContain(`The person has exams this weekend · until ${future}`);
     expect(captured).toContain("The account balance is -10");
     // detail is filed into a topic the bot creates, found later by its other words

@@ -7,7 +7,7 @@
 //   Allow applies it as the person;
 // - a person paired with chat access only is refused with the reason: a
 //   bot never does what its person could not do by hand.
-import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { expect, it } from "vitest";
@@ -42,12 +42,9 @@ it("applies the owner's own settings at once, holds the sensitive ones on a card
     return comms;
   };
   const settings = (comms: string, args: Record<string, unknown>, status = 200) => api("POST", "/api/internal/settings", args, status, comms);
-  const journal = (): any[] => {
-    const dir = join(dataDir, "admin-activity");
-    if (!existsSync(dir)) return [];
-    return readdirSync(dir).flatMap((name) => readFileSync(join(dir, name), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line)))
-      .filter((row) => row.action === "setting.change");
-  };
+  // the journal's files are sealed at rest (#1263): read through its API, oldest first
+  const journal = async (): Promise<any[]> => ((await api("GET", "/api/admin-activity?what=setting")).entries as any[])
+    .filter((row) => row.action === "setting.change").reverse();
   const botOf = async (id: string) => (await api("GET", "/api/bots?messages=0")).bots.find((bot: any) => bot.id === id);
   try {
     const scout = (await api("POST", "/api/bots", { name: "Scout" }, 201)).bot;
@@ -81,9 +78,9 @@ it("applies the owner's own settings at once, holds the sensitive ones on a card
     expect((await settings(comms, { action: "set", key: "server.showToolCalls", value: true })).text).toMatch(/^Done/);
 
     // ── journal: one row per applied change, with the bot that made it ───
-    await expect.poll(() => journal().map((row) => row.changed[0]), { timeout: 5_000 })
+    await expect.poll(async () => (await journal()).map((row) => row.changed[0]), { timeout: 5_000 })
       .toEqual(["bot.approvalMode", "bot.title", "routine.schedule", "routine.thread", "group.name", "server.showToolCalls"]);
-    expect(journal()[0]).toMatchObject({ category: "setting", after: { "bot.approvalMode": "auto", how: "run", bot: scout.id } });
+    expect((await journal())[0]).toMatchObject({ what: "setting", after: { "bot.approvalMode": "auto", how: "run", bot: scout.id } });
 
     // ── the person's own routine: deleted at once (2026-10-26) ──────────
     expect((await settings(comms, { action: "set", key: "routine.delete", target: routine.id, value: true })).text).toMatch(/^Done/);
@@ -103,7 +100,7 @@ it("applies the owner's own settings at once, holds the sensitive ones on a card
     // the person's Allow applies the deletion as them, and it is journaled
     await api("POST", `/api/threads/${scout.threadId}/respond`, { requestId: cards[1].card.requestId, behavior: "allow" });
     expect((await api("GET", "/api/groups")).groups.some((row: any) => row.id === group.id)).toBe(false);
-    await expect.poll(() => journal().at(-1)?.after, { timeout: 5_000 }).toMatchObject({ "group.delete": true, how: "allowed" });
+    await expect.poll(async () => (await journal()).at(-1)?.after, { timeout: 5_000 }).toMatchObject({ "group.delete": true, how: "allowed" });
 
     // ── a person with chat access only: refused with the reason ──────────
     const pairing = await api("POST", "/api/auth/pairing", { label: "Member fixture", scopes: ["client"] });
@@ -112,7 +109,7 @@ it("applies the owner's own settings at once, holds the sensitive ones on a card
     expect(memberComms).not.toBe(comms);
     const refused = await settings(memberComms, { action: "set", key: "server.showToolCalls", value: false }, 403);
     expect(refused.error).toContain("rights they do not have");
-    expect(journal().filter((row) => row.changed[0] === "server.showToolCalls")).toHaveLength(1);
+    expect((await journal()).filter((row) => row.changed[0] === "server.showToolCalls")).toHaveLength(1);
   } finally {
     await fixture.close();
   }
