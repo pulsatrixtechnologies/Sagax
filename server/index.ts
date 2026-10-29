@@ -865,7 +865,8 @@ import { createUnattendedConsentStore } from "./remote-session-consent-store.ts"
 import { createRemoteSessionsAdmin } from "./remote-sessions-admin.ts";
 import { createUnattendedHosts } from "./remote-unattended-hosts.ts";
 import { createRemoteSessionRegistrar } from "./remote-session-register.ts";
-import { recallSupportSession } from "./remote-support-local.ts";
+import { handleRemoteSupportCall, recallSupportSession } from "./remote-support-local.ts";
+import { createRemoteSupportWatcher, parseSupportCheck, type SupportWatchTarget } from "./remote-support-watch.ts";
 import { supportFolderOwner, supportOwnersOfId } from "./remote-session-probe.ts";
 import { createRemoteSessionInternalRoutes, createRemoteSessionRoutes } from "./routes/remote-sessions.ts";
 import { createRemoteSessionsAdminRoutes } from "./routes/remote-sessions-admin.ts";
@@ -12132,12 +12133,74 @@ process.once("exit", () => resourceUsage.close());
 // While a Tailcat session is open, the owner's turn names the two tools
 // (Grok offers them directly instead of behind search_tool).
 registerReachProvider("tailcat-remote-session", remoteSessionReach((input) => remoteSessions.reachFor(input)));
+// #1499: from remote_support_open on, Sagax asks for the session's state by
+// itself, in the opener's name, on the conversation it was opened in. When
+// the end user's computer joins, that same status call connects it and the
+// registrar posts the card: nobody has to say "it is launched". One
+// Perspicax generation per watched code, made again when it is dropped.
+const remoteSupportSeats = new Map<string, { generation: string; ready: Promise<boolean> }>();
+async function remoteSupportSeat(target: SupportWatchTarget): Promise<string | null> {
+  const mcp = perspicaxMcp;
+  const bot = store.bot(target.botId);
+  if (!mcp || !bot?.perspicax?.profiles.length) return null;
+  let seat = remoteSupportSeats.get(target.code);
+  if (!seat) {
+    const generation = randomUUID();
+    const ready = mcp.prepareTurn({ threadId: target.threadId, generation, bot: { id: bot.id, perspicax: bot.perspicax }, speakerPrincipalId: target.principalId, speakerOrigin: "person" })
+      .then((plan) => plan.mounted.length > 0, () => false);
+    seat = { generation, ready };
+    remoteSupportSeats.set(target.code, seat);
+  }
+  if (await seat.ready) return seat.generation;
+  dropRemoteSupportSeat(target);
+  return null;
+}
+function dropRemoteSupportSeat(target: SupportWatchTarget): void {
+  const seat = remoteSupportSeats.get(target.code);
+  if (!seat) return;
+  remoteSupportSeats.delete(target.code);
+  void perspicaxMcp?.endGeneration(target.threadId, seat.generation).catch(() => {});
+}
+const remoteSupportWatcher = createRemoteSupportWatcher({
+  check: async (target) => {
+    const mcp = perspicaxMcp;
+    const generation = await remoteSupportSeat(target);
+    if (!mcp || !generation) return { error: true };
+    const owner = { principalId: target.principalId, botId: target.botId };
+    const answer = await handleRemoteSupportCall({
+      name: "remote_support_status",
+      args: { code: target.code },
+      local: {
+        dir: REMOTE_SUPPORT_DIR,
+        technicianName: (personDisplayName(principals.byId(target.principalId)) || cfg.profile?.name?.trim() || "").slice(0, 80),
+        orgName: (process.env.SAGAX_ORG_NAME?.trim() || "Pulsatrix").slice(0, 80),
+      },
+      post: async (tool, args) => {
+        const called = await mcp.callTool({ threadId: target.threadId, generation, botId: target.botId, name: tool, args: args as never });
+        if (!called.ok) {
+          // the turn's tokens ended (a new turn on this thread, a restart): a new seat next time
+          dropRemoteSupportSeat(target);
+          return { status: called.code === "profile_not_mounted" ? 409 : 502, body: { error: called.error, code: called.code } };
+        }
+        const text = typeof called.value === "string" ? called.value : JSON.stringify(called.value);
+        return { status: 200, body: { text, isError: called.isError, owner } };
+      },
+    });
+    return parseSupportCheck(answer.text, answer.isError);
+  },
+  release: (target) => dropRemoteSupportSeat(target),
+  log: (line) => console.warn(line),
+});
 const remoteSessionRegistrar = createRemoteSessionRegistrar({
   // principalId: the speaker whose token made the call (PerspicaxMcp.relay)
   publish: async ({ principalId, botId, threadId, open }) => {
     await remoteSessions.publish({ ...open, botId, threadId, principalId });
   },
+  opened: ({ principalId, botId, threadId, open }) => {
+    remoteSupportWatcher.watch({ principalId, botId, threadId, code: open.code, endAt: open.endAt });
+  },
   end: async ({ principalId, botId, code }) => {
+    remoteSupportWatcher.stop(code);
     await remoteSessions.endByCode(principalId, botId, code);
   },
   recall: (code) => recallSupportSession(REMOTE_SUPPORT_DIR, code),

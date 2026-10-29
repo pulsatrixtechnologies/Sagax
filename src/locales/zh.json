@@ -2664,5 +2664,7 @@
   "mascot.shape.shield": "盾牌",
   "mascot.shape.bubble": "泡泡",
   "chat.exchange.empty": "还没有与 {name} 的消息。",
-  "chat.exchange.loadError": "无法加载此对话。"
+  "chat.exchange.loadError": "无法加载此对话。",
+  "remoteSession.screenExpand": "放大屏幕",
+  "remoteSession.screenShrink": "缩小屏幕"
 }

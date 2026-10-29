@@ -71,6 +71,10 @@ const norm = (value: string) => value.trim().toLowerCase();
 export function createRemoteSessionRegistrar(deps: {
   /** Post or refresh the card and the panel row (RemoteSessionService.publish), for this person. */
   publish(input: { principalId: string; botId: string; threadId: string; open: RegisteredOpen }): Promise<unknown>;
+  /** A session this person opened on this bot, in this conversation: Sagax
+   * watches it from here (server/remote-support-watch.ts) and connects it
+   * when the end user's computer joins, without a word from the person. */
+  opened?(input: { principalId: string; botId: string; threadId: string; open: RegisteredOpen }): void;
   /** Mark the card closed (RemoteSessionService.endByCode). */
   end(input: { principalId: string; botId: string; threadId: string; code: string }): Promise<unknown>;
   /** A session opened before a restart: what the support folder kept for this code. */
@@ -133,13 +137,15 @@ export function createRemoteSessionRegistrar(deps: {
         const others = (deps.idOwners?.(id) ?? []).filter((owner) => !owner.principalId || norm(owner.principalId) !== principalId || owner.botId !== call.botId);
         if (others.length) return null;
         const os = parseRemoteSessionOs(args.os);
-        remember(principalId, call.botId, {
+        const open: RegisteredOpen = {
           id,
           code,
           elevated: args.rights === "elevated",
           endAt: new Date(end).toISOString(),
           ...(os ? { os } : {}),
-        });
+        };
+        remember(principalId, call.botId, open);
+        deps.opened?.({ principalId, botId: call.botId, threadId: call.threadId, open });
         return "opened";
       }
       const code = parseRemoteSessionCode(args.code);

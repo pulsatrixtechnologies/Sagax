@@ -3812,5 +3812,7 @@
   "mascot.shape.shield": "盾",
   "mascot.shape.bubble": "あわ",
   "chat.exchange.empty": "{name} とのメッセージはまだありません。",
-  "chat.exchange.loadError": "この会話を読み込めませんでした。"
+  "chat.exchange.loadError": "この会話を読み込めませんでした。",
+  "remoteSession.screenExpand": "画面を拡大",
+  "remoteSession.screenShrink": "画面を縮小"
 }

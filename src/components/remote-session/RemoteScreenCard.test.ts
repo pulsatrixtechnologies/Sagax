@@ -144,6 +144,21 @@ describe("the chat screen card", () => {
     expect(document.body.innerHTML).not.toContain(ADDRESS);
   });
 
+  it("is a compact screen in the chat, enlarged to the chat width on demand (#1499)", async () => {
+    act(() => root.render(createElement(RemoteScreenCard, { botId: "melonie", view })));
+    await flush();
+    const card = $("[data-remote-screen-card]")!;
+    expect(card.className).toContain("max-w-md");
+    const toggle = $("[data-remote-screen-size]")!;
+    expect(toggle.dataset.remoteScreenSize).toBe("compact");
+    expect(toggle.getAttribute("aria-label")).toBe(t("remoteSession.screenExpand"));
+    await click("[data-remote-screen-size]");
+    expect($("[data-remote-screen-card]")!.className).not.toContain("max-w-md");
+    expect($("[data-remote-screen-size]")!.getAttribute("aria-label")).toBe(t("remoteSession.screenShrink"));
+    await click("[data-remote-screen-size]");
+    expect($("[data-remote-screen-card]")!.className).toContain("max-w-md");
+  });
+
   it("has no Take control on a Mac (view only), and says why when the screen is not there", async () => {
     screenOk = false;
     act(() => root.render(createElement(RemoteScreenCard, { botId: "melonie", view: { ...view, os: "macos", inventory: "no-tunnel" } })));

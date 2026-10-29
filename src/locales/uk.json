@@ -2380,5 +2380,7 @@
   "mascot.shape.shield": "Щит",
   "mascot.shape.bubble": "Бульбашка",
   "chat.exchange.empty": "Ще немає повідомлень з {name}.",
-  "chat.exchange.loadError": "Не вдалося завантажити цю розмову."
+  "chat.exchange.loadError": "Не вдалося завантажити цю розмову.",
+  "remoteSession.screenExpand": "Збільшити екран",
+  "remoteSession.screenShrink": "Зменшити екран"
 }

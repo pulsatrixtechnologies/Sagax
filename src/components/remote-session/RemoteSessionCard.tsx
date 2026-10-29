@@ -59,7 +59,7 @@ export function RemoteSessionCard({ botId, threadId, view, detailsOpen = false }
   return (
     <div data-remote-session="" className="flex flex-col gap-3">
     {remoteHasScreen(view) && <RemoteScreenCard botId={botId} view={view} />}
-    <div data-remote-session-card="" data-remote-state={view.state} className="@container/remote overflow-hidden rounded-xl border border-hairline text-ink">
+    <div data-remote-session-card="" data-remote-state={view.state} className="@container/remote w-full max-w-xl overflow-hidden rounded-xl border border-hairline text-ink">
       <RemoteSessionFacts view={view} detailsOpen={detailsOpen} botId={botId} />
       {hints.length > 0 && (
         <div data-remote-hints="" className="border-t border-hairline/40 px-3 pb-3 pt-2.5">
