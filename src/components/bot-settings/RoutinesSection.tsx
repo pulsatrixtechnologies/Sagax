@@ -1,7 +1,7 @@
 // Shared by bot settings and the bot's side panel. The list keeps one action
 // (New schedule); a row opens the routine's page, which holds Run now, Pause
 // or Resume, Edit, the run logs and Delete.
-import { CalendarClock, ChevronLeft, Copy as CopyIcon, FileText, MoreHorizontal, PanelRight, Pause, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { CalendarClock, ChevronLeft, CirclePlay, Copy as CopyIcon, History, MoreHorizontal, PanelRight, Pause, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useServerFeature } from "@/lib/server-features";
 import { api, openBotThread, openNotificationTarget, useStore, type Bot } from "@/state/store";
@@ -14,7 +14,7 @@ import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useCaptionChrome, useMacInsetChrome } from "../DesktopCapabilities";
 import { RoutineEditor } from "../RoutinesPage";
 import { canSortRoutinesByPrefix, RoutineFolderList, type RoutineFolderControl } from "../routines/RoutineFolders";
-import { ACTION_LABEL, ActionBar, ActionButton, actionButtonClass } from "../ActionBar";
+import { ACTION_LABEL_MAIN, ActionBar, ActionButton, actionButtonClass } from "../ActionBar";
 import { canRunRoutineNow, routineRunInFlight, RunNowButton } from "../routines/RunNowButton";
 import { RoutineDetail } from "../routines/RoutineDetail";
 import { ConnectedRunActivity, RoutineRunDetail } from "../routines/RoutineRunDetail";
@@ -141,14 +141,16 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
         onOpenResults={() => openResults(detail)}
         canOpenResults
       />
-      <ActionBar data-routine-detail-actions="">
-        <RunNowButton routine={detail} bot={bot} className={actionButtonClass("primary")} labelClassName={ACTION_LABEL} onStarted={(run) => setOpenedRun(run)} />
-        <ActionButton icon={detail.enabled ? <Pause size={15} /> : <Play size={15} />} label={detail.enabled ? t("botPanel.routines.pause") : t("botPanel.routines.resume")} onClick={() => toggle(detail)} data-routine-toggle="" />
-        <ActionButton icon={<Pencil size={15} />} label={t("botPanel.routines.edit")} onClick={() => setEditing(detail)} data-routine-edit="" />
-        <ActionButton icon={<CopyIcon size={15} />} label={t("routineDetail.duplicate")} wide={false} onClick={() => setEditing({ copyOf: detail })} data-routine-duplicate="" />
-        <ActionButton icon={<FileText size={15} />} label={t("routines.logs")} wide={false} onClick={() => openLogs(detail.id)} data-routine-logs="" />
-        <ActionButton icon={<Trash2 size={15} />} label={t("common.delete")} wide={false} danger onClick={() => { dispatch({ type: "deleteRoutine", routineId: detail.id }); setDetailId(null); }} data-routine-delete="" />
-      </ActionBar>
+      <RoutinePanelActions
+        routine={detail}
+        bot={bot}
+        onStarted={(run) => setOpenedRun(run)}
+        onToggle={() => toggle(detail)}
+        onEdit={() => setEditing(detail)}
+        onDuplicate={() => setEditing({ copyOf: detail })}
+        onLogs={() => openLogs(detail.id)}
+        onDelete={() => { dispatch({ type: "deleteRoutine", routineId: detail.id }); setDetailId(null); }}
+      />
       {editing && editing !== "new" && !("copyOf" in editing) && <RoutineEditor key={detail.id} routine={detail} bots={[bot]} lockedBotId={bot.id} defaultRunOn={defaultRunOn} onClose={() => setEditing(null)} />}
       {editing && editing !== "new" && "copyOf" in editing && <RoutineEditor key={`${detail.id}-copy`} copyOf={editing.copyOf} bots={[bot]} lockedBotId={bot.id} defaultRunOn={defaultRunOn} folder={detail.folder} onClose={() => setEditing(null)} />}
     </div>;
@@ -180,4 +182,29 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
       onCreateIn={(folder) => { setNewFolder(folder); setEditing("new"); }} />
     {editing === "new" && <RoutineEditor key={`${bot.id}-new-${newFolder ?? ""}`} bots={[bot]} lockedBotId={bot.id} defaultRunOn={defaultRunOn} folder={newFolder} onClose={() => { setEditing(null); setNewFolder(undefined); }} />}
   </div>;
+}
+
+/** The bar under a routine's page in the bot panel (2026-10-29): Run now,
+ * Pause or Resume, Edit, Duplicate, Logs, Delete. Each with its words while
+ * the panel has room (Run now and Pause/Resume the longest), else its icon
+ * alone with a tooltip; no two icons alike (Run now a filled play, Resume a
+ * play in a circle, Logs a clock). */
+export function RoutinePanelActions({ routine, bot, onStarted, onToggle, onEdit, onDuplicate, onLogs, onDelete }: {
+  routine: Routine;
+  bot: Bot;
+  onStarted: (run: RoutineRun) => void;
+  onToggle: () => void;
+  onEdit: () => void;
+  onDuplicate: () => void;
+  onLogs: () => void;
+  onDelete: () => void;
+}) {
+  return <ActionBar data-routine-detail-actions="">
+    <RunNowButton routine={routine} bot={bot} className={actionButtonClass("primary", "main")} labelClassName={ACTION_LABEL_MAIN} onStarted={onStarted} />
+    <ActionButton fold="main" icon={routine.enabled ? <Pause size={15} /> : <CirclePlay size={15} />} label={routine.enabled ? t("botPanel.routines.pause") : t("botPanel.routines.resume")} onClick={onToggle} data-routine-toggle="" />
+    <ActionButton icon={<Pencil size={15} />} label={t("botPanel.routines.edit")} onClick={onEdit} data-routine-edit="" />
+    <ActionButton icon={<CopyIcon size={15} />} label={t("routineDetail.duplicate")} onClick={onDuplicate} data-routine-duplicate="" />
+    <ActionButton icon={<History size={15} />} label={t("routines.logs")} onClick={onLogs} data-routine-logs="" />
+    <ActionButton icon={<Trash2 size={15} />} label={t("common.delete")} danger onClick={onDelete} data-routine-delete="" />
+  </ActionBar>;
 }

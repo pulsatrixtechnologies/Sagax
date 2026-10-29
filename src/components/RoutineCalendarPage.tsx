@@ -2024,9 +2024,11 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
   // 2026-10-28: "Running" on a bot panel row lands on that run, open.
   useEffect(() => {
     const runId = state.routinesFocus?.runId;
-    const run = runId ? scopedRuns.find((candidate) => candidate.id === runId) : undefined;
+    // 2026-10-29: View run and a run's notification land here too; a run
+    // outside the current scope (or of a deleted routine) still opens.
+    const run = runId ? scopedRuns.find((candidate) => candidate.id === runId) ?? state.routineRuns.find((candidate) => candidate.id === runId) : undefined;
     if (run) openRun(run);
-  }, [state.routinesFocus, scopedRuns.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.routinesFocus, state.routineRuns.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
   const macInset = capabilities.windowChrome === "mac-inset";
   const windowDragStyle = macInset
     ? ({ WebkitAppRegion: "drag" } as CSSProperties)
