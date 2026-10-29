@@ -197,22 +197,31 @@ var redraw=0;W.addEventListener("resize",function(){clearTimeout(redraw);redraw=
 
 /** A reading frame's shared state (#1544, shared/page-state.ts), run first
  * after the prelude so the page's own scripts find it: window.sagax.page
- * with ready (a promise), get(key), entry(key) ({ value, name, at }), all(),
- * canWrite(), set(key, value) (a promise; null clears) and subscribe(fn)
- * (called with every value whenever the state changes; returns the
- * unsubscribe). It only ever posts to its parent, the wrapper, which reads
- * and writes this server's store with the reader's own rights. No network. */
+ * with ready (a promise), get(key), entry(key) ({ value, name, at, who }),
+ * all(), canWrite(key?) (this reader may write that key, or without a key
+ * at least one), level(key) (anyone, signed_in, editors or owner, as the
+ * page's sagax-state block declares), me() (this reader's handle on this
+ * page: an entry's `who` when they set it), set(key, value) (a promise; null
+ * clears) and subscribe(fn) (called with every value whenever the state
+ * changes; returns the unsubscribe). It only ever posts to its parent, the
+ * wrapper, which reads and writes this server's store with the reader's own
+ * rights; the server applies the rules again. No network. */
 export const STATE_BRIDGE_SOURCE = String.raw`(function(){"use strict";
-var W=window,P=W.parent,state={},can=false,subs=[],pending={},seq=0,done,ready=new Promise(function(r){done=r});
+var W=window,P=W.parent,state={},can=false,access=null,me="",subs=[],pending={},seq=0,done,ready=new Promise(function(r){done=r}),own=Object.prototype.hasOwnProperty;
 function copy(v){return v===undefined?undefined:JSON.parse(JSON.stringify(v))}
-function all(){var o={};for(var k in state)if(Object.prototype.hasOwnProperty.call(state,k))o[k]={value:copy(state[k].value),name:String(state[k].name||""),at:Number(state[k].at)||0};return o}
+function one(e){var o={value:copy(e.value),name:String(e.name||""),at:Number(e.at)||0};if(typeof e.who==="string")o.who=e.who;return o}
+function all(){var o={};for(var k in state)if(own.call(state,k))o[k]=one(state[k]);return o}
+function level(k){var r=access&&access.rules||{};if(own.call(r,k)&&k.slice(-1)!=="*")return r[k];var b=null,n=-1;for(var p in r){if(!own.call(r,p)||p==="*"||p.slice(-1)!=="*")continue;var s=p.slice(0,-1);if(k.indexOf(s)===0&&s.length>n){n=s.length;b=r[p]}}return b||(own.call(r,"*")?r["*"]:"signed_in")}
+function may(k){if(!access)return can;if(access.locked&&access.locked.indexOf(k)>=0)return false;var l=level(k),ro=access.role;if(ro==="anon")return l==="anyone"&&access.publicLink===true;if(l==="anyone"||l==="signed_in")return true;if(l==="editors")return ro==="editor"||ro==="owner";return ro==="owner"}
 W.addEventListener("message",function(e){if(e.source!==P||!e.data||e.data.v!==1)return;var d=e.data;
-if(d.type==="${STATE_MESSAGE}"&&d.entries&&typeof d.entries==="object"){state=d.entries;can=d.canWrite===true;done();var s=all();subs.slice().forEach(function(f){try{f(s)}catch(x){}})}
+if(d.type==="${STATE_MESSAGE}"&&d.entries&&typeof d.entries==="object"){state=d.entries;can=d.canWrite===true;access=d.access&&typeof d.access==="object"?d.access:null;me=typeof d.me==="string"?d.me:"";done();var s=all();subs.slice().forEach(function(f){try{f(s)}catch(x){}})}
 else if(d.type==="${STATE_RESULT_MESSAGE}"&&pending[d.id]){var p=pending[d.id];delete pending[d.id];if(d.ok)p.ok(true);else p.no(new Error(String(d.error||"refused")))}});
 var page={ready:ready,
 get:function(k){var e=state[k];return e?copy(e.value):undefined},
-entry:function(k){var e=state[k];return e?{value:copy(e.value),name:String(e.name||""),at:Number(e.at)||0}:undefined},
-all:all,canWrite:function(){return can},
+entry:function(k){var e=state[k];return e?one(e):undefined},
+all:all,canWrite:function(k){return k===undefined?can:may(String(k))},
+level:function(k){return level(String(k))},
+me:function(){return me},
 set:function(k,v){return new Promise(function(ok,no){var id=++seq;pending[id]={ok:ok,no:no};try{P.postMessage({type:"${STATE_SET_MESSAGE}",v:1,id:id,key:String(k),value:v===undefined?null:v},"*")}catch(x){delete pending[id];no(x)}})},
 subscribe:function(f){if(typeof f!=="function")return function(){};subs.push(f);return function(){subs=subs.filter(function(g){return g!==f})}}};
 try{Object.defineProperty(W,"sagax",{value:Object.freeze({page:Object.freeze(page)}),writable:false,configurable:false,enumerable:false})}catch(x){}

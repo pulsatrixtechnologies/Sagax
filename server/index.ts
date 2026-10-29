@@ -8526,6 +8526,8 @@ function publishedPageOptions(): PublicPageOptions {
       const person = principals.byId(principalId);
       return person ? personDisplayName(person) : "";
     },
+    // a reader not signed in changed a page's shared state (2026-10-29)
+    stateChanged: (pageId) => pageLive.stateChanged(pageId),
     pagesHost: PAGES_ORIGIN?.host ?? null,
     appOrigin: (() => {
       try {

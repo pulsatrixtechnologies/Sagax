@@ -1,9 +1,9 @@
 // The actions on the right of the reader's bar: who else has the page open
 // (avatars) and Annotate for anyone signed in who may read the page,
-// Download PDF for every reader, Share only for the page's own person (the
-// server tells, shared/page-reader.ts ReaderBoot.can). In the page's
-// person's look (reader.css); on a phone each keeps its icon and its name
-// as its accessible label.
+// Download PDF for every reader, Page state and Share only for the page's
+// own person (the server tells, shared/page-reader.ts ReaderBoot.can). In
+// the page's person's look (reader.css); on a phone each keeps its icon and
+// its name as its accessible label.
 import { useCallback, useEffect, useState } from "react";
 import { FileDown, MessageSquareText, Share2 } from "lucide-react";
 
@@ -13,6 +13,7 @@ import { AnnotatePanel } from "./AnnotatePanel";
 import { othersHere, usePageLive } from "./live";
 import { downloadPdf } from "./print";
 import { ReaderShare } from "./ReaderShare";
+import { ReaderStateButton } from "./ReaderState";
 
 /** The panel sits under the bar, whose height can change (a phone wraps it). */
 function useBarHeight(active: boolean) {
@@ -59,6 +60,7 @@ export function ReaderActions({ boot }: { boot: ReaderBoot }) {
         </button>
       )}
       {annotating && boot.pageId && <AnnotatePanel boot={boot} pageId={boot.pageId} frame={frame} changes={live.changes} onClose={closePanel} />}
+      {boot.can.share && boot.pageId && <ReaderStateButton boot={boot} pageId={boot.pageId} />}
       {boot.can.share && boot.pageId && (
         <div className="sr-anchor">
           <button type="button" className="sr-bar-button sr-bar-button-primary" data-reader-share aria-expanded={sharing} aria-haspopup="dialog" aria-label={text("share")} title={text("share")} onClick={() => setSharing((open) => !open)}>

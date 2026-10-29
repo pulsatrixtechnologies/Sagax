@@ -211,6 +211,14 @@ try {
         await shot(page, `${person}-${scheme}-taken`);
       }
       if (process.env.CAPTURE_STATE === "1" && person === "owner") await shot(page, `${person}-${scheme}-sees-taken`);
+      if (process.env.CAPTURE_STATE === "1" && person === "owner" && await page.locator("[data-reader-state]").count()) {
+        // Page state (2026-10-29): what readers set, a key made read-only
+        await page.locator("[data-reader-state]").click();
+        await page.waitForSelector("[data-state-lock]");
+        await page.locator("[data-state-lock]").first().click();
+        await page.waitForSelector("[data-state-lock][aria-pressed='true']");
+        await shot(page, `${person}-${scheme}-state-panel`);
+      }
       if (KIND === "markdown" && person === "reader" && await page.locator("[data-reader-annotate]").count()) {
         // a suggested edit (2026-10-28): select words, Suggest an edit, the new words
         await page.locator("[data-reader-annotate]").click();
