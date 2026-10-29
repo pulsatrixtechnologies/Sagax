@@ -30,6 +30,16 @@ public enum BubbleColors {
         return (dark?.color ?? accent, darkInk)
     }
 
+    /// The person's bubble in a bot's colour (a 1:1 with that bot, 2026-10-28):
+    /// the same derivation as the accent's, so a skin with a neutral accent
+    /// (Midnight's near white) no longer leaves it white. Nil for a name that
+    /// is not a bot colour: the skin's bubble then stays.
+    public static func user(botColor name: String?) -> (fill: SkinColor, ink: SkinColor)? {
+        guard let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty,
+              let hex = MausColors.hex(for: name), let color = SkinColor(css: hex) else { return nil }
+        return user(accent: color)
+    }
+
     /// The bot's grey: the page's lightness, neutral, a step lighter (dark) or darker (light).
     public static func bot(app: SkinColor, dark: Bool) -> SkinColor {
         let l = hsl(app).l

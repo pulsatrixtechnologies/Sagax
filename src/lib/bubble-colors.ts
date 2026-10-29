@@ -107,3 +107,47 @@ export function brandBubbleVars(accent: string | undefined): Record<string, stri
   const { user, userInk } = userBubble(accent);
   return { "--brand-bubble-user": user, "--brand-bubble-user-ink": userInk };
 }
+
+/** The names a bot's (or a room's) colour sets on its own scope, set together. */
+export const SCOPED_BUBBLE_VARS = ["--color-bubble-user", "--color-bubble-user-ink"] as const;
+
+/**
+ * The person's bubble in a bot's own colour (2026-10-28). A skin with a
+ * neutral accent (Midnight's is #f5f5f5) left the bubble white; in a
+ * conversation with a bot it takes the bot's colour instead, whatever the
+ * "Use bot color as accent" setting says, like the switches in its panel.
+ * Same derivation as the skin's bubble (the lightness moves, the hue stays,
+ * the text reaches 4.5:1), which does not depend on the scheme, so one pair
+ * serves light and dark. Set inline on the conversation's root (ChatView,
+ * RunView, the floating bot), it outweighs the skin's and the brand's pair
+ * inherited from <html>; the bot's own bubble stays grey. Empty for a colour
+ * that is not `#rrggbb`: the skin's bubble then stays.
+ */
+export function botBubbleVars(color: string | null | undefined): Record<string, string> {
+  if (!color || !parseHex(color)) return {};
+  const { user, userInk } = userBubble(color);
+  return { "--color-bubble-user": user, "--color-bubble-user-ink": userInk };
+}
+
+/** How far from grey (max minus min channel, 0 to 1) an accent must be to
+ * count as a colour: below it (Midnight, Graphite, Linen, Daylight) the
+ * accent is a neutral. */
+const NEUTRAL_CHROMA = 0.1;
+
+/** Whether an accent is a neutral (white, grey, black) rather than a colour. */
+export function isNeutralAccent(accent: string): boolean {
+  const rgb = parseHex(accent);
+  if (!rgb) return false;
+  return (Math.max(...rgb) - Math.min(...rgb)) / 255 < NEUTRAL_CHROMA;
+}
+
+/**
+ * The person's bubble in a room (GroupView, `[data-room-bubble]`): the room's
+ * colour when it has one (set inline, as a bot's), else the skin's bubble,
+ * except on a skin whose accent is a neutral: there the brand's accent
+ * (the deployment's, else Pulsatrix's of the same scheme) keeps the bubble a
+ * colour. The generated stylesheet writes that rule per skin.
+ */
+export function roomBubbleColors({ accent, brand }: { accent: string; brand: string }): { user: string; userInk: string } {
+  return userBubble(isNeutralAccent(accent) ? brand : accent);
+}

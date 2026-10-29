@@ -61,4 +61,21 @@ final class BubbleColorsTests: XCTestCase {
     func testAnAccentThatAlreadyCarriesWhiteIsUsedAsIs() {
         XCTAssertEqual(BubbleColors.user(accent: SkinColor(0x2F62DD)).fill, SkinColor(0x2F62DD))
     }
+
+    /// Regression (2026-10-28): on Midnight the accent is near white, so my
+    /// bubble was white in a 1:1. With a bot's colour it takes that colour's
+    /// hue, with text at 4.5:1 or better, for every bot colour.
+    func testMyBubbleInAOneToOneTakesTheBotsColour() {
+        let midnight = SkinColor(0xF5F5F5)
+        XCTAssertNil(BubbleColors.user(botColor: nil))
+        XCTAssertNil(BubbleColors.user(botColor: "not-a-colour"))
+        for name in ["red", "green", "blue", "purple", "orange"] {
+            guard let paint = BubbleColors.user(botColor: name) else { XCTFail("no paint for \(name)"); continue }
+            XCTAssertNotEqual(paint.fill, midnight, name)
+            XCTAssertGreaterThanOrEqual(paint.ink.contrast(on: paint.fill), BubbleColors.minimumContrast, name)
+            let bot = SkinColor(css: MausColors.hex(for: name)!)!
+            let a = [bot.red, bot.green, bot.blue], u = [paint.fill.red, paint.fill.green, paint.fill.blue]
+            XCTAssertEqual(a.firstIndex(of: a.max()!), u.firstIndex(of: u.max()!), "\(name): hue moved")
+        }
+    }
 }

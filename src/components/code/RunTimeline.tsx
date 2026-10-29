@@ -7,6 +7,7 @@ import { Check, ChevronRight, ExternalLink, GitPullRequest, ListChecks, ShieldQu
 
 import type { RunEvent } from "../../../shared/cloud-agents.ts";
 import { ChatMarkdown } from "../ChatMarkdown";
+import { botBubbleVars } from "@/lib/bubble-colors";
 import { timelineItems, type TimelineItem } from "@/lib/code-runs";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
@@ -18,6 +19,8 @@ export interface RunTimelineProps {
   workedMinutes?: number;
   /** The run is working right now (a discreet line at the end). */
   working?: boolean;
+  /** The colour (#rrggbb) of the bot that launched the run: the task's bubble takes it. */
+  botColor?: string;
 }
 
 function Tools({ item }: { item: Extract<TimelineItem, { kind: "tools" }> }) {
@@ -95,10 +98,10 @@ function Approval({ item, onApprove }: { item: Extract<TimelineItem, { kind: "ap
   );
 }
 
-export function RunTimeline({ events, onApprove, workedMinutes, working }: RunTimelineProps) {
+export function RunTimeline({ events, onApprove, workedMinutes, working, botColor }: RunTimelineProps) {
   const items = timelineItems(events);
   return (
-    <ol data-run-timeline className="flex flex-col gap-3" aria-live="polite">
+    <ol data-run-timeline className="flex flex-col gap-3" aria-live="polite" style={botBubbleVars(botColor) as React.CSSProperties}>
       {items.map((item, index) => {
         const key = `${item.kind}:${item.seq}`;
         switch (item.kind) {

@@ -3,7 +3,8 @@
  * Headless screenshots of the chat-bubbles gallery (Playwright, no window):
  * the person's bubble in the accent and the bot's in grey, in a dark and a
  * light skin, over several accents. No server beyond the gallery's own Vite.
- * Usage: node scripts/capture-chat-bubbles.mjs [--out DIR] [--port N] [--mode before|after]
+ * Usage: node scripts/capture-chat-bubbles.mjs [--out DIR] [--port N] [--mode before|after] [--gallery bot]
+ * --gallery bot: my bubble in a bot's colour on Studio (Midnight dark, Daylight light), files bot-<mode>-<scheme>.png.
  */
 import { spawn } from "node:child_process";
 import { mkdir } from "node:fs/promises";
@@ -18,10 +19,12 @@ const arg = (name, fallback) => {
 const outDir = resolve(arg("--out", join(root, "docs", "screenshots", "chat-bubbles")));
 const port = Number(arg("--port", "5294"));
 const mode = arg("--mode", "after");
-const skins = [
-  { id: "pulsatrix", label: "dark" },
-  { id: "pulsatrix-light", label: "light" },
-];
+const gallery = arg("--gallery", "");
+const skins = gallery === "bot"
+  ? [{ id: "midnight", label: "dark" }, { id: "daylight", label: "light" }]
+  : [{ id: "pulsatrix", label: "dark" }, { id: "pulsatrix-light", label: "light" }];
+const pageName = gallery === "bot" ? "chat-bubbles-bot" : "chat-bubbles";
+const prefix = gallery === "bot" ? "bot-" : "";
 
 async function waitForServer(url, ms = 120_000) {
   const start = Date.now();
@@ -44,7 +47,7 @@ const vite = spawn(
 );
 let browser;
 try {
-  const base = `http://127.0.0.1:${port}/src/gallery/chat-bubbles.html`;
+  const base = `http://127.0.0.1:${port}/src/gallery/${pageName}.html`;
   await waitForServer(base);
   const { chromium } = await import(process.env.SAGAX_VERIFY_PLAYWRIGHT || "playwright");
   await mkdir(outDir, { recursive: true });
@@ -53,7 +56,7 @@ try {
   for (const { id, label } of skins) {
     await page.goto(`${base}?skin=${id}&mode=${mode}`, { waitUntil: "networkidle" });
     await page.waitForSelector("[data-gallery]");
-    const file = join(outDir, `${mode}-${label}.png`);
+    const file = join(outDir, `${prefix}${mode}-${label}.png`);
     await page.locator("[data-gallery]").screenshot({ path: file });
     console.log(file);
   }
