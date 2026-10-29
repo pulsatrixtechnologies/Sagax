@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { driverKeyBacked, type AppConfig } from "./config.ts";
-import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, memberOwnHostToolCall, resolveTurnSpeaker, sensitiveHiddenSegment, routineAccessNotifications, routineLineage, serverCommandApproval, speakerPrincipal, type MemberHostToolPlace, signInExpiredCard, engineNameForViewer } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, memberOwnHostToolCall, resolveTurnSpeaker, sensitiveHiddenSegment, routineAccessNotifications, routineLineage, serverCommandApproval, speakerPrincipal, type MemberHostToolPlace, signInExpiredCard, engineNameForViewer, keyEngineProvider, orgKeyEngineName } from "./engine-access.ts";
 
 const ALICE = "pr_aaaaaaaa-0000-4000-8000-000000000001";
 const BOB = "pr_bbbbbbbb-0000-4000-8000-000000000002";
@@ -482,5 +482,15 @@ describe("#1533: an engine's name for a member", () => {
     expect(engineNameForViewer("Claude (API key)", "Claude", false)).toBe("Claude (API key)");
     // an admin reads the name as it was saved
     expect(engineNameForViewer("someone@example.test", "Claude", true)).toBe("someone@example.test");
+  });
+});
+
+describe("an engine the organization's key runs, as a member reads it (#1533)", () => {
+  it("is named after its provider and who pays, in the person's language", () => {
+    expect(orgKeyEngineName(keyEngineProvider("claudeAgent", "Claude (API key)"), "fr")).toBe("Claude (clé de l'organisation)");
+    expect(orgKeyEngineName(keyEngineProvider("claudeAgent", "Claude (API key)"), "en")).toBe("Claude (organization key)");
+    expect(orgKeyEngineName(keyEngineProvider("grok", "xAI"), "fr-CA")).toBe("Grok (clé de l'organisation)");
+    expect(orgKeyEngineName(keyEngineProvider("openai-compat", "OpenAI"), "en")).toBe("OpenAI (organization key)");
+    expect(orgKeyEngineName(keyEngineProvider("openai-compat", "OpenRouter"), "")).toBe("OpenRouter (organization key)");
   });
 });

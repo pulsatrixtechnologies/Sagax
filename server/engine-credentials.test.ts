@@ -385,3 +385,19 @@ describe("resolveEngineAccess: the owner pays (#1137)", () => {
     expect(out).toMatchObject({ ok: true, access: { via: "owner-key", identity: `owner-key:${OWNER}:fp` }, plan: { ownerPays: true } });
   });
 });
+
+describe("an API-key engine runs on a key, never on a subscription (#1533)", () => {
+  const CLAUDE_API = { instanceId: "claudeApi", driver: "claudeAgent", installed: true, keyOnly: true };
+  it("a member signed in to Claude pays nothing on the organization's Claude API engine: the organization does", () => {
+    const plan = resolveEngineAccess(input({ instance: CLAUDE_API, signedIn: [`${OWNER}/claudeAgent`], keyBacked: true }));
+    expect(plan).toEqual({ ok: true, via: "org-key", payer: "organization" });
+  });
+  it("their own key still comes before the organization's", () => {
+    const plan = resolveEngineAccess(input({ instance: CLAUDE_API, signedIn: [`${OWNER}/claudeAgent`], keys: ["SUB-OWNER/anthropic"], keyBacked: true }));
+    expect(plan).toMatchObject({ ok: true, via: "owner-key" });
+  });
+  it("the subscription engine itself is unchanged", () => {
+    const plan = resolveEngineAccess(input({ instance: CLAUDE, signedIn: [`${OWNER}/claudeAgent`], keyBacked: true }));
+    expect(plan).toMatchObject({ ok: true, via: "subscription" });
+  });
+});

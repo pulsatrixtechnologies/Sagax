@@ -187,10 +187,10 @@
         "fr": { "stringUnit": { "state": "translated", "value": "Vos tours utilisent votre propre clé." } }
       }
     },
-    "Your turns use your organization's key.": {
+    "Pays with: the organization": {
       "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Your turns use your organization's key." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Vos tours utilisent la clé de votre organisation." } }
+        "en": { "stringUnit": { "state": "translated", "value": "Pays with: the organization" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Payé par : l'organisation" } }
       }
     },
     "Outside your organization's list: only your own subscription or key runs it.": {
