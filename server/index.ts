@@ -1059,6 +1059,7 @@ import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotInboundMailReadRoutes } from "./routes/bot-inbound-mail.ts";
 import { BOT_MAIL_ASSERTION_ACTORS, botmailConfinedInternalRefusal, botmailRunConfined, createBotInboundMailRoute } from "./bot-inbound-mail.ts";
 import { TELEPHONY_ASSERTION_ACTORS, createBotInboundTelephonyRoute } from "./bot-inbound-telephony.ts";
+import { SmsConversation } from "./sms-conversation.ts";
 import { isRelaySource } from "../shared/trigger-sources.ts";
 import { BotMailAddresses } from "./bot-mail-addresses.ts";
 import { createBotPresetRoutes } from "./routes/bot-presets.ts";
@@ -30999,6 +31000,41 @@ const inboundMail = createBotInboundMailRoute({
 // phone line wakes the chosen bot's Bot phone triggers
 // (server/bot-inbound-telephony.ts), wired before the session gate with the
 // member API and bot email. Same owner rule as bot email.
+/** The bot's words after a line of the person's, as one text: its own text
+ * replies only (no tool row, no other bot's line). */
+function smsReplyAfter(threadId: string, messageId: string): string {
+  const messages = store.messagesFor(threadId);
+  let index = messageId ? messages.findIndex((message) => message.id === messageId) : -1;
+  if (index < 0) index = messages.map((message) => message.role).lastIndexOf("user");
+  return messages.slice(index + 1)
+    .filter((message) => message.role === "bot" && message.kind === "text" && !message.from && typeof message.text === "string" && message.text.trim())
+    .map((message) => message.text!.trim())
+    .join("\n\n");
+}
+const smsConversation = new SmsConversation({
+  send: async ({ person, sub, botId, text }) => {
+    const bot = store.bot(botId);
+    if (!bot) return { ok: false, error: "no such bot" };
+    const member: MemberPerson = { principalId: person, sub, name: personDisplayName(principals.byId(person)) || "", admin: false, actor: "perspicax-voice" };
+    // the bot's one conversation with the person (#1586), started when they have none
+    const threadId = conversationOrStart(bot, person);
+    if (!threadId) return { ok: false, error: "no conversation" };
+    if (store.isConfidentialThread(threadId)) return { ok: false, error: "confidential conversation" };
+    const sent = await performAsMember(member, { method: "POST", path: `/api/bots/${encodeURIComponent(botId)}/messages`, body: { text, threadId } });
+    if (sent.status >= 300) return { ok: false, error: String((sent.body as { error?: unknown })?.error ?? `refused (${sent.status})`) };
+    const messageId = (sent.body as { message?: { id?: unknown } })?.message?.id;
+    if (typeof messageId === "string") store.patchMessage(threadId, messageId, { via: "sms" });
+    return { ok: true, threadId, messageId: typeof messageId === "string" ? messageId : "" };
+  },
+  state: (botId, threadId) => agentTurnState(botId, threadId),
+  replyAfter: smsReplyAfter,
+  textBack: async ({ person, botId, to, body }) => {
+    const answer = await reachMeVoice(person, botId, "voice_sms", { to, body });
+    return answer.ok;
+  },
+  botName: (botId) => store.bot(botId)?.name ?? "Sagax",
+  language: (person) => reachMeLanguage(person),
+});
 const inboundTelephony = createBotInboundTelephonyRoute({
   identity: () => IDENTITY.kind,
   publicOrigin: () => (IDENTITY.kind === "perspicax" ? IDENTITY.publicOrigin.replace(/\/+$/, "") : null),
@@ -31015,6 +31051,8 @@ const inboundTelephony = createBotInboundTelephonyRoute({
   triggers: (botId) => webhooks.list().filter((hook) => hook.enabled && hook.botId === botId && hook.source?.type === "telephony").map((hook) => hook.id),
   ingest: (id, event, key) => webhooks.ingest(id, event, key),
   callResult: (input) => outbound.callResult(input),
+  // 2026-10-29: the person texting their own bot (server/sms-conversation.ts)
+  ownText: (input) => smsConversation.start({ person: input.ownerPrincipalId.trim().toLowerCase(), sub: input.sub, botId: input.botId, from: input.from, text: input.text }),
   record: (row) => appendAdminAction(DATA_DIR, {
     category: "webhook",
     action: row.notice ? "bot-phone.notice" : "bot-phone.delivered",

@@ -24,6 +24,12 @@
 //
 //   - `sms`, `call_request`, `call_summary` wake the bot with the text
 //     (`sms.received`, `call.requested`, `call.summary`);
+//   - 2026-10-29: an `sms` the line owner sent from their own verified
+//     number (`authenticated`, `person.id` is the assertion's `sub`) is the
+//     person texting their bot: it becomes a turn of their conversation
+//     with the bot and the answer goes back by text (server/sms-conversation.ts,
+//     `ownText`). The phone triggers keep everyone else's texts. A carrier
+//     keyword alone (STOP, HELP) is never a turn;
 //   - `call_started`, `pin_locked`, `call_rejected` are notices: metadata
 //     only, one admin activity row, no run;
 //   - `call_result` (2026-10-28) ends a conversation call the bot placed
@@ -62,6 +68,7 @@ import type { NormalizedTriggerEvent } from "../shared/trigger-sources.ts";
 import type { ConsoleAssertion, ConsoleAssertionActor } from "./oidc-rp.ts";
 import { AssertionReplayCache } from "./org-admin-routes.ts";
 import { reachMeSmsReply } from "./reach-me/inbound.ts";
+import { isOwnText } from "./sms-conversation.ts";
 import { maskedCaller, type WebhookReceiveResult } from "./webhooks.ts";
 
 export const TELEPHONY_PATH = "/api/org/telephony/inbound";
@@ -235,6 +242,11 @@ export interface TelephonyRouteDeps {
   /** A conversation call's result (event call_result) for the person
    * `sub`. Absent: the event is refused like an unknown one. */
   callResult?(input: { sub: string; result: CallResultBody }): "applied" | "unknown" | "not_yours" | "already";
+  /** The line owner texting their bot from their own verified number: a
+   * turn of their conversation, answered by text. False: it could not
+   * start, the text goes to the phone triggers as before. Absent: always
+   * the triggers. */
+  ownText?(input: { ownerPrincipalId: string; sub: string; botId: string; from: string; text: string }): Promise<boolean>;
   /** WebhookManager.ingest: throws an Error with `status` on a refusal. */
   ingest(triggerId: string, event: NormalizedTriggerEvent, dedupeKey: string): WebhookReceiveResult | null;
   record(row: TelephonyDeliveryRow): void;
@@ -379,6 +391,19 @@ export function createBotInboundTelephonyRoute(deps: TelephonyRouteDeps): (req: 
       if (reply.handled) {
         seen.add(seenKey, now());
         return send(res, 202, { event: event.event, notice, triggers: 0, delivered: 0, duplicate: 0, ignored: 0, reachMe: reply.outcome });
+      }
+    }
+
+    // 2026-10-29: the person texting their own bot: their conversation
+    if (deps.ownText && isOwnText({ event: event.event, authenticated: event.authenticated, personId: event.person?.id, sub: assertion.sub, text: event.content?.text })) {
+      const started = await deps.ownText({ ownerPrincipalId: owner.principalId, sub: assertion.sub, botId: bot.id, from: event.from, text: event.content!.text.trim() });
+      if (started) {
+        seen.add(seenKey, now());
+        deps.record({
+          botId: bot.id, botName: bot.name, ownerPrincipalId: owner.principalId, event: event.event, notice: false,
+          caller: maskedCaller(event.from), authenticated: true, triggers: 0, delivered: 1, duplicate: 0, ignored: 0,
+        });
+        return send(res, 202, { event: event.event, notice, triggers: 0, delivered: 1, duplicate: 0, ignored: 0, conversation: true });
       }
     }
 

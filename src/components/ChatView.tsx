@@ -782,6 +782,11 @@ const Bubble = memo(function Bubble({
                   {t("chat.viaCall")}
                 </span>
               )}
+              {message.via === "sms" && (
+                <span className="mt-1 text-[11px] text-ink-tertiary" data-via="sms">
+                  {t("chat.viaSms")}
+                </span>
+              )}
               {collapsible && (
                 <button onClick={() => setExpanded(true)} className="mt-1 text-[12.5px] text-ink-secondary hover:text-ink">
                   {t("chat.showFull")}

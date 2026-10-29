@@ -51,6 +51,15 @@ describe("via call label", () => {
     expect(markup.indexOf(">via call<")).toBeGreaterThan(markup.indexOf("spoken words"));
   });
 
+  it("marks a text the person sent from their own number", () => {
+    const markup = renderToStaticMarkup(createElement(ChatView, {
+      bot: bot([message("m1", "typed words"), message("m2", "texted words", { via: "sms" })]),
+    }));
+    expect(markup.match(/data-via="sms"/g)).toHaveLength(1);
+    expect(markup).toContain(">via text message<");
+    expect(markup.indexOf("via text message")).toBeGreaterThan(markup.indexOf("texted words"));
+  });
+
   it("shows no label without a call", () => {
     const markup = renderToStaticMarkup(createElement(ChatView, { bot: bot([message("m1", "typed words")]) }));
     expect(markup).toContain("typed words");
