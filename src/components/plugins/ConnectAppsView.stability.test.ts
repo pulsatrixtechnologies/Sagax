@@ -78,7 +78,7 @@ describe("the header and the tab row", () => {
     expect(CONNECT_APPS_TABS).toEqual(["discover", "bots", "installed", "pages", "sources"]);
     const html = view("discover", { counts: { installed: 6 } });
     expect(html).not.toContain("data-plugins-connected");
-    expect(html).toMatch(/<header[^>]*><h2 id="plugins-title"[^>]*>Connect Apps<\/h2><div class="[^"]*" data-plugins-scope-row><div class="shrink-0" data-plugins-scope-slot/);
+    expect(html).toMatch(/<header[^>]*><h2 id="plugins-title"[^>]*>Connect Apps<\/h2><div class="[^"]*" data-plugins-scope-row="true"><div class="shrink-0" data-plugins-scope-slot/);
   });
 
   it("a click on a tab with a counter opens that tab", () => {
