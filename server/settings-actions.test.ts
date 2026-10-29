@@ -462,7 +462,7 @@ describe("sagax_settings: the rest of Settings (#1545, lot 2)", () => {
   });
 
   it("every setting has a get, or is an action the screen offers (create, delete, run, test, sign-in)", () => {
-    const actions = /(?:create|delete|remove|Delete|Remove|run|Run|Test|SignIn|SignOut|Install|Refresh|Update|Account|Disconnect|Telegram|WhatsApp|commandAllow|template\.|section\.bots|account\.avatar|computer\.rename|liveKeyRemove)/;
+    const actions = /(?:update|reset|power|Action|Attach|Revoke|create|delete|remove|Delete|Remove|run|Run|Test|SignIn|SignOut|Install|Refresh|Update|Account|Disconnect|Telegram|WhatsApp|commandAllow|template\.|section\.bots|account\.avatar|computer\.rename|liveKeyRemove)/;
     const missing = SETTINGS.filter((spec) => !spec.read && !actions.test(spec.key)).map((spec) => spec.key);
     expect(missing).toEqual([]);
   });
@@ -492,6 +492,56 @@ describe("sagax_settings: the rest of Settings (#1545, lot 2)", () => {
         const h = harness({ mode });
         await h.call({ action: "set", key, value, ...(target ? { target } : {}) });
         expect(h.planned.at(-1)?.effect, `${key} ${mode}`).toBe(mode === "ask" || card ? "hold" : "run");
+      }
+    }
+  });
+});
+
+describe("sagax_settings: the actions Settings offers (#1545, lot 3)", () => {
+  it("runs each action by the screen's own route and body", async () => {
+    const h = harness({ mode: "full" });
+    const cases: Array<[Record<string, unknown>, { method: string; path: string; body?: unknown }]> = [
+      [{ key: "computer.update", value: true }, { method: "POST", path: "/api/computer/update", body: {} }],
+      [{ key: "computer.reset", value: true }, { method: "POST", path: "/api/computer/reset", body: { confirm: true } }],
+      [{ key: "computer.power", value: "stop" }, { method: "POST", path: "/api/me/server-environment/power", body: { action: "stop", confirm: true } }],
+      [{ key: "computer.localVmAction", value: "ensure" }, { method: "POST", path: "/api/local-computer/ensure", body: { reason: "person" } }],
+      [{ key: "server.boxes", value: { sleep: "box1" } }, { method: "POST", path: "/api/computers/boxes/box1/sleep" }],
+      [{ key: "org.invites", value: { invite: "new@example.com" } }, { method: "POST", path: "/api/org/invites", body: { email: "new@example.com" } }],
+      [{ key: "bot.librarySkills", target: "b1", value: ["writer"] }, { method: "PUT", path: "/api/bots/b1/skills-library", body: { skills: ["writer"] } }],
+      [{ key: "bot.history", target: "b1", value: { id: "v3", expectedRevision: 7 } }, { method: "POST", path: "/api/bots/b1/history/restore", body: { id: "v3", expectedRevision: 7 } }],
+    ];
+    for (const [args, route] of cases) {
+      await h.call({ action: "set", ...args });
+      expect(h.planned.at(-1), String(args.key)).toMatchObject(route);
+    }
+    expect((await h.call({ action: "set", key: "computer.update", value: false })).body.error).toMatch(/value is true/);
+  });
+
+  it("matrix: admin and member, Ask, Approve for me and Full; a member's refusal is the route's own", async () => {
+    const adminRoutes = /^\/api\/(computers|computer\/(maintenance|disk-saver)|tool-grants|org|moderation|admin|local-computer)/;
+    const cases: Array<{ key: string; value: unknown; sensitive?: true }> = [
+      { key: "computer.update", value: true },
+      { key: "computer.power", value: "start" },
+      { key: "server.maintenance", value: { enabled: true } },
+      { key: "computer.localVmAction", value: "start" },
+      { key: "computer.reset", value: true },
+      { key: "server.diskSaver", value: { categories: ["cache"] }, sensitive: true },
+      { key: "org.toolGrants", value: "tg_1", sensitive: true },
+      { key: "org.invites", value: { invite: "a@example.com" }, sensitive: true },
+      { key: "org.pageRevoke", value: "p1", sensitive: true },
+    ];
+    for (const role of ["admin", "member"] as const) {
+      for (const mode of ["ask", "auto", "full"] as const) {
+        for (const { key, value, sensitive } of cases) {
+          const h = harness({ mode, ...(role === "member" ? { routeStatus: (method: string, path: string) => method !== "GET" && adminRoutes.test(path) ? 403 : 200 } : {}) });
+          const result = await h.call({ action: "set", key, value });
+          const expected = mode === "ask" || sensitive ? "hold" : "run";
+          expect(h.planned.at(-1)?.effect, `${key} ${role} ${mode}`).toBe(expected);
+          if (expected === "run") {
+            const adminOnly = adminRoutes.test(String(h.planned.at(-1)?.path));
+            expect(result.status, `${key} ${role}`).toBe(role === "member" && adminOnly ? 403 : 200);
+          }
+        }
       }
     }
   });

@@ -1089,6 +1089,132 @@ add({
   write: (ids, v) => ({ method: "PUT", path: `/api/bots/${enc(ids.target!)}/inbound-mail`, body: { localPart: v } }),
 });
 
+// ── #1545 lot 3: the actions Settings offers ────────────────────────────
+/** One action of a screen: value true runs it (the screen's own body). */
+function action(key: string, family: SettingFamily, target: SettingTarget, path: (ids: SettingIds) => string, label: string, where: string, classes?: SettingSpec["classes"], body: unknown = {}): void {
+  add({
+    key, family, target, value: "boolean", label: `${label} (value true)`, where,
+    write: (ids, v) => v === true ? { method: "POST", path: path(ids), body } : "value is true.",
+    ...(classes ? { classes } : {}),
+  });
+}
+// the bot computer, whatever it is (an organization member's server
+// environment, or this computer's Local VM): status, update, reset
+add({
+  key: "computer.status", family: "computer", target: "none", value: "object", label: "The bot computer's state (read only: kind, state, disk, version)", where: "Settings > Computer > Bot's computer",
+  read: () => ({ path: "/api/computer/status" }),
+  write: () => "computer.status is read only: computer.update, computer.reset, computer.power change it.",
+});
+action("computer.update", "computer", "none", () => "/api/computer/update", "Update the bot computer from the current image (the workspace is kept)", "Settings > Computer > Bot's computer > Update");
+action("computer.reset", "computer", "none", () => "/api/computer/reset", "Reset the bot computer (erased, created again; the workspace folder on a personal computer is kept)", "Settings > Computer > Bot's computer > Reset", always("delete"), { confirm: true });
+add({
+  key: "computer.power", family: "computer", target: "none", value: "enum:start|stop", label: "Start or stop your server computer (organization server)", where: "Settings > Computer > Server environment",
+  write: (_ids, v) => ({ method: "POST", path: "/api/me/server-environment/power", body: { action: v, ...(v === "stop" ? { confirm: true } : {}) } }),
+});
+// this computer's Local VM (personal server)
+add({
+  key: "computer.localVm", family: "computer", target: "none", value: "object", label: "This computer's Local VMs (read only: status and instances)", where: "Settings > Computer > Bot's computer",
+  read: () => ({ path: "/api/local-computer" }),
+  write: () => "computer.localVm is read only: computer.localVmAction changes it.",
+});
+add({
+  key: "computer.localVmAction", family: "computer", target: "none", value: "enum:pull|run|start|stop|remove|ensure", label: "A Local VM step (pull: prepare, run: create, start, stop, remove, ensure: set it up)", where: "Settings > Computer > Bot's computer",
+  write: (_ids, v) => ({ method: "POST", path: `/api/local-computer/${String(v)}`, body: v === "ensure" ? { reason: "person" } : {} }),
+  classes: (v, ctx) => v === "remove" ? [...serverWide(v, ctx), "delete"] : serverWide(v, ctx),
+});
+action("bot.localVmRemove", "bot", "bot", (ids) => `/api/bots/${enc(ids.target!)}/local-computer/remove`, "Delete this bot's own Local VM", "Bot panel > Computer > Delete", always("delete"));
+// computer care (admin, host.shell)
+add({
+  key: "server.maintenance", family: "server", target: "none", value: "object", label: "Scheduled computer update ({enabled, days, hour, windowHours, timeZone})", where: "Settings > Computer > Computer care",
+  read: () => ({ path: "/api/computer/maintenance" }),
+  write: (_ids, v) => ({ method: "PUT", path: "/api/computer/maintenance", body: v }),
+  classes: serverWide,
+});
+add({
+  key: "server.diskSaver", family: "server", target: "none", value: "object", label: "Disk saver ({categories: [ids from get], confirmUserFiles?}; get lists what it frees)", where: "Settings > Computer > Computer care > Disk saver",
+  read: () => ({ path: "/api/computer/disk-saver" }),
+  write: (_ids, v) => ({ method: "POST", path: "/api/computer/disk-saver", body: v }),
+  classes: (v, ctx) => [...serverWide(v, ctx), "delete"],
+});
+// cloud and VPS computers
+add({
+  key: "server.boxes", family: "server", target: "none", value: "object", label: "Cloud computers ({sleep: id} or {delete: id}; get lists them)", where: "Settings > Computer > Cloud computers",
+  read: () => ({ path: "/api/computers/boxes" }),
+  write: (_ids, v) => {
+    const r = (v ?? {}) as { sleep?: unknown; delete?: unknown };
+    const id = typeof r.delete === "string" ? r.delete : typeof r.sleep === "string" ? r.sleep : "";
+    if (!id) return "value is {sleep: id} or {delete: id}.";
+    return { method: "POST", path: `/api/computers/boxes/${enc(id)}/${typeof r.delete === "string" ? "delete" : "sleep"}`, body: {} };
+  },
+  classes: (v, ctx) => typeof (v as { delete?: unknown } | null)?.delete === "string" ? [...serverWide(v, ctx), "delete"] : serverWide(v, ctx),
+});
+add({
+  key: "server.vpsComputers", family: "server", target: "none", value: "string", label: "VPS computers (get lists them; set with a name removes it)", where: "Settings > Computer > VPS computers",
+  read: () => ({ path: "/api/computers/vps" }),
+  write: (_ids, v) => typeof v === "string" && v ? { method: "POST", path: `/api/computers/vps/${enc(v)}/remove`, body: {} } : "value is a VPS computer's name.",
+  classes: (v, ctx) => [...serverWide(v, ctx), "delete"],
+});
+add({
+  key: "models.antigravityLeftovers", family: "models", target: "engine", value: "boolean", label: "Free up space: delete Antigravity's leftover files (get lists them; value true deletes)", where: "Settings > Models > Antigravity > Free up space",
+  read: (ids) => ({ path: `/api/instances/${enc(ids.target!)}/leftover-files` }),
+  write: (ids, v) => v === true ? { method: "POST", path: `/api/instances/${enc(ids.target!)}/leftover-files/remove`, body: {} } : "value is true.",
+  classes: (v, ctx) => [...serverWide(v, ctx), "delete"],
+});
+// people and the organization (admin)
+add({
+  key: "org.toolGrants", family: "organization", target: "none", value: "string", label: "People's tool access (get lists it; set with a grant's id revokes it)", where: "Settings > Account > Advanced > People's tool access",
+  read: () => ({ path: "/api/tool-grants", query: { kind: "user" }, field: "grants" }),
+  write: (_ids, v) => typeof v === "string" && v ? { method: "POST", path: `/api/tool-grants/${enc(v)}/revoke`, body: {} } : "value is a grant's id.",
+  classes: always("others", "delete"),
+});
+add({
+  key: "org.reports", family: "organization", target: "none", value: "string", label: "Reports (get lists them; set with a report's id resolves it)", where: "Settings > Notifications > Privacy > Reports",
+  read: () => ({ path: "/api/moderation/reports" }),
+  write: (_ids, v) => typeof v === "string" && v ? { method: "POST", path: `/api/moderation/reports/${enc(v)}/resolve`, body: {} } : "value is a report's id.",
+  classes: always("others"),
+});
+add({
+  key: "org.interimAttach", family: "organization", target: "none", value: "object", label: "Attach a person from before to a member ({interimPrincipalId, principalId})", where: "Settings > Organization > People from before",
+  write: (_ids, v) => ({ method: "POST", path: "/api/org/interim-people/attach", body: v }),
+  classes: always("others", "org"),
+});
+add({
+  key: "org.invites", family: "organization", target: "none", value: "object", label: "Invitations ({invite: email} or {revoke: token}; get lists them)", where: "Settings > Organization > Servers > Invitations",
+  read: () => ({ path: "/api/org/invites" }),
+  write: (_ids, v) => {
+    const r = (v ?? {}) as { invite?: unknown; revoke?: unknown };
+    if (typeof r.revoke === "string" && r.revoke) return { method: "POST", path: `/api/org/invites/${enc(r.revoke)}/revoke`, body: {} };
+    if (typeof r.invite === "string" && r.invite) return { method: "POST", path: "/api/org/invites", body: { email: r.invite } };
+    return "value is {invite: email} or {revoke: token}.";
+  },
+  classes: always("others"),
+});
+add({
+  key: "org.pageRevoke", family: "organization", target: "none", value: "string", label: "Take down a published page of the organization (its id)", where: "Settings > Pages > Organization pages",
+  write: (_ids, v) => typeof v === "string" && v ? { method: "POST", path: `/api/admin/pages/${enc(v)}/revoke`, body: {} } : "value is a page's id.",
+  classes: always("others", "delete"),
+});
+// bot editor: library skills and versions
+add({
+  key: "bot.librarySkills", family: "bot", target: "bot", value: "array", label: "Skills from the library this bot uses (their names)", where: "Bot editor > Skills > Library",
+  // the bot's skills as Skills lists them; the library's are origin library
+  read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/skills`, shape: (v) => {
+    const rows = Array.isArray(v) ? v : (v as { skills?: unknown } | null)?.skills;
+    return Array.isArray(rows) ? rows.filter((row) => (row as { origin?: unknown } | null)?.origin === "library").map((row) => (row as { name?: unknown }).name) : v;
+  } }),
+  write: (ids, v) => ({ method: "PUT", path: `/api/bots/${enc(ids.target!)}/skills-library`, body: { skills: v ?? [] } }),
+  classes: selfReach,
+});
+add({
+  key: "bot.history", family: "bot", target: "bot", value: "object", label: "The bot's versions (get lists them; set {id, expectedRevision} restores one)", where: "Bot editor > Changes",
+  read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/history`, query: { limit: "30" } }),
+  write: (ids, v) => {
+    const r = (v ?? {}) as { id?: unknown; expectedRevision?: unknown };
+    if (typeof r.id !== "string") return "value is {id, expectedRevision} from get.";
+    return { method: "POST", path: `/api/bots/${enc(ids.target!)}/history/restore`, body: { id: r.id, ...(r.expectedRevision !== undefined ? { expectedRevision: r.expectedRevision } : {}) } };
+  },
+});
+
 export const SETTINGS: readonly SettingSpec[] = SPECS;
 const BY_KEY = new Map(SPECS.map((spec) => [spec.key, spec]));
 
