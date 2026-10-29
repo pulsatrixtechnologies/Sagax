@@ -32,6 +32,24 @@ describe("the access card: who pays (#1137)", () => {
     expect(accessCardLines(notGiven, { principalId: BOB, admin: false })).toMatchObject({ chooseModel: true, text: expect.stringContaining("Replies from Scout are paid by the person who writes") });
   });
 
+  it("#1533: an expired sign-in of the person's own subscription offers Reconnect, in their language", () => {
+    const expired = { ...card, engine: "Claude", payer: "speaker" as const, payerPrincipalId: BOB, cause: "sign_in_expired" as const, subscriptionSignIn: true as const };
+    expect(accessCardLines(expired, { principalId: BOB, admin: false })).toEqual({
+      text: "Your Claude sign-in has expired, so Scout could not answer. Reconnect Claude to continue.",
+      signIn: true,
+      signInLabel: "Reconnect Claude",
+    });
+    const html = renderToStaticMarkup(createElement(AccessCard, { access: expired, viewer: { principalId: BOB, admin: false }, onSignIn: () => {} }));
+    expect(html).toContain("data-access-sign-in");
+    expect(html).toContain("Reconnect Claude");
+    expect(html).not.toContain("OAuth");
+    setLocale("fr");
+    expect(accessCardLines(expired, { principalId: BOB, admin: false })).toMatchObject({ signInLabel: "Reconnecter Claude", text: expect.stringContaining("Votre connexion Claude a expiré") });
+    // someone else reading the bot does not get the button
+    setLocale("en");
+    expect(accessCardLines(expired, { principalId: OWNER, admin: false })).not.toHaveProperty("signIn");
+  });
+
   it("the owner's own bot, or a card from before: no choose-a-model offer", () => {
     const owners = { ...card, payer: "owner" as const, payerPrincipalId: OWNER, cause: "no_credentials" as const, keysUrl: KEYS };
     expect(accessCardLines(owners, { principalId: OWNER, admin: false })).not.toHaveProperty("chooseModel");

@@ -227,7 +227,9 @@ export interface MyEngine {
    * (engines.lock.json, notPreinstalled): why, in English, for a tooltip.
    * The line then reads "Not available on this server". */
   notAvailable?: string;
-  subscription: { supported: boolean; signedIn: boolean };
+  /** `expired` (#1533): signed in, but the provider refused that sign-in
+   * since and could not refresh it: the card offers Reconnect. */
+  subscription: { supported: boolean; signedIn: boolean; expired?: boolean };
   /** The person's own key for this engine's provider is in Perspicax. */
   myKey: boolean;
   /** The server has a key for this engine (the organization's key) and it

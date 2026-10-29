@@ -77,8 +77,9 @@ export function speakerPrincipal(speaker: TurnSpeaker, ownerPrincipalId: string,
 /** The notification body for a refused turn (never provider text). A
  * no_access turn is the payer's to fix: the person who speaks, or the
  * owner for the bot's routines (engine-credentials.ts). */
-export function engineAccessNotice(reason: EngineAccessRefusal | "key_refused", engine: string, refusal: { payer?: "speaker" | "owner"; cause?: "payer_disabled" | "no_credentials" | "server_engine_not_allowed" | "owner_model_offline"; routine?: boolean; ownerName?: string } = {}): string {
+export function engineAccessNotice(reason: EngineAccessRefusal | "key_refused", engine: string, refusal: { payer?: "speaker" | "owner"; cause?: "payer_disabled" | "no_credentials" | "server_engine_not_allowed" | "owner_model_offline" | "sign_in_expired"; routine?: boolean; ownerName?: string } = {}): string {
   if (reason === "engine_missing") return `This bot uses ${engine}, which is not installed on this server.`;
+  if (refusal.cause === "sign_in_expired") return `Your ${engine} sign-in has expired. Reconnect ${engine} to keep using this bot.`;
   if (refusal.cause === "owner_model_offline") return `${refusal.ownerName?.trim() || "The owner"}'s model isn't reachable right now.`;
   if (reason === "key_refused") return "The provider refused this bot's key.";
   if (refusal.cause === "payer_disabled") {
@@ -491,4 +492,47 @@ export function adminApprovalDecision(input: {
   const card = input.card;
   if (input.identity !== "perspicax" || !card?.adminApproval || card.answered || card.dismissed || card.expired) return null;
   return input.callerIsOrgAdmin ? "admin" : "refused";
+}
+
+const EMAIL_IN_NAME = /[^\s@]+@[^\s@]+\.[^\s@]+/;
+
+/** #1533: the engine name a member reads. An admin may name a second
+ * account's engine after its email address; a member is never shown an
+ * address, only the engine's own name and that it is another account. An
+ * admin reads the name as it was saved. Pure. */
+export function engineNameForViewer(name: string, driverName: string, admin: boolean): string {
+  if (admin || !EMAIL_IN_NAME.test(name)) return name;
+  return `${driverName} (other account)`;
+}
+
+/** #1533: words a subscription engine uses when its own sign-in was refused
+ * and could not be refreshed (Claude Code: "Failed to authenticate: OAuth
+ * session expired and could not be refreshed", `authentication_failed`). */
+const SIGN_IN_REFUSED = /oauth session expired|could not be refreshed|failed to authenticate|authentication_failed|oauth token (?:has )?expired|invalid (?:oauth|bearer) token|not logged in|please run \/login/i;
+
+/** #1533: the access card for a turn that ran on the speaker's own
+ * subscription (organization server) and that the provider refused because
+ * the sign-in expired: "Reconnect Claude" for that person, instead of the
+ * engine's raw words. Null for anything else (a key, the organization's
+ * key, a solo server, another error). Pure. */
+export function signInExpiredCard(input: {
+  identity: "solo" | "perspicax";
+  via: string | undefined;
+  subscriptionDriver: boolean;
+  message: string;
+  payerPrincipalId: string | undefined;
+  botId: string;
+  botName?: string;
+  ownerPrincipalId: string;
+  engine: string;
+  routine?: boolean;
+}): { reason: "no_access"; cause: "sign_in_expired"; engine: string; botId: string; ownerPrincipalId: string; payerPrincipalId: string; subscriptionSignIn: true; botName?: string; routine?: true } | null {
+  if (input.identity !== "perspicax" || input.via !== "subscription" || !input.subscriptionDriver || !input.payerPrincipalId) return null;
+  if (!SIGN_IN_REFUSED.test(input.message)) return null;
+  return {
+    reason: "no_access", cause: "sign_in_expired", engine: input.engine, botId: input.botId, ownerPrincipalId: input.ownerPrincipalId,
+    payerPrincipalId: input.payerPrincipalId, subscriptionSignIn: true,
+    ...(input.botName?.trim() ? { botName: input.botName.trim().slice(0, 200) } : {}),
+    ...(input.routine ? { routine: true as const } : {}),
+  };
 }

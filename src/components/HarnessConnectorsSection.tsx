@@ -3,7 +3,7 @@
 // While Connected apps is switched off (Settings > Experimental), the same
 // read-only status shows in Settings > Model providers instead.
 // Read-only here: people add, sign in to and remove them on claude.ai.
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, Loader2, Plug, RefreshCw } from "lucide-react";
 import { api } from "@/state/store";
 import { cn } from "@/lib/cn";
@@ -14,6 +14,8 @@ import { HelpTip } from "./SettingsPrimitives";
 import { ConnectFromEngine } from "./ConnectFromEngine";
 import { CapabilityTags } from "./plugins/EngineCapabilities";
 import { claudeAiConnectorCapabilities } from "../../shared/engine-connectors";
+import { reloadMyEngines, useMyEngines, type MyEngine } from "@/lib/perspicax-org";
+import { ClaudeSignIn } from "./ClaudeSignIn";
 
 type ConnectorStatus = "connected" | "needs_auth" | "failed" | "unknown";
 type Unavailable = "disabled" | "managed_policy" | "no_engine" | "not_signed_in" | "not_operator" | "key" | "unknown";
@@ -48,6 +50,13 @@ export function harnessUnavailableKey(reason: Unavailable | undefined): LocaleKe
   return UNAVAILABLE_KEY[reason ?? "unknown"] ?? UNAVAILABLE_KEY.unknown;
 }
 
+/** #1533: the person's own Claude engine on an organization server, the one
+ * "Connect Claude" signs in to (the default Claude engine first). */
+export function myClaudeEngine(engines: readonly MyEngine[] | null | undefined): MyEngine | undefined {
+  const claude = (engines ?? []).filter((engine) => engine.driver === "claudeAgent" && engine.subscription.supported);
+  return claude.find((engine) => engine.instanceId === "claude") ?? claude[0];
+}
+
 /** `provider`: inside Plugins > Manage > Providers, under the Claude
  * accounts, which already carry the title and the Manage link: only the
  * connectors and Check again. */
@@ -79,7 +88,24 @@ export function HarnessConnectorsSection({ placement = "panel", onAnswer }: {
     void load();
   }, [load]);
 
+  // #1533: a sign-in or sign-out of the person's own Claude (here or on the
+  // engine card) reads the connectors again: no stale "connect" sentence.
+  const myEngines = useMyEngines();
+  const myClaude = myClaudeEngine(myEngines);
+  const claudeState = myClaude ? `${myClaude.subscription.signedIn}:${Boolean(myClaude.subscription.expired)}` : "";
+  const seenState = useRef<string | null>(null);
+  useEffect(() => {
+    if (!claudeState) return;
+    const before = seenState.current;
+    seenState.current = claudeState;
+    if (before !== null && before !== claudeState) void load(true);
+  }, [claudeState, load]);
+
   const claude = answer?.claude;
+  // not signed in (or the sign-in expired): the same sign-in as the engine
+  // card's "Connect Claude", never the claude.ai page, which connects nothing
+  const signIn = claude && !claude.available && claude.reason === "not_signed_in" && myClaude ? myClaude : undefined;
+  const expired = Boolean(signIn?.subscription.signedIn && signIn.subscription.expired);
   return (
     <section aria-labelledby="harness-connectors-title" data-harness-connectors={placement}
       className={cn(placement === "panel" && "mx-6 mb-3 rounded-xl border border-border bg-inset px-4 py-3 sm:mx-8", placement === "settings" && "rounded-xl border border-hairline/40 px-3.5 py-2.5")}>
@@ -126,13 +152,13 @@ export function HarnessConnectorsSection({ placement = "panel", onAnswer }: {
           >
             <RefreshCw size={15} className={cn(loading && "animate-spin")} />
           </button>
-          <button
+          {!signIn && <button
             type="button"
             onClick={() => void openExternalLink(answer?.manageUrl ?? "https://claude.ai/customize/connectors")}
             className="inline-flex items-center gap-1 rounded-full bg-control px-2.5 py-1 text-[11.5px] font-medium text-ink hover:bg-raised-hover"
           >
             <ExternalLink size={12} /> {t("harnessConnectors.manage")}
-          </button>
+          </button>}
         </div>
       </div>
       )}
@@ -142,7 +168,18 @@ export function HarnessConnectorsSection({ placement = "panel", onAnswer }: {
           <Loader2 size={13} className="animate-spin" /> {t("harnessConnectors.loading")}
         </div>
       ) : claude && !claude.available ? (
-        <p role="status" className="mt-2 text-[12px] text-ink-secondary">{t(harnessUnavailableKey(claude.reason))}</p>
+        <div data-harness-connectors-unavailable={claude.reason ?? "unknown"}>
+          <p role="status" className="mt-2 text-[12px] text-ink-secondary">{t(expired ? "harnessConnectors.unavailable.expired" : harnessUnavailableKey(claude.reason))}</p>
+          {signIn && (
+            <ClaudeSignIn
+              key={signIn.instanceId}
+              instanceId={signIn.instanceId}
+              base={`/api/me/engines/${encodeURIComponent(signIn.instanceId)}/login`}
+              label={t(expired ? "engineConnect.reconnect" : "engineConnect.connect", { name: "Claude" })}
+              onSignedIn={async () => { await reloadMyEngines(); }}
+            />
+          )}
+        </div>
       ) : claude && claude.connectors.length === 0 ? (
         <p className="mt-2 text-[12px] text-ink-secondary">{t("harnessConnectors.empty")}</p>
       ) : claude && placement === "settings" ? (

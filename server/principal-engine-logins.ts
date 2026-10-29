@@ -29,6 +29,11 @@ import { ProviderAuthSessions } from "./provider-auth-sessions.ts";
 import { isPrincipalId } from "./principals.ts";
 
 export const LOGIN_MARKER = ".pulsabot-login.json";
+/** #1533: the provider refused this sign-in and could not refresh it (a
+ * turn ended in an authentication failure, or the CLI says it is signed
+ * out). Written next to LOGIN_MARKER, removed by the next sign-in. The
+ * marker itself stays: who pays for a turn does not change by itself. */
+export const LOGIN_EXPIRED_MARKER = ".pulsabot-login-expired.json";
 export type LoginDriver = "claudeAgent" | "codex" | "grokAgent" | "kimiAgent";
 
 /** Each driver's own command when the instance saved none and the registry
@@ -126,6 +131,19 @@ export class PrincipalEngineLogins {
     return existsSync(join(this.loginDir(principalId, driver), LOGIN_MARKER));
   }
 
+  /** #1533: signed in, but the provider refused the sign-in since. */
+  expired(principalId: string, driver: string): boolean {
+    if (!this.signedIn(principalId, driver)) return false;
+    return existsSync(join(this.loginDir(principalId, driver as LoginDriver), LOGIN_EXPIRED_MARKER));
+  }
+
+  /** #1533: note that the provider refused this person's sign-in. Nothing
+   * when they are not signed in. */
+  markExpired(principalId: string, driver: string): void {
+    if (!this.signedIn(principalId, driver)) return;
+    writeFileAtomic(join(this.loginDir(principalId, driver as LoginDriver), LOGIN_EXPIRED_MARKER), JSON.stringify({ at: this.now() }), { mode: 0o600 });
+  }
+
   private ensureDir(principalId: string, driver: LoginDriver): string {
     const personDir = join(this.options.dataDir, "principals", principalId);
     mkdirSync(personDir, { recursive: true, mode: 0o700 });
@@ -143,6 +161,7 @@ export class PrincipalEngineLogins {
   private markSignedIn(principalId: string, driver: LoginDriver): void {
     const dir = this.ensureDir(principalId, driver);
     writeFileAtomic(join(dir, LOGIN_MARKER), JSON.stringify({ at: this.now() }), { mode: 0o600 });
+    rmSync(join(dir, LOGIN_EXPIRED_MARKER), { force: true });
   }
 
   private flowKey(principalId: string, instanceId: string): string {
@@ -202,7 +221,7 @@ export class PrincipalEngineLogins {
         getAuthentication: async (flowId: string) => {
           const status = await bound.get(flowId);
           // The marker follows the CLI's verdict even when the callback raced.
-          if (status.phase === "succeeded" && !this.signedIn(principalId, driver)) this.markSignedIn(principalId, driver);
+          if (status.phase === "succeeded" && (!this.signedIn(principalId, driver) || this.expired(principalId, driver))) this.markSignedIn(principalId, driver);
           return status;
         },
         ...(bound.complete ? { completeAuthentication: (flowId: string, pasted: string) => bound.complete!(flowId, pasted) } : {}),

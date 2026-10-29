@@ -593,8 +593,10 @@ export interface WireAccessCard {
   payer?: "speaker" | "owner";
   payerPrincipalId?: string;
   /** `owner_model_offline` (#1137): the owner pays and the bot runs on the
-   * local model of the owner's computer, which is not connected now. */
-  cause?: "payer_disabled" | "no_credentials" | "server_engine_not_allowed" | "owner_model_offline";
+   * local model of the owner's computer, which is not connected now.
+   * `sign_in_expired` (#1533): the payer's own subscription sign-in was
+   * refused and could not be refreshed: they reconnect it. */
+  cause?: "payer_disabled" | "no_credentials" | "server_engine_not_allowed" | "owner_model_offline" | "sign_in_expired";
   /** The bot's routine: it runs on its owner's credentials only. */
   routine?: true;
   /** #1137: the bot's name, when the card was written. */

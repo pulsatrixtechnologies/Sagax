@@ -1341,7 +1341,7 @@ import { attachedFilesInText, attachmentChunks, attachmentIsTheirs, stageTurnAtt
 import { OFFICE_IMAGE_MAX_COUNT, OFFICE_IMAGES_MAX_TOTAL_BYTES, officeKind, officeMediaFolder, officeNote, readOfficeMedia } from "./office-media.ts";
 import { archiveInlineTexts, archiveNote, archiveSummary, extractedFolderName, localExtractedPath, prepareArchiveUpload, sandboxArchiveArgv, storedArchiveManifest } from "./attachment-archives.ts";
 import { BOT_WORKPLACE_PREFERENCE, DESKTOP_BRIDGE_MCP_NAME, parseBotWorkplace, type BotWorkplace } from "../shared/bot-workplace.ts";
-import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type MemberHostToolPlace, type TurnSpeaker } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, engineNameForViewer, signInExpiredCard, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type MemberHostToolPlace, type TurnSpeaker } from "./engine-access.ts";
 import {
   assignBotHost,
   channelTurnGate,
@@ -8669,7 +8669,11 @@ const engineLogins = IDENTITY.kind === "perspicax"
       const cli = loginCliFor(entry.driver, configured, registry.cliTarget(instanceId)?.cli);
       return { driver: entry.driver, cli, environment: entry.environment ?? {} };
     },
-    onClaudeLinked: (person) => recordAchievements(person, [{ type: "claude.linked" }]),
+    onClaudeLinked: (person) => {
+      recordAchievements(person, [{ type: "claude.linked" }]);
+      // #1533: the connectors box reads the new sign-in, not the cached refusal
+      claudeAiInventory.forget(`person:${person}`);
+    },
   })
   : null;
 /** Slice 4: shared sidebar sections (section-channels.ts), organization mode. */
@@ -17400,6 +17404,10 @@ bus.subscribe((event: RuntimeEvent) => {
       }) : null;
       // A turn on a person's own key (slice 4) also counts: that key is dropped at once.
       if (keyRefused && keyVia(ranOn?.via) && ranOn?.payerSub && ranOn.provider) perspicaxDirectory?.invalidate(ranOn.payerSub, ranOn.provider);
+      // #1533: the person's own subscription sign-in was refused and could
+      // not be refreshed: their engine card says Reconnect, and the chat
+      // shows the access card with that button, not the engine's raw words.
+      const expiredCard = bot && refusedInstance && !keyRefused ? subscriptionExpiredCard(bot, refusedInstance, ranOn, event.message) : null;
       // The engine refusing is a backup the usage-limit failover picked, not
       // one the person chose: no sign-in card for it. The thread goes back
       // and its "continuing on" line becomes the one error the person reads.
@@ -17411,6 +17419,11 @@ bus.subscribe((event: RuntimeEvent) => {
         if (!repeatsShownFailure(store.messagesFor(event.threadId), { role: "bot", kind: "access", access: keyRefused, from: failureFrom }, bot.id)) {
           pushMessage({ role: "bot", kind: "access", access: keyRefused });
           notifyAccess(deliverableNotification("turn-failed", bot, event.threadId, engineAccessNotice("key_refused", keyRefused.engine), { avatarUrl: bot.avatarUrl }), keyRefused);
+        }
+      } else if (expiredCard && bot) {
+        if (!repeatsShownFailure(store.messagesFor(event.threadId), { role: "bot", kind: "access", access: expiredCard, from: failureFrom }, bot.id)) {
+          pushMessage({ role: "bot", kind: "access", access: expiredCard });
+          notifyAccess(deliverableNotification("turn-failed", bot, event.threadId, engineAccessNotice("no_access", expiredCard.engine, expiredCard), { avatarUrl: bot.avatarUrl }), expiredCard);
         }
       } else {
         const tool = failedTurnTool(event.message, event);
@@ -23038,6 +23051,12 @@ async function startTurn(
         } else if (refusal) message = `Automatic recovery unavailable: ${refusal} Original error: ${message}`;
       }
       const backupRefused = e instanceof EngineAccessLost ? limitBackupRefusedInThread(bot.id, threadId, speaker) : null;
+      // #1533: Claude refused the person's own sign-in before the turn began
+      const startExpired = e instanceof TurnAuthenticationRefusedError ? subscriptionExpiredCard(bot, instance, turnAccessByThread.get(threadId), e.message) : null;
+      if (startExpired) {
+        store.appendMessage(threadId, { role: "bot", kind: "access", access: startExpired });
+        notifyAccess(deliverableNotification("turn-failed", bot, threadId, engineAccessNotice("no_access", startExpired.engine, startExpired), { avatarUrl: bot.avatarUrl }), startExpired);
+      }
       if (backupRefused) message = backupRefused;
       else if (e instanceof EngineAccessLost) {
         // The owner key went away between admission and dispatch: the same
@@ -23051,7 +23070,7 @@ async function startTurn(
       settleDirectFollowup(dispatchClaimId, { ok: false, text: message });
       // The wait already wrote its failure resolution; keep all dispatch
       // failure bookkeeping below without adding the same error twice.
-      if (!(e instanceof EngineAccessLost)) store.appendMessage(threadId, {
+      if (!(e instanceof EngineAccessLost) && !startExpired) store.appendMessage(threadId, {
         role: "bot",
         kind: "activity",
         turnSucceeded: false,
@@ -29001,6 +29020,16 @@ function peerOwnerPrincipal(speaker: TurnSpeaker): string | undefined {
   return from ? effectiveBotOwner(from) : undefined;
 }
 /** The principal a turn on `bot` speaks for ("" for an unknown person). */
+/** #1533: a driver's own name (Claude, Codex...), for an engine whose saved
+ * name a member must not read (engineNameForViewer). */
+function driverDisplayName(driverKind: string): string {
+  return BUILT_IN_DRIVERS.find((driver) => driver.driverKind === driverKind)?.metadata.displayName || driverKind;
+}
+/** Whether this person is an organization admin (or the local operator). */
+function personIsOrgAdmin(principalId: string): boolean {
+  const person = principals.byId(principalId);
+  return person?.local === true || person?.orgRole === "admin";
+}
 /** The zone a turn's clock is told in (server/turn-clock.ts). */
 // The zone someone set for the speaker, the owner or the server; null when none
 // is set (the engine already sees the host clock, so no note is added then).
@@ -29809,6 +29838,20 @@ function perspicaxKeysUrl(): string | undefined {
   // redirects there.
   return IDENTITY.kind === "perspicax" ? `${IDENTITY.issuer.replace(/\/+$/, "")}/console/credentials?kind=model` : undefined;
 }
+/** #1533: the access card of a turn the provider refused because the
+ * payer's own subscription sign-in expired, and the note on their engine
+ * card (PrincipalEngineLogins.markExpired). Null for any other failure. */
+function subscriptionExpiredCard(bot: BotRecord, instance: { driverKind: string; displayName?: string }, ran: { via: string; payerPrincipalId?: string; routine?: true } | undefined, message: string) {
+  const payer = ran?.payerPrincipalId?.trim().toLowerCase();
+  const card = signInExpiredCard({
+    identity: IDENTITY.kind, via: ran?.via, subscriptionDriver: subscriptionDriver(instance.driverKind), message,
+    payerPrincipalId: payer, botId: bot.id, botName: bot.name, ownerPrincipalId: effectiveBotOwner(bot),
+    engine: engineNameForViewer(engineDisplayName(instance), driverDisplayName(instance.driverKind), payer ? personIsOrgAdmin(payer) : false),
+    ...(ran?.routine ? { routine: true } : {}),
+  });
+  if (card) engineLogins?.markExpired(card.payerPrincipalId, instance.driverKind);
+  return card;
+}
 /** The access card of a refused or lost turn: who has to act (the person
  * who speaks, or the owner for a routine) and where. */
 function accessCardFor(bot: BotRecord, refusal: OrgAccessRefusal, engine: string, detail?: string): WireAccessCard {
@@ -29934,7 +29977,9 @@ function personalEngine(instanceId: string, person: string): boolean {
 function memberInstanceView(instance: Awaited<ReturnType<typeof describeInstances>>[number]) {
   const { cli: _cli, cliDefault: _cliDefault, cliCandidates: _cliCandidates, install: _install, authentication: _authentication, claudeAccount: _claudeAccount, freeUpSpace: _freeUpSpace, managed: _managed, ...rest } = instance as typeof instance & Record<string, unknown>;
   const { account: _account, authenticated: _authenticated, chatgptPlan: _chatgptPlan, authenticationUnavailableReason: _reason, update: _update, ...snapshot } = (instance.snapshot ?? {}) as Record<string, unknown>;
-  return { ...rest, snapshot };
+  // #1533: never an address as an engine's name for a member
+  const displayName = typeof rest.displayName === "string" ? engineNameForViewer(rest.displayName, driverDisplayName(instance.driverKind), false) : rest.displayName;
+  return { ...rest, displayName, snapshot };
 }
 
 /** Set once graceful shutdown begins: quitting disposes Company instances
@@ -36442,6 +36487,8 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         const installed = engineInstalled(entry.instanceId);
         const supported = isLoginDriver(driver);
         const signedIn = supported && logins.signedIn(principalId, driver);
+        // #1533: the provider refused that sign-in since (the card says Reconnect)
+        const expired = signedIn && logins.expired(principalId, driver);
         const held = sub ? perspicaxDirectory?.providerKeys(sub) ?? [] : [];
         const myKey = providersOfDriver(driver).some((provider) => held.includes(provider));
         // a key sealed for this person on this server serves their turns too (engine-credentials.ts 4b)
@@ -36457,12 +36504,12 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         return {
           instanceId: entry.instanceId,
           driver,
-          displayName: live ? engineDisplayName(live) : entry.instanceId,
+          displayName: engineNameForViewer(live ? engineDisplayName(live) : entry.instanceId, driverDisplayName(driver), personIsOrgAdmin(principalId)),
           installed,
           // "Not available on this server" rather than "Not installed": the
           // image deliberately does not carry it (engines.lock.json).
           ...(notAvailable ? { notAvailable } : {}),
-          subscription: { supported, signedIn },
+          subscription: { supported, signedIn, ...(expired ? { expired: true } : {}) },
           myKey,
           orgKey,
           ...(orgKeySet && !orgKey ? { orgKeyNotGiven: true } : {}),
@@ -37742,6 +37789,7 @@ ROUTES.push(createHarnessConnectorRoutes({
   isAdmin: (auth) => (IDENTITY.kind === "perspicax" ? orgAdminCaller(auth) : true),
   claudeAccountFor: claudeAccountForPrincipal,
   inventory: claudeAiInventory,
+  onSignedOut: (principalId) => engineLogins?.markExpired(principalId, "claudeAgent"),
 }));
 
 // The engines' own slash commands in the chat (server/harness-commands.ts):

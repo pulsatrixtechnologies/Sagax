@@ -317,6 +317,9 @@ export interface HarnessConnectorRouteDeps {
    * reason it has none. */
   claudeAccountFor(principalId: string): { cli: string; env: NodeJS.ProcessEnv; key: string } | { unavailable: "no_engine" | "not_signed_in" | "key" };
   inventory: Pick<ClaudeAiConnectorInventory, "read">;
+  /** #1533: the person's own Claude sign-in exists, but Claude says it is
+   * signed out (its refresh was refused): their engine card says Reconnect. */
+  onSignedOut?(principalId: string): void;
 }
 
 function isAdminScope(auth: RequestAuth): boolean {
@@ -358,7 +361,10 @@ export function createHarnessConnectorRoutes(deps: HarnessConnectorRouteDeps): R
     const account = deps.claudeAccountFor(principalId);
     if ("unavailable" in account) return answer({ available: false, reason: account.unavailable, connectors: [] });
     const inventory = await deps.inventory.read(account.key, { cli: account.cli, env: account.env }, url.searchParams.get("refresh") === "1");
-    if (inventory.auth === "none") return answer({ available: false, reason: "not_signed_in", connectors: [] });
+    if (inventory.auth === "none") {
+      if (deps.organization) deps.onSignedOut?.(principalId);
+      return answer({ available: false, reason: "not_signed_in", connectors: [] });
+    }
     if (inventory.auth === "key") return answer({ available: false, reason: "key", connectors: [] });
     if (inventory.auth === "unknown") return answer({ available: false, reason: "unknown", connectors: [] });
     return answer({ available: true, connectors: inventory.connectors });

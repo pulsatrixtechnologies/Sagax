@@ -27,8 +27,11 @@ function endedFlow(phase: "expired" | "failed"): DeviceSignInStatus {
 
 /** Settings → Engines → Claude on a hosted server: open Anthropic's sign-in
  * page, paste the code it shows, done. The server drives the unmodified CLI. */
-export function ClaudeSignIn({ instanceId, base: baseOverride, onSignedIn }: {
+export function ClaudeSignIn({ instanceId, base: baseOverride, onSignedIn, label }: {
   instanceId: string;
+  /** The start button's words (default "Connect Claude"; "Reconnect
+   * Claude" once a sign-in expired, #1533). */
+  label?: string;
   /** Another sign-in with the same verbs (start, status, complete, cancel):
    * a person's own subscription on an organization server
    * (`/api/me/engines/<id>/login`). Defaults to the server's own engine. */
@@ -191,7 +194,7 @@ export function ClaudeSignIn({ instanceId, base: baseOverride, onSignedIn }: {
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50"
         >
           {busy === "start" ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />}
-          {busy === "start" ? t("engineSetup.claude.starting") : t("engineConnect.connect", { name: "Claude" })}
+          {busy === "start" ? t("engineSetup.claude.starting") : label ?? t("engineConnect.connect", { name: "Claude" })}
         </button>
       ) : null}
       {error ? <p role="alert" className="text-[12px] text-danger">{error}</p> : null}

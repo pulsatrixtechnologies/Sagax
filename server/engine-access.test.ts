@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { driverKeyBacked, type AppConfig } from "./config.ts";
-import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, memberOwnHostToolCall, resolveTurnSpeaker, sensitiveHiddenSegment, routineAccessNotifications, routineLineage, serverCommandApproval, speakerPrincipal, type MemberHostToolPlace } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, memberOwnHostToolCall, resolveTurnSpeaker, sensitiveHiddenSegment, routineAccessNotifications, routineLineage, serverCommandApproval, speakerPrincipal, type MemberHostToolPlace, signInExpiredCard, engineNameForViewer } from "./engine-access.ts";
 
 const ALICE = "pr_aaaaaaaa-0000-4000-8000-000000000001";
 const BOB = "pr_bbbbbbbb-0000-4000-8000-000000000002";
@@ -452,5 +452,35 @@ describe("host-level agents tools in the member's own environment", () => {
     expect(memberOwnHostToolCall("mcp__agentsx__vm_exec", { command: "ls" }, all)).toBe(false);
     expect(memberBotAdminApproval({ tool: "mcp__agents__vm_exec", command: "rm -rf /", workspaceRoot: workspace, hostPlace: all })).toBe(true);
     expect(memberBotAdminApproval({ tool: "mcp__agents__vm_exec", workspaceRoot: workspace, hostPlace: all, foreignMcpServers: ["agents"] })).toBe(true);
+  });
+});
+
+describe("#1533: an expired subscription sign-in", () => {
+  const base = { identity: "perspicax" as const, via: "subscription", subscriptionDriver: true, payerPrincipalId: "pr_member", botId: "b1", botName: "Helper", ownerPrincipalId: "pr_member", engine: "Claude" };
+
+  it("gives the payer the access card with Reconnect, not the engine's raw words", () => {
+    const card = signInExpiredCard({ ...base, message: "Failed to authenticate: OAuth session expired and could not be refreshed" });
+    expect(card).toEqual({ reason: "no_access", cause: "sign_in_expired", engine: "Claude", botId: "b1", botName: "Helper", ownerPrincipalId: "pr_member", payerPrincipalId: "pr_member", subscriptionSignIn: true });
+    expect(signInExpiredCard({ ...base, message: "API Error: authentication_failed" })).not.toBeNull();
+    expect(engineAccessNotice("no_access", "Claude", { cause: "sign_in_expired" })).toContain("Reconnect Claude");
+  });
+
+  it("leaves every other failure and route alone", () => {
+    const message = "Failed to authenticate: OAuth session expired and could not be refreshed";
+    expect(signInExpiredCard({ ...base, message: "Overloaded" })).toBeNull();
+    expect(signInExpiredCard({ ...base, via: "org-key", message })).toBeNull();
+    expect(signInExpiredCard({ ...base, via: "speaker-key", message })).toBeNull();
+    expect(signInExpiredCard({ ...base, identity: "solo", message })).toBeNull();
+    expect(signInExpiredCard({ ...base, subscriptionDriver: false, message })).toBeNull();
+    expect(signInExpiredCard({ ...base, payerPrincipalId: undefined, message })).toBeNull();
+  });
+});
+
+describe("#1533: an engine's name for a member", () => {
+  it("never shows an address, only the engine and that it is another account", () => {
+    expect(engineNameForViewer("someone@example.test", "Claude", false)).toBe("Claude (other account)");
+    expect(engineNameForViewer("Claude (API key)", "Claude", false)).toBe("Claude (API key)");
+    // an admin reads the name as it was saved
+    expect(engineNameForViewer("someone@example.test", "Claude", true)).toBe("someone@example.test");
   });
 });
