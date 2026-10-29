@@ -973,7 +973,8 @@ function timingPhrase(schedule: RoutineRequestSchedule): string {
 export function scheduleText(schedule: RoutineRequestSchedule, timeZone: string): string {
   const phrase = timingPhrase(schedule);
   if (schedule.type === "cron") {
-    const label = `${cronScheduleLabel(schedule)} · Cron: ${schedule.expression}`;
+    // The card says it in words; the expression stays under the hood (2026-10-29).
+    const label = cronScheduleLabel(schedule);
     return phrase ? `${label} · around the time${phrase}` : label;
   }
   if (schedule.type === "once") return `${formatInstant(schedule.at, timeZone)} (${timeZone})`;

@@ -5,13 +5,11 @@
 // exists, that routine's settings; a run of a deleted routine shows what the
 // run kept. Nothing from the old details is dropped: owner, run as, the
 // group of a team goal, attachments, the run limit, the cron preview.
-import { Copy } from "lucide-react";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
-import { copyText } from "@/lib/copy-text";
 import { personLabel } from "@/lib/human-label";
 import type { Routine, RoutineRun } from "@/lib/routines";
-import { durationLabel, scheduleLabel, scheduleRawCron } from "@/lib/schedule-label";
+import { durationLabel, scheduleLabel } from "@/lib/schedule-label";
 import { routineAutoPauseAfter } from "../../../shared/routine-auto-pause";
 import { routineAutoPauseOption } from "@/lib/routine-display";
 import type { Bot, Group } from "@/state/store";
@@ -54,7 +52,6 @@ export function RoutineConfiguration({ routine, run, bots, groups = [], viewerPr
   const limit = run ? run.timeoutMinutes : routine?.timeoutMinutes;
   const attachments = run?.attachments ?? routine?.attachments ?? [];
   const otherOwner = routine?.owner?.id && routine.owner.id.toLowerCase() !== viewerPrincipalId?.toLowerCase() ? routine.owner : null;
-  const rawCron = routine ? scheduleRawCron(routine.schedule) : null;
   const runOn = run?.runOn ?? routine?.runOn;
   const resultsThreadId = run ? run.resultsThreadId ?? run.sourceThreadId : routine?.resultsThreadId;
   return (
@@ -74,10 +71,7 @@ export function RoutineConfiguration({ routine, run, bots, groups = [], viewerPr
         </Row>
         {roomGoal && <Row label={t("routineCalendar.teamGoalGroup")}>{group?.name ?? t("routineCalendar.groupUnavailable")}</Row>}
         {routine && <Row label={t("routines.drawer.schedule")} data-routine-config-schedule="">
-          <span className="inline-flex items-start gap-1.5">
-            <span title={rawCron ?? undefined}>{scheduleLabel(routine.schedule)}</span>
-            {routine.schedule.type === "cron" && <button type="button" data-copy-cron title={t("routines.copyCron")} aria-label={t("routines.copyCron")} onClick={() => { if (routine.schedule.type === "cron") void copyText(routine.schedule.expression); }} className="shrink-0 rounded-md p-0.5 text-ink-secondary hover:bg-raised hover:text-ink"><Copy size={12} /></button>}
-          </span>
+          <span>{scheduleLabel(routine.schedule)}</span>
           {routine.schedule.type === "cron" && <div className="mt-2"><CronSchedulePreview schedule={routine.schedule} paused={!routine.enabled} /></div>}
           {routine.precheck?.kind === "watch" && <div className="mt-1 text-ink-secondary">{t("routineWatch.badge")}</div>}
         </Row>}

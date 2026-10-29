@@ -59,7 +59,9 @@ it("takes cron through the real routine tools, applying the bot's own routine at
     // The creator asked for it paused (new routines start live by default).
     expect(create.subtitle).toContain("Created paused; resume it when ready.");
     expect(create.subtitle).not.toContain("Next 3 runs");
-    expect(create.subtitle).toContain("Cron: 0 9 1 * *");
+    // In words, never the expression (2026-10-29).
+    expect(create.subtitle).toContain("Monthly on day 1 at 09:00 · America/New_York");
+    expect(create.subtitle).not.toContain("0 9 1 * *");
     const { resultId: routineId } = applied(create);
     const current = async () => (await api("GET", "/api/routines")).routines.find((routine: any) => routine.id === routineId);
     expect(await current()).toMatchObject({ schedule, enabled: false, nextRunAt: null, runOn: "maus", overlap: "queue" });

@@ -60,8 +60,9 @@ import { RoutineDetail } from "@/components/routines/RoutineDetail";
 import { ConnectedRunActivity, RoutineRunDetail, RUN_WIDE_PX } from "@/components/routines/RoutineRunDetail";
 import { useElementWidth } from "@/components/bot-settings/ActivityWindow";
 import { canRunRoutineNow, routineRunInFlight } from "@/components/routines/RunNowButton";
-import { CronScheduleFields } from "@/components/routines/CronScheduleFields";
-import { cronChoiceFor, cronDraftFor, cronEditorValue, isCronChoice, type CronChoice } from "@/components/routines/cron-editor";
+import { AdvancedScheduleFields, HumanScheduleFields } from "@/components/routines/HumanScheduleFields";
+import { everyMinutesOf, keptScheduleValue, PICKER_FREQUENCIES, savedPatternSchedule, scheduleDraftFor, scheduleEditorValue, type ScheduleDraft } from "@/components/routines/schedule-editor";
+import { defaultScheduleModel, type ScheduleFrequency } from "../../shared/schedule-model";
 import { routineAutoPauseChoices, routineAutoPauseOption, routineDateTime, routineRunLabel, scheduleRepeatsEventDate, upcomingRoutines } from "@/lib/routine-display";
 import { ROUTINE_AUTO_PAUSE_DEFAULT, routineAutoPauseAfter } from "../../shared/routine-auto-pause";
 import { useShowThreads } from "@/lib/thread-preferences";
@@ -123,14 +124,18 @@ import { BOT_CALENDAR_DRAG_TYPE } from "@/lib/bot-drag";
 const HOUR_HEIGHT = 64;
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 const WEEKDAYS = [1, 2, 3, 4, 5];
-const INTERVAL_PRESETS = [5, 10, 15, 30, 60];
+/** Every N minutes or hours (2026-10-29: hours read as hours). */
+const INTERVAL_PRESETS = [5, 10, 15, 20, 30, 60, 120, 180, 240, 360, 480, 720];
 const EVENT_DURATION_OPTIONS = Array.from({ length: 240 / CALENDAR_SLOT_MINUTES }, (_, index) => (index + 1) * CALENDAR_SLOT_MINUTES);
 const BOT_DRAG_TYPE = BOT_CALENDAR_DRAG_TYPE;
 const EVENT_DRAG_TYPE = "application/x-openmaus-calendar-event";
 
 type EventKind = "routine" | "call";
 type CalendarRecurrenceChoice = "none" | "daily" | "weekdays" | "weekly" | "custom";
-type RecurrenceChoice = CalendarRecurrenceChoice | "interval" | CronChoice;
+/** A routine repeats on a pattern (HumanScheduleFields), every N minutes
+ * (the interval's fields), or on a saved schedule no pattern fits
+ * ("advanced", kept as it is). A call keeps the calendar's choices. */
+type RecurrenceChoice = CalendarRecurrenceChoice | "interval" | "pattern" | "advanced";
 type IntervalDayChoice = "every-day" | "weekdays" | "custom";
 type IntervalWindowChoice = "all-day" | "custom";
 type IntervalEndChoice = "never" | "on-date";
@@ -190,6 +195,11 @@ function nextHour(): number {
   return date.getTime();
 }
 
+/** "15 minutes", "2 hours": an interval preset in words. */
+function intervalSpan(minutes: number): string {
+  return minutes < 60 ? t("scheduleEditor.minutesN", { count: minutes }) : minutes === 60 ? t("scheduleEditor.hour1") : t("scheduleEditor.hoursN", { count: minutes / 60 });
+}
+
 function sameDays(left: readonly number[] | undefined, right: readonly number[]): boolean {
   return Boolean(left && left.length === right.length && left.every((day, index) => day === right[index]));
 }
@@ -204,11 +214,15 @@ function endOfLocalDate(dateInput: string): number {
   date.setHours(23, 59, 59, 999);
   return date.getTime();
 }
-function recurrenceFor(schedule: RoutineSchedule | CalendarCall["schedule"], at: number): RecurrenceChoice {
+function recurrenceFor(schedule: RoutineSchedule | CalendarCall["schedule"], at: number, routine: boolean): RecurrenceChoice {
   if (schedule.type === "once") return "none";
   if (schedule.type === "webhook" || schedule.type === "event") return "none";
   if (schedule.type === "interval") return "interval";
-  if (schedule.type === "cron") return cronChoiceFor(schedule);
+  if (schedule.type === "cron") {
+    const { draft, fits } = scheduleDraftFor(schedule, at);
+    return !fits ? "advanced" : draft.model.frequency === "every" ? "interval" : "pattern";
+  }
+  if (routine) return "pattern";
   if (schedule.weekdays.length === 7) return "daily";
   if (schedule.weekdays.join(",") === "1,2,3,4,5") return "weekdays";
   if (schedule.weekdays.length === 1 && schedule.weekdays[0] === new Date(at).getDay()) return "weekly";
@@ -228,7 +242,7 @@ function makeCalendarSchedule(choice: CalendarRecurrenceChoice, at: number, week
 }
 
 function makeRoutineSchedule(
-  choice: Exclude<RecurrenceChoice, CronChoice>,
+  choice: Exclude<RecurrenceChoice, "pattern" | "advanced">,
   at: number,
   weekdays: number[],
   everyMinutes: number,
@@ -410,15 +424,19 @@ function EventEditor({
   // choice, else the installation default. Off keeps a run in the background.
   const [postResults, setPostResults] = useState(template?.postResults ?? routinesInConversationEnabled(state.config));
   const [mailAlias, setMailAlias] = useState(template?.mailAlias ?? "");
-  const [recurrence, setRecurrence] = useState<RecurrenceChoice>(recurrenceFor(schedule, initialAt));
+  const [recurrence, setRecurrence] = useState<RecurrenceChoice>(recurrenceFor(schedule, initialAt, (routinesOnly ? "routine" : seed.kind) === "routine"));
   const initialTiming = readTiming(schedule);
   const [timingMode, setTimingMode] = useState<"exact" | "flexible">(initialTiming.mode);
   const [earlyMinutes, setEarlyMinutes] = useState(initialTiming.early);
   const [lateMinutes, setLateMinutes] = useState(initialTiming.late);
-  const [cronDraft, setCronDraft] = useState(() => cronDraftFor(schedule.type === "cron" ? schedule : undefined, initialAt));
-  const [cronChanged, setCronChanged] = useState(false);
+  // The schedule in words (2026-10-29): frequency, times, days, zone. The
+  // saved schedule is kept exactly until the person changes it.
+  const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>(() => scheduleDraftFor(schedule, initialAt).draft);
+  const [scheduleTouched, setScheduleTouched] = useState(false);
   const [weekdays, setWeekdays] = useState(schedule.type === "daily" ? schedule.weekdays : [new Date(initialAt).getDay()]);
-  const [intervalMinutes, setIntervalMinutes] = useState(schedule.type === "interval" ? schedule.everyMinutes : 15);
+  // A saved "every 15 minutes" cron opens in the interval's fields.
+  const savedEveryMinutes = schedule.type === "cron" ? everyMinutesOf(scheduleDraftFor(schedule, initialAt).draft.model) : null;
+  const [intervalMinutes, setIntervalMinutes] = useState(schedule.type === "interval" ? schedule.everyMinutes : savedEveryMinutes ?? 15);
   const [intervalDays, setIntervalDays] = useState<IntervalDayChoice>(() => intervalDayChoice(schedule));
   const [intervalWeekdays, setIntervalWeekdays] = useState(() => schedule.type === "interval" && schedule.weekdays?.length
     ? schedule.weekdays
@@ -503,21 +521,40 @@ function EventEditor({
   const selectedIntervalWindow = intervalWindow === "custom"
     ? { start: intervalWindowStart, end: intervalWindowEnd }
     : undefined;
-  const cron = isCronChoice(recurrence)
-    ? cronEditorValue(recurrence, cronDraft, editorOpenedAt, !cronChanged && schedule.type === "cron" ? schedule : undefined)
-    : null;
+  const keptCron = !scheduleTouched && schedule.type === "cron" ? schedule : null;
+  const pattern = recurrence === "advanced" && keptCron
+    ? keptScheduleValue(keptCron, editorOpenedAt)
+    : recurrence === "pattern"
+      ? scheduleEditorValue(scheduleDraft, editorOpenedAt)
+      : null;
+  // An untouched "every N minutes" cron is saved as it was.
+  const keptEvery = Boolean(keptCron && savedEveryMinutes != null && intervalMinutes === savedEveryMinutes
+    && intervalDays === "every-day" && intervalWindow === "all-day" && intervalEnd === "never");
 
   const selectRecurrence = (choice: RecurrenceChoice) => {
     if (choice === "interval" && !intervalTimeoutDefaultApplied) {
       setTimeoutMinutes((current) => current ?? 30);
       setIntervalTimeoutDefaultApplied(true);
     }
-    if (isCronChoice(choice)) {
-      // Switching from a preset to Advanced starts with what the person chose.
-      if (choice === "cron" && cron?.schedule) setCronDraft((draft) => ({ ...draft, expression: cron.schedule!.expression }));
-      setCronChanged(true);
-    }
+    setScheduleTouched(true);
     setRecurrence(choice);
+  };
+
+  /** A frequency of the Repeat picker: a pattern keeps its times and zone. */
+  const selectFrequency = (frequency: ScheduleFrequency) => {
+    setScheduleDraft((draft) => ({ ...draft, model: { ...draft.model, frequency } }));
+    selectRecurrence("pattern");
+  };
+
+  const changeScheduleDraft = (draft: ScheduleDraft) => {
+    setScheduleDraft(draft);
+    setScheduleTouched(true);
+  };
+
+  /** Advanced: replace a schedule no pattern fits with a simple one. */
+  const simplifySchedule = () => {
+    setScheduleDraft((draft) => ({ ...draft, model: defaultScheduleModel({ times: draft.model.times }) }));
+    selectRecurrence("pattern");
   };
 
   const selectIntervalDays = (choice: IntervalDayChoice) => {
@@ -583,13 +620,15 @@ function EventEditor({
         if (recurrence === "interval" && intervalEndsAt != null && intervalEndsAt < nextIntervalForSave(savedAt, intervalMinutes, existingIntervalSchedule)) {
           throw new Error(t("routineCalendar.endAfterFirstRun"));
         }
-        const built = isCronChoice(recurrence) ? cron?.schedule : makeRoutineSchedule(recurrence, at, weekdays, intervalMinutes, {
+        const built = recurrence === "pattern" || recurrence === "advanced"
+          ? keptCron ?? (!scheduleTouched && schedule.type === "daily" ? schedule : pattern?.schedule && savedPatternSchedule(pattern.schedule, scheduleDraft))
+          : recurrence === "interval" && keptEvery && keptCron ? keptCron : makeRoutineSchedule(recurrence, at, weekdays, intervalMinutes, {
           anchorAt: intervalAnchorAt,
           weekdays: selectedIntervalWeekdays ? [...selectedIntervalWeekdays].sort() : null,
           window: selectedIntervalWindow ?? null,
           endsAt: intervalEndsAt,
         });
-        if (!built) throw new Error(cron?.error || t("routineCalendar.validSchedule"));
+        if (!built) throw new Error(pattern?.error || t("routineCalendar.validSchedule"));
         const keptTrigger = existingRoutine && (existingRoutine.schedule.type === "webhook" || existingRoutine.schedule.type === "event")
           ? existingRoutine.schedule
           : null;
@@ -628,7 +667,7 @@ function EventEditor({
         });
         dispatch({ type: "routinePatched", routine: response.routine });
       } else {
-        if (recurrence === "interval" || isCronChoice(recurrence)) throw new Error(t("routineCalendar.supportedCallSchedule"));
+        if (recurrence === "interval" || recurrence === "pattern" || recurrence === "advanced") throw new Error(t("routineCalendar.supportedCallSchedule"));
         const nextSchedule = makeCalendarSchedule(recurrence, at, weekdays);
         const input: CalendarCallInput = {
           name,
@@ -679,7 +718,7 @@ function EventEditor({
     && !intervalDaysInvalid
     && !intervalWindowInvalid
     && !intervalEndInvalid
-    && !cron?.error
+    && !pattern?.error
     && !("error" in watchBuilt && watchAllowed),
   );
   const canSwitchKind = !routinesOnly && !existingRoutine && !existingCall && !lockedBotId;
@@ -697,8 +736,8 @@ function EventEditor({
         <div className="space-y-5 px-5 py-5 sm:px-8">
           {canSwitchKind && (
             <div className="ml-10 inline-flex rounded-lg bg-inset p-1">
-              <button type="button" onClick={() => { setKind("routine"); setBotIds((ids) => ids.slice(0, 1)); }} className={cn("rounded-md px-4 py-1.5 text-[12.5px] font-medium", kind === "routine" ? "bg-raised text-ink shadow" : "text-ink-secondary")}>{t("botPanel.coding.kind.routine")}</button>
-              <button type="button" onClick={() => { setKind("call"); if (recurrence === "interval" || isCronChoice(recurrence)) setRecurrence("none"); }} className={cn("rounded-md px-4 py-1.5 text-[12.5px] font-medium", kind === "call" ? "bg-raised text-ink shadow" : "text-ink-secondary")}>{t("routineCalendar.kindCall")}</button>
+              <button type="button" onClick={() => { setKind("routine"); setBotIds((ids) => ids.slice(0, 1)); if (recurrence !== "none" && recurrence !== "interval") { setScheduleDraft(scheduleDraftFor(makeCalendarSchedule(recurrence as CalendarRecurrenceChoice, at, weekdays), at).draft); setRecurrence("pattern"); } }} className={cn("rounded-md px-4 py-1.5 text-[12.5px] font-medium", kind === "routine" ? "bg-raised text-ink shadow" : "text-ink-secondary")}>{t("botPanel.coding.kind.routine")}</button>
+              <button type="button" onClick={() => { setKind("call"); if (recurrence === "interval" || recurrence === "pattern" || recurrence === "advanced") setRecurrence("none"); }} className={cn("rounded-md px-4 py-1.5 text-[12.5px] font-medium", kind === "call" ? "bg-raised text-ink shadow" : "text-ink-secondary")}>{t("routineCalendar.kindCall")}</button>
             </div>
           )}
 
@@ -734,7 +773,7 @@ function EventEditor({
           <div className="flex items-start gap-4">
             <Clock3 size={18} className="mt-2.5 shrink-0 text-ink-secondary" />
             <div className="min-w-0 flex-1 space-y-3">
-              {recurrence !== "interval" && !isCronChoice(recurrence) && (
+              {(kind === "call" || recurrence === "none") && (
                 <div className="flex flex-wrap items-center gap-2">
                   {kind === "routine" && recurrence === "none" && <span className="text-[12px] font-medium text-ink-secondary">{t("routineCalendar.starts")}</span>}
                   {kind === "routine" && recurrence === "weekly" && <span className="text-[12px] font-medium text-ink-secondary">{t("routineCalendar.onDate")}</span>}
@@ -751,16 +790,29 @@ function EventEditor({
               )}
               <div className="flex flex-wrap items-center gap-2">
                 <Repeat2 size={14} className="text-ink-secondary" />
+                {kind === "routine" ? (
+                  <select data-schedule-frequency aria-label={t("routines.editor.repeat")} value={recurrence === "pattern" ? scheduleDraft.model.frequency : recurrence} onChange={(event) => {
+                    const value = event.target.value;
+                    if ((PICKER_FREQUENCIES as string[]).includes(value)) selectFrequency(value as ScheduleFrequency);
+                    else selectRecurrence(value as RecurrenceChoice);
+                  }} className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none focus:border-border-strong">
+                    <option value="none">{t("scheduleEditor.frequency.once")}</option>
+                    {PICKER_FREQUENCIES.map((frequency) => <option key={frequency} value={frequency}>{t(`scheduleEditor.frequency.${frequency}`)}</option>)}
+                    <option value="interval">{t("scheduleEditor.frequency.every")}</option>
+                    {recurrence === "advanced" && <option value="advanced">{t("scheduleEditor.frequency.advanced")}</option>}
+                  </select>
+                ) : (
                 <select aria-label={t("routines.editor.repeat")} value={recurrence} onChange={(event) => selectRecurrence(event.target.value as RecurrenceChoice)} className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink outline-none focus:border-border-strong">
                   <option value="none">{t("routineCalendar.noRepeat")}</option>
-                  {kind === "routine" && <option value="interval">{t("routineCalendar.everyXMinutes")}</option>}
                   <option value="daily">{t("routineCalendar.daily")}</option>
                   <option value="weekdays">{t("routineCalendar.everyWeekday")}</option>
                   <option value="weekly">{t("routineCalendar.weeklyOn", { day: dayNames()[new Date(at).getDay()] ?? "" })}</option>
                   <option value="custom">{t("routineCalendar.selectedWeekdays")}</option>
-                  {kind === "routine" && <><option value="monthly">{t("routineCalendar.monthly")}</option><option value="yearly">{t("routineCalendar.yearly")}</option><option value="cron">{t("routineCalendar.customCron")}</option></>}
                 </select>
+                )}
               </div>
+              {kind === "routine" && recurrence === "pattern" && pattern && <HumanScheduleFields draft={scheduleDraft} value={pattern} onChange={changeScheduleDraft} />}
+              {kind === "routine" && recurrence === "advanced" && pattern && <AdvancedScheduleFields value={pattern} onSimplify={simplifySchedule} />}
               {kind === "routine" && recurrence !== "none" && (
                 <RoutineTimingFields
                   mode={timingMode}
@@ -772,8 +824,7 @@ function EventEditor({
                 />
               )}
               {kind === "routine" && <RoutineScheduleNote />}
-              {isCronChoice(recurrence) && kind === "routine" && cron && <CronScheduleFields choice={recurrence} value={cronDraft} onChange={(draft) => { setCronDraft(draft); setCronChanged(true); }} runs={cron.runs} error={cron.error} />}
-              {recurrence === "custom" && (
+              {kind === "call" && recurrence === "custom" && (
                 <div className="flex flex-wrap gap-1.5">
                   {dayNames().map((label, day) => <button key={label} type="button" onClick={() => setWeekdays((current) => current.includes(day) ? (current.length === 1 ? current : current.filter((value) => value !== day)) : [...current, day].sort())} className={cn("size-8 rounded-full text-[10px] font-semibold", weekdays.includes(day) ? "bg-accent text-accent-ink" : "bg-inset text-ink-secondary hover:bg-raised hover:text-ink")}>{label[0]}</button>)}
                 </div>
@@ -788,7 +839,7 @@ function EventEditor({
                       aria-label={t("routineCalendar.howOften")}
                       className="rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] tabular-nums text-ink outline-none focus:border-border-strong"
                     >
-                      {INTERVAL_PRESETS.map((minutes) => <option key={minutes} value={minutes}>{minutes}</option>)}
+                      {INTERVAL_PRESETS.map((minutes) => <option key={minutes} value={minutes}>{intervalSpan(minutes)}</option>)}
                       <option value="custom">{t("room.turnLimit.custom")}</option>
                     </select>
                     {!INTERVAL_PRESETS.includes(intervalMinutes) && (
@@ -806,7 +857,7 @@ function EventEditor({
                         className={cn("w-20 rounded-lg border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] tabular-nums text-ink outline-none focus:border-border-strong", intervalInvalid ? "border-danger/70" : "border-border")}
                       />
                     )}
-                    <span>{t("settings.mcpCalls.minutes")}</span>
+                    {!INTERVAL_PRESETS.includes(intervalMinutes) && <span>{t("settings.mcpCalls.minutes")}</span>}
                   </div>
 
                   <div className="grid items-center gap-2 text-[12.5px] text-ink sm:flex sm:flex-wrap">

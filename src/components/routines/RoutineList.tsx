@@ -3,7 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerE
 import { t } from "@/lib/i18n";
 import type { Routine, RoutineRun } from "@/lib/routines";
 import type { RoutineSuspendReason } from "../../../shared/routines";
-import { scheduleLabelCompact, scheduleRawCron } from "@/lib/schedule-label";
+import { scheduleLabel, scheduleLabelCompact } from "@/lib/schedule-label";
 import { routineAutoPausedText, routineNextRunPhrase, routineRunAgo, routineRunLabel, routineRunPreview, routineRunTime, routineRunTone, routineScheduleState, routineUpcomingState, routineWhenLabel } from "@/lib/routine-display";
 import { ActivityStatusIcon } from "../bot-settings/ActivityCard";
 import { runActivityStatus } from "./RoutineRunDetail";
@@ -89,7 +89,8 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
           const bot = upcoming ? bots?.find((candidate) => candidate.id === routine.botId) : undefined;
           const botName = bot?.name ?? routine.bot?.name;
           const when = upcoming && routine.nextRunAt != null ? routineNextRunPhrase(routine.nextRunAt) : routineWhenLabel(routine);
-          const rawCron = scheduleRawCron(routine.schedule);
+          // The full sentence, with its zone, in the tooltip; never the expression.
+          const fullWhen = routine.schedule.type === "cron" ? scheduleLabel(routine.schedule) : null;
           const state = upcoming ? routineUpcomingState(routine, runs) : null;
           // Someone else's routine (a wider scope): its owner, read-only
           // unless the server says this person may edit it.
@@ -111,7 +112,7 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
           const lastRun = upcoming ? undefined : runs.filter((run) => run.routineId === routine.id && run.status !== "queued").sort((a, b) => routineRunTime(b) - routineRunTime(a))[0];
           const lastPreview = lastRun && !lastRun.redacted && !lastRun.quiet ? routineRunPreview(lastRun) : "";
           const nextLine = !upcoming && routine.enabled && routine.nextRunAt != null ? routineNextRunPhrase(routine.nextRunAt) : undefined;
-          const whenTitle = [pausedWithSwitch ? routineWhenLabel(routine) : when, rawCron].filter(Boolean).join("\n");
+          const whenTitle = [pausedWithSwitch ? routineWhenLabel(routine) : when, fullWhen !== when ? fullWhen : null].filter(Boolean).join("\n");
           return (
             <div key={routine.id} data-routine-row data-routine-id={routine.id}
               onPointerDown={onRowDragStart && !readOnly ? (event) => {
@@ -135,7 +136,7 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
                   </span>
                 ) : <span className="block truncate text-[13px] leading-[18px] text-ink">{routine.name}</span>}
                 {upcoming ? (
-                  <span data-routine-when={when} title={[botName ? `${botName} · ${when}` : when, rawCron].filter(Boolean).join("\n")} className="flex min-w-0 items-center gap-1.5 text-[13px] leading-[18px] text-ink-secondary">
+                  <span data-routine-when={when} title={[botName ? `${botName} · ${when}` : when, fullWhen !== when ? fullWhen : null].filter(Boolean).join("\n")} className="flex min-w-0 items-center gap-1.5 text-[13px] leading-[18px] text-ink-secondary">
                     {bot && <BotAvatar bot={bot} size={16} animated={false} />}
                     {botName && <span data-routine-bot className="min-w-0 truncate">{botName}</span>}
                     {botName && <span aria-hidden="true" className="shrink-0">·</span>}

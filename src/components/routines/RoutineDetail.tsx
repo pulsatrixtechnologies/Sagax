@@ -8,12 +8,11 @@
 import { CirclePlay, Copy, ExternalLink, History, Inbox, Loader2, Pause, Pencil, Play, Trash2, UsersRound } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/cn";
-import { copyText } from "@/lib/copy-text";
 import { t } from "@/lib/i18n";
 import type { Routine, RoutineRun } from "@/lib/routines";
 import { isRoutineProblemRun } from "@/lib/routines";
 import { routineDateTime, routineNextText, routineRunAgo, routineRunDuration, routineRunLabel, routineRunPreview, routineRunTime, routineRunTone, routineState, routineWeekRunsText, type RoutineStateTone } from "@/lib/routine-display";
-import { scheduleLabel, scheduleRawCron } from "@/lib/schedule-label";
+import { scheduleLabel } from "@/lib/schedule-label";
 import { formatUsd } from "@/lib/usage";
 import type { Bot, Group } from "@/state/store";
 import { BotAvatar } from "../Avatar";
@@ -97,7 +96,6 @@ export function RoutineDetail({ routine, runs, bots, groups = [], viewerPrincipa
   const group = groups.find((candidate) => candidate.id === routine.groupId);
   const state = routineState(routine, runs);
   const history = [...runs].filter((run) => run.routineId === routine.id).sort((a, b) => routineRunTime(b) - routineRunTime(a));
-  const rawCron = scheduleRawCron(routine.schedule);
   const skips = routine.awaySkips && !routine.awaySkips.reportedAt ? routine.awaySkips.count : 0;
   return (
     <div data-routine-detail className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -116,7 +114,7 @@ export function RoutineDetail({ routine, runs, bots, groups = [], viewerPrincipa
           </div>
           <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[12.5px]">
             <dt className="text-ink-secondary">{t("routineDetail.trigger")}</dt>
-            <dd data-routine-trigger className="flex min-w-0 items-start gap-1.5 text-ink"><span title={rawCron ?? undefined}>{scheduleLabel(routine.schedule)}</span>{routine.precheck?.kind === "watch" && <span className="shrink-0 rounded-md bg-inset px-1.5 text-[11px] leading-[18px] text-ink-secondary">{t("routineWatch.badge")}</span>}{routine.schedule.type === "cron" && <button type="button" data-copy-cron title={t("routines.copyCron")} aria-label={t("routines.copyCron")} onClick={() => { if (routine.schedule.type === "cron") void copyText(routine.schedule.expression); }} className="shrink-0 rounded-md p-0.5 text-ink-secondary hover:bg-raised hover:text-ink"><Copy size={12} /></button>}</dd>
+            <dd data-routine-trigger className="flex min-w-0 items-start gap-1.5 text-ink"><span>{scheduleLabel(routine.schedule)}</span>{routine.precheck?.kind === "watch" && <span className="shrink-0 rounded-md bg-inset px-1.5 text-[11px] leading-[18px] text-ink-secondary">{t("routineWatch.badge")}</span>}</dd>
             <dt className="text-ink-secondary">{t("routineDetail.nextRun")}</dt>
             <dd data-routine-next className="text-ink">{routineNextText(routine, now)}</dd>
             {routine.weekRuns && <><dt className="text-ink-secondary">{t("routineDetail.week")}</dt><dd data-routine-week-runs className="text-ink">{routineWeekRunsText(routine.weekRuns)}</dd></>}

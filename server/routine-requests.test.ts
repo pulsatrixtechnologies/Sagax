@@ -299,7 +299,9 @@ describe("RoutineRequestService", () => {
     });
     expect(routines.listRoutines()).toHaveLength(0);
     expect(proposed.timeZone).toBe("America/New_York");
-    expect(proposed.summary).toContain("0 9 1 * *");
+    // In words on the card, never the expression (2026-10-29).
+    expect(proposed.summary).toContain("Monthly on day 1 at 09:00");
+    expect(proposed.summary).not.toContain("0 9 1 * *");
     expect(proposed.summary).toContain("America/New_York");
     expect(proposed.detail).toContain("Next 3 runs (America/New_York): Sep 1, 2026, 9:00 AM · Oct 1, 2026, 9:00 AM · Nov 1, 2026, 9:00 AM");
     expect(proposed.nextRunAt).toBe(Date.parse("2026-09-01T13:00:00Z"));

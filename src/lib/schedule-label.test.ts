@@ -11,9 +11,9 @@ describe("schedule labels", () => {
     ["0 9 1 1 *", "Yearly on January 1 at 09:00"],
     ["0 9 * * 1#2", "Monthly on the second Monday at 09:00"],
     ["0 9 * * 1-5", "Every weekday at 09:00"],
-    ["0 9 1 * 1", "Cron 0 9 1 * 1"],
+    ["0 9 1 * 1", "Custom schedule"],
     ["*/15 9-17 * * 1-5", "Weekdays, 9 AM to 5 PM, every 15 minutes"],
-    ["0 9 1,15 * 1", "Cron 0 9 1,15 * 1"],
+    ["0 9 1,15 * 1", "Custom schedule"],
   ])("labels %s without inventing a meaning for arbitrary expressions", (expression, description) => {
     const schedule = { type: "cron" as const, expression, timeZone: "Asia/Kolkata" };
     expect(scheduleLabel(schedule)).toBe(`${description} · Asia/Kolkata`);
@@ -90,11 +90,11 @@ const TABLE: Array<[string, string, string]> = [
   ["30 8 L * *", "Monthly on the last day at 08:30", "Le dernier jour du mois à 8 h 30"],
   ["0 9 * * 1#2", "Monthly on the second Monday at 09:00", "Le deuxième lundi du mois à 9 h 00"],
   ["0 9 1 1 *", "Yearly on January 1 at 09:00", "Chaque année, le 1er janvier, à 9 h 00"],
-  ["0 9 1 * 1", "Cron 0 9 1 * 1", "Cron 0 9 1 * 1"],
-  ["0 9 ? * 1", "Cron 0 9 ? * 1", "Cron 0 9 ? * 1"],
-  ["*/15 8,12 * * *", "Cron */15 8,12 * * *", "Cron */15 8,12 * * *"],
-  ["61 9 * * *", "Cron 61 9 * * *", "Cron 61 9 * * *"],
-  ["0 9 * *", "Cron 0 9 * *", "Cron 0 9 * *"],
+  ["0 9 1 * 1", "Custom schedule", "Horaire personnalisé"],
+  ["0 9 ? * 1", "Custom schedule", "Horaire personnalisé"],
+  ["*/15 8,12 * * *", "Custom schedule", "Horaire personnalisé"],
+  ["61 9 * * *", "Custom schedule", "Horaire personnalisé"],
+  ["0 9 * *", "Custom schedule", "Horaire personnalisé"],
 ];
 
 describe("cron wording in French and English", () => {

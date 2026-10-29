@@ -10,20 +10,27 @@ const MONTHS = {
   fr: ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"],
 };
 
-/** The raw expression, for a tooltip or a Copy button. */
-export function cronRawText(schedule: RoutineCronSchedule): string {
-  return `${schedule.expression} · ${schedule.timeZone}`;
+/** What a schedule no sentence fits reads as: never the raw expression
+ * (2026-10-29), its next runs say the rest. */
+export function cronCustomLabel(locale: CronLocale = "en"): string {
+  return locale === "fr" ? "Horaire personnalisé" : "Custom schedule";
 }
 
-/** True when the label is a sentence rather than the raw expression. */
+/** True when the label is a sentence rather than the custom fallback. */
 export function cronIsDescribed(schedule: RoutineCronSchedule, locale: CronLocale = "en"): boolean {
-  return !cronScheduleLabel(schedule, locale).startsWith("Cron ");
+  return cronScheduleWords(schedule, locale) !== cronCustomLabel(locale);
 }
 
-/** Describe the expression in words (fr or en); keep the exact expression
- * when it cannot be said clearly. Presentation only, never a second parser
- * or source of scheduling truth. */
+/** The schedule as a person reads it, with its zone: "Weekdays, at 8:30 AM,
+ * 12:30 PM and 4:30 PM · America/Toronto". */
 export function cronScheduleLabel(schedule: RoutineCronSchedule, locale: CronLocale = "en"): string {
+  return `${cronScheduleWords(schedule, locale)} · ${schedule.timeZone}`;
+}
+
+/** Describe the expression in words (fr or en), without its zone; "Custom
+ * schedule" when it cannot be said clearly. Presentation only, never a
+ * second parser or source of scheduling truth. */
+export function cronScheduleWords(schedule: Pick<RoutineCronSchedule, "expression">, locale: CronLocale = "en"): string {
   const fr = locale === "fr";
   const [minute, hour, day, month, weekday] = schedule.expression.trim().split(/\s+/);
   let label: string | null = null;
@@ -59,6 +66,5 @@ export function cronScheduleLabel(schedule: RoutineCronSchedule, locale: CronLoc
       }
     }
   }
-  label ??= describeCron(schedule.expression, locale) ?? `Cron ${schedule.expression}`;
-  return `${label} · ${schedule.timeZone}`;
+  return label ?? describeCron(schedule.expression, locale) ?? cronCustomLabel(locale);
 }
