@@ -76,6 +76,8 @@ public enum BotFieldRules {
         "clients.botsRead", "clients.botsMessage", "clients.routinesRun", "clients.routinesRead", "clients.agentsCreate",
         // a member default since #1098 (shared/permissions.ts)
         "security.triage",
+        // a person's own working folders (shared/permissions.ts, folders group)
+        "folders.botWorkingFolder", "folders.roomWorkingFolder",
     ]
 
     /// The keys about a person's own things that every member holds,
@@ -85,6 +87,7 @@ public enum BotFieldRules {
         "bots.create", "bots.approvalLevel", "bots.fullAccess", "bots.behaviour", "bots.tools",
         "sharing.grants", "sharing.visibility", "apps.ownIntegrations",
         "clients.botsRead", "clients.botsMessage", "clients.routinesRun", "clients.routinesRead", "clients.agentsCreate",
+        "folders.botWorkingFolder", "folders.roomWorkingFolder",
     ]
 }
 
