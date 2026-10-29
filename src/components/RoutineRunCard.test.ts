@@ -145,14 +145,15 @@ describe("RoutineRunCard", () => {
     expect(markup).toContain("Morning brief completed.");
   });
 
-  it("does not offer a dead navigation action when the execution task is unavailable", () => {
+  it("offers View run without an execution thread: the run's detail opens, to read (2026-10-29)", () => {
     const markup = renderToStaticMarkup(createElement(RoutineRunCard, {
       message: message("missed", { executionThreadId: undefined, error: "Computer was offline." }),
       onOpen: vi.fn(),
     }));
 
     expect(markup).toContain("Missed");
-    expect(markup).not.toContain("View run");
+    expect(markup).toContain("View run");
+    expect(renderToStaticMarkup(createElement(RoutineRunCard, { message: message("missed") }))).not.toContain("View run");
   });
 
   it("recognizes only an execution thread still present in the owning bot's tasks", () => {

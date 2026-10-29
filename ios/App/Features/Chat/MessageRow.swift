@@ -33,6 +33,10 @@ struct MessageRow: View {
     /// Block's confirmation, and a blocked line opened with Show.
     @State private var confirmingBlock = false
     @State private var revealedBlocked = false
+    /// View run (2026-10-29): the run's detail, as the routines screens show
+    /// it, never the execution conversation. Continue in the conversation
+    /// stays in the detail.
+    @State private var openedRun: OpenedRoutineRun?
     @Environment(\.messageActions) private var context
     /// Cite in the Select Text sheet (CO8); nil where nothing can be sent.
     @Environment(\.citeIntoComposer) private var citeIntoComposer
@@ -155,6 +159,10 @@ struct MessageRow: View {
         }
         .sheet(item: $digest) {
             DigestSheet(summary: $0)
+        }
+        .sheet(item: $openedRun) { opened in
+            RoutineRunDetailView(run: opened.run, routine: opened.routine)
+                .environmentObject(session)
         }
         .sheet(isPresented: $reporting) {
             ReportMessageSheet(
@@ -434,9 +442,22 @@ struct MessageRow: View {
     /// takes, so it lands on screen without joining the thread list. No
     /// route — the run was deleted, or the phone holds no bot owning it —
     /// means no button.
+    /// View run opens the run's detail (a run of a deleted routine too, to
+    /// read). A run the computer no longer lists falls back to its
+    /// execution conversation when this phone has a route to it.
     private func routineRunOpener(_ card: RoutineRunCard) -> (() -> Void)? {
-        guard let openThread, let ref = session.state.routineExecutionRef(for: card) else { return nil }
-        return { openThread(ref) }
+        let fallback = session.state.routineExecutionRef(for: card)
+        let openThread = openThread
+        return {
+            Task {
+                let listing = await session.loadRoutines()
+                if let run = listing.runs.first(where: { $0.id == card.runId }) {
+                    openedRun = OpenedRoutineRun(run: run, routine: listing.routines.first { $0.id == run.routineId })
+                } else if let openThread, let fallback {
+                    openThread(fallback)
+                }
+            }
+        }
     }
 }
 
@@ -451,4 +472,12 @@ extension MessageRow: Equatable {
             && lhs.endsRun == rhs.endsRun
             && (lhs.openThread == nil) == (rhs.openThread == nil)
     }
+}
+
+/// A run opened from its card in the chat, with its routine when it still
+/// exists.
+struct OpenedRoutineRun: Identifiable {
+    let run: RoutineRun
+    let routine: Routine?
+    var id: String { run.id }
 }
