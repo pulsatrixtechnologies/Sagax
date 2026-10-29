@@ -72,7 +72,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { join } from "node:path";
 
 import type { PageError, PageRecord, PageVersionRecord, PublishedPages } from "../published-pages.ts";
-import { commentAnswerDocument, pageDocument, parseReaderAssets, splitSlides, wrapperDocument, type ReaderAssets } from "../published-pages-render.ts";
+import { commentAnswerDocument, escapeHtml, pageDocument, parseReaderAssets, splitSlides, wrapperDocument, type ReaderAssets } from "../published-pages-render.ts";
 import type { ReaderBoot } from "../../shared/page-reader.ts";
 import type { PageLive } from "../page-live.ts";
 import { applySuggestion, parsePageQuote, parseSuggestion, parseThreadText, suggestable, type PageThread, type PageThreadsAnswer } from "../../shared/page-threads.ts";
@@ -175,6 +175,9 @@ export interface PublicPageOptions {
   readerAssets?(): ReaderAssets | null;
   /** A signed-in reader's name, as the bar shows it. */
   personName?(principalId: string): string;
+  /** Where a reader who is not signed in signs in and comes back to this
+   * reading link (an organization server's web sign-in), or nothing. */
+  signInPath?(viewPath: string): string | undefined;
 }
 
 const assetCache = new Map<string, { mtimeMs: number; assets: ReaderAssets | null }>();
@@ -219,9 +222,17 @@ export function readerBoot(input: { page: PageRecord; version: PageVersionRecord
   };
 }
 
-const NOT_FOUND_HTML = (language: "fr" | "en") => language === "fr"
-  ? "<!doctype html><meta charset=\"utf-8\"><title>Page introuvable</title><p>Cette page n'existe pas, n'est plus publiée ou vous n'y avez pas accès. Si elle vous a été partagée, connectez-vous à Sagax dans ce navigateur, puis rouvrez le lien.</p>"
-  : "<!doctype html><meta charset=\"utf-8\"><title>Page not found</title><p>This page does not exist, is no longer published, or you cannot see it. If it was shared with you, sign in to Sagax in this browser, then open the link again.</p>";
+const NOT_FOUND_STYLE = "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><style>:root{color-scheme:light dark}body{margin:0;min-height:100vh;display:grid;place-items:center;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;background:#f6f7f9;color:#1f2328}"
+  + "main{max-width:30rem;margin:16px;padding:24px 28px;border-radius:16px;background:#fff;box-shadow:0 8px 30px rgba(0,0,0,.08)}p{margin:0 0 12px}"
+  + "a{display:inline-block;margin-top:4px;padding:9px 16px;border-radius:999px;background:#1f2328;color:#fff;text-decoration:none;font-weight:600}"
+  + "@media (prefers-color-scheme:dark){body{background:#0d1117;color:#e6edf3}main{background:#161b22;box-shadow:none}a{background:#e6edf3;color:#0d1117}}</style>";
+
+const NOT_FOUND_HTML = (language: "fr" | "en", signIn?: string) => (language === "fr"
+  ? "<!doctype html><meta charset=\"utf-8\"><title>Page introuvable</title>" + NOT_FOUND_STYLE + "<main><p>Cette page n'existe pas, n'est plus publiée ou vous n'y avez pas accès. Si elle vous a été partagée, connectez-vous à Sagax dans ce navigateur, puis rouvrez le lien.</p>"
+  : "<!doctype html><meta charset=\"utf-8\"><title>Page not found</title>" + NOT_FOUND_STYLE + "<main><p>This page does not exist, is no longer published, or you cannot see it. If it was shared with you, sign in to Sagax in this browser, then open the link again.</p>")
+  // a reader who is not signed in (#1486): sign in, then back to this link
+  + (signIn ? `<p><a href="${escapeHtml(signIn)}">${language === "fr" ? "Se connecter et revenir à cette page" : "Sign in and come back to this page"}</a></p>` : "")
+  + "</main>";
 
 function language(req: IncomingMessage): "fr" | "en" {
   const header = typeof req.headers["accept-language"] === "string" ? req.headers["accept-language"] : "";
@@ -240,9 +251,9 @@ function common(res: ServerResponse): void {
   res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), clipboard-read=()");
 }
 
-function notFound(req: IncomingMessage, res: ServerResponse, method: string): true {
+function notFound(req: IncomingMessage, res: ServerResponse, method: string, signIn?: string): true {
   res.writeHead(404, { "content-type": "text/html; charset=utf-8", "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; sandbox", "x-frame-options": "DENY" });
-  res.end(method === "HEAD" ? undefined : NOT_FOUND_HTML(language(req)));
+  res.end(method === "HEAD" ? undefined : NOT_FOUND_HTML(language(req), signIn));
   return true;
 }
 
@@ -335,7 +346,9 @@ function serveWrapper(options: PublicPageOptions, req: IncomingMessage, res: Ser
   const token = tokenAfter(path, PAGE_VIEW_PREFIX);
   const opened = token && options.pages ? options.pages.open(token) : null;
   const viewer = options.viewer(req);
-  if (!opened || !ownerActive(options, opened.page) || !readableBy(options, opened.page, viewer)) return notFound(req, res, method);
+  // nobody signed in: the same 404 for every reason, with a way to sign in
+  // and come back to this very link (#1486); never a hint the page exists
+  if (!opened || !ownerActive(options, opened.page) || !readableBy(options, opened.page, viewer)) return notFound(req, res, method, viewer ? undefined : options.signInPath?.(path));
   const subject = `link:${opened.page.linkId!}`;
   const commentPath = readerCommentsOpen(options, opened.page) ? `${PAGE_COMMENT_PREFIX}${token}` : undefined;
   return sendWrapper(options, req, res, method, { ...opened, framePath: `${PAGE_FRAME_PREFIX}${token}`, ticket: options.pages!.frameTicket(subject, viewerKey(viewer)), preview: false, ...(commentPath ? { commentPath } : {}) });

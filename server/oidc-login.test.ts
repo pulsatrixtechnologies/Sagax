@@ -10,7 +10,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 import { AccountReauth } from "./account-reauth.ts";
 import { IDP_SWEEP_SLACK_MS, IdpGrantVault, IdpSessionManager } from "./idp-session.ts";
-import { BACKCHANNEL_MAX_BODY_BYTES, OIDC_NATIVE_BIND_GRACE_MS, OIDC_NATIVE_PAIRING_TTL_MS, createOidcLoginRoutes, type OidcGrantKeeper, desktopReturnLink, identityConfigFromEnv, identityDescriptor, isInterimSignInRoute, orgRoleForRole, phoneErrorLink, phoneReturnLink, profileManagement, sagaxReturnLink, scopesForRole, validLoopbackReturn, writesManagedProfile } from "./oidc-login.ts";
+import { BACKCHANNEL_MAX_BODY_BYTES, OIDC_NATIVE_BIND_GRACE_MS, OIDC_NATIVE_PAIRING_TTL_MS, createOidcLoginRoutes, type OidcGrantKeeper, desktopReturnLink, identityConfigFromEnv, identityDescriptor, isInterimSignInRoute, orgRoleForRole, phoneErrorLink, phoneReturnLink, profileManagement, sagaxReturnLink, scopesForRole, validLoopbackReturn, webPageReturn, writesManagedProfile } from "./oidc-login.ts";
 import { RoutineConsents } from "./org-routine-consent.ts";
 import { ACCOUNT_PURGED_EVENT, OidcRelyingParty } from "./oidc-rp.ts";
 import { PrincipalRegistry } from "./principals.ts";
@@ -368,6 +368,20 @@ describe("the sign-in routes (in process)", () => {
     }
     expect((await walk("desktop", { returnTo: "sagax" })).location).toBe("/pair#signin_error=return");
     expect((await walk("web", { returnTo: "sagax" })).location).toBe("/pair#signin_error=return");
+  });
+
+  it("a web sign-in started from a published page's link lands back on that page, and on nothing else (#1486)", async () => {
+    const page = "/pages/view/AbCdEfGhIjKlMnOpQrStUv.abc123_-XYZ";
+    const { callback, location } = await walk("web", { returnTo: page });
+    expect(location).toBe(page);
+    expect(callback!.headers.getSetCookie().some((cookie) => cookie.startsWith("omb_session_test="))).toBe(true);
+    for (const returnTo of ["/settings", "/pages/view/../../api/me", "https://evil.example/pages/view/x", "//evil.example/pages/view/x", "/pages/preview/x/1", "/pages/view/"]) {
+      expect((await walk("web", { returnTo })).location, returnTo).toBe("/pair#signin_error=return");
+    }
+    // a web sign-in without a return still ends on the app
+    expect((await walk("web")).location).toBe("/");
+    expect(webPageReturn("/pages/view/a.b")).toBe("/pages/view/a.b");
+    expect(webPageReturn(null)).toBeNull();
   });
 
   it("sends desktop errors back to the app, phone and web errors to /pair", async () => {

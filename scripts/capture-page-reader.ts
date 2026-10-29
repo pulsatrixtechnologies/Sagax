@@ -53,7 +53,8 @@ const MARKDOWN = KIND === "presentation"
   : "# Rapport mensuel\n\nRésumé des activités du mois d'octobre.\n\n## Faits saillants\n\n| Catégorie | Demandes |\n|---|---|\n| Postes | 54 |\n| Réseau | 31 |\n\n" + "Notes de suivi détaillées pour l'équipe.\n\n".repeat(30);
 const made = pages.propose({ ownerId: OWNER, botId: "bot_capture", threadId: "t_capture", title: "Rapport mensuel", kind: KIND, content: KIND === "html" ? HTML : MARKDOWN });
 if (!made.ok) throw new Error(made.error);
-pages.publish(made.page.id, { version: 1, access: "link", expiresAt: null, by: OWNER });
+// CAPTURE_ACCESS=org: a page a reader who is not signed in cannot open (#1486)
+pages.publish(made.page.id, { version: 1, access: process.env.CAPTURE_ACCESS === "org" ? "org" : "link", expiresAt: null, by: OWNER });
 pages.setInvites(made.page.id, { people: [READER], teams: [] }, OWNER);
 const pageId = made.page.id;
 // two annotations already there (2026-10-28, Annotate), on the HTML report
@@ -85,6 +86,7 @@ const options: PublicPageOptions = {
   viewer: viewerOf,
   names: () => ({ botName: "Scout", personName: "Page owner" }),
   teamsOf: () => [],
+  signInPath: (path: string) => `/auth/oidc/start?client=web&return=${encodeURIComponent(path)}`,
   ...(typeof (routesModule as Record<string, unknown>).readerAssetsFrom === "function"
     ? { readerAssets: () => (routesModule as unknown as { readerAssetsFrom(dir: string): unknown }).readerAssetsFrom(staticDir) } : {}),
 } as PublicPageOptions;

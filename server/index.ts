@@ -1247,7 +1247,7 @@ import { NudgeCooldown, nudgeFrameAllowed, recordNudgeLine } from "./nudge.ts";
 import { findPeopleDm, isPeopleDmParticipant, otherPerson, PEOPLE_DM_THREADS_HEADER, PeopleDmSelections, peopleDmForViewer, peopleDmPatchRefusal, peopleDmRouteRefusal, peopleDmThreadUnreadPatch, peopleDmUnreadPatch } from "./people-dms.ts";
 import { deleteGroupMemory, groupMemoryEnabled, groupMemorySystemPrompt, updateGroupMemory } from "./group-memory.ts";
 import type { OrgRecord } from "./org-record.ts";
-import { createOidcLoginRoutes, identityConfigFromEnv, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
+import { createOidcLoginRoutes, identityConfigFromEnv, OIDC_START_PATH, identityDescriptor, INTERIM_SIGNIN_REFUSAL, isInterimSignInRoute, MANAGED_PROFILE_REFUSAL, oidcSessionFields, profileManagement, writesManagedProfile } from "./oidc-login.ts";
 import { OidcRelyingParty } from "./oidc-rp.ts";
 import type { BotAttachment, BotFileRoot } from "./org-admin-files.ts";
 import { ADMIN_ACTIVITY_CATEGORIES } from "./admin-activity.ts";
@@ -8366,6 +8366,8 @@ function publishedPageOptions(): PublicPageOptions {
     teamsOf: (principalId) => IDENTITY.kind === "perspicax" ? (principals.byId(principalId)?.teams ?? []).map((team) => team.id) : [],
     // the reader's bar around a reading link: this server's built script
     readerAssets: () => readerAssetsFrom(STATIC_DIR),
+    // #1486: a reader who is not signed in signs in and lands back on the link
+    signInPath: (viewPath) => IDENTITY.kind === "perspicax" ? `${OIDC_START_PATH}?client=web&return=${encodeURIComponent(viewPath)}` : undefined,
     personName: (principalId) => {
       const person = principals.byId(principalId);
       return person ? personDisplayName(person) : "";
