@@ -23,6 +23,10 @@ describe("calendar call access (#1482)", () => {
     expect(visibleCalendarCalls(calls, member(["a", "b"])).map((c) => c.id)).toEqual(["mine"]);
   });
 
+  it("never lists a call on a bot the member sees but may not run: someone else's", () => {
+    expect(visibleCalendarCalls(calls, member(["a", "b", "hidden"], ["a", "b"])).map((c) => c.id)).toEqual(["mine"]);
+  });
+
   it("lists every call for an admin", () => {
     expect(visibleCalendarCalls(calls, { ...member([]), everything: true })).toHaveLength(3);
   });
@@ -38,6 +42,12 @@ describe("calendar call access (#1482)", () => {
     const access = member(["a", "b"]);
     expect(calendarCallRefusal(access, null, { botIds: ["a", "hidden"] })?.status).toBe(404);
     expect(calendarCallRefusal(access, calls[1]!)?.status).toBe(404);
+  });
+
+  it("answers a call on a bot the member sees but may not run like a missing one", () => {
+    const access = member(["a", "b", "hidden"], ["a", "b"]);
+    expect(calendarCallRefusal(access, calls[2]!)).toEqual({ status: 404, body: { error: "no such scheduled call" } });
+    expect(calendarCallRefusal(access, calls[2]!, { name: "Renamed" })?.status).toBe(404);
   });
 
   it("refuses a visible bot the member may not run", () => {

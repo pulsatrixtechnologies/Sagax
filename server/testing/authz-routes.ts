@@ -22,14 +22,15 @@ export type SlotKind =
   | "sharedComputer" | "vps" | "engine" | "section" | "plugin" | "marketplace" | "pageVersion"
   | "queueItem" | "parallelRun" | "card" | "resourceUsage" | "connectorSetup" | "phoneRequest"
   | "cardScan" | "purchase" | "phoneCall" | "invite" | "blocked" | "journalEntry" | "credentialGrant"
-  | "draft" | "codeRun" | "cloudAgent" | "allowlistEntry" | "workflow" | "workflowRun" | "taskListItem" | "briefItem";
+  | "draft" | "codeRun" | "cloudAgent" | "allowlistEntry" | "workflow" | "workflowRun" | "taskListItem" | "briefItem"
+  | "calendarCall";
 
 /** Kinds a person owns: the matrix aims A at B's. The rest only ride along. */
 export const OWNED_KINDS: ReadonlySet<SlotKind> = new Set<SlotKind>([
   "bot", "thread", "message", "group", "routine", "run", "task", "person", "credential", "webhook",
   "page", "customRule", "approvalRule", "ruleSet", "skill", "project", "artifact", "toolGrant",
   "worker", "terminalSession", "wizard", "mcpServer", "securityKey", "desktopBridge", "codeRun",
-  "cloudAgent", "attachment", "threadFile", "draft", "importStaging", "section",
+  "cloudAgent", "attachment", "threadFile", "draft", "importStaging", "section", "calendarCall",
 ]);
 
 /**
@@ -112,6 +113,8 @@ export const SLOT_KINDS: Readonly<Record<string, SlotKind>> = {
   "task-list/task_": "taskListItem",
   // an item of a bot's background brief: the request is aimed at the bot
   "background-brief/": "briefItem",
+  // a scheduled call (#1482): reached when the caller may run every bot in it
+  "calendar-calls/": "calendarCall",
 };
 
 type Atom = { lit: string } | { cls: string };

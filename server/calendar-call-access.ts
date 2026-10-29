@@ -1,13 +1,16 @@
 /**
  * Who reaches a scheduled call (#1482). A call is a room session with some
- * bots: a member sees the calls whose bots they can all see, and creates,
- * changes, opens or deletes one when they may run every bot in it (the same
- * right as scheduling a routine for that bot). An admin sees everything.
+ * bots: a member sees, changes, opens or deletes a call when they may run
+ * every bot in it (the same right as scheduling a routine for that bot), and
+ * creates one with such bots only. A call on a bot they can see but not run
+ * is someone else's: it answers like a missing call, its words never shown
+ * (authorization matrix, 2026-10-29). An admin reaches everything.
  */
 import type { CalendarCall } from "./calendar-calls.ts";
 
 export interface CalendarCallAccess {
-  /** The caller sees every bot (admin, the owner at this computer). */
+  /** An admin, or the owner at this computer. Not VisibleSet.everything,
+   * which is also true for a member when no bot is restricted. */
   everything: boolean;
   /** The caller can see this bot. */
   botVisible: (botId: string) => boolean;
@@ -19,10 +22,11 @@ export type CalendarCallRefusal =
   | { status: 404; body: { error: string } }
   | { status: 403; body: { error: string; code: string } };
 
-/** The calls this caller may see: every bot in the call must be visible. */
+/** The calls this caller may see: every bot in the call visible to them,
+ * and theirs to run. */
 export function visibleCalendarCalls(calls: readonly CalendarCall[], access: CalendarCallAccess): CalendarCall[] {
   if (access.everything) return [...calls];
-  return calls.filter((call) => call.botIds.every((botId) => access.botVisible(botId)));
+  return calls.filter((call) => call.botIds.every((botId) => access.botVisible(botId) && !access.needsRun(botId)));
 }
 
 function botIdsOf(body: unknown): string[] {
@@ -44,14 +48,14 @@ export function calendarCallRefusal(
 ): CalendarCallRefusal | null {
   if (access.everything) return null;
   const existingIds = existing?.botIds ?? [];
-  if (existingIds.some((botId) => !access.botVisible(botId))) {
+  if (existingIds.some((botId) => !access.botVisible(botId) || access.needsRun(botId))) {
     return { status: 404, body: { error: "no such scheduled call" } };
   }
   const requested = botIdsOf(body);
   if (requested.some((botId) => !access.botVisible(botId))) {
     return { status: 404, body: { error: "no such bot" } };
   }
-  if ([...existingIds, ...requested].some((botId) => access.needsRun(botId))) {
+  if (requested.some((botId) => access.needsRun(botId))) {
     return { status: 403, body: { error: "you need the right to run every bot in this call", code: "needs_run" } };
   }
   return null;
