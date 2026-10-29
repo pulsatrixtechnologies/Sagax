@@ -1911,5 +1911,13 @@
   "chat.step.tool.detail": "{detail} इस्तेमाल कर रहा है",
   "chat.step.lastOutput": "आख़िरी आउटपुट {age} पहले",
   "chat.step.age.minutes": "{count} मिनट",
-  "chat.step.age.hours": "{count} घंटे"
+  "chat.step.age.hours": "{count} घंटे",
+  "task.sheet.waiting": "आपकी प्रतीक्षा में",
+  "task.sheet.waiting.from": "उप-एजेंट {title} से",
+  "task.sheet.status.working": "काम चल रहा है",
+  "task.sheet.status.waitingApproval": "आपकी स्वीकृति की प्रतीक्षा में",
+  "task.sheet.status.waitingAnswer": "आपके उत्तर की प्रतीक्षा में",
+  "task.sheet.status.elapsed": "अब तक {duration}",
+  "task.sheet.status.took": "{duration} में",
+  "task.sheet.details": "विवरण"
 }

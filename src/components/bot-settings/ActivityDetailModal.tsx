@@ -1,42 +1,47 @@
-// One Coding entry in full: status, times and duration, who started it, the
-// engine and model and whose credentials paid (organization server), the
-// tool steps with where each ran (your computer or the server environment),
-// files touched and the sub-agents it started, with Stop and Open thread.
-// A failed routine run refused for lack of credentials carries its access
-// card (audience only), with the same actions as in the thread.
+// One task in full (2026-10-29, the sheet redone): a sub-agent, a parallel
+// task, a run or a coding session, at Settings' size (ActivityWindow).
+//
+// From the top: the head (TaskStatusHeader: the bot's pill, the title, the
+// state in plain words with the step in flight and the time, Stop and Open
+// conversation at the right); then, when the task or one of its sub-agents
+// waits on the person, what it waits for with its answers (WaitingOnYou:
+// the conversation's own approval and question cards); then the body. Wide
+// (WIDE_PX): the summary at the left (a failed run's note, its access card,
+// the sub-agents with the waiting one first, the facts folded under
+// Details, and the composer at the bottom) and the Steps (grouped,
+// ActivityStepGroups) or the live Conversation at the right. Narrow: one
+// column with a Summary view, the composer under it.
+//
 // The server decides what this person may read (server/routes/bot-activity.ts):
 // a routine run seen without its thread comes with no steps and no thread.
-//
-// The window is Settings' own size (ActivityWindow, 2026-10-16), in two
-// columns when it is wide enough (WIDE_PX): at the left the summary (status,
-// the facts card, a message into the run, the sub-agents, the files, Stop and
-// Open thread), at the right the Steps and, while it has a thread, its live
-// Conversation (ActivityConversation, the real thread in the chat view). A
-// narrow window (or History's detail pane) has one column and a third view,
-// Summary. A sub-agent opens in place, so its own live conversation is one
-// click away from its parent's window.
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ExternalLink, FileText, Loader2, Send, Square } from "lucide-react";
+// A sub-agent opens in place, so its own sheet is one click away.
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { ExternalLink, Loader2, Square } from "lucide-react";
 
-import { api, openBotThread, useStore } from "@/state/store";
+import { api, openBotThread, useStore, type Bot } from "@/state/store";
 import { useShowThreads } from "@/lib/thread-preferences";
-import { t, activeLocale } from "@/lib/i18n";
+import { t } from "@/lib/i18n";
 import { engineLabel } from "@/lib/human-label";
 import {
   activityStatusActive,
-  activityStatusLabel,
   activityViaLabel,
   formatActivityDuration,
   loadBotActivityDetail,
   type BotActivityDetail,
   type BotActivityItem,
 } from "@/lib/bot-activity";
-import { ActivityCard, ActivityStatusIcon } from "./ActivityCard";
-import { ActivitySteps } from "./ActivitySteps";
+import { currentTaskStep } from "@/lib/activity-step-groups";
+import { useWaitingCards, type WaitingItem, type WaitingSource } from "@/lib/use-waiting-cards";
 import { AccessCard, type AccessViewer } from "../AccessCard";
-import { DIALOG, GROUP_CARD, PILL, PRIMARY_PILL } from "../SettingsPrimitives";
+import { PILL, PRIMARY_PILL } from "../SettingsPrimitives";
 import { cn } from "@/lib/cn";
 import { ActivityWindow, activityChip, useElementWidth } from "./ActivityWindow";
+import { TaskStatusHeader } from "../task/TaskStatusHeader";
+import { WaitingOnYou, waitingKind, type WaitingNote } from "../task/WaitingOnYou";
+import { ActivityStepGroups } from "../task/ActivityStepGroups";
+import { SubagentList } from "../task/SubagentList";
+import { TaskComposer } from "../task/TaskComposer";
+import { TaskFacts, taskFacts } from "../task/TaskFacts";
 
 const POLL_MS = 3_000;
 /** From this width a task shows its summary and its steps side by side. */
@@ -47,64 +52,6 @@ const ActivityConversation = lazy(() => import("./ActivityConversation"));
 
 export type ActivityView = "summary" | "steps" | "conversation";
 export type ConversationTarget = { botId: string; threadId: string; title: string };
-
-function formatTime(at: number): string {
-  return new Date(at).toLocaleString(activeLocale(), { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" });
-}
-
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex min-h-[36px] min-w-0 items-center justify-between gap-3 px-3.5 py-1.5">
-      <dt className="shrink-0 text-[13px] text-ink">{label}</dt>
-      <dd className="min-w-0 truncate text-right text-[13px] text-ink-secondary">{children}</dd>
-    </div>
-  );
-}
-
-/** The body, without fetching: tests render it with a fixed detail. */
-/** A message into a running task: it joins the work in progress. */
-function SteerBox({ onSteer }: { onSteer: (text: string) => Promise<void> }) {
-  const [text, setText] = useState("");
-  const [state, setState] = useState<"idle" | "sending" | "sent" | "error">("idle");
-  const submit = async () => {
-    const words = text.trim();
-    if (!words || state === "sending") return;
-    setState("sending");
-    try {
-      await onSteer(words);
-      setText("");
-      setState("sent");
-    } catch {
-      setState("error");
-    }
-  };
-  return (
-    <section className="mt-4" data-activity-steer="">
-      <label htmlFor="activity-steer" className="mb-2 block px-1 text-[13px] text-ink-secondary">{t("activity.steer.label")}</label>
-      <div className="flex items-center gap-2">
-        <input
-          id="activity-steer"
-          value={text}
-          onChange={(event) => { setText(event.target.value); if (state !== "sending") setState("idle"); }}
-          onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); void submit(); } }}
-          placeholder={t("activity.steer.placeholder")}
-          className="min-w-0 flex-1 rounded-lg border-[0.5px] border-border bg-inset px-3 py-1.5 text-[13px] text-ink placeholder:text-ink-secondary focus:border-focus focus:outline-none"
-        />
-        <button
-          type="button"
-          onClick={() => void submit()}
-          disabled={!text.trim() || state === "sending"}
-          className={cn(PRIMARY_PILL, "shrink-0 gap-1")}
-        >
-          {state === "sending" ? <Loader2 size={12} aria-hidden="true" className="animate-spin motion-reduce:animate-none" /> : <Send size={12} aria-hidden="true" />}
-          {t("activity.steer.send")}
-        </button>
-      </div>
-      {state === "sent" && <p role="status" className="mt-1 text-[11.5px] text-ink-secondary">{t("activity.steer.sent")}</p>}
-      {state === "error" && <p role="alert" className="mt-1 text-[11.5px] text-danger">{t("botPanel.activity.error")}</p>}
-    </section>
-  );
-}
 
 /** The views a task offers: Summary only in one column (two columns show
  * it at the left), Conversation only with a thread and a way to draw it. */
@@ -122,7 +69,22 @@ const VIEW_KEYS = {
   conversation: "activity.view.conversation",
 } as const;
 
-export function ActivityDetailBody({ item, detail, error, now, engineName, onStop, onOpenThread, onOpenChild, onSteer, stopping = false, viewer, onSignIn, wide = true, renderConversation, onBack, backLabel, initialView }: {
+/** The threads whose open cards the head shows: the task's own while it
+ * waits, and each waiting sub-agent's. */
+export function waitingSources(detail: BotActivityDetail | null): WaitingSource[] {
+  if (!detail) return [];
+  const sources: WaitingSource[] = [];
+  if (detail.status === "waiting" && detail.threadId) sources.push({ threadId: detail.threadId, botId: detail.botId });
+  for (const child of detail.children) {
+    if (child.status === "waiting" && child.threadId) sources.push({ threadId: child.threadId, botId: child.botId, from: child.title });
+  }
+  return sources;
+}
+
+const NO_BOT = () => undefined;
+
+/** The body, without fetching: tests and galleries render it with a fixed detail. */
+export function ActivityDetailBody({ item, detail, error, now, engineName, onStop, onOpenThread, onOpenChild, onSteer, stopping = false, viewer, onSignIn, wide = true, renderConversation, onBack, backLabel, initialView, bot, botFor = NO_BOT, waiting = [], factsOpen = false }: {
   item: BotActivityItem;
   /** Who reads the access card of a refused run (the server already sent
    * it to its audience only). */
@@ -147,6 +109,14 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
   onBack?: () => void;
   backLabel?: string;
   initialView?: ActivityView;
+  /** The bot the work runs on, for the head's pill. */
+  bot?: Bot;
+  /** The bots of the sub-agents and of the cards, by id. */
+  botFor?: (botId: string) => Bot | undefined;
+  /** What the task waits on from the person (useWaitingCards). */
+  waiting?: readonly WaitingItem[];
+  /** The facts fold open at first (tests). */
+  factsOpen?: boolean;
 }) {
   const shown = detail ?? item;
   const running = activityStatusActive(shown.status);
@@ -160,91 +130,107 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
   const view: ActivityView | undefined = views.includes(chosen) ? chosen : chosen === "summary" ? views[0] : views.includes("steps") ? "steps" : views[0];
   const split = wide && views.length > 0;
 
-  const header = (
-    <div className={cn(DIALOG.header, "flex items-start gap-3", !split && "pr-12")}>
-      {onBack && (
-        <button type="button" data-activity-back onClick={onBack} aria-label={backLabel ?? t("activity.back")} title={backLabel ?? t("activity.back")} className="-ml-1.5 mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70">
-          <ChevronLeft size={16} aria-hidden="true" />
+  // What waits: the cards read off the threads, else what the server says
+  // a waiting run asks (a routine's own question, read in its conversation).
+  const waitingItems: (WaitingItem | WaitingNote)[] = useMemo(() => {
+    if (waiting.length > 0) return [...waiting];
+    if (shown.status !== "waiting") return [];
+    const text = detail?.note ?? shown.currentStep;
+    const askingChild = detail?.children.find((child) => child.status === "waiting");
+    if (text) return [{ kind: "note", text, botId: shown.botId, ...(threadId ? { threadId } : {}) }];
+    if (askingChild) return [{ kind: "note", text: askingChild.currentStep ?? t("botPanel.coding.status.waiting"), botId: askingChild.botId, from: askingChild.title, ...(askingChild.threadId ? { threadId: askingChild.threadId } : {}) }];
+    return [];
+  }, [waiting, shown.status, shown.currentStep, shown.botId, detail?.note, detail?.children, threadId]);
+  const current = detail ? currentTaskStep(detail.steps) : null;
+
+  const actions = (running && detail?.canStop) || shown.threadId ? (
+    <>
+      {running && detail?.canStop && (
+        <button type="button" data-activity-stop onClick={onStop} disabled={stopping} title={t("botPanel.activity.stop")} className={cn(PILL, "gap-1.5 text-danger")}>
+          {stopping ? <Loader2 size={13} aria-hidden="true" className="animate-spin motion-reduce:animate-none" /> : <Square size={12} aria-hidden="true" fill="currentColor" />}
+          <span className="max-sm:sr-only">{t("botPanel.activity.stop")}</span>
         </button>
       )}
-      <span className="mt-1"><ActivityStatusIcon status={shown.status} size={18} /></span>
-      <div className="min-w-0 flex-1">
-        <h2 id="activity-detail-title" className={cn(DIALOG.title, "break-words")}>{shown.title}</h2>
-        <p data-activity-detail-status className={DIALOG.subtitle}>
-          {shown.parallel ? `${t("botPanel.activity.parallel")} · ` : ""}{activityStatusLabel(shown.status)}
-        </p>
-      </div>
-    </div>
+      {shown.threadId && (
+        <button type="button" data-activity-open-thread onClick={() => onOpenThread(shown.botId, shown.threadId!)} className={cn(PRIMARY_PILL, "gap-1.5")}>
+          <ExternalLink size={13} aria-hidden="true" />
+          {t("botPanel.activity.openThread")}
+        </button>
+      )}
+    </>
+  ) : undefined;
+
+  const header = (
+    <TaskStatusHeader
+      title={shown.title}
+      bot={bot ? { ...bot, name: bot.name } : undefined}
+      botName={shown.botName}
+      status={shown.status}
+      startedAt={shown.startedAt}
+      endedAt={shown.endedAt}
+      now={now}
+      step={current?.step}
+      stepLabel={current?.label ?? shown.currentStep}
+      waitingFor={waitingKind(waitingItems)}
+      parallel={shown.parallel}
+      handedBy={shown.kind === "hop" ? shown.startedBy?.name : undefined}
+      actions={actions}
+      onBack={onBack}
+      backLabel={backLabel}
+    />
   );
 
+  // At the head, before anything else; never more than half the sheet, so
+  // the sub-agents and the steps stay in reach (it scrolls on its own).
+  const waitingBlock = waitingItems.length > 0 ? (
+    <div className="max-h-[50%] shrink-0 overflow-y-auto overscroll-contain px-5 pb-3">
+      <WaitingOnYou items={waitingItems} threadId={threadId ?? shown.threadId ?? ""} botFor={botFor} onCancel={onStop} onOpenThread={onOpenThread} />
+    </div>
+  ) : null;
+
+  const facts = taskFacts({
+    startedAt: shown.startedAt,
+    endedAt: shown.endedAt,
+    duration: formatActivityDuration(duration),
+    startedBy: shown.startedBy?.name ? (shown.startedBy.kind === "routine" ? t("botPanel.activity.byRoutine", { name: shown.startedBy.name }) : shown.startedBy.name) : undefined,
+    botName: shown.botName && shown.kind === "subagent" ? shown.botName : undefined,
+    engine: detail?.engine ? [engineLabel(engineName?.(detail.engine.instanceId), detail.engine.instanceId), detail.engine.model].filter(Boolean).join(" · ") : undefined,
+    via: detail?.via ? activityViaLabel(detail.via) : undefined,
+  });
+
   const summary = (
-    <>
-      {detail === null && error && <p role="alert" className="py-2 text-[12.5px] text-danger">{t("botPanel.activity.error")}</p>}
-      {detail?.note && <p className="mb-2 rounded-lg bg-warning/10 px-3 py-2 text-[12.5px] text-ink">{detail.note}</p>}
+    <div className="flex flex-col gap-4">
+      {detail === null && error && <p role="alert" className="text-[12.5px] text-danger">{t("botPanel.activity.error")}</p>}
+      {detail?.note && shown.status !== "waiting" && (
+        <p data-activity-note className={cn("rounded-lg px-3 py-2 text-[12.5px] leading-[18px] text-ink", shown.status === "failed" ? "bg-danger/10" : "bg-warning/10")}>{detail.note}</p>
+      )}
       {detail?.access && (
-        <div data-activity-access className="mb-2">
+        <div data-activity-access>
           <AccessCard access={detail.access} viewer={viewer ?? { principalId: null, admin: false }} onSignIn={onSignIn} />
         </div>
       )}
-      <dl className={GROUP_CARD}>
-        <Fact label={t("botPanel.activity.started")}>{formatTime(shown.startedAt)}</Fact>
-        {shown.endedAt !== undefined && <Fact label={t("botPanel.activity.ended")}>{formatTime(shown.endedAt)}</Fact>}
-        <Fact label={t("botPanel.activity.duration")}>{formatActivityDuration(duration)}</Fact>
-        {shown.startedBy?.name && (
-          <Fact label={t("botPanel.activity.startedBy")}>
-            {shown.startedBy.kind === "routine" ? t("botPanel.activity.byRoutine", { name: shown.startedBy.name }) : shown.startedBy.name}
-          </Fact>
-        )}
-        {shown.botName && shown.kind === "subagent" && <Fact label={t("botPanel.activity.bot")}>{shown.botName}</Fact>}
-        {detail?.engine && (
-          <Fact label={t("botPanel.activity.engine")}>
-            {[engineLabel(engineName?.(detail.engine.instanceId), detail.engine.instanceId), detail.engine.model].filter(Boolean).join(" · ")}
-          </Fact>
-        )}
-        {detail?.via && <Fact label={t("botPanel.activity.via")}>{activityViaLabel(detail.via)}</Fact>}
-      </dl>
-
       {detail && !detail.threadId && detail.kind === "routine" && (
-        <p className="mt-3 text-[12px] leading-relaxed text-ink-secondary">{t("botPanel.activity.privateRun")}</p>
+        <p className="text-[12px] leading-relaxed text-ink-secondary">{t("botPanel.activity.privateRun")}</p>
       )}
-
-      {running && detail?.canStop && detail.threadId && onSteer && <SteerBox key={detail.id} onSteer={onSteer} />}
-
       {detail && detail.children.length > 0 && (
-        <section className="mt-4">
-          <h3 className="mb-2 px-1 text-[13px] text-ink-secondary">{t("botPanel.activity.children")}</h3>
-          <ul className="flex flex-col gap-1.5">
-            {detail.children.map((child) => (
-              <li key={child.id}><ActivityCard item={child} onOpen={onOpenChild} /></li>
-            ))}
-          </ul>
-        </section>
+        <SubagentList items={detail.children} now={now} botFor={botFor} onOpen={onOpenChild} />
       )}
-
-      {detail && detail.files.length > 0 && (
-        <section className="mt-4">
-          <h3 className="mb-2 px-1 text-[13px] text-ink-secondary">{t("botPanel.activity.files")}</h3>
-          <ul className="flex flex-col gap-1">
-            {detail.files.map((file) => (
-              <li key={file} className="flex min-w-0 items-center gap-2 text-[12px] text-ink">
-                <FileText size={13} aria-hidden="true" className="shrink-0 text-ink-secondary" />
-                <span className="min-w-0 truncate font-mono" title={file}>{file}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-    </>
+      <TaskFacts facts={facts} files={detail?.files ?? []} defaultOpen={factsOpen} />
+    </div>
   );
+
+  const composer = running && detail?.canStop && detail.threadId && onSteer
+    ? <div className="shrink-0 px-5 pb-4 pt-2"><TaskComposer key={detail.id} onSend={onSteer} /></div>
+    : null;
 
   const steps = detail && (
     detail.steps.length === 0
       ? <p className="text-[12.5px] text-ink-secondary">{t("botPanel.activity.stepsEmpty")}</p>
-      : <ActivitySteps steps={detail.steps} truncated={detail.stepsTruncated} />
+      : <ActivityStepGroups steps={detail.steps} truncated={detail.stepsTruncated} />
   );
 
   const tabs = views.length > 1 || (split && views.length > 0) ? (
-    <div role="tablist" aria-label={t("activity.view.aria")} className={cn("flex shrink-0 gap-1", split ? "px-5 pb-2 pr-12 pt-4" : "px-5 pb-1 pt-2")}>
+    <div role="tablist" aria-label={t("activity.view.aria")} className={cn("flex shrink-0 gap-1", split ? "px-5 pb-2 pt-1" : "px-5 pb-1 pt-1")}>
       {views.map((id) => (
         <button
           key={id}
@@ -270,49 +256,25 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
       {renderConversation({ botId: shown.botId, threadId, title: shown.title })}
     </div>
   ) : view === "steps" ? (
-    <div id="activity-view-panel" role="tabpanel" aria-labelledby="activity-view-steps" data-activity-steps-panel className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-2">
+    <div id="activity-view-panel" role="tabpanel" aria-labelledby="activity-view-steps" data-activity-steps-panel className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-5 pt-1">
       {steps}
-    </div>
-  ) : null;
-
-  const footer = (running && detail?.canStop) || shown.threadId ? (
-    <div className={cn(DIALOG.footer, "pt-3")}>
-      {running && detail?.canStop && (
-        <button
-          type="button"
-          onClick={onStop}
-          disabled={stopping}
-          className={cn(PILL, "gap-1.5 text-danger")}
-        >
-          {stopping ? <Loader2 size={13} aria-hidden="true" className="animate-spin motion-reduce:animate-none" /> : <Square size={12} aria-hidden="true" fill="currentColor" />}
-          {t("botPanel.activity.stop")}
-        </button>
-      )}
-      {shown.threadId && (
-        <button
-          type="button"
-          data-activity-open-thread
-          onClick={() => onOpenThread(shown.botId, shown.threadId!)}
-          className={cn(PRIMARY_PILL, "gap-1.5")}
-        >
-          <ExternalLink size={13} aria-hidden="true" />
-          {t("botPanel.activity.openThread")}
-        </button>
-      )}
     </div>
   ) : null;
 
   if (split) {
     return (
-      <div data-activity-layout="columns" className="flex min-h-0 min-w-0 flex-1">
-        <div data-activity-summary className="flex min-h-0 w-[340px] shrink-0 flex-col border-r border-hairline-weak">
-          {header}
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4 pt-3">{summary}</div>
-          {footer}
-        </div>
-        <div data-activity-detail-right className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {tabs}
-          {panel}
+      <div data-activity-layout="columns" className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {header}
+        {waitingBlock}
+        <div className="flex min-h-0 min-w-0 flex-1 border-t border-hairline-weak">
+          <div data-activity-summary className="flex min-h-0 w-[340px] shrink-0 flex-col border-r border-hairline-weak">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4 pt-4">{summary}</div>
+            {composer}
+          </div>
+          <div data-activity-detail-right className="flex min-h-0 min-w-0 flex-1 flex-col pt-2">
+            {tabs}
+            {panel}
+          </div>
         </div>
       </div>
     );
@@ -320,13 +282,14 @@ export function ActivityDetailBody({ item, detail, error, now, engineName, onSto
   return (
     <div data-activity-layout="single" className="flex min-h-0 min-w-0 flex-1 flex-col">
       {header}
+      {waitingBlock}
       {tabs}
       {view === undefined || view === "summary" ? (
         <div data-activity-summary id={views.length ? "activity-view-panel" : undefined} role={views.length ? "tabpanel" : undefined} aria-labelledby={views.length ? "activity-view-summary" : undefined} className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4 pt-3">
           {summary}
         </div>
       ) : panel}
-      {footer}
+      {view !== "conversation" && composer}
     </div>
   );
 }
@@ -365,6 +328,10 @@ export function ActivityDetailPane({ item, wide, onClose, onChanged, onBack }: {
     return () => window.clearInterval(timer);
   }, [running, load]);
 
+  // What waits on the person, read again at each poll while it waits.
+  const sources = useMemo(() => waitingSources(detail), [detail]);
+  const waiting = useWaitingCards(sources, now);
+
   const stop = () => {
     setStopping(true);
     const finish = () => { setStopping(false); void load(); onChanged(); };
@@ -394,6 +361,7 @@ export function ActivityDetailPane({ item, wide, onClose, onChanged, onBack }: {
     onClose();
   };
   const engineName = (instanceId: string) => state.instances.find((instance) => instance.instanceId === instanceId)?.displayName;
+  const botFor = (botId: string) => state.bots.find((candidate) => candidate.id === botId);
 
   return (
     <ActivityDetailBody
@@ -402,6 +370,9 @@ export function ActivityDetailPane({ item, wide, onClose, onChanged, onBack }: {
       error={error}
       now={now}
       engineName={engineName}
+      bot={botFor(current.botId)}
+      botFor={botFor}
+      waiting={waiting}
       onStop={stop}
       onOpenThread={openThread}
       // Diving into a sub-agent keeps the view: its conversation, if that

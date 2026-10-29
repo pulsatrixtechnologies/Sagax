@@ -1942,7 +1942,15 @@
       "chat.step.tool.detail": "34d12041d33a83ccc00e48a60715743de5249d8c4e4bc52875c796e6081dbfc8",
       "chat.step.lastOutput": "54ae6b1f480db7a69cd94d6108c3e613b3cef22929e9efe46863e555fc7113f0",
       "chat.step.age.minutes": "1829c58ba472520fd39e61f9e337a1b7da27e86299332dde5bfdea355c3895a8",
-      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585"
+      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585",
+      "task.sheet.waiting": "57dccc5db9b096172f80ed94d7ba1886dbd8ad7c582831c78f0a3e4ab095ceec",
+      "task.sheet.waiting.from": "e42e0abcd9f264c8d5f3f5fabc747a8b6bf5d647af190fcf228b8d4097db93f0",
+      "task.sheet.status.working": "a92f0449a9f7235bf69dc2e8ff7070bfae3f00ec8f8f26e5457a9beac53466ac",
+      "task.sheet.status.waitingApproval": "af7a94b91a7493faa5d5226a2ddbb38b57df3d30f426deb82d9cd9c64547d122",
+      "task.sheet.status.waitingAnswer": "8e4b72ca2511e0bcdbb24cfba59f203972522cc440bfee2e8d9b7b0f7bebfd84",
+      "task.sheet.status.elapsed": "e975120e463e3f5802155e6b5c24d2ed8e093701e8e4e06336ea082f6adae565",
+      "task.sheet.status.took": "e8890007ebf11364577036ec0f0f5f1fcdaee97c8fdd042c2b5164535d973401",
+      "task.sheet.details": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df"
     },
     "es": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -3867,7 +3875,15 @@
       "chat.step.tool.detail": "34d12041d33a83ccc00e48a60715743de5249d8c4e4bc52875c796e6081dbfc8",
       "chat.step.lastOutput": "54ae6b1f480db7a69cd94d6108c3e613b3cef22929e9efe46863e555fc7113f0",
       "chat.step.age.minutes": "1829c58ba472520fd39e61f9e337a1b7da27e86299332dde5bfdea355c3895a8",
-      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585"
+      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585",
+      "task.sheet.waiting": "57dccc5db9b096172f80ed94d7ba1886dbd8ad7c582831c78f0a3e4ab095ceec",
+      "task.sheet.waiting.from": "e42e0abcd9f264c8d5f3f5fabc747a8b6bf5d647af190fcf228b8d4097db93f0",
+      "task.sheet.status.working": "a92f0449a9f7235bf69dc2e8ff7070bfae3f00ec8f8f26e5457a9beac53466ac",
+      "task.sheet.status.waitingApproval": "af7a94b91a7493faa5d5226a2ddbb38b57df3d30f426deb82d9cd9c64547d122",
+      "task.sheet.status.waitingAnswer": "8e4b72ca2511e0bcdbb24cfba59f203972522cc440bfee2e8d9b7b0f7bebfd84",
+      "task.sheet.status.elapsed": "e975120e463e3f5802155e6b5c24d2ed8e093701e8e4e06336ea082f6adae565",
+      "task.sheet.status.took": "e8890007ebf11364577036ec0f0f5f1fcdaee97c8fdd042c2b5164535d973401",
+      "task.sheet.details": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df"
     },
     "fr": {
       "botPanel.turnLimits.title": "35696e37e777cad0dc06cfa324dc49ef445287e54d0eba6f80d6ba90e2611858",
@@ -3985,7 +4001,6 @@
       "achievements.unlockBy": "9d593e0649923b0bbdda4f51fdc460474edb824780799b75952a40eaed84f098",
       "achievements.unlockedCount": "7c0e13ef267fc7ba70b7b4cd5ff9dd2d9fc31d5d15343878a812cc653e495fd6",
       "activity.steer.label": "eb138696679d8e83ad174736bdae29caafb76de9e09678b0ad7f74a2232cd880",
-      "activity.steer.placeholder": "7922aa2541a511e947c550d991b5e43c41be8a387f82b6861a001b5d2fe3f48c",
       "activity.steer.send": "f6f4688ff23d50c67053963c251fa0ce64a925cf283537cf066b1f362cb9b778",
       "activity.steer.sent": "4009111bedcfed8413ec538b817cae188e5ce8694781bdb9f44b287b07c27467",
       "activity.back": "79b6c5ff87cfea33f47c71c2845c6c2c8763b9eccbd38da3eab6929b57a5b4ec",
@@ -3999,7 +4014,6 @@
       "activity.step.searchFiles": "2670a1f96ca4f74c03fe0b802afd2981df30bc7e94efcb27c59ac6135f3e295e",
       "activity.step.subagent": "5e961c376973241939a1b8942d5bd879a9e815c97f300aa41835d21cf7320918",
       "activity.step.subagentBare": "429f6057535c1ea39908628554a768cd03dd16b7dcfc3ce1d2df6838c95d9312",
-      "activity.step.technical": "890ab358a55d7fcefe7527f675efb96865cf84d1d54e8d52d9692e3b599031e3",
       "activity.step.todo": "170d8234deca703348ff4a3b7a33128b1344b01ef152bec2f390b05836adba3b",
       "activity.step.toolSearch": "b3afd8ecbb7fb072fa19059215eeeb4c14cb81cb70b56433a84a57d63de753f2",
       "activity.subagent.engineNote": "f056431315734b67d64f3eb4b6a78e620c20bbb96a78b27b7da8252a936deabc",
@@ -15775,7 +15789,15 @@
       "connectApps.search.resultsAria": "e978b00de465a271a13bf2f6b9d74d67fdfaa7d973a37378fa32f988c3280599",
       "connectApps.search.empty": "7057d2dc8544a7bd7074cf3693241d504e8f1f54bd94a043154d1578516088fb",
       "connectApps.search.group.plugins": "9514b7ff4860ead73491768e45cce0ce20e6e3473a7b272e496c43c875d80ac5",
-      "connectApps.search.group.apps": "89dd748442c194857825848e1500abbbc5f52fb067ad27fb05dc9fb23eebba3b"
+      "connectApps.search.group.apps": "89dd748442c194857825848e1500abbbc5f52fb067ad27fb05dc9fb23eebba3b",
+      "task.sheet.waiting": "57dccc5db9b096172f80ed94d7ba1886dbd8ad7c582831c78f0a3e4ab095ceec",
+      "task.sheet.waiting.from": "e42e0abcd9f264c8d5f3f5fabc747a8b6bf5d647af190fcf228b8d4097db93f0",
+      "task.sheet.status.working": "a92f0449a9f7235bf69dc2e8ff7070bfae3f00ec8f8f26e5457a9beac53466ac",
+      "task.sheet.status.waitingApproval": "af7a94b91a7493faa5d5226a2ddbb38b57df3d30f426deb82d9cd9c64547d122",
+      "task.sheet.status.waitingAnswer": "8e4b72ca2511e0bcdbb24cfba59f203972522cc440bfee2e8d9b7b0f7bebfd84",
+      "task.sheet.status.elapsed": "e975120e463e3f5802155e6b5c24d2ed8e093701e8e4e06336ea082f6adae565",
+      "task.sheet.status.took": "e8890007ebf11364577036ec0f0f5f1fcdaee97c8fdd042c2b5164535d973401",
+      "task.sheet.details": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -17690,7 +17712,15 @@
       "chat.step.tool.detail": "34d12041d33a83ccc00e48a60715743de5249d8c4e4bc52875c796e6081dbfc8",
       "chat.step.lastOutput": "54ae6b1f480db7a69cd94d6108c3e613b3cef22929e9efe46863e555fc7113f0",
       "chat.step.age.minutes": "1829c58ba472520fd39e61f9e337a1b7da27e86299332dde5bfdea355c3895a8",
-      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585"
+      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585",
+      "task.sheet.waiting": "57dccc5db9b096172f80ed94d7ba1886dbd8ad7c582831c78f0a3e4ab095ceec",
+      "task.sheet.waiting.from": "e42e0abcd9f264c8d5f3f5fabc747a8b6bf5d647af190fcf228b8d4097db93f0",
+      "task.sheet.status.working": "a92f0449a9f7235bf69dc2e8ff7070bfae3f00ec8f8f26e5457a9beac53466ac",
+      "task.sheet.status.waitingApproval": "af7a94b91a7493faa5d5226a2ddbb38b57df3d30f426deb82d9cd9c64547d122",
+      "task.sheet.status.waitingAnswer": "8e4b72ca2511e0bcdbb24cfba59f203972522cc440bfee2e8d9b7b0f7bebfd84",
+      "task.sheet.status.elapsed": "e975120e463e3f5802155e6b5c24d2ed8e093701e8e4e06336ea082f6adae565",
+      "task.sheet.status.took": "e8890007ebf11364577036ec0f0f5f1fcdaee97c8fdd042c2b5164535d973401",
+      "task.sheet.details": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df"
     },
     "ja": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -21557,7 +21587,15 @@
       "chat.step.tool.detail": "34d12041d33a83ccc00e48a60715743de5249d8c4e4bc52875c796e6081dbfc8",
       "chat.step.lastOutput": "54ae6b1f480db7a69cd94d6108c3e613b3cef22929e9efe46863e555fc7113f0",
       "chat.step.age.minutes": "1829c58ba472520fd39e61f9e337a1b7da27e86299332dde5bfdea355c3895a8",
-      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585"
+      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585",
+      "task.sheet.waiting": "57dccc5db9b096172f80ed94d7ba1886dbd8ad7c582831c78f0a3e4ab095ceec",
+      "task.sheet.waiting.from": "e42e0abcd9f264c8d5f3f5fabc747a8b6bf5d647af190fcf228b8d4097db93f0",
+      "task.sheet.status.working": "a92f0449a9f7235bf69dc2e8ff7070bfae3f00ec8f8f26e5457a9beac53466ac",
+      "task.sheet.status.waitingApproval": "af7a94b91a7493faa5d5226a2ddbb38b57df3d30f426deb82d9cd9c64547d122",
+      "task.sheet.status.waitingAnswer": "8e4b72ca2511e0bcdbb24cfba59f203972522cc440bfee2e8d9b7b0f7bebfd84",
+      "task.sheet.status.elapsed": "e975120e463e3f5802155e6b5c24d2ed8e093701e8e4e06336ea082f6adae565",
+      "task.sheet.status.took": "e8890007ebf11364577036ec0f0f5f1fcdaee97c8fdd042c2b5164535d973401",
+      "task.sheet.details": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df"
     },
     "pt-br": {
       "achievements.panel.all": "e2adb0c3b5f28a7c9d5bdac240382201b39376dd11671aedc93e8a73b6468f19",
@@ -24238,7 +24276,15 @@
       "chat.step.tool.detail": "34d12041d33a83ccc00e48a60715743de5249d8c4e4bc52875c796e6081dbfc8",
       "chat.step.lastOutput": "54ae6b1f480db7a69cd94d6108c3e613b3cef22929e9efe46863e555fc7113f0",
       "chat.step.age.minutes": "1829c58ba472520fd39e61f9e337a1b7da27e86299332dde5bfdea355c3895a8",
-      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585"
+      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585",
+      "task.sheet.waiting": "57dccc5db9b096172f80ed94d7ba1886dbd8ad7c582831c78f0a3e4ab095ceec",
+      "task.sheet.waiting.from": "e42e0abcd9f264c8d5f3f5fabc747a8b6bf5d647af190fcf228b8d4097db93f0",
+      "task.sheet.status.working": "a92f0449a9f7235bf69dc2e8ff7070bfae3f00ec8f8f26e5457a9beac53466ac",
+      "task.sheet.status.waitingApproval": "af7a94b91a7493faa5d5226a2ddbb38b57df3d30f426deb82d9cd9c64547d122",
+      "task.sheet.status.waitingAnswer": "8e4b72ca2511e0bcdbb24cfba59f203972522cc440bfee2e8d9b7b0f7bebfd84",
+      "task.sheet.status.elapsed": "e975120e463e3f5802155e6b5c24d2ed8e093701e8e4e06336ea082f6adae565",
+      "task.sheet.status.took": "e8890007ebf11364577036ec0f0f5f1fcdaee97c8fdd042c2b5164535d973401",
+      "task.sheet.details": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df"
     },
     "uk": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -26673,7 +26719,15 @@
       "chat.step.tool.detail": "34d12041d33a83ccc00e48a60715743de5249d8c4e4bc52875c796e6081dbfc8",
       "chat.step.lastOutput": "54ae6b1f480db7a69cd94d6108c3e613b3cef22929e9efe46863e555fc7113f0",
       "chat.step.age.minutes": "1829c58ba472520fd39e61f9e337a1b7da27e86299332dde5bfdea355c3895a8",
-      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585"
+      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585",
+      "task.sheet.waiting": "57dccc5db9b096172f80ed94d7ba1886dbd8ad7c582831c78f0a3e4ab095ceec",
+      "task.sheet.waiting.from": "e42e0abcd9f264c8d5f3f5fabc747a8b6bf5d647af190fcf228b8d4097db93f0",
+      "task.sheet.status.working": "a92f0449a9f7235bf69dc2e8ff7070bfae3f00ec8f8f26e5457a9beac53466ac",
+      "task.sheet.status.waitingApproval": "af7a94b91a7493faa5d5226a2ddbb38b57df3d30f426deb82d9cd9c64547d122",
+      "task.sheet.status.waitingAnswer": "8e4b72ca2511e0bcdbb24cfba59f203972522cc440bfee2e8d9b7b0f7bebfd84",
+      "task.sheet.status.elapsed": "e975120e463e3f5802155e6b5c24d2ed8e093701e8e4e06336ea082f6adae565",
+      "task.sheet.status.took": "e8890007ebf11364577036ec0f0f5f1fcdaee97c8fdd042c2b5164535d973401",
+      "task.sheet.details": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df"
     },
     "zh-tw": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -30429,7 +30483,15 @@
       "chat.step.tool.detail": "34d12041d33a83ccc00e48a60715743de5249d8c4e4bc52875c796e6081dbfc8",
       "chat.step.lastOutput": "54ae6b1f480db7a69cd94d6108c3e613b3cef22929e9efe46863e555fc7113f0",
       "chat.step.age.minutes": "1829c58ba472520fd39e61f9e337a1b7da27e86299332dde5bfdea355c3895a8",
-      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585"
+      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585",
+      "task.sheet.waiting": "57dccc5db9b096172f80ed94d7ba1886dbd8ad7c582831c78f0a3e4ab095ceec",
+      "task.sheet.waiting.from": "e42e0abcd9f264c8d5f3f5fabc747a8b6bf5d647af190fcf228b8d4097db93f0",
+      "task.sheet.status.working": "a92f0449a9f7235bf69dc2e8ff7070bfae3f00ec8f8f26e5457a9beac53466ac",
+      "task.sheet.status.waitingApproval": "af7a94b91a7493faa5d5226a2ddbb38b57df3d30f426deb82d9cd9c64547d122",
+      "task.sheet.status.waitingAnswer": "8e4b72ca2511e0bcdbb24cfba59f203972522cc440bfee2e8d9b7b0f7bebfd84",
+      "task.sheet.status.elapsed": "e975120e463e3f5802155e6b5c24d2ed8e093701e8e4e06336ea082f6adae565",
+      "task.sheet.status.took": "e8890007ebf11364577036ec0f0f5f1fcdaee97c8fdd042c2b5164535d973401",
+      "task.sheet.details": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df"
     },
     "zh": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",
@@ -33148,7 +33210,15 @@
       "chat.step.tool.detail": "34d12041d33a83ccc00e48a60715743de5249d8c4e4bc52875c796e6081dbfc8",
       "chat.step.lastOutput": "54ae6b1f480db7a69cd94d6108c3e613b3cef22929e9efe46863e555fc7113f0",
       "chat.step.age.minutes": "1829c58ba472520fd39e61f9e337a1b7da27e86299332dde5bfdea355c3895a8",
-      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585"
+      "chat.step.age.hours": "b7fc364731644a6667a1ab0d48785151323d2dce026a3cf09d2c24273ebb2585",
+      "task.sheet.waiting": "57dccc5db9b096172f80ed94d7ba1886dbd8ad7c582831c78f0a3e4ab095ceec",
+      "task.sheet.waiting.from": "e42e0abcd9f264c8d5f3f5fabc747a8b6bf5d647af190fcf228b8d4097db93f0",
+      "task.sheet.status.working": "a92f0449a9f7235bf69dc2e8ff7070bfae3f00ec8f8f26e5457a9beac53466ac",
+      "task.sheet.status.waitingApproval": "af7a94b91a7493faa5d5226a2ddbb38b57df3d30f426deb82d9cd9c64547d122",
+      "task.sheet.status.waitingAnswer": "8e4b72ca2511e0bcdbb24cfba59f203972522cc440bfee2e8d9b7b0f7bebfd84",
+      "task.sheet.status.elapsed": "e975120e463e3f5802155e6b5c24d2ed8e093701e8e4e06336ea082f6adae565",
+      "task.sheet.status.took": "e8890007ebf11364577036ec0f0f5f1fcdaee97c8fdd042c2b5164535d973401",
+      "task.sheet.details": "45989de49fb7f66dfe17a8fc26f3a02c7abcd74f7e8e6cf9f39fa0e3775780df"
     }
   }
 }

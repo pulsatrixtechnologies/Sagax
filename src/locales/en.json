@@ -138,7 +138,6 @@
   "activity.more": "Showing the newest {shown} of {total}. Narrow the filters, or export CSV for all of them.",
   "activity.refresh": "Refresh",
   "activity.steer.label": "Send a message to this task",
-  "activity.steer.placeholder": "Add an instruction…",
   "activity.steer.send": "Send",
   "activity.steer.sent": "Sent to the task",
   "activity.back": "Back to the list",
@@ -152,7 +151,6 @@
   "activity.step.searchFiles": "search files",
   "activity.step.subagent": "Sub-agent: {description}",
   "activity.step.subagentBare": "Sub-agent",
-  "activity.step.technical": "Technical details",
   "activity.step.todo": "update the to-do list",
   "activity.step.toolSearch": "find a tool",
   "activity.subagent.engineNote": "Claude runs this sub-agent inside the turn: it stops with the turn and takes no message of its own.",
@@ -11904,5 +11902,13 @@
   "connectApps.search.resultsAria": "Search results",
   "connectApps.search.empty": "Nothing matches “{query}”.",
   "connectApps.search.group.plugins": "Plugins",
-  "connectApps.search.group.apps": "Apps"
+  "connectApps.search.group.apps": "Apps",
+  "task.sheet.waiting": "Waiting on you",
+  "task.sheet.waiting.from": "From the sub-agent {title}",
+  "task.sheet.status.working": "Working",
+  "task.sheet.status.waitingApproval": "Waiting for your approval",
+  "task.sheet.status.waitingAnswer": "Waiting for your answer",
+  "task.sheet.status.elapsed": "{duration} so far",
+  "task.sheet.status.took": "in {duration}",
+  "task.sheet.details": "Details"
 }

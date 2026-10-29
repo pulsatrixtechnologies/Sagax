@@ -1921,5 +1921,13 @@
   "chat.step.tool.detail": "Usando {detail}",
   "chat.step.lastOutput": "última salida hace {age}",
   "chat.step.age.minutes": "{count} min",
-  "chat.step.age.hours": "{count} h"
+  "chat.step.age.hours": "{count} h",
+  "task.sheet.waiting": "Esperando por ti",
+  "task.sheet.waiting.from": "Del subagente {title}",
+  "task.sheet.status.working": "Trabajando",
+  "task.sheet.status.waitingApproval": "Espera tu aprobación",
+  "task.sheet.status.waitingAnswer": "Espera tu respuesta",
+  "task.sheet.status.elapsed": "desde hace {duration}",
+  "task.sheet.status.took": "en {duration}",
+  "task.sheet.details": "Detalles"
 }

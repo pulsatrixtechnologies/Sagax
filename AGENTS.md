@@ -24,6 +24,48 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## The task sheet, redone (2026-10-29)
+
+The window that opens on a sub-agent, a parallel task or a run
+(`ActivityDetailModal`, `ActivityDetailPane`) reads top down: the head, what
+waits on the person, then the body. Its pieces are reusable components
+under `src/components/task/`, each pure (props in, no fetching), so the
+routine run detail and any other sheet of work draw from the same ones.
+
+- `TaskStatusHeader`: the bot's pill (mascot, name), the title, one line in
+  plain words (`taskStatusWords`): "Working · Reading clients.csv · 4m so
+  far", "Waiting for your approval", "Finished · in 12m". The step is
+  named by the working line's table (`currentTaskStep`,
+  `shared/working-step.ts`; the plain step name when the table only knows
+  "a tool"). Stop and Open conversation sit at the right of the head.
+- `WaitingOnYou`: an approval or a question the task, or one of its
+  sub-agents, waits on, with its answers: the conversation's own cards
+  (`PendingApprovalBox`, `OptionCard`), read off the waiting threads by
+  `useWaitingCards` (`src/lib/use-waiting-cards.ts`, `waitingSources`).
+  A run that waits without a readable card shows what it asks and opens
+  its conversation. Never more than half the sheet; it scrolls on its own.
+- `ActivityStepGroups` over `groupActivitySteps`
+  (`src/lib/activity-step-groups.ts`): the same step repeated back to back
+  reads once with a count ("×12"), a running step, a sub-agent's step or a
+  failure never merges in, the place a step ran is marked once and then
+  only when it changes, one disclosure per group with every call inside.
+  Rows are the chat's `StepRow`: no dot per row, shimmer while it runs,
+  the danger tone only on a failure.
+- `SubagentList` (`sortSubagents`): mascot, title, state and step, time;
+  the waiting one first and marked.
+- `TaskFacts` (`taskFacts`): started, ended, duration, started by, bot,
+  engine, paid with and the files touched, folded under Details; closed, it
+  names who started it and the engine. Nothing of the old facts card is gone.
+- `TaskComposer`: the message into a running task, drawn like the chat's
+  composer, at the bottom of the summary column.
+- Gallery `src/gallery/task-sheet.html` (a long run of the same action, a
+  question, four sub-agents of which one waits on an approval); captures
+  `node scripts/capture-task-sheet.mjs` (desktop and narrow, light and
+  dark). iOS: `BotActivityDetailView` follows the same order (head with
+  Stop and Open thread, "Waiting on you", sub-agents sorted by
+  `BotActivitySubagents`, steps grouped by `BotActivityStepGroup`, facts
+  folded under Details, the steer box last), both in CompanionCore.
+
 ## The working line names the step (2026-10-29)
 
 While a tool call runs, the line under the transcript names the step in

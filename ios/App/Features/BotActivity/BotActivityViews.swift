@@ -427,69 +427,152 @@ struct BotActivityDetailView: View {
     private var shown: BotActivityItem { detail?.item ?? item }
     private var running: Bool { shown.status.isActive }
 
+    /// The sub-agent the task waits on, when one waits.
+    private var waitingChild: BotActivityItem? { detail?.children.first { $0.status == .waiting } }
+
+    /// The status line in plain words (`taskStatusWords`): the state, the
+    /// step in flight, the time.
+    private var statusWords: String {
+        let duration = BotActivityRules.duration((shown.endedAt ?? now.timeIntervalSince1970 * 1000) - shown.startedAt)
+        var words: [String] = []
+        if shown.parallel == true { words.append(String(localized: "Parallel task")) }
+        switch shown.status {
+        case .running:
+            words.append(String(localized: "Working"))
+            let step = detail.flatMap { $0.steps.last { $0.ok == nil } }.map(BotActivityWording.step) ?? shown.currentStep
+            if let step, !step.isEmpty { words.append(step) }
+            words.append(duration)
+        case .waiting:
+            words.append(BotActivityWording.status(.waiting))
+            words.append(duration)
+        case .queued:
+            words.append(BotActivityWording.status(.queued))
+        default:
+            words.append(BotActivityWording.status(shown.status))
+            words.append(duration)
+        }
+        return words.joined(separator: " · ")
+    }
+
+    private var bot: Bot? { session.state.bots.first { $0.id == shown.botId } }
+
     var body: some View {
         List {
+            // The head: the bot, the title, the state in words; Stop and
+            // Open thread within reach.
             Section {
-                HStack(alignment: .top, spacing: 12) {
-                    BotActivityStatusIcon(status: shown.status, size: 18).padding(.top, 2)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(verbatim: shown.title)
-                            .font(Theme.font(15, .semibold))
-                            .foregroundStyle(Theme.textPrimary)
-                        Text(verbatim: (shown.parallel == true ? String(localized: "Parallel task") + " · " : "") + BotActivityWording.status(shown.status))
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        if let bot {
+                            HStack(spacing: 6) {
+                                BotMascotView(bot: bot, size: 22, state: running ? .working : .idle, animated: false)
+                                Text(verbatim: bot.name).font(Theme.Font.labelMedium).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                            }
+                            .padding(.vertical, 3)
+                            .padding(.leading, 3)
+                            .padding(.trailing, 10)
+                            .background(Theme.inset, in: Capsule())
+                            .accessibilityIdentifier("activity-detail-bot")
+                        } else if let name = shown.botName, !name.isEmpty {
+                            Text(verbatim: name).font(Theme.Font.labelMedium).foregroundStyle(Theme.textSecondary)
+                        }
+                        Spacer(minLength: 4)
+                        if running, detail?.canStop == true {
+                            Button(role: .destructive) {
+                                stop()
+                            } label: {
+                                if stopping { ProgressView().controlSize(.small) } else { Image(systemName: "stop.fill") }
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(stopping)
+                            .accessibilityLabel(Text("Stop"))
+                            .accessibilityIdentifier("activity-detail-stop")
+                        }
+                        if let threadId = shown.threadId {
+                            Button {
+                                openThread(botId: shown.botId, threadId: threadId)
+                            } label: {
+                                Label("Open thread", systemImage: "arrow.up.right.square")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("activity-open-thread")
+                        }
+                    }
+                    Text(verbatim: shown.title)
+                        .font(Theme.font(17, .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        BotActivityStatusIcon(status: shown.status, size: 13)
+                        Text(verbatim: statusWords)
                             .font(Theme.Profile.labelFont)
                             .foregroundStyle(Theme.textSecondary)
-                            .accessibilityIdentifier("activity-detail-status")
                     }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("activity-detail-status")
                 }
+                .buttonBorderShape(.capsule)
+                .controlSize(.small)
                 if detail == nil, failed {
                     Text("Couldn't load this activity.").foregroundStyle(Theme.danger)
                 }
-                if let note = detail?.note, !note.isEmpty {
+            }
+            .listRowBackground(Theme.card)
+
+            // What waits on the person, at the head: the task's own ask or
+            // a sub-agent's, with the way to answer it.
+            if shown.status == .waiting || waitingChild != nil {
+                let child = waitingChild
+                let note = detail?.note?.isEmpty == false ? detail?.note : nil
+                Section {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if let child {
+                            Text(verbatim: [child.botName, child.title].compactMap { $0 }.joined(separator: " · "))
+                                .font(Theme.Font.labelMedium)
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        Text(verbatim: note ?? child?.currentStep ?? BotActivityWording.status(.waiting))
+                            .font(Theme.Font.body)
+                            .foregroundStyle(Theme.textPrimary)
+                        let target = child ?? shown
+                        if let threadId = target.threadId {
+                            Button {
+                                openThread(botId: target.botId, threadId: threadId)
+                            } label: {
+                                Label("Open thread", systemImage: "arrow.up.right.square")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .buttonBorderShape(.capsule)
+                            .controlSize(.small)
+                            .accessibilityIdentifier("activity-waiting-open")
+                        }
+                    }
+                } header: {
+                    Label("Waiting on you", systemImage: "hand.raised")
+                        .foregroundStyle(Theme.warning)
+                }
+                .listRowBackground(Theme.warning.opacity(0.12))
+                .accessibilityIdentifier("activity-waiting")
+            } else if let note = detail?.note, !note.isEmpty {
+                Section {
                     Text(verbatim: note)
                         .font(Theme.Font.body)
                         .foregroundStyle(Theme.textPrimary)
-                        .listRowBackground(Theme.warning.opacity(0.12))
                 }
-            }
-            .listRowBackground(Theme.card)
-
-            Section {
-                fact("Started", BotActivityWording.time(shown.startedAt))
-                if let ended = shown.endedAt { fact("Ended", BotActivityWording.time(ended)) }
-                fact("Duration", BotActivityRules.duration((shown.endedAt ?? now.timeIntervalSince1970 * 1000) - shown.startedAt))
-                if let by = shown.startedBy, !by.name.isEmpty {
-                    fact("Started by", by.kind == .routine ? String(localized: "Routine \(by.name)") : by.name)
-                }
-                if shown.kind == .subagent, let name = shown.botName, !name.isEmpty { fact("Bot", name) }
-                if let engine = detail?.engine {
-                    let name = instances.first { $0.instanceId == engine.instanceId }?.displayName ?? engine.instanceId
-                    fact("Engine", [name, engine.model].filter { !$0.isEmpty }.joined(separator: " · "))
-                }
-                if let via = detail?.via { fact("Paid with", BotActivityWording.via(via)) }
-            } footer: {
-                if let detail, detail.item.threadId == nil, detail.item.kind == .routine {
-                    Text("This run's conversation belongs to the person it runs for: only its status is shown here.")
-                }
-            }
-            .listRowBackground(Theme.card)
-
-            if running, let detail, detail.stoppable, let threadId = detail.item.threadId {
-                BotActivitySteerSection(botId: detail.item.botId, threadId: threadId, text: $steerText, state: $steerState) { await load() }
+                .listRowBackground(Theme.warning.opacity(0.12))
             }
 
             if let children = detail?.children, !children.isEmpty {
                 Section("Sub-agents") {
-                    ForEach(children) { child in
+                    ForEach(BotActivitySubagents.sorted(children)) { child in
                         BotActivityRow(item: child, onOpen: { child in
                             // a sub-agent opens in place
                             guard child.threadId != nil else { return }
                             item = child
                             detail = nil
                         })
+                        .listRowBackground(child.status == .waiting ? Theme.warning.opacity(0.12) : Theme.card)
                     }
                 }
-                .listRowBackground(Theme.card)
                 .listRowInsets(EdgeInsets())
             }
 
@@ -503,9 +586,8 @@ struct BotActivityDetailView: View {
                                 .font(Theme.Profile.labelFont)
                                 .foregroundStyle(Theme.textSecondary)
                         }
-                        let tree = BotActivityStepLabel.tree(detail.steps)
-                        ForEach(tree.top) { step in
-                            BotActivityStepRow(step: step, substeps: tree.children[step.id] ?? [])
+                        ForEach(BotActivityStepGroup.groups(detail.steps)) { group in
+                            BotActivityStepGroupRow(group: group)
                         }
                     }
                 }
@@ -513,45 +595,54 @@ struct BotActivityDetailView: View {
                 .accessibilityIdentifier("activity-steps")
             }
 
-            if let files = detail?.files, !files.isEmpty {
-                Section("Files touched") {
-                    ForEach(files, id: \.self) { file in
-                        Label {
-                            Text(verbatim: file).font(Theme.Font.code).lineLimit(1).truncationMode(.middle)
-                        } icon: {
-                            Image(systemName: "doc.text").foregroundStyle(Theme.textSecondary)
-                        }
-                        .contextMenu {
-                            Button(String(localized: "Copy path"), systemImage: "doc.on.doc") { UIPasteboard.general.string = file }
-                        }
-                    }
-                }
-                .listRowBackground(Theme.card)
-            }
-
+            // The facts, folded: nothing of the old card is gone.
             Section {
-                if running, detail?.canStop == true {
-                    Button(role: .destructive) {
-                        stop()
-                    } label: {
-                        HStack {
-                            if stopping { ProgressView().controlSize(.small) } else { Image(systemName: "stop.fill") }
-                            Text("Stop")
+                DisclosureGroup {
+                    fact("Started", BotActivityWording.time(shown.startedAt))
+                    if let ended = shown.endedAt { fact("Ended", BotActivityWording.time(ended)) }
+                    fact("Duration", BotActivityRules.duration((shown.endedAt ?? now.timeIntervalSince1970 * 1000) - shown.startedAt))
+                    if let by = shown.startedBy, !by.name.isEmpty {
+                        fact("Started by", by.kind == .routine ? String(localized: "Routine \(by.name)") : by.name)
+                    }
+                    if shown.kind == .subagent, let name = shown.botName, !name.isEmpty { fact("Bot", name) }
+                    if let engine = detail?.engine {
+                        fact("Engine", engineWords(engine))
+                    }
+                    if let via = detail?.via { fact("Paid with", BotActivityWording.via(via)) }
+                    if let files = detail?.files, !files.isEmpty {
+                        Text("Files touched").font(Theme.Profile.labelFont).foregroundStyle(Theme.textSecondary)
+                        ForEach(files, id: \.self) { file in
+                            Label {
+                                Text(verbatim: file).font(Theme.Font.code).lineLimit(1).truncationMode(.middle)
+                            } icon: {
+                                Image(systemName: "doc.text").foregroundStyle(Theme.textSecondary)
+                            }
+                            .contextMenu {
+                                Button(String(localized: "Copy path"), systemImage: "doc.on.doc") { UIPasteboard.general.string = file }
+                            }
                         }
                     }
-                    .disabled(stopping)
-                    .accessibilityIdentifier("activity-detail-stop")
-                }
-                if let threadId = shown.threadId {
-                    Button {
-                        openThread(botId: shown.botId, threadId: threadId)
-                    } label: {
-                        Label("Open thread", systemImage: "arrow.up.right.square")
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Details").font(Theme.Font.body).foregroundStyle(Theme.textPrimary)
+                        Text(verbatim: [shown.startedBy?.name, detail?.engine.map(engineWords)].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(Theme.Profile.labelFont)
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
                     }
-                    .accessibilityIdentifier("activity-open-thread")
+                }
+                .accessibilityIdentifier("activity-facts")
+            } footer: {
+                if let detail, detail.item.threadId == nil, detail.item.kind == .routine {
+                    Text("This run's conversation belongs to the person it runs for: only its status is shown here.")
                 }
             }
             .listRowBackground(Theme.card)
+
+            // A message into the running task, at the bottom like the chat's composer.
+            if running, let detail, detail.stoppable, let threadId = detail.item.threadId {
+                BotActivitySteerSection(botId: detail.item.botId, threadId: threadId, text: $steerText, state: $steerState) { await load() }
+            }
         }
         .scrollContentBackground(.hidden)
         .background(Theme.bg)
@@ -563,6 +654,11 @@ struct BotActivityDetailView: View {
             await follow()
         }
         .accessibilityIdentifier("activity-detail")
+    }
+
+    private func engineWords(_ engine: BotActivityDetail.Engine) -> String {
+        let name = instances.first { $0.instanceId == engine.instanceId }?.displayName ?? engine.instanceId
+        return [name, engine.model].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
     private func fact(_ label: LocalizedStringKey, _ value: String) -> some View {
@@ -689,97 +785,110 @@ private struct BotActivitySteerSection: View {
     }
 }
 
-/// One step: its plain name, where it ran, its summary; a sub-agent's step
-/// opens to what it was asked, its own steps and what it reported.
-private struct BotActivityStepRow: View {
+/// One group of steps (`BotActivityStepGroup`): the step's plain name, a
+/// count when it repeated, the place only when it changes, the danger tone
+/// only on a failure. Every call sits behind one disclosure; a sub-agent's
+/// step opens to what it was asked, its own grouped steps and its result.
+private struct BotActivityStepGroupRow: View {
     @Environment(\.themePalette) var themePalette
-    let step: BotActivityStep
-    var substeps: [BotActivityStep] = []
+    let group: BotActivityStepGroup
     @State private var open = false
-    @State private var technical = false
+
+    private var first: BotActivityStep { group.steps[0] }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(step.ok == nil ? Theme.accent : step.ok == true ? Theme.success : Theme.danger)
-                    .frame(width: 7, height: 7)
-                if BotActivityStepLabel.isSubagent(step) {
-                    Button {
-                        withAnimation(.snappy(duration: 0.2)) { open.toggle() }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: open ? "chevron.down" : "chevron.right").font(.system(size: 10, weight: .semibold))
-                            Image(systemName: "person.crop.circle.badge.checkmark").foregroundStyle(Theme.accentText)
-                            Text(verbatim: BotActivityWording.step(step)).font(Theme.Font.bodyMedium).lineLimit(1)
-                            if !substeps.isEmpty { Text(verbatim: "· \(substeps.count)").foregroundStyle(Theme.textSecondary) }
-                        }
-                        .foregroundStyle(Theme.textPrimary)
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    Text(verbatim: BotActivityWording.step(step))
+        DisclosureGroup(isExpanded: $open) {
+            if group.subagent { subagentBody } else { calls }
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    if group.subagent { Image(systemName: "person.crop.circle.badge.checkmark").foregroundStyle(Theme.accentText) }
+                    if group.phase == .running { ProgressView().controlSize(.mini) }
+                    if group.phase == .failed { Image(systemName: "exclamationmark.circle").foregroundStyle(Theme.danger) }
+                    Text(verbatim: BotActivityWording.step(first))
                         .font(Theme.Font.body)
-                        .foregroundStyle(Theme.textPrimary)
+                        .foregroundStyle(group.phase == .failed ? Theme.danger : group.phase == .running ? Theme.textPrimary : Theme.textSecondary)
+                        .lineLimit(1)
+                    if group.count > 1 {
+                        Text(verbatim: "×\(group.count)")
+                            .font(Theme.Font.label)
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.textSecondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Theme.inset, in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+                    }
+                    Spacer(minLength: 4)
+                    if group.placeChanged, let place = group.place {
+                        Label(BotActivityWording.place(place), systemImage: place == .computer ? "laptopcomputer" : "server.rack")
+                            .font(Theme.Font.label)
+                            .foregroundStyle(Theme.textSecondary)
+                            .labelStyle(.titleAndIcon)
+                            .lineLimit(1)
+                    }
+                }
+                if group.count == 1, let summary = group.summary {
+                    Text(verbatim: summary)
+                        .font(Theme.Profile.labelFont)
+                        .foregroundStyle(Theme.textTertiary)
                         .lineLimit(1)
                 }
-                Spacer(minLength: 4)
-                if let place = step.where {
-                    Label(BotActivityWording.place(place), systemImage: place == .computer ? "laptopcomputer" : "server.rack")
-                        .font(Theme.Font.label)
-                        .foregroundStyle(Theme.textSecondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Theme.inset, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                }
             }
-            if let summary = step.summary, !summary.isEmpty {
-                Text(verbatim: summary)
-                    .font(Theme.Profile.labelFont)
-                    .foregroundStyle(Theme.textSecondary)
-                    .lineLimit(2)
-            }
-            if BotActivityStepLabel.isSubagent(step), open {
-                VStack(alignment: .leading, spacing: 4) {
-                    if let prompt = step.subagent?.prompt, !prompt.isEmpty {
-                        Text("Asked").font(Theme.Font.labelMedium).foregroundStyle(Theme.textSecondary)
-                        Text(verbatim: prompt).font(Theme.Font.preview).foregroundStyle(Theme.textPrimary)
-                    }
-                    if !substeps.isEmpty {
-                        Text("Its steps").font(Theme.Font.labelMedium).foregroundStyle(Theme.textSecondary)
-                        ForEach(substeps) { child in BotActivityStepRow(step: child) }
-                    }
-                    Text("Result").font(Theme.Font.labelMedium).foregroundStyle(Theme.textSecondary)
-                    if let result = step.subagent?.result, !result.isEmpty {
-                        Text(verbatim: result).font(Theme.Font.preview).foregroundStyle(Theme.textPrimary)
-                    } else {
-                        Text(step.ok == nil ? String(localized: "Working…") : "-").font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
-                    }
-                    if step.ok == nil {
-                        Text("Claude runs this sub-agent inside the turn: it stops with the turn and takes no message of its own.")
-                            .font(Theme.Font.label)
-                            .foregroundStyle(Theme.textTertiary)
-                    }
-                }
-                .padding(10)
-                .background(Theme.inset, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            }
-            if !BotActivityStepLabel.isSubagent(step) || open {
-                DisclosureGroup(isExpanded: $technical) {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(verbatim: step.name).font(Theme.Font.code).foregroundStyle(Theme.textPrimary)
-                        if let input = step.input, !input.isEmpty {
-                            Text(verbatim: input).font(Theme.Font.code).foregroundStyle(Theme.textSecondary).lineLimit(8)
+            .accessibilityElement(children: .combine)
+        }
+        .padding(.vertical, 1)
+        .accessibilityIdentifier("activity-step.\(group.id)")
+    }
+
+    /// Every call of the group: when, its summary, its arguments; the tool's id once.
+    private var calls: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(verbatim: first.name).font(Theme.Font.code).foregroundStyle(Theme.textTertiary)
+            ForEach(group.steps) { step in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(verbatim: Date(timeIntervalSince1970: step.at / 1000).formatted(date: .omitted, time: .standard))
+                            .font(Theme.Font.label).monospacedDigit().foregroundStyle(Theme.textTertiary)
+                        if step.ok == false { Text("Failed").font(Theme.Font.label).foregroundStyle(Theme.danger) }
+                        if let summary = step.summary, !summary.isEmpty {
+                            Text(verbatim: summary).font(Theme.Font.label).foregroundStyle(Theme.textPrimary).lineLimit(1)
                         }
                     }
-                    .textSelection(.enabled)
-                } label: {
-                    Text("Technical details").font(Theme.Font.label).foregroundStyle(Theme.textTertiary)
+                    if let input = step.input, !input.isEmpty {
+                        Text(verbatim: input).font(Theme.Font.code).foregroundStyle(Theme.textSecondary).lineLimit(6)
+                    }
                 }
+                .padding(6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.inset, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
             }
         }
-        .padding(.vertical, 2)
-        .accessibilityIdentifier("activity-step.\(step.id)")
+        .textSelection(.enabled)
+    }
+
+    private var subagentBody: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let prompt = first.subagent?.prompt, !prompt.isEmpty {
+                Text("Asked").font(Theme.Font.labelMedium).foregroundStyle(Theme.textSecondary)
+                Text(verbatim: prompt).font(Theme.Font.preview).foregroundStyle(Theme.textPrimary)
+            }
+            if !group.substeps.isEmpty {
+                Text("Its steps").font(Theme.Font.labelMedium).foregroundStyle(Theme.textSecondary)
+                ForEach(group.substeps) { child in BotActivityStepGroupRow(group: child) }
+            }
+            Text("Result").font(Theme.Font.labelMedium).foregroundStyle(Theme.textSecondary)
+            if let result = first.subagent?.result, !result.isEmpty {
+                Text(verbatim: result).font(Theme.Font.preview).foregroundStyle(Theme.textPrimary)
+            } else {
+                Text(first.ok == nil ? String(localized: "Working…") : "-").font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+            }
+            if first.ok == nil {
+                Text("Claude runs this sub-agent inside the turn: it stops with the turn and takes no message of its own.")
+                    .font(Theme.Font.label)
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            calls
+        }
     }
 }
 

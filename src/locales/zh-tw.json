@@ -3752,5 +3752,13 @@
   "chat.step.tool.detail": "正在使用 {detail}",
   "chat.step.lastOutput": "上次輸出於 {age} 前",
   "chat.step.age.minutes": "{count} 分鐘",
-  "chat.step.age.hours": "{count} 小時"
+  "chat.step.age.hours": "{count} 小時",
+  "task.sheet.waiting": "等待你的處理",
+  "task.sheet.waiting.from": "來自子代理 {title}",
+  "task.sheet.status.working": "工作中",
+  "task.sheet.status.waitingApproval": "等待你的核准",
+  "task.sheet.status.waitingAnswer": "等待你的回答",
+  "task.sheet.status.elapsed": "已進行 {duration}",
+  "task.sheet.status.took": "用時 {duration}",
+  "task.sheet.details": "詳細資料"
 }

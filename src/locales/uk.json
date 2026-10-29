@@ -2431,5 +2431,13 @@
   "chat.step.tool.detail": "Використовує {detail}",
   "chat.step.lastOutput": "останній вивід {age} тому",
   "chat.step.age.minutes": "{count} хв",
-  "chat.step.age.hours": "{count} год"
+  "chat.step.age.hours": "{count} год",
+  "task.sheet.waiting": "Чекає на тебе",
+  "task.sheet.waiting.from": "Від субагента {title}",
+  "task.sheet.status.working": "Працює",
+  "task.sheet.status.waitingApproval": "Чекає на твоє схвалення",
+  "task.sheet.status.waitingAnswer": "Чекає на твою відповідь",
+  "task.sheet.status.elapsed": "вже {duration}",
+  "task.sheet.status.took": "за {duration}",
+  "task.sheet.details": "Деталі"
 }

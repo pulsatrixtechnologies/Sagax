@@ -1939,5 +1939,13 @@
   "chat.step.tool.detail": "Nutzt {detail}",
   "chat.step.lastOutput": "letzte Ausgabe vor {age}",
   "chat.step.age.minutes": "{count} Min.",
-  "chat.step.age.hours": "{count} Std."
+  "chat.step.age.hours": "{count} Std.",
+  "task.sheet.waiting": "Wartet auf dich",
+  "task.sheet.waiting.from": "Vom Unteragenten {title}",
+  "task.sheet.status.working": "Arbeitet",
+  "task.sheet.status.waitingApproval": "Wartet auf deine Freigabe",
+  "task.sheet.status.waitingAnswer": "Wartet auf deine Antwort",
+  "task.sheet.status.elapsed": "seit {duration}",
+  "task.sheet.status.took": "in {duration}",
+  "task.sheet.details": "Details"
 }
