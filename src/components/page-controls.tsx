@@ -51,13 +51,17 @@ export function openPage(url: string) {
 
 /** Only this server's own preview wrapper path is ever framed, with the
  * annotation flag and the app's own look at most (2026-10-28: no banner
- * inside the app, the app's theme, the place to keep). Pure. */
-export function previewSrc(path: string, options: { annotate?: boolean; bare?: boolean; theme?: "light" | "dark"; y?: number } = {}): string | null {
+ * inside the app, the app's theme and the person's skin tokens with it, the
+ * place to keep). `skin` is encodeSkinTokens' value. Pure. */
+export function previewSrc(path: string, options: { annotate?: boolean; bare?: boolean; theme?: "light" | "dark"; skin?: string; y?: number } = {}): string | null {
   if (!/^\/pages\/preview\/[A-Za-z0-9_-]{8,40}\/\d{1,4}$/.test(path)) return null;
   const query: string[] = [];
   if (options.annotate) query.push("annotate=1");
   if (options.bare) query.push("bare=1");
-  if (options.theme === "light" || options.theme === "dark") query.push(`theme=${options.theme}`);
+  if (options.theme === "light" || options.theme === "dark") {
+    query.push(`theme=${options.theme}`);
+    if (options.skin && /^[A-Za-z0-9_-]{1,4096}$/.test(options.skin)) query.push(`skin=${options.skin}`);
+  }
   if (options.y !== undefined && Number.isSafeInteger(options.y) && options.y >= 0 && options.y <= 10_000_000) query.push(`y=${options.y}`);
   return query.length ? `${path}?${query.join("&")}` : path;
 }

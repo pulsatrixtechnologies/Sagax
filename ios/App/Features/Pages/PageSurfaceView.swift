@@ -22,7 +22,9 @@ extension Session {
     func pageWebSource(pageId: String, previewPath: String, theme: PageTheme, y: Int) -> PageWebSource? {
         if isDemo, let demo = demoServer { return .html(demo.pageDocument(theme: theme), place: y) }
         guard let client = settingsClient,
-              let request = try? client.pagePreviewRequest(path: previewPath, bare: true, theme: theme, y: y) else { return nil }
+              // the person's skin goes with the theme: the page's default theme takes it
+              let request = try? client.pagePreviewRequest(path: previewPath, bare: true, theme: theme, y: y,
+                                                           skin: ContentTheme.skinParam(Theme.palette.contentTokens)) else { return nil }
         return .request(request)
     }
 

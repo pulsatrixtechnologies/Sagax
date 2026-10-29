@@ -70,6 +70,9 @@ import type { PageError, PageRecord, PageVersionRecord, PublishedPages } from ".
 import { commentAnswerDocument, pageDocument, parseReaderAssets, splitSlides, wrapperDocument, type ReaderAssets } from "../published-pages-render.ts";
 import type { ReaderBoot } from "../../shared/page-reader.ts";
 import { parsePageQuote, parseThreadText, type PageThread, type PageThreadsAnswer } from "../../shared/page-threads.ts";
+import { geistFace } from "../geist-face.ts";
+import { decodeSkinTokens, encodeSkinTokens } from "../../src/lib/page-theme.ts";
+import type { WidgetThemeTokens } from "../../src/lib/widget-kit.ts";
 import { requestSource, type RequestAuth } from "../request-auth.ts";
 import { redactSecretsInText } from "../../shared/redact.ts";
 import { pageAudienceOf, pageMayEnter, parsePageAudience } from "../../shared/page-audience.ts";
@@ -306,7 +309,8 @@ function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: Serv
     personName: names.personName,
     frameUrl: `${separate ? separate.pagesOrigin.origin : ""}${input.framePath}?t=${encodeURIComponent(input.ticket)}${input.annotate ? "&a=1" : ""}`
       + (input.preview && input.look?.keep !== undefined ? `&k=${input.look.keep}` : "")
-      + (input.preview && input.look?.theme ? `&c=${input.look.theme}` : ""),
+      + (input.preview && input.look?.theme ? `&c=${input.look.theme}` : "")
+      + (input.preview && input.look?.theme && input.look.skin ? `&s=${encodeSkinTokens(input.look.skin)}` : ""),
     lang,
     preview: input.preview,
     ...(!input.preview && input.version.kind === "presentation" ? { slides: splitSlides(options.pages?.content(input.page.id, input.version.n) ?? "").length } : {}),
@@ -344,17 +348,21 @@ function servePreviewWrapper(options: PublicPageOptions, req: IncomingMessage, r
 
 /** How the app draws its own preview (2026-10-28), from the wrapper's query:
  * `bare=1` no banner (inside the app, which names the page itself),
- * `theme=light|dark` the app's theme, `y=<n>` keep the place (the frame runs
- * the small script that scrolls there and reports the place back). The
- * page's person only: a reading link never takes them. */
-export interface PreviewLook { bare?: boolean; theme?: PageTheme; keep?: number }
+ * `theme=light|dark` the app's theme, `skin=<tokens>` the person's skin
+ * tokens with it (src/lib/page-theme.ts encodeSkinTokens: known names and
+ * safe values only), `y=<n>` keep the place (the frame runs the small script
+ * that scrolls there and reports the place back). The page's person only: a
+ * reading link never takes them. */
+export interface PreviewLook { bare?: boolean; theme?: PageTheme; skin?: WidgetThemeTokens; keep?: number }
 export function previewLook(req: IncomingMessage): PreviewLook {
   const theme = query(req, "theme");
+  const skin = theme === "light" || theme === "dark" ? decodeSkinTokens(query(req, "skin")) : undefined;
   const y = query(req, "y");
   const keep = /^\d{1,8}$/.test(y) ? Number(y) : undefined;
   return {
     ...(query(req, "bare") === "1" ? { bare: true } : {}),
     ...(theme === "light" || theme === "dark" ? { theme } : {}),
+    ...(skin ? { skin } : {}),
     ...(keep !== undefined && keep <= PAGE_SCROLL_MAX ? { keep } : {}),
   };
 }
@@ -477,6 +485,7 @@ function serveFrame(options: PublicPageOptions, req: IncomingMessage, res: Serve
   const keepScroll = /^\d{1,8}$/.test(keepRaw) && Number(keepRaw) <= PAGE_SCROLL_MAX ? Number(keepRaw) : undefined;
   const themeRaw = preview ? query(req, "c") : "";
   const theme: PageTheme | undefined = themeRaw === "light" || themeRaw === "dark" ? themeRaw : undefined;
+  const skin = theme ? decodeSkinTokens(query(req, "s")) : undefined;
   // a reading link's frame reports its size to the wrapper (Download PDF)
   const reportSize = !preview;
   const nonce = annotating || keepScroll !== undefined || reportSize ? randomBytes(16).toString("base64url") : undefined;
@@ -487,6 +496,8 @@ function serveFrame(options: PublicPageOptions, req: IncomingMessage, res: Serve
     ...(keepScroll !== undefined ? { keepScroll } : {}),
     ...(reportSize ? { reportSize: true } : {}),
     ...(theme ? { theme } : {}),
+    ...(skin ? { skin } : {}),
+    font: geistFace(),
   }));
   return true;
 }

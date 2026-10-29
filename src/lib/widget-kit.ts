@@ -81,9 +81,14 @@ const FALLBACK: Record<"light" | "dark", Record<Exclude<WidgetThemeToken, "--cod
     "--color-warning": "#b35c00",
     "--color-danger": "#d12c3a",
     "--color-danger-ink": "#ffffff",
-    "--font-sans": "Inter, -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif",
+    "--font-sans": "\"Geist Variable\", -apple-system, BlinkMacSystemFont, \"SF Pro Text\", \"Segoe UI\", system-ui, sans-serif",
   },
 };
+
+/** The fallback tokens of a scheme (Midnight, Pulsatrix Light). */
+export function fallbackWidgetTokens(scheme: "light" | "dark"): WidgetThemeTokens {
+  return { "--code-color-scheme": scheme, ...FALLBACK[scheme] };
+}
 
 /** A token value safe to write inside a <style> declaration: colors,
  * color-mix(), numbers and font lists. Anything that could close the rule,
@@ -102,13 +107,20 @@ export interface WidgetTheme {
   scheme: "light" | "dark";
   /** the `:root{...}` rule with the shadcn variables, ready for a <style> */
   css: string;
+  /** the app tokens it was computed from (sanitized), for a page frame the
+   * server draws (src/lib/page-theme.ts encodeSkinTokens) */
+  tokens: WidgetThemeTokens;
 }
+
+/** Where bot content sits. chat: on the bubble, no ground of its own (a
+ * widget). page: a whole page, on the skin's panel, with cards raised. */
+export type ContentSurface = "chat" | "page";
 
 const mix = (color: string, percent: number, other = "transparent") => `color-mix(in srgb, ${color} ${percent}%, ${other})`;
 
-/** The shadcn variables for a set of Sagax tokens. Missing or unsafe tokens
- * take the fallback of the scheme. */
-export function widgetThemeFromTokens(tokens: WidgetThemeTokens): WidgetTheme {
+/** The shadcn variables for a set of Sagax tokens, as a map. Missing or
+ * unsafe tokens take the fallback of the scheme. */
+export function contentThemeVars(tokens: WidgetThemeTokens, surface: ContentSurface = "chat"): { scheme: "light" | "dark"; vars: Record<string, string> } {
   const scheme = tokens["--code-color-scheme"]?.trim() === "light" ? "light" : "dark";
   const base = FALLBACK[scheme];
   const token = (name: keyof typeof base) => safeTokenValue(tokens[name]) ?? base[name];
@@ -121,12 +133,14 @@ export function widgetThemeFromTokens(tokens: WidgetThemeTokens): WidgetTheme {
   const warning = token("--color-warning");
   const danger = token("--color-danger");
   const purple = safeTokenValue(tokens["--identity-purple"]) ?? token("--color-accent-text");
+  const page = surface === "page";
   const vars: Record<string, string> = {
     "color-scheme": scheme,
-    // the widget sits on the bubble: no ground of its own
-    "--background": "transparent",
+    // a widget sits on the bubble: no ground of its own; a page has the
+    // skin's panel as its ground and its cards one step up
+    "--background": page ? panel : "transparent",
     "--foreground": ink,
-    "--card": panel,
+    "--card": page ? token("--color-card") : panel,
     "--card-foreground": ink,
     "--popover": token("--color-menu"),
     "--popover-foreground": ink,
@@ -154,15 +168,37 @@ export function widgetThemeFromTokens(tokens: WidgetThemeTokens): WidgetTheme {
     "--chart-4": purple,
     "--chart-5": danger,
     "--font-sans": token("--font-sans"),
+    "--font-mono": "ui-monospace, SFMono-Regular, \"SF Mono\", Menlo, Consolas, monospace",
     // the names older widgets were told about
-    "--omb-bg": "transparent",
+    "--omb-bg": page ? panel : "transparent",
     "--omb-fg": ink,
     "--omb-muted": token("--color-ink-secondary"),
     "--omb-border": hairline,
     "--omb-accent": token("--color-accent-text"),
   };
-  const css = `:root{${Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";")}}`;
-  return { scheme, css };
+  return { scheme, vars };
+}
+
+/** The declarations of a variable map, for a rule. */
+export function cssDeclarations(vars: Record<string, string>): string {
+  return Object.entries(vars).map(([name, value]) => `${name}:${value}`).join(";");
+}
+
+/** Only the app tokens, each one safe; anything else is dropped. */
+export function sanitizeWidgetTokens(tokens: Partial<Record<string, unknown>>): WidgetThemeTokens {
+  const out: WidgetThemeTokens = {};
+  for (const name of WIDGET_THEME_TOKENS) {
+    const raw = tokens[name];
+    const value = typeof raw === "string" ? safeTokenValue(raw) : undefined;
+    if (value !== undefined) out[name] = value;
+  }
+  return out;
+}
+
+/** The shadcn variables of a widget for a set of Sagax tokens. */
+export function widgetThemeFromTokens(tokens: WidgetThemeTokens): WidgetTheme {
+  const { scheme, vars } = contentThemeVars(tokens, "chat");
+  return { scheme, css: `:root{${cssDeclarations(vars)}}`, tokens: sanitizeWidgetTokens(tokens) };
 }
 
 /** Read the tokens from where the widget is drawn (its skin may be a
@@ -201,6 +237,39 @@ const CHEVRON_MASK = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2
 const tint = (color: string, percent: number) => `color-mix(in srgb,var(${color}) ${percent}%,transparent)`;
 const toward = (color: string, percent: number) => `color-mix(in srgb,var(${color}) ${percent}%,var(--foreground))`;
 const FOCUS = "outline:none;box-shadow:0 0 0 2px " + tint("--ring", 60);
+
+/** Plain content and the components added for pages (2026-10-28): what a
+ * bot writes without a class (lists, quotes, code blocks, tables, images)
+ * takes the theme at zero specificity (:where), so any rule of the bot's
+ * own wins; then statistics, a simple bar chart, SVG chart colors, divided
+ * lists and a lead paragraph. Shared by widgets and pages
+ * (src/lib/page-theme.ts). */
+export const CONTENT_KIT_CSS = [
+  ":where(ul,ol){margin:0 0 8px;padding-inline-start:1.4em}:where(li){margin:2px 0}:where(li)::marker{color:var(--subtle-foreground)}",
+  ":where(blockquote){margin:0 0 8px;padding:2px 0 2px 12px;border-inline-start:3px solid var(--border);color:var(--muted-foreground)}",
+  ":where(pre){margin:0 0 8px;padding:10px 12px;overflow:auto;border:1px solid var(--border);border-radius:10px;background:var(--muted);font-family:var(--font-mono);font-size:12px;line-height:18px}:where(pre code){padding:0;border-radius:0;background:none;font-size:inherit}",
+  ":where(code){font-family:var(--font-mono)}:where(strong,b){font-weight:600}:where(img,video,canvas){max-width:100%;height:auto}",
+  ":where(table:not(.table)){width:100%;margin:0 0 12px;border-collapse:collapse;font-variant-numeric:tabular-nums}",
+  ":where(table:not(.table) th){padding:8px 12px;text-align:start;font-size:11px;line-height:16px;font-weight:600;letter-spacing:.04em;color:var(--muted-foreground);border-bottom:1px solid var(--border);white-space:nowrap}",
+  `:where(table:not(.table) td){padding:8px 12px;vertical-align:top;border-bottom:1px solid ${mixVar("--border", 60)}}:where(table:not(.table) tbody tr:last-child td){border-bottom:0}`,
+  ".lead{font-size:15px;line-height:22px;color:var(--muted-foreground)}.meta{font-size:12px;line-height:16px;color:var(--subtle-foreground)}",
+  // statistics: a label, the number, a change (positive or negative)
+  ".stat-card{padding:14px 16px}.stat-card>.stat{margin-top:6px}",
+  ".stat-label{font-size:12px;line-height:16px;font-weight:500;color:var(--muted-foreground)}",
+  `.stat-delta{margin-top:6px;font-size:12px;line-height:16px;color:var(--subtle-foreground);font-variant-numeric:tabular-nums}.stat-delta.positive{color:${toward("--success", 70)}}.stat-delta.negative{color:${toward("--destructive", 70)}}`,
+  // a bar chart without script: one row per value, its width in --value
+  ".bar-chart{display:flex;flex-direction:column;gap:8px}",
+  ".bar-row{display:grid;grid-template-columns:minmax(0,8rem) minmax(0,1fr) auto;align-items:center;gap:10px;font-size:12px;line-height:16px}",
+  ".bar-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted-foreground)}.bar-value{min-width:2ch;text-align:end;font-variant-numeric:tabular-nums}",
+  ".bar{position:relative;display:block;height:8px;overflow:hidden;border-radius:999px;background:var(--muted)}.bar::before{content:\"\";position:absolute;inset-block:0;inset-inline-start:0;width:var(--value,0%);border-radius:inherit;background:var(--bar-color,var(--chart-1))}",
+  ".bar-2{--bar-color:var(--chart-2)}.bar-3{--bar-color:var(--chart-3)}.bar-4{--bar-color:var(--chart-4)}.bar-5{--bar-color:var(--chart-5)}",
+  // an inline SVG chart: series colors by class, quiet axes and labels
+  "svg.chart{display:block;width:100%;height:auto;overflow:visible}svg.chart text{fill:var(--muted-foreground);font-family:var(--font-sans);font-size:11px}svg.chart .axis,svg.chart .gridline{stroke:var(--border);stroke-width:1;fill:none}",
+  ".fill-1{fill:var(--chart-1)}.fill-2{fill:var(--chart-2)}.fill-3{fill:var(--chart-3)}.fill-4{fill:var(--chart-4)}.fill-5{fill:var(--chart-5)}",
+  ".stroke-1{stroke:var(--chart-1)}.stroke-2{stroke:var(--chart-2)}.stroke-3{stroke:var(--chart-3)}.stroke-4{stroke:var(--chart-4)}.stroke-5{stroke:var(--chart-5)}",
+  // a divided list of rows: text on the left, a badge or a number on the right
+  `.list{margin:0 0 8px;padding:0;list-style:none}.list>li{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0;padding:10px 0;border-top:1px solid ${mixVar("--border", 60)}}.list>li:first-child{border-top:0}.card .list{margin:0}.card .list>li{padding-inline:14px}`,
+].join("");
 
 /** Reset, typography and the component classes. Static: every color is a
  * variable of the theme rule, so a skin change never rebuilds it. */
@@ -313,6 +382,7 @@ export const WIDGET_KIT_CSS = [
   ".skeleton{border-radius:8px;background:var(--secondary);animation:sx-pulse 2s ease-in-out infinite}@keyframes sx-pulse{50%{opacity:.5}}",
   ".kbd{display:inline-flex;align-items:center;height:20px;min-width:20px;padding:0 5px;border:1px solid var(--border);border-bottom-width:2px;border-radius:5px;background:var(--muted);color:var(--muted-foreground);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}",
   ".stat{font-size:28px;line-height:1;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}",
+  CONTENT_KIT_CSS,
   "@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}",
 ].join("");
 
@@ -327,6 +397,8 @@ export const WIDGET_KIT_CLASSES = [
   ".badge (+ .badge-secondary .badge-outline .badge-success .badge-warning .badge-destructive)",
   ".input .search .textarea .select .checkbox .radio .switch .label .field",
   ".tabs .tabs-list .tabs-trigger[aria-selected] .table .separator .progress .alert .avatar .skeleton .kbd .stat",
+  ".stat-card .stat-label .stat-delta(.positive .negative) .bar-chart .bar-row .bar-label .bar[style=--value:62%] (.bar-2 to .bar-5) .bar-value",
+  "svg.chart (.fill-1 to .fill-5, .stroke-1 to .stroke-5, .axis, .gridline) .list .lead .meta",
   ".row .stack .grid .muted",
 ] as const;
 

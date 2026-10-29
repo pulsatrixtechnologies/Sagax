@@ -186,8 +186,10 @@ const BUDGET_BASELINE: Record<string, number> = {
   "room+own-thread+skills+voice": 84360,
   "room+own-thread+skills+shared": 85394,
   "room+own-thread+skills+shared+voice": 86361,
-  "direct+non-chief": 75964,
-  "direct+voice+non-chief": 76931,
+  // +236 on 2026-10-28: propose_page and show_html name the default theme of
+  // bot content (src/lib/page-theme.ts), so a bot uses it instead of its own colors
+  "direct+non-chief": 76200,
+  "direct+voice+non-chief": 77167,
   "direct+shared+non-chief": 78605,
   "direct+shared+voice+non-chief": 79572,
   "direct+skills+non-chief": 78657,

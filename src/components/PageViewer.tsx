@@ -47,6 +47,7 @@ import { ACCESS_LABEL, needsLinkConfirm, pageErrorText, pageGone, previewSrc, us
 import { PageSharePopover } from "./PageShare";
 import { SwitchRow } from "./SettingsPrimitives";
 import { useWidgetTheme } from "./WidgetFrame";
+import { encodeSkinTokens } from "@/lib/page-theme";
 import { MenuItem, PopoverMenu } from "./bot-settings/FilesSection";
 
 export { needsLinkConfirm, pageErrorText };
@@ -206,7 +207,10 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
   const [failed, setFailed] = useState(false);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const rootRef = useRef<HTMLDivElement>(null);
-  const theme = useWidgetTheme(rootRef).scheme;
+  const look = useWidgetTheme(rootRef);
+  const theme = look.scheme;
+  // the person's skin goes with the theme: the page's default theme takes it
+  const skin = useMemo(() => encodeSkinTokens(look.tokens), [look]);
 
   // the caller's handler may change on every render: read it from a ref, so
   // loading the page never runs again because of it
@@ -339,9 +343,9 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
   const shown = page?.versions.find((entry) => entry.n === version);
   // the place is read once per drawing: scrolling never reloads the frame
   const src = useMemo(
-    () => (previewPath ? previewSrc(previewPath, { annotate: annotating, bare: true, theme, y: pagePlace(pageId) }) : null),
+    () => (previewPath ? previewSrc(previewPath, { annotate: annotating, bare: true, theme, skin, y: pagePlace(pageId) }) : null),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [previewPath, annotating, theme, pageId, reloads],
+    [previewPath, annotating, theme, skin, pageId, reloads],
   );
   const title = page?.title ?? initialTitle;
   const proposed = page && shown && shown.state === "proposed" && page.currentVersion !== shown.n;

@@ -12,14 +12,13 @@
 // port, no window). Checks run one at a time.
 import { spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import { createRequire } from "node:module";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import type { Readable, Writable } from "node:stream";
 
 import { buildWidgetDocument, WIDGET_MAX_HEIGHT, WIDGET_MESSAGE, WIDGET_MIN_HEIGHT, WIDGET_SANDBOX } from "../src/lib/rich-blocks.ts";
-import { widgetFontFace } from "../src/lib/widget-kit.ts";
+import { geistFace } from "./geist-face.ts";
 import { auditWidgetPage, type AuditDefect } from "./widget-check-audit.ts";
 
 export const WIDGET_CHECK_MAX_ATTEMPTS = 3;
@@ -111,31 +110,8 @@ function playwrightShell(env: NodeJS.ProcessEnv, exists: (path: string) => boole
   return null;
 }
 
-let fontFace: string | undefined;
-/** The chat's own font, so text wraps where it wraps in the app: from the
- * package in development, from the built UI (SAGAX_STATIC_DIR, where Vite
- * emits geist-latin-wght-normal-<hash>.woff2) in the image and the desktop,
- * which carry no node_modules. */
-export function geistFace(staticDir?: string | null): string {
-  if (fontFace !== undefined) return fontFace;
-  fontFace = "";
-  const candidates: Array<() => string> = [
-    () => join(dirname(createRequire(import.meta.url).resolve("@fontsource-variable/geist")), "files", "geist-latin-wght-normal.woff2"),
-    () => {
-      const assets = join(staticDir ?? "", "assets");
-      const name = staticDir ? readdirSync(assets).find((file) => /^geist-latin-wght-normal.*\.woff2$/.test(file)) : undefined;
-      if (!name) throw new Error("no font");
-      return join(assets, name);
-    },
-  ];
-  for (const candidate of candidates) {
-    try {
-      fontFace = widgetFontFace(`data:font/woff2;base64,${readFileSync(candidate()).toString("base64")}`);
-      break;
-    } catch { /* next; none: the fallback stack measures close enough */ }
-  }
-  return fontFace;
-}
+// The chat's own font: server/geist-face.ts (shared with the published pages).
+export { geistFace };
 
 // ---------------------------------------------------------------------------
 // CDP over a pipe
