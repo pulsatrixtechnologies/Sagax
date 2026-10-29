@@ -41,9 +41,10 @@ final class CallRecognizer: CallTranscribing {
     /// Speech Recognition was allowed (set by `prepare`).
     private(set) var speechAuthorized = false
     var onPartial: (String) -> Void = { _ in }
-    /// A turn uploaded whole could not be heard (two failed uploads): the
-    /// call tells the person instead of dropping the turn silently.
-    var onUploadFailed: () -> Void = {}
+    /// A turn uploaded whole could not be heard (two failed uploads, or one
+    /// refusal every upload would get): the call tells the person why
+    /// instead of dropping the turn silently.
+    var onUploadFailed: (Error?) -> Void = { _ in }
     private var current: UtteranceRecognition?
     private var legacy: SFSpeechRecognizer?
     private var analyzerLocale: Locale?
@@ -153,7 +154,7 @@ final class CallRecognizer: CallTranscribing {
         case .legacy:
             return legacy.map { LegacyUtterance(recognizer: $0, contextualStrings: contextualStrings, onPartial: partial) }
         case .server:
-            return upload.map { UploadUtterance(upload: $0, failed: { [weak self] in self?.onUploadFailed() }) }
+            return upload.map { UploadUtterance(upload: $0, failed: { [weak self] error in self?.onUploadFailed(error) }) }
         case .scripted:
             return script.map { ScriptedUtterance(script: $0, onPartial: partial) }
         case .none:
@@ -338,26 +339,31 @@ private final class UploadUtterance: UtteranceRecognition {
     private var samples: [Float] = []
     private var cancelled = false
     private let upload: ([Float]) async throws -> String
-    private let failed: () -> Void
+    private let failed: (Error?) -> Void
 
-    init(upload: @escaping ([Float]) async throws -> String, failed: @escaping () -> Void) {
+    init(upload: @escaping ([Float]) async throws -> String, failed: @escaping (Error?) -> Void) {
         self.upload = upload
         self.failed = failed
     }
 
     func append(_ frame: [Float]) { samples += frame }
 
-    /// Tried twice (a network blip), then reported: never a silent empty turn.
+    /// Tried twice (a network blip), once when the server refused for good
+    /// (no key, no credit: a second try would get the same), then reported
+    /// with its reason: never a silent empty turn.
     func finish() async -> String {
+        var last: Error?
         for attempt in 0..<2 {
             if cancelled || Task.isCancelled { return "" }
             do {
                 return try await upload(samples)
             } catch {
+                last = error
+                if permanentVoiceFailure(error) { break }
                 if attempt == 0 { try? await Task.sleep(nanoseconds: 300_000_000) }
             }
         }
-        if !cancelled && !Task.isCancelled { failed() }
+        if !cancelled && !Task.isCancelled { failed(last) }
         return ""
     }
 

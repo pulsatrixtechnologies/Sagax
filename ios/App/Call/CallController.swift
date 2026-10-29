@@ -61,17 +61,24 @@ final class CallController: ObservableObject {
     /// Who hears and speaks on this call (xAI with whose key, or Apple on
     /// this phone when no voice provider is set up), shown on the call.
     @Published private(set) var provider: CallProvider = .apple
+    /// The key the voice runs on (the status's), for the provider line.
+    @Published private(set) var voiceKey: VoiceKeyInfo?
+    /// Why this call is on Apple's ears and voice although the person
+    /// would have xAI: the server could not be asked (its error), or no key
+    /// serves them (the refusal's line). Nil when Apple is the plain choice.
+    @Published private(set) var appleReason: String?
     /// The provider line the call shows.
     var providerLabel: String {
         switch provider {
-        case let .xai(via) where via == "speaker-key": String(localized: "Voice: xAI, with your key")
-        case let .xai(via) where via == "org-key": String(localized: "Voice: xAI, with the organization's key")
-        case .xai: String(localized: "Voice: xAI")
+        case let .xai(via): VoiceWords.providerLine(key: voiceKey, via: via)
+        case .apple where appleReason != nil: String(localized: "Voice: Apple on this iPhone (xAI could not be used)")
         case .apple: String(localized: "Voice: Apple on this iPhone (no voice provider set up)")
         }
     }
     /// The notice a voice failure put up: cleared once the voice is heard again.
     private var voiceNotice: String?
+    /// The key fallback already said on this call (said once).
+    private var keyFallbackSaid: String?
 
     @Published var voiceSettings: VoiceModeSettings {
         didSet {
@@ -178,13 +185,25 @@ final class CallController: ObservableObject {
         let demo = session.isDemo
         demoLanguage = demo ? DemoLaunch.language.rawValue : nil
 
-        // the server decides, every time (desktop VoiceModeCallButton)
+        // the server decides, every time (desktop VoiceModeCallButton):
+        // asked twice, and a server that cannot answer is said, never a
+        // silent fall to Apple's ears (2026-10-28)
         var status: VoiceModeStatus?
-        if !demo, case let .bot(bot) = chat { status = try? await client.voiceModeStatus(botId: bot.id) }
+        var statusError: String?
+        if !demo, case let .bot(bot) = chat { (status, statusError) = await Self.askVoiceStatus(client, botId: bot.id) }
         organization = status?.organization == true
         if case let .bot(bot) = chat, status?.organization == true, status?.available != true {
             unavailable = Self.refusal(status?.refusal, botName: bot.name)
             return
+        }
+        voiceKey = status?.key
+        appleReason = nil
+        if !demo, !isRoom, status?.available != true {
+            if let statusError {
+                appleReason = String(localized: "The server could not say whether xAI voice is available (\(statusError)).")
+            } else if let refusal = status?.refusal {
+                appleReason = VoiceWords.refusalLines(cause: refusal.cause, admin: refusal.admin == true).joined(separator: " ")
+            }
         }
         if !demo, isRoom, session.connection?.pairedWithServer == true, await roomOnOrganization(session: session, client: client) {
             unavailable = Unavailable(
@@ -214,6 +233,8 @@ final class CallController: ObservableObject {
         voicesError = nil
         startedAt = Date()
         callId = "call-" + UUID().uuidString.lowercased()
+        // Apple's ears and voice although xAI was wanted: said at the start
+        if let appleReason { notice = String(localized: "\(appleReason) This call hears and speaks with Apple on this iPhone.") }
         noteCallClockRunning()
         devicesStarted = false
         lastBusy = nil
@@ -246,11 +267,20 @@ final class CallController: ObservableObject {
             }
             let upload: (([Float]) async throws -> String)? = voiceModeAvailable && !isRoom ? { [weak self] samples in
                 guard let self, case let .bot(bot)? = self.target else { return "" }
-                return try await client.voiceModeTranscribe(botId: bot.id, wav: CallWav.encode(samples), language: self.voiceSettings.language, threadId: self.threadId)
+                let heard = try await client.voiceModeTranscription(botId: bot.id, wav: CallWav.encode(samples), language: self.voiceSettings.language, threadId: self.threadId)
+                self.noteKeyOutcome(heard.key)
+                return heard.text
             } : nil
-            recognizer.onUploadFailed = { [weak self] in
+            recognizer.onUploadFailed = { [weak self] error in
             guard let self, self.target != nil else { return }
-            self.notice = String(localized: "That did not get through. Could you say it again?")
+            // the reason and the key it is about (VoiceWords), never a
+            // silent "did not get through" when the server said why
+            if let failure = error as? VoiceFailure {
+                self.notice = VoiceWords.line(failure)
+                self.voiceNotice = self.notice
+            } else {
+                self.notice = String(localized: "That did not get through. Could you say it again?")
+            }
             Task { await self.engine?.say(String(localized: "That did not get through. Could you say it again?")) }
         }
         let ready = await recognizer.prepare(locales: callVoiceSettings.recognitionLocales(), upload: upload, onDeviceOnly: demo, preferServer: provider.recognizesOnServer)
@@ -309,8 +339,11 @@ final class CallController: ObservableObject {
         }
         player.onError = { [weak self] error in
             guard let self else { return }
-            // the server's reason when it gave one (xAI refused the key...)
-            if case let APIError.status(_, message) = error, let message, !message.isEmpty {
+            // the server's reason when it gave one, and the key it is about
+            // (xAI has no credits left for your voice key ···Wez8...)
+            if let failure = error as? VoiceFailure {
+                self.notice = VoiceWords.line(failure)
+            } else if case let APIError.status(_, message) = error, let message, !message.isEmpty {
                 self.notice = message
             } else {
                 self.notice = String(localized: "The voice didn't come through. The answer is in the chat.")
@@ -411,14 +444,19 @@ final class CallController: ObservableObject {
             }
         )
         // a voice that failed says why (xAI refused the key, no credits,
-        // busy): the server's own words, never a secret
+        // busy) and about which key: VoiceWords, never a secret
         routed.onFailure = { [weak self] error in
             guard let self, self.target != nil else { return }
-            if case let APIError.status(_, message) = error, let message, !message.isEmpty {
+            if let failure = error as? VoiceFailure {
+                self.notice = VoiceWords.line(failure)
+                self.voiceNotice = self.notice
+            } else if case let APIError.status(_, message) = error, let message, !message.isEmpty {
                 self.notice = message
                 self.voiceNotice = message
             }
         }
+        // the voice went on over another key: said once, never a silent switch
+        routed.onKeyOutcome = { [weak self] outcome in self?.noteKeyOutcome(outcome) }
         return routed
     }
 
@@ -1083,16 +1121,32 @@ final class CallController: ObservableObject {
     }
 
     private static func refusal(_ refusal: VoiceModeRefusal?, botName: String) -> Unavailable {
-        let cause = refusal?.cause ?? "no_credentials"
-        var lines: [String]
-        switch cause {
-        case "payer_disabled": lines = [String(localized: "Your account is disabled: voice mode can't run.")]
-        case "perspicax_unreachable": lines = [String(localized: "Perspicax could not be reached to read your xAI key. Try again in a moment.")]
-        default:
-            lines = [String(localized: "You don't have xAI access for voice mode: add your xAI key in Perspicax.")]
-            if refusal?.admin == true { lines.append(String(localized: "As an administrator, you can also add the organization's xAI key in Settings > Connections on the computer.")) }
-        }
+        let lines = VoiceWords.refusalLines(cause: refusal?.cause ?? "no_credentials", admin: refusal?.admin == true)
         return Unavailable(title: String(localized: "Voice mode unavailable"), lines: lines, keysUrl: refusal?.keysUrl.flatMap(URL.init(string:)))
+    }
+
+    /// The server's answer about voice mode, asked twice (a blip is not a
+    /// reason to fall to Apple's ears), else why it could not answer.
+    static func askVoiceStatus(_ client: CompanionClient, botId: String) async -> (VoiceModeStatus?, String?) {
+        var reason: String?
+        for attempt in 0..<2 {
+            do { return (try await client.voiceModeStatus(botId: botId), nil) } catch {
+                reason = error.localizedDescription
+                if attempt == 0 { try? await Task.sleep(nanoseconds: 300_000_000) }
+            }
+        }
+        return (nil, reason)
+    }
+
+    /// Which key served a request: the provider line follows, and a key
+    /// refused on the way is said once.
+    private func noteKeyOutcome(_ outcome: VoiceKeyOutcome) {
+        guard target != nil else { return }
+        if let used = outcome.used, used != voiceKey { voiceKey = used }
+        if let line = outcome.fallbackLine, line != keyFallbackSaid {
+            keyFallbackSaid = line
+            notice = line
+        }
     }
 
     /// What the bar says for a room's call (GroupCallView's status line).

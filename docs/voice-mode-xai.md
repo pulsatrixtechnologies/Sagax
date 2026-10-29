@@ -766,7 +766,20 @@ xAI's refusal is never hidden behind "didn't come through" (2026-10-28):
   desktop's provider for that person; Apple's recognizer and voice are only
   the fallback when no voice provider is set up (a group call, the demo, a
   server without voice mode). The call's transcript header says which one
-  ("Voice: xAI, with your key").
+  and on which key ("Voice: xAI with your voice key ···Wez8",
+  `VoiceWords.providerLine`). Since 2026-10-28 the status is asked twice
+  and a server that cannot answer, or a refusal on a personal server, is
+  said at the start of the call ("... This call hears and speaks with Apple
+  on this iPhone"), never a silent fall to Apple's ears; every voice route's
+  refusal is decoded (`VoiceFailure`: the kind, the key, every key tried)
+  and said with the key and what to do (`VoiceWords.line`); an uploaded
+  turn the server refused for good is not retried and its reason is shown;
+  the composer's dictation hears through xAI whenever a key serves
+  (`SpeechDictation` `.xai`, the clip sent when it stops, "Transcribing
+  with xAI…"), Apple on the phone being the announced fallback; a reply
+  read aloud goes through voice mode's xAI voice (`MessageSpeaker`,
+  `/voice/prepare` and `/voice/speak`), then the computer's engine, then
+  the phone's voice with the reason under the composer.
 - Composer dictation (the grey mic, `src/lib/composer-dictation.ts`) hears
   through xAI (POST /voice/transcribe) whenever a key serves the person, on
   every platform alike; the Mac's own recognizer is the fallback only when

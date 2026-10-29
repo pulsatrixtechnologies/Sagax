@@ -200,7 +200,7 @@ extension ChatView {
                         // Partial transcripts rebuild from a frozen base;
                         // prevent competing edits without dimming the text.
                         .allowsHitTesting(
-                            !dictation.isListening && !dictation.isStarting
+                            !dictation.isListening && !dictation.isStarting && !dictation.isProcessing
                                 && !preparingAttachments && !sendingMessage
                         )
                         // Not in an animated transaction: a keystroke must
@@ -234,7 +234,7 @@ extension ChatView {
                             .padding(.trailing, 6.3)
                             .accessibilityElement()
                             .accessibilityAddTraits(.isButton)
-                            .accessibilityLabel(dictation.isListening ? "Stop dictation" : "Start dictation")
+                            .accessibilityLabel(dictation.isListening ? "Stop dictation" : dictation.appleReason != nil ? "Start dictation (Apple on this iPhone, no xAI key)" : "Start dictation")
                             .accessibilityHint(Text("Touch and hold to record a voice note."))
                             .accessibilityAction { if !micDisabled { tapMic() } }
                             .accessibilityAction(named: Text("Record a voice note")) {
@@ -288,7 +288,10 @@ extension ChatView {
 
     func tapMic() {
         composerFocused = false
-        dictation.toggle(capturing: draft)
+        // xAI's ears whenever a key serves (the session asks the server,
+        // a minute's cache), else Apple on this iPhone with the reason shown
+        let chat = current
+        dictation.toggle(capturing: draft) { await session.dictationEars(for: chat) }
     }
 
     func startVoiceNote(mode: VoiceNoteRecorder.Mode) {
@@ -388,6 +391,7 @@ extension ChatView {
     var composerPrompt: String {
         if sendingMessage { return String(localized: "Sending…") }
         if dictation.isListening { return String(localized: "Listening…") }
+        if dictation.isProcessing { return String(localized: "Transcribing with xAI…") }
         return String(localized: "Message \(current.name)")
     }
 }

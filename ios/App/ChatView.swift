@@ -138,6 +138,8 @@ struct ChatView: View {
     @State var openAttempt = 0
     @FocusState var composerFocused: Bool
     @StateObject var dictation = SpeechDictation()
+    /// A reply read aloud (its notice when another voice than xAI's reads it).
+    @ObservedObject var speaker = MessageSpeaker.shared
     /// The composer's voice note (hold the mic, or + > Record a voice note).
     @StateObject var voiceNote = VoiceNoteRecorder()
     /// When the mic was pressed, and the wait before a press becomes a hold.

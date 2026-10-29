@@ -54,7 +54,7 @@ struct BotConversationLineView: View {
                     .accessibilityLabel(Text("Preview of the conversation with \(row.otherName)"))
                 Button {
                     if speaking { speaker.stop() }
-                    else { speaker.speak(preview, messageId: previewId, voiceId: selfBot?.voice, session: session) }
+                    else { speaker.speak(preview, messageId: previewId, voiceId: selfBot?.voice, botId: selfBot?.id, session: session) }
                 } label: {
                     Text(speaking
                         ? "Stop the preview of \(row.otherName)"

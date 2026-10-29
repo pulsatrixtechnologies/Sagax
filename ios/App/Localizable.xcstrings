@@ -1,6 +1,204 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "your voice key%@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "your voice key%@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "ta clé vocale%@" } }
+      }
+    },
+    "your xAI key in Perspicax%@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "your xAI key in Perspicax%@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "ta clé xAI dans Perspicax%@" } }
+      }
+    },
+    "the organization's xAI key%@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "the organization's xAI key%@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "la clé xAI de l'organisation%@" } }
+      }
+    },
+    "this server's xAI key%@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "this server's xAI key%@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "la clé xAI de ce serveur%@" } }
+      }
+    },
+    "Add credits to that xAI account, or change the key in Settings > Models and voice > My voice keys on the computer.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Add credits to that xAI account, or change the key in Settings > Models and voice > My voice keys on the computer." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajoute des crédits à ce compte xAI, ou change la clé dans Réglages > Modèles et voix > Mes clés vocales sur l'ordinateur." } }
+      }
+    },
+    "Add credits to that xAI account, or change the key in Perspicax (Providers > Grok).": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Add credits to that xAI account, or change the key in Perspicax (Providers > Grok)." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajoute des crédits à ce compte xAI, ou change la clé dans Perspicax (Fournisseurs > Grok)." } }
+      }
+    },
+    "Ask an admin, or add your own xAI key in Settings > Models and voice > My voice keys on the computer.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Ask an admin, or add your own xAI key in Settings > Models and voice > My voice keys on the computer." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Demande à un admin, ou ajoute ta propre clé xAI dans Réglages > Modèles et voix > Mes clés vocales sur l'ordinateur." } }
+      }
+    },
+    "Add credits to that xAI account, or change the key in Settings > Models and voice on the computer.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Add credits to that xAI account, or change the key in Settings > Models and voice on the computer." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajoute des crédits à ce compte xAI, ou change la clé dans Réglages > Modèles et voix sur l'ordinateur." } }
+      }
+    },
+    "Your organization has not given you its xAI voice. Add your own xAI key in Perspicax, or ask an admin.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Your organization has not given you its xAI voice. Add your own xAI key in Perspicax, or ask an admin." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ton organisation ne t'a pas donné sa voix xAI. Ajoute ta propre clé xAI dans Perspicax, ou demande à un admin." } }
+      }
+    },
+    "The spend limit is reached: the voice stops here. The answers stay in the chat.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The spend limit is reached: the voice stops here. The answers stay in the chat." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La limite de dépenses est atteinte : la voix s'arrête ici. Les réponses restent dans le chat." } }
+      }
+    },
+    "xAI has no credits left for %@. %@ The answers stay in the chat.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "xAI has no credits left for %@. %@ The answers stay in the chat." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "xAI n'a plus de crédits pour %@. %@ Les réponses restent dans le chat." } }
+      }
+    },
+    "The xAI account has no voice credits left, or the spend limit is reached. The answers stay in the chat.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The xAI account has no voice credits left, or the spend limit is reached. The answers stay in the chat." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le compte xAI n'a plus de crédits pour la voix, ou la limite de dépenses est atteinte. Les réponses restent dans le chat." } }
+      }
+    },
+    "xAI rejected %@: invalid, revoked, or without voice permission. %@ The answers stay in the chat.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "xAI rejected %@: invalid, revoked, or without voice permission. %@ The answers stay in the chat." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "xAI a refusé %@ : invalide, révoquée ou sans permission pour la voix. %@ Les réponses restent dans le chat." } }
+      }
+    },
+    "xAI refused the voice key. Check your xAI key in Settings > Models and voice on the computer.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "xAI refused the voice key. Check your xAI key in Settings > Models and voice on the computer." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "xAI a refusé la clé vocale. Vérifie ta clé xAI dans Réglages > Modèles et voix sur l'ordinateur." } }
+      }
+    },
+    "xAI is rate-limiting %@. It comes back by itself; the answers stay in the chat.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "xAI is rate-limiting %@. It comes back by itself; the answers stay in the chat." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "xAI limite le débit de %@. Ça revient tout seul; les réponses restent dans le chat." } }
+      }
+    },
+    "xAI voice is busy right now. It comes back by itself; the answers stay in the chat.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "xAI voice is busy right now. It comes back by itself; the answers stay in the chat." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La voix xAI est occupée en ce moment. Ça revient tout seul; les réponses restent dans le chat." } }
+      }
+    },
+    "xAI voice is not answering right now. The answers stay in the chat.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "xAI voice is not answering right now. The answers stay in the chat." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La voix xAI ne répond pas en ce moment. Les réponses restent dans le chat." } }
+      }
+    },
+    "xAI no longer has the chosen voice. Pick another one in the call settings.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "xAI no longer has the chosen voice. Pick another one in the call settings." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "xAI n'a plus la voix choisie. Choisis-en une autre dans les réglages de l'appel." } }
+      }
+    },
+    "no credits": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "no credits" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "pas de crédits" } }
+      }
+    },
+    "key rejected": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "key rejected" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "clé refusée" } }
+      }
+    },
+    "%@ was refused (%@). The voice now runs on %@.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ was refused (%@). The voice now runs on %@." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%@ a été refusée (%@). La voix passe maintenant par %@." } }
+      }
+    },
+    "Voice: xAI with %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Voice: xAI with %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Voix : xAI avec %@" } }
+      }
+    },
+    "Voice: Apple on this iPhone (xAI could not be used)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Voice: Apple on this iPhone (xAI could not be used)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Voix : Apple sur cet iPhone (xAI n'a pas pu servir)" } }
+      }
+    },
+    "The server could not say whether xAI voice is available (%@).": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The server could not say whether xAI voice is available (%@)." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le serveur n'a pas pu dire si la voix xAI est disponible (%@)." } }
+      }
+    },
+    "%@ This call hears and speaks with Apple on this iPhone.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ This call hears and speaks with Apple on this iPhone." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%@ Cet appel entend et parle avec Apple sur cet iPhone." } }
+      }
+    },
+    "Read with this iPhone's voice: no voice is set up on the computer for this bot.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Read with this iPhone's voice: no voice is set up on the computer for this bot." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lu avec la voix de cet iPhone : aucune voix n'est configurée sur l'ordinateur pour ce bot." } }
+      }
+    },
+    "%@ Read with another voice.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ Read with another voice." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%@ Lu avec une autre voix." } }
+      }
+    },
+    "xAI could not read this reply (%@). Read with another voice.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "xAI could not read this reply (%@). Read with another voice." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "xAI n'a pas pu lire cette réponse (%@). Lu avec une autre voix." } }
+      }
+    },
+    "xAI could not hear that (%@). Try again.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "xAI could not hear that (%@). Try again." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "xAI n'a pas pu entendre ça (%@). Réessaie." } }
+      }
+    },
+    "The server could not say whether xAI voice is available%@.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The server could not say whether xAI voice is available%@." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le serveur n'a pas pu dire si la voix xAI est disponible%@." } }
+      }
+    },
+    "%@ Dictation hears with Apple on this iPhone.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%@ Dictation hears with Apple on this iPhone." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%@ La dictée entend avec Apple sur cet iPhone." } }
+      }
+    },
+    "Transcribing with xAI…": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Transcribing with xAI…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Transcription avec xAI…" } }
+      }
+    },
+    "Start dictation (Apple on this iPhone, no xAI key)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Start dictation (Apple on this iPhone, no xAI key)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lancer la dictée (Apple sur cet iPhone, sans clé xAI)" } }
+      }
+    },
     "From the xAI Bot Marketplace": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "From the xAI Bot Marketplace" } },
