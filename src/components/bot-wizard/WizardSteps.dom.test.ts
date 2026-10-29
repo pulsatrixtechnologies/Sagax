@@ -58,7 +58,7 @@ describe("wizard steps", () => {
     expect(container.textContent).not.toContain("botPanel.identity.blurbHelp");
     await act(async () => { container.querySelector<HTMLButtonElement>("[data-wizard-role-select] [data-pill-select]")!.click(); });
     const options = [...document.querySelectorAll<HTMLElement>('[role="option"]')];
-    expect(options).toHaveLength(7);
+    expect(options).toHaveLength(8);
     await act(async () => { options.find((option) => option.textContent?.includes("Coding partner"))!.click(); });
     expect(patch).toHaveBeenCalledWith({ roleId: "coder" });
     expect(fixture.patchBot).toHaveBeenCalledWith(expect.objectContaining({ title: "Coding partner", soul: expect.stringContaining("careful engineer") }));

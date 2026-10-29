@@ -47,7 +47,7 @@ describe("chat column and bot panel", () => {
       expect(source).toMatch(/"content-topbar[\s"]/);
       expect(source).toMatch(/className="content-card-body /);
     }
-    for (const source of [botPanel, personPanel]) expect(source).toMatch(/className="app-docked-panel /);
+    for (const source of [botPanel, personPanel]) expect(source).toMatch(/"app-docked-panel /);
   });
 
   it("share one header height in every skin, outranking h-12 and min-h-[52px]", () => {
@@ -66,7 +66,7 @@ describe("chat column and bot panel", () => {
   it("let the panel give way to the chat column's minimum on a desktop row", () => {
     const desktop = styles.slice(styles.indexOf("@media (min-width: 1024px) {\n  .app-docked-panel {"));
     expect(rule(desktop, "  .app-docked-panel")).toContain("flex-shrink: 1;");
-    expect(rule(desktop, "  .app-content-frame:has(~ .app-docked-panel)")).toContain("min-width: var(--app-chat-min-width);");
+    expect(rule(desktop, "  .app-content-frame:has(~ [data-split-panel-slot] > .app-docked-panel)")).toContain("min-width: var(--app-chat-min-width);");
   });
 });
 
