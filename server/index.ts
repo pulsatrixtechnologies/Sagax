@@ -778,7 +778,7 @@ import { teamMemoryReviewRefusal } from "./team-memory-review.ts";
 import { teamMemoryCardSettled, teamMemoryLateAnswer } from "./team-memory-cards.ts";
 import { isTeamMemorySharing, storedTeamMemorySharing, teamMemoryCardReachesMember, teamMemorySharingOf } from "../shared/team-memory-sharing.ts";
 import { readBotActivity, readToolRuns } from "./activity.ts";
-import { COMPACT_VOLATILE_SECTIONS, KNOWN_USE_CALLS, compactVolatileOrder, compactMemoryDir, compactPins, parseLocalPromptMode, toolUsage, usesCompactPrompt, usesStablePrompt, type ToolUse } from "./compact-prompt.ts";
+import { COMPACT_VOLATILE_SECTIONS, KNOWN_USE_CALLS, compactBotLast, compactVolatileOrder, compactMemoryDir, compactPins, parseLocalPromptMode, toolUsage, usesCompactPrompt, usesStablePrompt, type ToolUse } from "./compact-prompt.ts";
 import { buildJournal, journalWire, replayable, testRuleOnJournal, type JournalRow } from "./action-journal.ts";
 import { JOURNAL_SELF, RULE_TEST_DAYS, type JournalPayload, type RuleTestDraft, type RuleTestResult } from "../shared/action-journal.ts";
 import { OutboundCounts } from "./outbound-counts.ts";
@@ -22747,7 +22747,9 @@ async function startTurn(
           ...(stablePrompt ? COMPACT_VOLATILE_SECTIONS : []),
         ])
         : undefined);
-      const prompt = stablePrompt ? compactVolatileOrder(builtPrompt) : builtPrompt;
+      const ordered = stablePrompt ? compactVolatileOrder(builtPrompt) : builtPrompt;
+      // #1276: on a local model a new bot shares the cache of the others
+      const prompt = compactPrompt && instance.driverKind === "piAgent" ? compactBotLast(ordered) : ordered;
       turnPromptBytes.set(threadId, { stable: Buffer.byteLength(prompt.stable), volatile: Buffer.byteLength(prompt.volatile) });
       const catalogBytes = toolDefinitionBytes(integrations.agents?.env);
       const buckets = measureContextBuckets({
