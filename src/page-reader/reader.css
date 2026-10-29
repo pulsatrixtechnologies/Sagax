@@ -205,3 +205,11 @@ body.sr-panel-open iframe { margin-right: 380px; width: calc(100% - 380px) !impo
 .sr-suggestion-old { margin: 0 0 4px; color: var(--sr-danger); text-decoration: line-through; white-space: pre-wrap; overflow-wrap: anywhere; }
 .sr-suggestion-new { margin: 0 0 8px; color: #1a7f37; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (prefers-color-scheme: dark) { .sr-suggestion-new { color: #56d364; } }
+
+/* Page state, the page's person only (ReaderState.tsx, 2026-10-29) */
+.sr-state-hint { margin: -6px 0 12px; }
+.sr-state-list { max-height: 280px; overflow-y: auto; }
+.sr-state-list code { font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.sr-state-confirm { display: flex; flex-direction: column; gap: 8px; }
+.sr-state-confirm p { margin: 0; }
+.sr-state-actions { display: flex; justify-content: flex-end; gap: 8px; }

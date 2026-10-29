@@ -1296,7 +1296,7 @@ describe("a page's shared state (#1544)", () => {
     // a reader who is not signed in reads it (refresh, another person)
     const anon = await readState(pages, path, null);
     expect(anon.status).toBe(200);
-    expect(anon.body.entries["ticket:4242"]).toEqual({ value: { taken: true }, name: "Reader", at: now });
+    expect(anon.body.entries["ticket:4242"]).toEqual({ value: { taken: true }, name: "Reader", at: now, who: expect.stringMatching(/^[\w-]{12}$/) });
     expect(JSON.stringify(anon.body)).not.toContain("pr_reader");
     // null clears
     await call(handler, session("pr_reader"), "PUT", `/api/pages/${id}/state`, { key: "ticket:4242", value: null });
@@ -1452,5 +1452,165 @@ describe("a reading link in its person's look", () => {
     expect(wrapper.body).not.toContain("--sb-bg");
     const frame = await hit(options(pages, OWNER), frameSrc(wrapper.body), { "sec-fetch-dest": "iframe" });
     expect(frame.body).not.toContain("#fbf7ee");
+  });
+});
+
+describe("who writes a page's state: the page's declaration within its sharing (2026-10-29)", () => {
+  const OWNER_ID = "pr_owner";
+  const DECLARED = `<!doctype html><html><body><h1>Vote</h1><script type="application/sagax-state+json">{"vote:*":"anyone","note":{"write":"signed_in"},"decision":"editors","budget":"owner"}</script></body></html>`;
+  const BROWSER = "b".repeat(22);
+  function page(pages: PublishedPages, access: "private" | "org" | "link", content = DECLARED) {
+    const { page: proposal } = proposed(pages, OWNER_ID, { content });
+    pages.publish(proposal.id, { version: 1, access, expiresAt: null });
+    return { id: proposal.id, path: pages.path(pages.get(proposal.id)!.linkId!) };
+  }
+  function stateRoutes(pages: PublishedPages) {
+    return createPublishedPageRoutes({
+      pages,
+      owner: (auth) => auth.kind === "session" ? auth.session.principalId : undefined,
+      isPerson: (auth) => auth.kind === "session" && Boolean(auth.session.principalId),
+      origin: () => "https://sagax.example.com",
+      reachable: () => true,
+      now: () => now,
+      reader: (auth) => auth.kind === "session" && auth.session.principalId ? { principalId: auth.session.principalId, computerOwner: false } : null,
+      names: (ids) => Object.fromEntries(ids.map((id) => [id, id === "pr_reader" ? "Reader" : "Someone"])),
+    });
+  }
+  /** A write on the public link, as the wrapper of a reader not signed in sends it. */
+  async function anonWrite(pages: PublishedPages, path: string, body: unknown, headers: Record<string, string> = {}, changed?: string[]) {
+    const statePath = path.replace("/pages/view/", "/pages/state/");
+    const { req, res, done } = request(statePath, "PUT", { host: "sagax.example.com", "accept-language": "fr-CA", "content-type": "application/json", "x-sagax-reader": BROWSER, ...headers });
+    process.nextTick(() => {
+      req.push(JSON.stringify(body));
+      req.push(null);
+    });
+    const opts: PublicPageOptions = { ...options(pages, null), ...(changed ? { stateChanged: (id: string) => { changed.push(id); } } : {}) };
+    expect(handlePublishedPagePublic(opts, req, res, statePath, "PUT")).toBe(true);
+    const answer = await done;
+    return { status: answer.status, body: JSON.parse(answer.body) as Record<string, any> };
+  }
+  const readState = async (pages: PublishedPages, path: string, viewer: PageViewer, headers: Record<string, string> = {}) => {
+    const answer = await hit(options(pages, viewer), path.replace("/pages/view/", "/pages/state/"), headers);
+    return { status: answer.status, body: JSON.parse(answer.body) as Record<string, any> };
+  };
+  const put = (handler: ReturnType<typeof stateRoutes>, who: string, id: string, key: string, value: unknown) =>
+    call(handler, session(who), "PUT", `/api/pages/${id}/state`, { key, value });
+
+  it("anyone: a reader not signed in votes on a public link, written as Anonyme with a hash of the browser, never more", async () => {
+    const { pages } = store();
+    const { id, path } = page(pages, "link");
+    const changed: string[] = [];
+    const first = await readState(pages, path, null, { "x-sagax-reader": BROWSER });
+    expect(first.body.access).toEqual({ role: "anon", rules: { "vote:*": "anyone", note: "signed_in", decision: "editors", budget: "owner" }, locked: [], publicLink: true });
+    const me = first.body.me as string;
+    expect(me).toMatch(/^[\w-]{12}$/);
+    const vote = await anonWrite(pages, path, { key: `vote:${me}`, value: "yes" }, {}, changed);
+    expect(vote.status).toBe(200);
+    expect(vote.body.entries[`vote:${me}`]).toMatchObject({ value: "yes", name: "Anonyme", who: me });
+    expect(changed).toEqual([id]);
+    // stored as a hash of the browser's own id, nothing else
+    const by = pages.state(id)[`vote:${me}`]!.by;
+    expect(by).toMatch(/^anon:[\w-]{16}$/);
+    expect(by).not.toContain(BROWSER);
+    expect(JSON.stringify(vote.body)).not.toContain(by);
+    // another reader sees it, named Anonyme
+    expect((await readState(pages, path, { principalId: "pr_reader", computerOwner: false })).body.entries[`vote:${me}`].name).toBe("Anonyme");
+    // every other key keeps its level: not signed in is refused
+    for (const key of ["note", "decision", "budget", "undeclared"]) {
+      expect(await anonWrite(pages, path, { key, value: 1 })).toMatchObject({ status: 403, body: { code: "sign_in" } });
+    }
+  });
+
+  it("anyone is refused to a reader not signed in when the link is not public", async () => {
+    const { pages } = store();
+    for (const access of ["org", "private"] as const) {
+      const { path } = page(pages, access);
+      expect((await anonWrite(pages, path, { key: "vote:x", value: "yes" })).status).toBe(404);
+      expect((await readState(pages, path, null)).status).toBe(404);
+    }
+    // a public link the organization turned off reads as "org": refused too
+    const { path } = page(pages, "link");
+    pages.setPolicy({ linkSharing: false });
+    expect((await anonWrite(pages, path, { key: "vote:x", value: "yes" })).status).toBe(404);
+    pages.setPolicy({ linkSharing: true });
+    expect((await anonWrite(pages, path, { key: "vote:x", value: "yes" })).status).toBe(200);
+  });
+
+  it("anyone on an organization page: anyone signed in who may read it writes", async () => {
+    const { pages } = store();
+    const { id } = page(pages, "org");
+    expect((await put(stateRoutes(pages), "pr_reader", id, "vote:r", "no")).status).toBe(200);
+  });
+
+  it("signed_in, the default: a signed-in reader writes, a reader not signed in does not", async () => {
+    const { pages } = store();
+    const { id, path } = page(pages, "link", HTML);
+    const handler = stateRoutes(pages);
+    expect((await put(handler, "pr_reader", id, "anything", 1)).status).toBe(200);
+    expect((await put(handler, "pr_reader", id, "note", 1)).status).toBe(200);
+    expect(await anonWrite(pages, path, { key: "anything", value: 2 })).toMatchObject({ status: 403, body: { code: "sign_in" } });
+    expect(pages.state(id).anything!.value).toBe(1);
+  });
+
+  it("editors and owner: only the page's person, never another reader", async () => {
+    const { pages } = store();
+    const { id } = page(pages, "org");
+    const handler = stateRoutes(pages);
+    for (const key of ["decision", "budget"]) {
+      expect(await put(handler, "pr_reader", id, key, "go")).toMatchObject({ status: 403, body: { code: "not_allowed" } });
+      expect((await put(handler, OWNER_ID, id, key, "go")).status).toBe(200);
+    }
+    const answer = await put(handler, OWNER_ID, id, "decision", "done");
+    expect(answer.body!.access.role).toBe("owner");
+    expect(answer.body!.entries.decision).toMatchObject({ value: "done", name: "Someone" });
+  });
+
+  it("a declaration in the browser is not one: the server reads only the published version", async () => {
+    const { pages } = store();
+    const { id, path } = page(pages, "link", HTML);
+    // the reader cannot make a key "anyone" by sending rules along
+    expect((await anonWrite(pages, path, { key: "vote:x", value: 1, rules: { "vote:*": "anyone" } })).status).toBe(403);
+    expect(pages.stateRules(id)).toEqual({});
+  });
+
+  it("writes not signed in: the browser's id, this host only, 1 KB, 20 a minute, 100 keys", async () => {
+    const { pages } = store();
+    const { id, path } = page(pages, "link");
+    expect((await anonWrite(pages, path, { key: "vote:a", value: 1 }, { "x-sagax-reader": "short" })).status).toBe(400);
+    expect((await anonWrite(pages, path, { key: "vote:a", value: 1 }, { "sec-fetch-site": "cross-site" })).status).toBe(403);
+    expect((await anonWrite(pages, path, { key: "vote:a", value: 1 }, { origin: "https://elsewhere.example" })).status).toBe(403);
+    expect((await anonWrite(pages, path, { key: "vote:a", value: "x".repeat(1100) })).body.code).toBe("bad_value");
+    for (let i = 0; i < 20; i += 1) expect((await anonWrite(pages, path, { key: `vote:${i % 4}`, value: i })).status).toBe(200);
+    expect(await anonWrite(pages, path, { key: "vote:a", value: 1 })).toMatchObject({ status: 429, body: { code: "too_many_writes" } });
+    // the cap on keys set without signing in, whatever the browser
+    now += 61_000;
+    for (let i = 0; i < 96; i += 1) {
+      const answer = await anonWrite(pages, path, { key: `vote:k${i}`, value: 1 }, { "x-sagax-reader": `reader-${String(i).padStart(12, "0")}` });
+      expect(answer.status).toBe(200);
+    }
+    expect(Object.keys(pages.state(id))).toHaveLength(100);
+    expect((await anonWrite(pages, path, { key: "vote:one-more", value: 1 }, { "x-sagax-reader": "c".repeat(20) })).body.code).toBe("too_many_keys");
+    // a person signed in still writes a new key
+    expect((await put(stateRoutes(pages), "pr_reader", id, "vote:person", 1)).status).toBe(200);
+  });
+
+  it("the page's person makes a key read-only and clears the state; nobody else can", async () => {
+    const { pages } = store();
+    const { id, path } = page(pages, "link");
+    const handler = stateRoutes(pages);
+    expect((await anonWrite(pages, path, { key: "vote:a", value: "yes" })).status).toBe(200);
+    expect((await call(handler, session("pr_reader"), "PUT", `/api/pages/${id}/state/lock`, { key: "vote:a", locked: true })).status).toBe(403);
+    expect((await call(handler, session("pr_reader"), "DELETE", `/api/pages/${id}/state`)).status).toBe(403);
+    const locked = await call(handler, session(OWNER_ID), "PUT", `/api/pages/${id}/state/lock`, { key: "vote:a", locked: true });
+    expect(locked.body!.access.locked).toEqual(["vote:a"]);
+    expect(await anonWrite(pages, path, { key: "vote:a", value: "no" })).toMatchObject({ status: 403, body: { code: "locked" } });
+    expect(await put(handler, OWNER_ID, id, "vote:a", "no")).toMatchObject({ status: 403, body: { code: "locked" } });
+    expect((await readState(pages, path, null)).body.access.locked).toEqual(["vote:a"]);
+    await call(handler, session(OWNER_ID), "PUT", `/api/pages/${id}/state/lock`, { key: "vote:a", locked: false });
+    expect((await anonWrite(pages, path, { key: "vote:a", value: "no" })).status).toBe(200);
+    const cleared = await call(handler, session(OWNER_ID), "DELETE", `/api/pages/${id}/state`);
+    expect(cleared.status).toBe(200);
+    expect(cleared.body!.entries).toEqual({});
+    expect(pages.state(id)).toEqual({});
   });
 });

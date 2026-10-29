@@ -69,11 +69,20 @@
 //   DELETE /api/pages/:id/threads/:tid      its author or the page's person
 //   DELETE /api/pages/:id/threads/:tid/replies/:rid   the same
 // Shared state (#1544, shared/page-state.ts): the page's script sets values
-// through window.sagax.page; its wrapper reads and writes them here:
+// through window.sagax.page; its wrapper reads and writes them here. Who
+// writes a key is what the page declares (its sagax-state block), within its
+// sharing (2026-10-29); the default is anyone signed in who may read it:
 //   GET    /pages/state/<token>             (before the gate) anyone who may read
-//          the page: { entries: { key: { value, name, at } } }
+//          the page: { entries: { key: { value, name, at, who } }, access, me }
+//   PUT    /pages/state/<token>             (before the gate) { key, value } a
+//          reader not signed in, on a page shared with anyone who has the link,
+//          only the keys it declares "anyone"; tighter limits, written as
+//          Anonyme with a hash of the browser's own random id
 //   PUT    /api/pages/:id/state             { key, value } anyone signed in who
-//          may annotate it (value null clears the key)
+//          may annotate it, as the key's level allows (value null clears it)
+//   DELETE /api/pages/:id/state             the page's person clears it all
+//   PUT    /api/pages/:id/state/lock        { key, locked } the page's person
+//          makes one key read-only, or writable again
 //   GET    /api/pages/:id/live             (2026-10-28) an event stream: who has
 //          the page open (presence) and "threads changed" (server/page-live.ts)
 import { randomBytes } from "node:crypto";
@@ -85,7 +94,7 @@ import type { PageError, PageRecord, PageVersionRecord, PublishedPages } from ".
 import { commentAnswerDocument, escapeHtml, pageDocument, parseReaderAssets, splitSlides, wrapperDocument, type ReaderAssets } from "../published-pages-render.ts";
 import type { ReaderBoot } from "../../shared/page-reader.ts";
 import type { PageLive } from "../page-live.ts";
-import { STATE_PREFIX, validStateKey, type PageStateEntry, type PageStateView } from "../../shared/page-state.ts";
+import { anonymousBy, anonymousName, READER_ID, READER_ID_HEADER, STATE_LIMITS, STATE_PREFIX, stateLevelFor, stateMayWrite, validStateKey, type PageStateEntry, type PageStateView, type StateAccess, type StateRole } from "../../shared/page-state.ts";
 import { applySuggestion, parsePageQuote, parseSuggestion, parseThreadText, suggestable, type PageThread, type PageThreadsAnswer } from "../../shared/page-threads.ts";
 import { geistFace } from "../geist-face.ts";
 import { decodeSkinTokens, encodeSkinTokens } from "../../src/lib/page-theme.ts";
@@ -195,6 +204,9 @@ export interface PublicPageOptions {
   /** The bot that published the page, as the bar draws its mascot
    * (2026-10-29): its color and its character; null when it is gone. */
   bot?(page: PageRecord): { color: string; look?: unknown } | null;
+  /** A reader not signed in changed the page's shared state: every open
+   * bar reads it again (PageLive.stateChanged). */
+  stateChanged?(pageId: string): void;
 }
 
 /** A bot color as #rrggbb, for the bar's dot and the bot accent. Pure. */
@@ -514,26 +526,156 @@ function serveReaderComment(options: PublicPageOptions, req: IncomingMessage, re
 }
 
 /** What a reader gets of a page's state: values, the name of who set each
- * and when, never a principal id. Pure. */
-export function stateView(state: Record<string, PageStateEntry>, nameOf: (by: string) => string): Record<string, PageStateView> {
-  return Object.fromEntries(Object.entries(state).map(([key, entry]) => [key, { value: entry.value, name: nameOf(entry.by), at: entry.at }]));
+ * and when, and a handle of this page only (`handleOf`), never a principal
+ * id. Pure. */
+export function stateView(state: Record<string, PageStateEntry>, nameOf: (by: string) => string, handleOf?: (by: string) => string): Record<string, PageStateView> {
+  return Object.fromEntries(Object.entries(state).map(([key, entry]) => [key, { value: entry.value, name: nameOf(entry.by), at: entry.at, ...(handleOf ? { who: handleOf(entry.by) } : {}) }]));
 }
 
+/** Whether a page is open to readers who are not signed in: shared with
+ * anyone who has the link, and the organization allows public links. Pure. */
+export function publicLinkPage(page: Pick<PageRecord, "access">, policy: PagesPolicy): boolean {
+  return page.access === "link" && policy.linkSharing !== false;
+}
+
+/** The whole state answer: values, who may write what, and the reader's
+ * own handle (`me`, when known). */
+function stateAnswer(pages: PublishedPages, page: PageRecord, input: { role: StateRole; me?: string; nameOf(by: string): string }): { entries: Record<string, PageStateView>; access: StateAccess; me?: string } {
+  return {
+    entries: stateView(pages.state(page.id), input.nameOf, (by) => pages.readerHandle(page.id, by)),
+    access: { role: input.role, rules: pages.stateRules(page.id), locked: pages.stateLocks(page.id), publicLink: publicLinkPage(page, pages.policy()) },
+    ...(input.me ? { me: input.me } : {}),
+  };
+}
+
+/** A browser's own random id, when its wrapper sent a valid one. */
+function readerIdOf(req: IncomingMessage): string | null {
+  const raw = req.headers[READER_ID_HEADER];
+  return typeof raw === "string" && READER_ID.test(raw) ? raw : null;
+}
+
+const STATE_HEADERS = { "content-type": "application/json", "cache-control": "no-store", "content-security-policy": "default-src 'none'; frame-ancestors 'none'" };
+
 /** The page's shared state for whoever may read it (#1544): the same checks
- * and the same 404 as the wrapper. */
+ * and the same 404 as the wrapper; with who may write what (2026-10-29). */
 function serveState(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, path: string, method: string): true {
   const token = tokenAfter(path, STATE_PREFIX);
   const opened = token && options.pages ? options.pages.open(token) : null;
   const viewer = options.viewer(req);
   if (!opened || !ownerActive(options, opened.page) || !readableBy(options, opened.page, viewer)) {
-    res.writeHead(404, { "content-type": "application/json", "content-security-policy": "default-src 'none'; frame-ancestors 'none'" });
+    res.writeHead(404, STATE_HEADERS);
     res.end(method === "HEAD" ? undefined : JSON.stringify({ error: "This page does not exist.", code: "not_found" }));
     return true;
   }
-  const owner = options.names(opened.page).personName;
-  const nameOf = (by: string) => (by === "owner" || (opened.page.ownerId && by.toLowerCase() === opened.page.ownerId.toLowerCase()) ? owner : options.personName?.(by) ?? "");
-  res.writeHead(200, { "content-type": "application/json", "content-security-policy": "default-src 'none'; frame-ancestors 'none'" });
-  res.end(method === "HEAD" ? undefined : JSON.stringify({ entries: stateView(opened.page.state ?? {}, nameOf) }));
+  const pages = options.pages!;
+  const page = opened.page;
+  const owned = pageOwnedBy(page, viewer);
+  const annotator = owned ? null : pageAnnotator(page, viewer, { policy: pages.policy(), now: Date.now(), ...(options.teamsOf ? { teamsOf: (id: string) => options.teamsOf!(id) } : {}) });
+  const role: StateRole = owned ? "owner" : annotator ? "signed_in" : "anon";
+  const readerId = role === "anon" ? readerIdOf(req) : null;
+  const by = owned ? viewer?.principalId ?? "owner" : annotator ? annotator.by : readerId ? pages.anonymousWriter(readerId) : null;
+  res.writeHead(200, STATE_HEADERS);
+  res.end(method === "HEAD" ? undefined : JSON.stringify(stateAnswer(pages, page, { role, ...(by ? { me: pages.readerHandle(page.id, by) } : {}), nameOf: stateNamer(options, page, language(req)) })));
+  return true;
+}
+
+/** The name readers see for who set a value: the page's person, a person
+ * of the organization, or Anonyme. */
+function stateNamer(options: PublicPageOptions, page: PageRecord, lang: "fr" | "en"): (by: string) => string {
+  const owner = options.names(page).personName;
+  return (by) => anonymousBy(by)
+    ? anonymousName(lang)
+    : by === "owner" || (page.ownerId && by.toLowerCase() === page.ownerId.toLowerCase()) ? owner : options.personName?.(by) ?? "";
+}
+
+const STATE_BODY_MAX = STATE_LIMITS.valueBytes + 1024;
+
+function readJson(req: IncomingMessage): Promise<Record<string, unknown> | null> {
+  return new Promise((resolve) => {
+    const type = String(req.headers["content-type"] ?? "");
+    if (!/^application\/json\b/i.test(type)) {
+      req.resume();
+      return resolve(null);
+    }
+    let size = 0;
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > STATE_BODY_MAX) {
+        resolve(null);
+        req.destroy();
+        return;
+      }
+      chunks.push(Buffer.from(chunk));
+    });
+    req.on("end", () => {
+      try {
+        const body = JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
+        resolve(body && typeof body === "object" && !Array.isArray(body) ? body as Record<string, unknown> : null);
+      } catch {
+        resolve(null);
+      }
+    });
+    req.on("error", () => resolve(null));
+  });
+}
+
+/** Whether a request came from this host's own pages: a browser that names
+ * another site, or an Origin of another host, never writes here. */
+function fromThisHost(req: IncomingMessage): boolean {
+  if (req.headers["sec-fetch-site"] === "cross-site") return false;
+  const origin = typeof req.headers.origin === "string" ? req.headers.origin : "";
+  if (!origin || origin === "null") return true;
+  try {
+    return new URL(origin).host.toLowerCase() === (hostOf(req) ?? "");
+  } catch {
+    return false;
+  }
+}
+
+/** A write by a reader who is not signed in (2026-10-29): only on a page
+ * shared with anyone who has the link (else the same 404 as a missing page),
+ * only a key the page declares "anyone" and its person did not make
+ * read-only, from this host, with the browser's own random id (stored as a
+ * hash: Anonyme in the history), within the tighter limits for readers not
+ * signed in. The reader's session, if any, is not used here. */
+function serveStateWrite(options: PublicPageOptions, req: IncomingMessage, res: ServerResponse, path: string): true {
+  const lang = language(req);
+  const reply = (status: number, body: unknown) => {
+    res.writeHead(status, STATE_HEADERS);
+    res.end(JSON.stringify(body));
+  };
+  const token = tokenAfter(path, STATE_PREFIX);
+  const opened = token && options.pages ? options.pages.open(token) : null;
+  if (!opened || !ownerActive(options, opened.page) || !publicLinkPage(opened.page, options.pages!.policy())) {
+    req.resume();
+    reply(404, { error: "This page does not exist.", code: "not_found" });
+    return true;
+  }
+  if (!fromThisHost(req)) {
+    req.resume();
+    reply(403, { error: "Not from this page.", code: "cross_site" });
+    return true;
+  }
+  const readerId = readerIdOf(req);
+  void readJson(req).then((body) => {
+    const pages = options.pages!;
+    const page = opened.page;
+    if (!readerId) return reply(400, { error: "Missing the browser's reader id.", code: "no_reader" });
+    if (!body || !validStateKey(body.key) || !("value" in body)) return reply(400, { error: "Send { key, value } (value null clears the key).", code: "bad_body" });
+    const level = stateLevelFor(pages.stateRules(page.id), body.key);
+    const locked = pages.stateLocks(page.id).includes(body.key);
+    if (!stateMayWrite("anon", level, { publicLink: true, locked })) {
+      return reply(403, locked
+        ? { error: lang === "fr" ? "Cette valeur est en lecture seule." : "This value is read-only.", code: "locked" }
+        : { error: lang === "fr" ? "Connectez-vous pour modifier cette page." : "Sign in to change this page.", code: "sign_in" });
+    }
+    const by = pages.anonymousWriter(readerId);
+    const result = pages.setState(page.id, { key: body.key, value: body.value, by, anon: { source: requestSource(req) } });
+    if (!result.ok) return reply(result.code === "too_many_writes" ? 429 : result.status, { error: result.error, code: result.code });
+    options.stateChanged?.(page.id);
+    return reply(200, stateAnswer(pages, page, { role: "anon", me: pages.readerHandle(page.id, by), nameOf: stateNamer(options, page, lang) }));
+  });
   return true;
 }
 
@@ -632,7 +774,10 @@ export function handlePublishedPagePublic(options: PublicPageOptions, req: Incom
   const comment = path.startsWith(PAGE_COMMENT_PREFIX);
   const state = path.startsWith(STATE_PREFIX);
   common(res);
-  if (state) return method === "GET" || method === "HEAD" ? serveState(options, req, res, path, method) : refuseMethod(res);
+  if (state) {
+    if (method === "PUT") return serveStateWrite(options, req, res, path);
+    return method === "GET" || method === "HEAD" ? serveState(options, req, res, path, method) : refuseMethod(res);
+  }
   // Any other address under /pages is no page: an explicit 404, never the
   // app's SPA page (which a page's card would then draw as its preview).
   if (!view && !previewWrapper && !frame && !comment) return notFound(req, res, method);
@@ -785,6 +930,8 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
       (method === "GET" && /^\/api\/pages\/([\w-]+)\/threads$/.exec(path) && { route: "list", match: /^\/api\/pages\/([\w-]+)\/threads$/.exec(path)! })
       || (method === "GET" && /^\/api\/pages\/([\w-]+)\/live$/.exec(path) && { route: "live", match: /^\/api\/pages\/([\w-]+)\/live$/.exec(path)! })
       || (method === "PUT" && /^\/api\/pages\/([\w-]+)\/state$/.exec(path) && { route: "state", match: /^\/api\/pages\/([\w-]+)\/state$/.exec(path)! })
+      || (method === "DELETE" && /^\/api\/pages\/([\w-]+)\/state$/.exec(path) && { route: "stateClear", match: /^\/api\/pages\/([\w-]+)\/state$/.exec(path)! })
+      || (method === "PUT" && /^\/api\/pages\/([\w-]+)\/state\/lock$/.exec(path) && { route: "stateLock", match: /^\/api\/pages\/([\w-]+)\/state\/lock$/.exec(path)! })
       || (method === "POST" && /^\/api\/pages\/([\w-]+)\/threads$/.exec(path) && { route: "add", match: /^\/api\/pages\/([\w-]+)\/threads$/.exec(path)! })
       || (method === "POST" && /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/replies$/.exec(path) && { route: "reply", match: /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/replies$/.exec(path)! })
       || (method === "POST" && /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/resolve$/.exec(path) && { route: "resolve", match: /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/resolve$/.exec(path)! })
@@ -979,7 +1126,7 @@ async function pageExtras(deps: PublishedPageRouteDeps, ctx: ExtrasContext, extr
   return result.ok ? json(res, 201, { comment: result.comment }) : json(res, result.status, { error: result.error, code: result.code });
 }
 
-type ThreadRoute = { route: "list" | "live" | "state" | "add" | "reply" | "resolve" | "accept" | "decline" | "remove" | "removeReply"; match: RegExpExecArray };
+type ThreadRoute = { route: "list" | "live" | "state" | "stateClear" | "stateLock" | "add" | "reply" | "resolve" | "accept" | "decline" | "remove" | "removeReply"; match: RegExpExecArray };
 
 /** Who may annotate this page: its own person always; anyone else signed in
  * only while it is published, not expired, and readable by them. Null for
@@ -1027,15 +1174,46 @@ async function pageThreads(deps: PublishedPageRouteDeps, ctx: ExtrasContext, thr
     res.on("close", leave);
     return;
   }
-  if (route === "state") {
-    // the page's shared state (#1544): a reader who may annotate writes it
+  if (route === "state" || route === "stateClear" || route === "stateLock") {
+    // the page's shared state (#1544): a reader who may annotate writes the
+    // keys the page lets them write (2026-10-29); its person always clears
+    // it or makes a key read-only
+    const role: StateRole = who.owner ? "owner" : "signed_in";
+    const lang = language(req);
+    const nameOf = (by: string) => anonymousBy(by) ? anonymousName(lang) : names[by] ?? "";
+    let names: Record<string, string> = {};
+    const reply = () => {
+      const ids = [...new Set(Object.values(deps.pages.state(page.id)).map((entry) => entry.by).filter((by) => !anonymousBy(by)))];
+      names = deps.names?.(ids) ?? {};
+      return json(res, 200, stateAnswer(deps.pages, deps.pages.get(page.id) ?? page, { role, me: deps.pages.readerHandle(page.id, who.by), nameOf }));
+    };
+    if (route !== "state" && !who.owner) return json(res, 403, { error: "Only the page's person does this.", code: "owner_only" });
+    if (route === "stateClear") {
+      const cleared = deps.pages.clearState(page.id);
+      if (!cleared.ok) return json(res, cleared.status, { error: cleared.error, code: cleared.code });
+      deps.live?.stateChanged(page.id);
+      return reply();
+    }
     const body = await readBody(req) as Record<string, unknown> | null;
+    if (route === "stateLock") {
+      if (!body || !validStateKey(body.key) || typeof body.locked !== "boolean") return json(res, 400, { error: "Send { key, locked }.", code: "bad_body" });
+      const result = deps.pages.lockState(page.id, body.key, body.locked);
+      if (!result.ok) return json(res, result.status, { error: result.error, code: result.code });
+      deps.live?.stateChanged(page.id);
+      return reply();
+    }
     if (!body || !validStateKey(body.key) || !("value" in body)) return json(res, 400, { error: "Send { key, value } (value null clears the key).", code: "bad_body" });
+    const level = stateLevelFor(deps.pages.stateRules(page.id), body.key);
+    const locked = deps.pages.stateLocks(page.id).includes(body.key);
+    if (!stateMayWrite(role, level, { publicLink: publicLinkPage(page, deps.pages.policy()), locked })) {
+      return json(res, 403, locked
+        ? { error: lang === "fr" ? "Cette valeur est en lecture seule." : "This value is read-only.", code: "locked" }
+        : { error: lang === "fr" ? "Seule la personne de la page modifie cette valeur." : "Only the page's person changes this value.", code: "not_allowed" });
+    }
     const result = deps.pages.setState(page.id, { key: body.key, value: body.value, by: who.by });
     if (!result.ok) return json(res, result.status, { error: result.error, code: result.code });
     deps.live?.stateChanged(page.id);
-    const names = deps.names?.([...new Set(Object.values(result.state).map((entry) => entry.by))]) ?? {};
-    return json(res, 200, { entries: stateView(result.state, (by) => names[by] ?? "") });
+    return reply();
   }
   // after a change: every open bar reads the threads again
   const changed = () => deps.live?.changed(page.id);

@@ -35,7 +35,7 @@ import { writeFileAtomic } from "./atomic.ts";
 import { sanitizePageLook, type PageLook } from "../src/lib/page-look.ts";
 import { threadOwner } from "./thread-privacy.ts";
 import { pageAudienceOf, samePageAudience, type PageAudience } from "../shared/page-audience.ts";
-import { STATE_LIMITS, stateValueJson, type PageStateEntry } from "../shared/page-state.ts";
+import { ANON_STATE_LIMITS, anonymousBy, STATE_LIMITS, stateRulesOf, stateValueJson, type PageStateEntry, type StateRules } from "../shared/page-state.ts";
 import { THREAD_LIMITS, type PageQuote, type PageSuggestion, type PageThread, type PageThreadReply } from "../shared/page-threads.ts";
 import {
   DEFAULT_PAGES_POLICY,
@@ -127,6 +127,8 @@ export interface PageRecord {
   /** The page's shared state (#1544, shared/page-state.ts): what its
    * script set through window.sagax.page, by key. Erased on revoke. */
   state?: Record<string, PageStateEntry>;
+  /** Keys its person made read-only (2026-10-29): nobody writes them. */
+  stateLocks?: string[];
 }
 
 export type PageError = { ok: false; status: 400 | 404 | 409; error: string; code: string };
@@ -153,6 +155,8 @@ export class PublishedPages {
   private contentBytes = 0;
   /** Shared-state writes per page and person, for the rate limit. */
   private readonly stateWrites = new Map<string, number[]>();
+  /** Writes of readers not signed in, per page and network address. */
+  private readonly anonSourceWrites = new Map<string, number[]>();
   /** Reader comment posts per source address, for the rate limit. */
   private readonly readerPosts = new Map<string, number[]>();
   /** Each person's look (src/lib/page-look.ts), kept apart from the index. */
@@ -578,21 +582,58 @@ export class PublishedPages {
     return this.get(id)?.state ?? {};
   }
 
+  /** Who set a value, as a handle of this page only: the same writer gets
+   * the same handle on this page and an unrelated one on any other. */
+  readerHandle(pageId: string, by: string): string {
+    return this.mac(`sagax-page-reader:v1:${pageId}:${by.toLowerCase()}`).slice(0, 12);
+  }
+
+  /** A reader not signed in, as their writes are stored: a hash of their
+   * browser's own random id, never anything personal. */
+  anonymousWriter(readerId: string): string {
+    return `anon:${this.mac(`sagax-page-anon:v1:${readerId}`).slice(0, 16)}`;
+  }
+
+  /** What the published version declares about its keys (shared/page-state.ts). */
+  stateRules(id: string): StateRules {
+    const page = this.get(id);
+    if (!page || page.currentVersion === null) return {};
+    const version = page.versions.find((entry) => entry.n === page.currentVersion);
+    if (!version || version.kind !== "html") return {};
+    const content = this.content(id, version.n);
+    return content === null ? {} : stateRulesOf(content);
+  }
+
+  /** The keys its person made read-only. */
+  stateLocks(id: string): string[] {
+    return [...(this.get(id)?.stateLocks ?? [])];
+  }
+
   /** Set one key of the page's shared state (`null` clears it), within the
-   * keys, size and rate limits. Never moves the page in its person's list. */
-  setState(id: string, input: { key: string; value: unknown; by: string }): { ok: true; state: Record<string, PageStateEntry> } | PageError {
+   * keys, size and rate limits; never a read-only key. A reader not signed
+   * in (`anon`) has tighter limits, and the writes from their network
+   * address are counted too. Never moves the page in its person's list. */
+  setState(id: string, input: { key: string; value: unknown; by: string; anon?: { source: string } }): { ok: true; state: Record<string, PageStateEntry> } | PageError {
     const json = stateValueJson(input.value);
     if (json === null) return refuse(400, "bad_value", `value: plain JSON data, at most ${STATE_LIMITS.valueBytes / 1024} KB.`);
+    if (input.anon && new TextEncoder().encode(json).length > ANON_STATE_LIMITS.valueBytes) return refuse(400, "bad_value", `value: at most ${ANON_STATE_LIMITS.valueBytes / 1024} KB without signing in.`);
     const now = this.clock();
     const rate = `${id}:${input.by.toLowerCase()}`;
     const recent = (this.stateWrites.get(rate) ?? []).filter((at) => at > now - 60_000);
-    if (recent.length >= STATE_LIMITS.writesPerMinute) return refuse(409, "too_many_writes", "Too many changes to this page's state; wait a minute.");
+    if (recent.length >= (input.anon ? ANON_STATE_LIMITS.writesPerMinute : STATE_LIMITS.writesPerMinute)) return refuse(409, "too_many_writes", "Too many changes to this page's state; wait a minute.");
+    const sourceRate = input.anon ? `${id}:${input.anon.source}` : "";
+    const fromSource = input.anon ? (this.anonSourceWrites.get(sourceRate) ?? []).filter((at) => at > now - 60_000) : [];
+    if (input.anon && fromSource.length >= ANON_STATE_LIMITS.sourceWritesPerMinute) return refuse(409, "too_many_writes", "Too many changes to this page's state; wait a minute.");
     let kept: Record<string, PageStateEntry> = {};
     const result = this.mutate(id, (page, at) => {
+      if ((page.stateLocks ?? []).includes(input.key)) return refuse(409, "locked", "This value is read-only.");
       const state = { ...page.state };
       if (input.value === null) delete state[input.key];
       else {
         if (!(input.key in state) && Object.keys(state).length >= STATE_LIMITS.keys) return refuse(409, "too_many_keys", `A page keeps at most ${STATE_LIMITS.keys} values.`);
+        if (input.anon && !(input.key in state) && Object.values(state).filter((entry) => anonymousBy(entry.by)).length >= ANON_STATE_LIMITS.keys) {
+          return refuse(409, "too_many_keys", `A page keeps at most ${ANON_STATE_LIMITS.keys} values set without signing in.`);
+        }
         state[input.key] = { value: JSON.parse(json), by: input.by, at };
       }
       if (new TextEncoder().encode(JSON.stringify(state)).length > STATE_LIMITS.totalBytes) return refuse(409, "state_full", `A page keeps at most ${STATE_LIMITS.totalBytes / 1024} KB of state.`);
@@ -603,7 +644,40 @@ export class PublishedPages {
     if ("ok" in result) return result;
     recent.push(now);
     this.stateWrites.set(rate, recent);
+    if (input.anon) {
+      fromSource.push(now);
+      this.anonSourceWrites.set(sourceRate, fromSource);
+    }
+    for (const map of [this.stateWrites, this.anonSourceWrites]) {
+      if (map.size > 10_000) for (const [key, times] of map) if (!times.some((at) => at > now - 60_000)) map.delete(key);
+    }
     return { ok: true, state: kept };
+  }
+
+  /** Its person clears the whole state. */
+  clearState(id: string): { ok: true } | PageError {
+    const result = this.mutate(id, (page) => {
+      delete page.state;
+      return page;
+    }, false);
+    return "ok" in result ? result : { ok: true };
+  }
+
+  /** Its person makes one key read-only, or writable again. */
+  lockState(id: string, key: string, locked: boolean): { ok: true; locked: string[] } | PageError {
+    let kept: string[] = [];
+    const result = this.mutate(id, (page) => {
+      const keys = new Set(page.stateLocks ?? []);
+      if (locked) {
+        if (!keys.has(key) && keys.size >= STATE_LIMITS.keys) return refuse(409, "too_many_keys", `At most ${STATE_LIMITS.keys} read-only values.`);
+        keys.add(key);
+      } else keys.delete(key);
+      kept = [...keys];
+      if (kept.length) page.stateLocks = kept;
+      else delete page.stateLocks;
+      return page;
+    }, false);
+    return "ok" in result ? result : { ok: true, locked: kept };
   }
 
   /** The page's bot read its annotations now. */

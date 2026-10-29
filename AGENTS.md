@@ -825,11 +825,24 @@ published with the same access if the page is) or declines it; words no
 longer found once in the source are refused (409). Shared state (#1544,
 shared/page-state.ts): an HTML page's script keeps small JSON values for
 every reader through `window.sagax.page` (ready, get, entry, all,
-canWrite, set, subscribe); the wrapper reads `GET /pages/state/<token>`
-(anyone who may read it) and writes `PUT /api/pages/:id/state` (anyone
-signed in who may annotate it; a reader not signed in reads only); names,
-never ids; capped (200 keys, 4 KB a value, 64 KB a page, 60 writes a
-minute per person); erased on revoke. Captures:
+canWrite(key?), level, me, set, subscribe); the wrapper reads `GET
+/pages/state/<token>` (anyone who may read it) and writes `PUT
+/api/pages/:id/state` (signed in) or `PUT /pages/state/<token>` (not signed
+in); names, never ids; capped (200 keys, 4 KB a value, 64 KB a page, 60
+writes a minute per person); erased on revoke. Who writes a key
+(2026-10-29) is the page's own declaration, a `<script
+type="application/sagax-state+json">` block the server reads from the
+published version (`stateRulesOf`), never from the browser: `anyone`,
+`signed_in` (the default for a key named nowhere), `editors` (who may change
+the page, today its person) or `owner`; `prefix*` and `*` patterns. Always
+within the sharing: `anyone` reaches a reader not signed in only while the
+page is shared with anyone with the link (else the same 404). Anonymous
+writes: 1 KB a value, 20 writes a minute per browser, 120 per network
+address, 100 keys a page; stored as `anon:<hash>` of the browser's own
+random id (`x-sagax-reader`), shown as Anonyme. The page's person clears it
+(`DELETE /api/pages/:id/state`) or makes a key read-only (`PUT
+/api/pages/:id/state/lock`) from Page state in the reader's bar
+(`src/page-reader/ReaderState.tsx`). Captures:
 `scripts/capture-page-reader.ts`.
 
 ## The reader's bar in its person's look (2026-10-29)

@@ -90,7 +90,7 @@ describe("the frame's shared state (#1544)", () => {
   function loadState() {
     load("<p>x</p>");
     new Function("window", "document", STATE_BRIDGE_SOURCE)(win, document);
-    return (win as unknown as { sagax: { page: { ready: Promise<void>; get(k: string): unknown; entry(k: string): unknown; all(): unknown; canWrite(): boolean; set(k: string, v: unknown): Promise<boolean>; subscribe(f: (s: unknown) => void): () => void } } }).sagax.page;
+    return (win as unknown as { sagax: { page: { ready: Promise<void>; get(k: string): unknown; entry(k: string): unknown; all(): unknown; canWrite(k?: string): boolean; level(k: string): string; me(): string; set(k: string, v: unknown): Promise<boolean>; subscribe(f: (s: unknown) => void): () => void } } }).sagax.page;
   }
 
   it("asks its parent for the state, and hears only its parent", async () => {
@@ -120,6 +120,23 @@ describe("the frame's shared state (#1544)", () => {
     const refused = page.set("ticket:2", 1);
     fromParent({ type: "sagax-state-result", v: 1, id: 2, ok: false, error: "Sign in to change this page." });
     await expect(refused).rejects.toThrow("Sign in to change this page.");
+  });
+
+  it("knows who writes which key as the wrapper tells (2026-10-29), and the reader's handle", async () => {
+    const page = loadState();
+    fromParent({ type: "sagax-state", v: 1, canWrite: true, me: "h1", access: { role: "anon", rules: { "vote:*": "anyone", decision: "owner" }, locked: ["vote:closed"], publicLink: true }, entries: { "vote:h1": { value: "yes", name: "Anonyme", at: 5, who: "h1" } } });
+    await page.ready;
+    expect(page.me()).toBe("h1");
+    expect(page.entry("vote:h1")).toEqual({ value: "yes", name: "Anonyme", at: 5, who: "h1" });
+    expect(page.canWrite()).toBe(true);
+    expect(page.canWrite("vote:x")).toBe(true);
+    expect(page.canWrite("vote:closed")).toBe(false);
+    expect(page.canWrite("decision")).toBe(false);
+    expect(page.canWrite("other")).toBe(false);
+    expect(page.level("vote:x")).toBe("anyone");
+    expect(page.level("other")).toBe("signed_in");
+    fromParent({ type: "sagax-state", v: 1, canWrite: true, access: { role: "owner", rules: { decision: "owner" }, locked: [], publicLink: false }, entries: {} });
+    expect(page.canWrite("decision")).toBe(true);
   });
 
   it("cannot be replaced by the page, and uses no network", () => {
