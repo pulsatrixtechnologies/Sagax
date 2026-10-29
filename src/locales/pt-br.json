@@ -2634,5 +2634,8 @@
   "room.leave.owner": "Este grupo é seu: ele passa para a pessoa que está nele há mais tempo.",
   "room.leave.last": "Você é a última pessoa: o grupo será arquivado.",
   "room.roster.left": "{name} saiu do grupo",
-  "access.signInRequested": "{bot} pede que você entre em {engine}. Você mesmo entra; o bot nunca vê o seu login."
+  "access.signInRequested": "{bot} pede que você entre em {engine}. Você mesmo entra; o bot nunca vê o seu login.",
+  "appearance.playMove": "Tocar um movimento",
+  "appearance.randomize": "Aleatório",
+  "appearance.tabs": "Personalizar"
 }

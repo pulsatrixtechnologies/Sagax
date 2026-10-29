@@ -2387,5 +2387,8 @@
   "room.leave.owner": "Ця група ваша: вона перейде до людини, яка в ній найдовше.",
   "room.leave.last": "Ви остання людина в групі: її буде заархівовано.",
   "room.roster.left": "{name} вийшов(-ла) з групи",
-  "access.signInRequested": "{bot} просить вас увійти в {engine}. Ви входите самі; бот ніколи не бачить ваш вхід."
+  "access.signInRequested": "{bot} просить вас увійти в {engine}. Ви входите самі; бот ніколи не бачить ваш вхід.",
+  "appearance.playMove": "Відтворити рух",
+  "appearance.randomize": "Випадково",
+  "appearance.tabs": "Налаштувати"
 }

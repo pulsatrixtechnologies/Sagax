@@ -3,6 +3,10 @@
 // Generate / Upload, drawn as the reference design's Avatar page (a centred
 // segmented pill, the big preview, the grid in one card with Reset to
 // default at its foot). Each choice saves at once.
+// Track A (2026-10-28), as the desktop's Appearance: the preview on top on a
+// ground tinted with the bot's colour, with the character's name, then on
+// Character a segmented Mascot | Shape | Color | Skin, one grid at a time
+// (Shape for Shapes only, Color for every character but Trombi).
 import CompanionCore
 import PhotosUI
 import SwiftUI
@@ -18,6 +22,8 @@ struct PhoneBotAvatarSheet: View {
     enum Tab: String, CaseIterable { case bot, generate, upload }
 
     @State private var tab: Tab = .bot
+    /// The one grid Character shows.
+    @State private var part: CharacterEditor.Section = .character
     @State private var unlocks: MascotUnlocks = .lockedUntilLoaded
     @State private var generating = false
     @State private var generatePrompt = ""
@@ -39,11 +45,23 @@ struct PhoneBotAvatarSheet: View {
                     .padding(.top, 8)
                 ScrollView {
                     VStack(spacing: 0) {
-                        // the big preview over every tab (the reference design)
-                        BotMascotView(bot: current, size: 112, state: .idle, animated: true)
-                            .frame(height: 140)
-                            .padding(.bottom, 20)
-                            .accessibilityHidden(true)
+                        // the big preview over every tab, on a ground tinted with the bot's colour
+                        VStack(spacing: 6) {
+                            BotMascotView(bot: current, size: 112, state: .idle, animated: true)
+                                .frame(height: 128)
+                                .accessibilityHidden(true)
+                            Text(CharacterEditor.characterName(draft.character))
+                                .font(Theme.Font.bodyMedium)
+                                .foregroundStyle(Theme.textPrimary)
+                                .accessibilityIdentifier("avatar-preview-name")
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(
+                            RadialGradient(colors: [MausPalette.color(draft.color).opacity(0.28), Theme.card], center: .init(x: 0.5, y: 0.4), startRadius: 0, endRadius: 190),
+                            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        )
+                        .padding(.bottom, 20)
                         Group {
                             switch tab {
                             case .bot: botTab
@@ -129,9 +147,21 @@ struct PhoneBotAvatarSheet: View {
     /// default at its foot.
     private var botTab: some View {
         VStack(spacing: 0) {
+            let parts = CharacterEditor.Section.offered(for: draft.character)
+            let shownPart = parts.contains(part) ? part : .character
+            Picker(String(localized: "Customize"), selection: Binding(get: { shownPart }, set: { Haptics.selection(); part = $0 })) {
+                ForEach(parts) { item in
+                    Text(partTitle(item)).tag(item)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .accessibilityIdentifier("avatar-part")
             CharacterEditor(
                 draft: Binding(get: { draft }, set: { saveLook($0) }),
                 metrics: .createSheet,
+                section: shownPart,
                 showsPhotoRow: false,
                 showsReset: false,
                 unlocks: session.isDemo ? .demo : session.surfaceGate.allows(.characterExtras) ? unlocks : .nothingLocked
@@ -156,6 +186,15 @@ struct PhoneBotAvatarSheet: View {
         }
         .frame(maxWidth: .infinity)
         .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.Metric.cardRadius, style: .continuous))
+    }
+
+    private func partTitle(_ part: CharacterEditor.Section) -> LocalizedStringKey {
+        switch part {
+        case .character: "Mascot"
+        case .shape: "Shape"
+        case .colour: "Color"
+        case .skin: "Skin"
+        }
     }
 
     private var generateTab: some View {

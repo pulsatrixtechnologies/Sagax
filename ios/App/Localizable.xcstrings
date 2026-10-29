@@ -7186,6 +7186,12 @@
         }
       }
     },
+    "Customize": {
+      "localizations": {
+        "fr": { "stringUnit": { "state": "translated", "value": "Personnaliser" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Personalizar" } }
+      }
+    },
     "Default": {
       "localizations": {
         "fr": {

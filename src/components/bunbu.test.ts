@@ -166,11 +166,11 @@ describe("Bunbu on the desktop and in the popover", () => {
 
   it("offers its colors, skins by rarity and moves in the Appearance gallery", () => {
     resetAchievementsForTests({ unlocks: NOTHING_LOCKED });
-    const render = (look: unknown) => renderToStaticMarkup(createElement(MascotLookEditor, { bot: { color: "mint", mascotSkin: "none", mascotLook: botMascotLook(look) }, onPatch: () => undefined }));
+    const render = (look: unknown, initialTab: "mascot" | "color" | "skin" = "skin") => renderToStaticMarkup(createElement(MascotLookEditor, { bot: { color: "mint", mascotSkin: "none", mascotLook: botMascotLook(look) }, onPatch: () => undefined, initialTab }));
     const html = render({ character: "bunbu" });
-    expect(html).toContain('data-character-option="bunbu"');
+    expect(render({ character: "bunbu" }, "mascot")).toContain('data-character-option="bunbu"');
     expect(html).toContain('data-character-options="bunbu"');
-    expect(html).toContain("data-color-tabs");
+    expect(render({ character: "bunbu" }, "color")).toContain("data-color-tabs");
     for (const skin of ["plain", "pastel", "night", "plush"]) expect(html).toContain(`data-bunbu-skin-option="${skin}"`);
     for (const skin of BUNBU_SKINS) expect(render({ character: "bunbu", skins: { bunbu: skin } })).toContain(`data-bunbu-skin-option="${skin}"`);
     expect(html).toContain(`data-character-move="${BUNBU_EARFLOP_CLIP}"`);

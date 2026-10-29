@@ -1895,5 +1895,8 @@
   "room.leave.owner": "Die Gruppe gehört dir: Sie geht an die Person über, die am längsten dabei ist.",
   "room.leave.last": "Du bist die letzte Person darin: Die Gruppe wird archiviert.",
   "room.roster.left": "{name} hat die Gruppe verlassen",
-  "access.signInRequested": "{bot} bittet Sie, sich bei {engine} anzumelden. Sie melden sich selbst an; der Bot sieht Ihre Anmeldung nie."
+  "access.signInRequested": "{bot} bittet Sie, sich bei {engine} anzumelden. Sie melden sich selbst an; der Bot sieht Ihre Anmeldung nie.",
+  "appearance.playMove": "Bewegung abspielen",
+  "appearance.randomize": "Zufällig",
+  "appearance.tabs": "Anpassen"
 }

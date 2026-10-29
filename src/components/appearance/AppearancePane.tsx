@@ -1,12 +1,13 @@
 // The persona editor's Appearance category: how the bot looks everywhere it
 // appears. A segmented control picks the source (Mascot, Generate, Upload)
-// and Reset puts the green owl back. Mascot is the character gallery
+// and Reset puts the green owl back. Mascot is a preview band
+// over four tabs (Mascot, Shape, Color, Skin), one grid at a time
 // (floating-bots/MascotLookEditor.tsx, loaded lazily with this pane),
 // Generate and Upload the picture sources (AvatarSources.tsx). Clicking the
 // bot's avatar opens the persona editor here (BotProfileAvatarCard); the New
 // bot dialog shows the same pane under its draft's avatar. The pane is a
-// size container: the gallery and its detail sit side by side when the pane
-// is wide enough, stacked otherwise, whatever the window's width.
+// size container: the preview band lays out in a row when the pane is wide
+// enough, stacked otherwise, whatever the window's width.
 import { lazy, Suspense, useState } from "react";
 
 import { useStore, type Bot } from "@/state/store";
@@ -45,7 +46,7 @@ export function AppearancePane({ bot, onPatch }: { bot: Bot; onPatch: (patch: Av
 
   return (
     <div className="@container" data-appearance-pane="">
-      <div className="mb-3 flex items-center gap-2">
+      <div className="mb-4 flex items-center gap-2">
         <div role="tablist" aria-label={t("appearance.modes")} className="inline-flex gap-0.5 rounded-lg bg-inset p-0.5" data-appearance-modes="">
           {APPEARANCE_MODES.map((id) => (
             <button
@@ -66,7 +67,7 @@ export function AppearancePane({ bot, onPatch }: { bot: Bot; onPatch: (patch: Av
                 event.currentTarget.parentElement?.querySelector<HTMLElement>(`[data-appearance-mode="${next}"]`)?.focus();
               }}
               className={cn(
-                "rounded-md px-2.5 py-1 text-[12px] leading-4 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
+                "rounded-md px-3 py-1.5 text-[13px] leading-4 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent",
                 mode === id ? "bg-control text-ink shadow-sm" : "text-ink-secondary hover:text-ink",
               )}
             >
@@ -78,7 +79,7 @@ export function AppearancePane({ bot, onPatch }: { bot: Bot; onPatch: (patch: Av
           type="button"
           onClick={resetMascot}
           data-appearance-reset=""
-          className="ml-auto rounded-md px-2 py-1 text-[12px] text-ink-secondary hover:bg-control hover:text-ink"
+          className="ml-auto rounded-lg border border-hairline-weak px-3 py-1.5 text-[13px] leading-4 text-ink-secondary hover:bg-control hover:text-ink"
         >
           {t("botPanel.avatar.reset")}
         </button>

@@ -15,18 +15,25 @@ import { contrastRatio, eyeInkOn, MASCOT_COLOR_GROUPS, MASCOT_COLOR_HEX, MASCOT_
 import { botMascotLook, CRAB_SKIN_TIER, CRAB_SKINS, MASCOT_SHAPES, SHAPE_SKIN_TIER, SHAPE_SKINS, TROMBI_SKIN_TIER, TROMBI_SKINS } from "../../../shared/mascot-look";
 import { botMascotSkin, LEGACY_OWL_SKINS, MASCOT_SKIN_IDS, mascotSkinSchema, OWL_SKIN_TIER } from "../../../shared/mascot-skins";
 import { parseBotProfilePatch } from "../../../server/bot-profile";
-import MascotLookEditor, { COLOR_GROUP_LABEL, OWL_SKIN_LABEL } from "./MascotLookEditor";
+import MascotLookEditor, { EDITOR_TABS, COLOR_GROUP_LABEL, OWL_SKIN_LABEL } from "./MascotLookEditor";
 import { colorTabFor, colorTabs, nextTab, SKIN_TIERS, skinTabFor, skinTierTabs } from "./editor-tabs";
 
 beforeEach(() => resetAchievementsForTests({ unlocks: NOTHING_LOCKED }));
 
+/** The editor with each of its tabs open in turn: the whole page, then every other tab's grid. */
 const render = (bot: { color?: string; mascotSkin?: string; mascotLook?: unknown }) =>
-  renderToStaticMarkup(
-    createElement(MascotLookEditor, {
-      bot: { color: (bot.color ?? "blue") as never, mascotSkin: (bot.mascotSkin ?? "none") as never, mascotLook: botMascotLook(bot.mascotLook) },
-      onPatch: () => undefined,
-    }),
-  );
+  EDITOR_TABS.map((initialTab, index) => {
+    const html = renderToStaticMarkup(
+      createElement(MascotLookEditor, {
+        bot: { color: (bot.color ?? "blue") as never, mascotSkin: (bot.mascotSkin ?? "none") as never, mascotLook: botMascotLook(bot.mascotLook) },
+        onPatch: () => undefined,
+        initialTab,
+      }),
+    );
+    if (index === 0) return html;
+    // a tab this character does not offer opens Mascot, already drawn
+    return html.includes(`data-appearance-tab-panel="${initialTab}"`) ? html.slice(html.indexOf('id="appearance-tab-panel"')) : "";
+  }).join("");
 
 describe("skin tabs", () => {
   it("groups each character's skins by rarity, with a count per tab", () => {
