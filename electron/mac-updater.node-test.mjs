@@ -146,7 +146,10 @@ test("real Mac ZIP transfer stays preparing until native ready; restart is singl
   assert.equal(h.updater.squirrelDownloadedUpdate, true);
   assert.equal(h.native.listenerCount("update-downloaded"), 1, "temporary staging listener was removed");
   assert.equal(h.timers.has(NATIVE_PREPARE_TIMEOUT_MS), false);
-  h.coordinator.install({ confirmed: true });
+  // A confirmed install reads the feed once more before it quits (#1478): a
+  // release published since the download would install in its place.
+  await h.coordinator.install({ confirmed: true });
+  assert.deepEqual(h.calls(), { downloads: 1, checks: 1, quitCalls: 1 });
   h.timers.get(120_000).callback();
   assert.equal(h.state().status, "installing");
   assert.match(h.state().message, /Quit and reopen/);
@@ -154,8 +157,9 @@ test("real Mac ZIP transfer stays preparing until native ready; restart is singl
   h.coordinator.install({ confirmed: true });
   await h.coordinator.check(true);
   h.native.emit("update-downloaded");
-  assert.deepEqual(h.calls(), { downloads: 1, checks: 0, quitCalls: 1 });
-  t.diagnostic("ZIP transferred -> preparing (0 quits) -> native ready -> downloaded -> one restart; watchdog and late ready cannot repeat it");
+  // still the one feed read and the one quit: the watchdog and a late ready repeat neither
+  assert.deepEqual(h.calls(), { downloads: 1, checks: 1, quitCalls: 1 });
+  t.diagnostic("ZIP transferred -> preparing (0 quits) -> native ready -> downloaded -> one feed read -> one restart; watchdog and late ready cannot repeat it");
 });
 
 test("a native staging deadline fails visibly without retrying or reviving on late readiness", async (t) => {
