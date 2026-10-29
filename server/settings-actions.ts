@@ -52,6 +52,10 @@ export type SettingsActionDeps = {
   ruleText?: (person: string | null, kind: "custom" | "owner", id: string) => string | undefined;
   /** An engine instance's label ("Claude API"), for the person's words. */
   instanceName?: (instanceId: string) => string | undefined;
+  /** #1545 (2026-10-28): whether another person's bot, or the
+   * organization's default model, uses this engine (organization server);
+   * undefined when it cannot be told (the card stays). */
+  engineShared?: (instanceId: string, speaker: string | null) => boolean | undefined;
   /** A record's name for a card (never its id), or undefined. */
   targetName?: (kind: string, id: string, botId?: string) => string | undefined;
 };
@@ -433,7 +437,8 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     }
     const organization = deps.organization();
     const self = spec.target === "bot" && ids.target === input.botId;
-    const classes = spec.classes ? spec.classes(value, { organization, self }) : (["own"] as SettingClass[]);
+    const shared = spec.target === "engine" && organization && ids.target ? deps.engineShared?.(ids.target, speaker) : undefined;
+    const classes = spec.classes ? spec.classes(value, { organization, self, ...(shared === undefined ? {} : { shared }) }) : (["own"] as SettingClass[]);
     const approvalTo = spec.approvalTo?.(value) as ApprovalMode | undefined;
     const actingOwner = deps.botOwner(input.botId);
     const targetOwner = ownerOf(spec, ids, speaker);

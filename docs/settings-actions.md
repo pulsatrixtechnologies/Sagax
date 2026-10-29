@@ -28,6 +28,13 @@ parties hors tableau du script.
      un niveau est appliqué jusqu'à celui du bot qui parle, jamais Full ni
      Custom sans carte ; le reste demande la carte ;
   6. sinon appliqué tout de suite.
+- Moteurs d'un serveur d'organisation (#1545, 2026-10-28) : ajouter un
+  compte, installer, vérifier de nouveau, mettre Claude Code à jour,
+  renommer et libérer l'espace ne touchent que la personne : le niveau du
+  bot décide (plus de carte en Full pour un admin). Déconnecter, retirer, ou
+  changer le programme, le dossier ou les outils d'un moteur qu'un bot d'une
+  autre personne, ou le modèle par défaut de l'organisation, utilise (autrui)
+  garde la carte à tout niveau : le travail des autres s'arrêterait.
 - Demande de la personne au bot principal (2026-10-20) : quand le bot
   principal de la personne fait le changement parce qu'elle l'a demandé
   dans son message du tour (`quote`, ses propres mots, vérifiés dans ce
@@ -335,23 +342,23 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Anthropic key for every Claude bot | Settings > Models > Keys | `sagax_settings` get, set `models.everyClaudeBot` | simple; organisation : organisation |
 | Live call settings | Settings > Voice > Live calls | `sagax_settings` get, set `models.liveCalls` | simple; organisation : organisation |
 | Engines and their accounts (read only: instanceId, name, driver, signedIn, account) | Settings > Models > Engines | `sagax_settings` get, set `models.engines` | simple |
-| An engine's settings ({displayName, configDir: a Claude account's folder, cli: the program's path, '' for the default, tools}) | Settings > Models > Engines > engine | `sagax_settings` get, set `models.engine` | simple; organisation : organisation |
-| Add a Claude account ({name, configDir?}); then models.engineSignIn posts its sign-in card | Settings > Models > Claude > Add account | `sagax_settings` set `models.claudeAccount` | simple; organisation : organisation |
-| Add a ChatGPT account for Codex ({name}); then models.engineSignIn posts its sign-in card | Settings > Models > Codex > Add account | `sagax_settings` set `models.chatgptAccount` | simple; organisation : organisation |
+| An engine's settings ({displayName, configDir: a Claude account's folder, cli: the program's path, '' for the default, tools}) | Settings > Models > Engines > engine | `sagax_settings` get, set `models.engine` | simple; organisation : autrui |
+| Add a Claude account ({name, configDir?}); then models.engineSignIn posts its sign-in card | Settings > Models > Claude > Add account | `sagax_settings` set `models.claudeAccount` | simple |
+| Add a ChatGPT account for Codex ({name}); then models.engineSignIn posts its sign-in card | Settings > Models > Codex > Add account | `sagax_settings` set `models.chatgptAccount` | simple |
 | Post the sign-in card of an engine or account (value true): the person signs in themselves, the bot never sees the sign-in | Settings > Models > engine > Sign in | `sagax_settings` set `models.engineSignIn` | simple |
-| Sign an engine or account out (value true) | Settings > Models > engine > Sign out | `sagax_settings` set `models.engineSignOut` | simple + suppression; organisation : organisation + suppression |
-| Remove an added account (value true) | Settings > Models > account > Remove | `sagax_settings` set `models.engineRemove` | simple + suppression; organisation : organisation + suppression |
+| Sign an engine or account out (value true) | Settings > Models > engine > Sign out | `sagax_settings` set `models.engineSignOut` | simple + suppression; organisation : autrui + suppression |
+| Remove an added account (value true) | Settings > Models > account > Remove | `sagax_settings` set `models.engineRemove` | simple + suppression; organisation : autrui + suppression |
 | Whether an engine's access key is saved (read only; the key itself is pasted by the person in Settings) | Settings > Models > engine > Access key | `sagax_settings` get, set `models.engineKeySaved` | simple |
-| Install an engine (value true) | Settings > Models > engine > Install | `sagax_settings` set `models.engineInstall` | simple; organisation : organisation |
-| Check an engine again (its models) (value true) | Settings > Models > Check again | `sagax_settings` set `models.engineRefresh` | simple; organisation : organisation |
-| Update Claude Code (value true) | Settings > Models > Claude > Advanced > Update | `sagax_settings` set `models.claudeUpdate` | simple; organisation : organisation |
-| Add an Antigravity account ({name, source: the Antigravity engine's instanceId}); then models.engineSignIn | Settings > Models > Antigravity > Add account | `sagax_settings` set `models.antigravityAccount` | simple; organisation : organisation |
+| Install an engine (value true) | Settings > Models > engine > Install | `sagax_settings` set `models.engineInstall` | simple |
+| Check an engine again (its models) (value true) | Settings > Models > Check again | `sagax_settings` set `models.engineRefresh` | simple |
+| Update Claude Code (value true) | Settings > Models > Claude > Advanced > Update | `sagax_settings` set `models.claudeUpdate` | simple |
+| Add an Antigravity account ({name, source: the Antigravity engine's instanceId}); then models.engineSignIn | Settings > Models > Antigravity > Add account | `sagax_settings` set `models.antigravityAccount` | simple |
 | The person's own engine access (organization server: subscription signed in, own key, organization key; read only) | Settings > Models > My engines | `sagax_settings` get, set `models.myEngines` | simple |
 | Sign the person's own subscription out of an engine (organization server; value true) | Settings > Models > My engines > Disconnect | `sagax_settings` set `models.mySignOut` | suppression |
 | Custom voice server address (the voice engine's own server) | Settings > Voice > Voice engine | `sagax_settings` get, set `models.ttsServer` | simple; organisation : organisation |
 | Custom voice server model | Settings > Voice > Voice engine | `sagax_settings` get, set `models.ttsModel` | simple; organisation : organisation |
 | Test the decision model (value true) | Settings > Models > Decision model > Test | `sagax_settings` set `models.deciderTest` | simple |
-| Free up space: delete Antigravity's leftover files (get lists them; value true deletes) | Settings > Models > Antigravity > Free up space | `sagax_settings` get, set `models.antigravityLeftovers` | simple + suppression; organisation : organisation + suppression |
+| Free up space: delete Antigravity's leftover files (get lists them; value true deletes) | Settings > Models > Antigravity > Free up space | `sagax_settings` get, set `models.antigravityLeftovers` | simple + suppression |
 
 ### Connexions
 
