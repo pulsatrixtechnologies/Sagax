@@ -280,7 +280,8 @@ export function ownBotReadAct(name: string | undefined, input: unknown, scope: {
  * row's, else the first segment after `/api/`. */
 function actRouteAreas(method: string, path: string): string[] {
   const policy = policyFor(method, path);
-  const segment = /^\/api\/([^/]+)/.exec(path)?.[1] ?? "";
+  // not a route of its own: the second segment of any /api/ path
+  const segment = path.startsWith("/api/") ? (path.slice("/api/".length).split("/")[0] ?? "") : "";
   return [policy.scope.split(":")[0] ?? "", segment];
 }
 

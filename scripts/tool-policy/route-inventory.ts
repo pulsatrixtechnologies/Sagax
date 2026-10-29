@@ -42,16 +42,45 @@ function patterns(line: string): string[] {
   return found;
 }
 
+const METHOD_ONLY = /^\s*if \((?:!\w+ \|\| )?(?:method !== "(?:GET|POST|PUT|PATCH|DELETE)"(?: && )?)+\) return\b/;
+
+/** The methods a line guards: `method === "POST"` names POST; a bare
+ * early return on `!==` (`if (method !== "GET" && method !== "POST") return
+ * PASS`) names the methods it lets through. A `!==` mixed with another
+ * condition says nothing. */
+function methodsOn(text: string): RouteMethod[] {
+  const guards = [...text.matchAll(METHOD)];
+  const is = guards.filter((m) => m[1] === "===").map((m) => m[2] as RouteMethod);
+  if (is.length) return is;
+  return METHOD_ONLY.test(text) ? guards.map((m) => m[2] as RouteMethod) : [];
+}
+
 function methodsNear(lines: string[], i: number): RouteMethod[] {
-  const on = (text: string) => [...text.matchAll(METHOD)].filter((m) => m[1] === "===").map((m) => m[2] as RouteMethod);
-  const same = on(lines[i]!);
+  const same = methodsOn(lines[i]!);
   if (same.length) return same;
   for (const j of [i - 1, i - 2, i + 1, i + 2, i + 3, i + 4, i + 5, i + 6]) {
     if (j < 0 || j >= lines.length) continue;
-    const near = on(lines[j]!);
+    const near = methodsOn(lines[j]!);
     if (near.length) return near;
   }
   return ["ANY"];
+}
+
+/** A pattern kept in a constant (`const ROUTE = /^\/api\/…/`) is matched
+ * where the constant is used (`ROUTE.exec(path)`): the method guard sits
+ * there, not beside the definition. The union over its uses, else the
+ * definition's own neighbourhood. */
+function methodsOfConstant(lines: string[], i: number): RouteMethod[] | null {
+  const name = /^\s*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*\/\^/.exec(lines[i]!)?.[1];
+  if (!name) return null;
+  const use = new RegExp(`\\b${name}\\.(exec|test)\\(`);
+  const found = new Set<RouteMethod>();
+  lines.forEach((text, j) => {
+    if (j === i || !use.test(text) || /^\s*(\/\/|\*)/.test(text)) return;
+    for (const method of methodsNear(lines, j)) found.add(method);
+  });
+  if (!found.size) return null;
+  return found.has("ANY") ? ["ANY"] : [...found];
 }
 
 export function routeInventory(root: string): InventoryRoute[] {
@@ -69,7 +98,7 @@ export function routeInventory(root: string): InventoryRoute[] {
       // `path.startsWith("/api/")` is the API gate itself, not a route
       const routes = hits.filter(([kind, route]) => !(kind === "prefix" && route === "/api/"));
       if (!routes.length) return;
-      const methods = methodsNear(lines, i);
+      const methods = (routes.some(([kind]) => kind === "pattern") && methodsOfConstant(lines, i)) || methodsNear(lines, i);
       for (const [kind, route] of routes) for (const method of methods) {
         const key = `${method} ${kind} ${route}`;
         if (!seen.has(key)) seen.set(key, { kind, route, method, file, line: i + 1 });
