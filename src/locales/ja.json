@@ -2175,7 +2175,6 @@
   "attach.revealMissing": "そのファイルはもうありません",
   "attach.revealFailed": "そのファイルをフォルダー内で表示できませんでした",
   "task.switchWithUsageDetail": "すべてのスレッド · {label}（{detail}）",
-  "task.otherActivity": "その他のアクティビティ（{count}）",
   "attention.item": "{title} · {name} · {status}",
   "attention.pin": "ピン留め",
   "attention.unpin": "ピン留めを解除",

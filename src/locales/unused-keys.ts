@@ -9,7 +9,10 @@ export function unreadLocaleKeys(repo: string): string[] {
   const en = JSON.parse(readFileSync(join(repo, "src/locales/en.json"), "utf8")) as Record<string, string>;
   const literals = new Set<string>();
   const prefixes = new Set<string>();
-  const literal = /["'`]([^"'`\n]{1,200})["'`]/g;
+  // A key is a dotted name, so the scan looks for one right after a quote
+  // without pairing quotes: `data-x=""` and a `t("…")` nested in a template
+  // string desync any pairing and hid keys that are read.
+  const literal = /["'`](?=([\w][\w.-]{0,199})["'`])/g;
   const template = /`([A-Za-z0-9_.]+)\$\{/g;
   const plus = /["']([A-Za-z0-9_.]+)["']\s*\+/g;
   const files: string[] = [];
@@ -27,7 +30,7 @@ export function unreadLocaleKeys(repo: string): string[] {
   for (const path of files) {
     const code = readFileSync(path, "utf8");
     for (const match of code.matchAll(literal)) {
-      if (!match[1]!.includes("${")) literals.add(match[1]!);
+      literals.add(match[1]!);
     }
     for (const match of code.matchAll(template)) prefixes.add(match[1]!);
     for (const match of code.matchAll(plus)) prefixes.add(match[1]!);
