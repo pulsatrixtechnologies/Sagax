@@ -10,6 +10,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { startCua, stopCua, registerCuaIpc, setCuaStateListener, currentCuaConnection } from "./cua.mjs";
 import { createLocalComputerGrant } from "./local-computer-grant.mjs";
+import { createHostScreenLease } from "./host-screen-lease.mjs";
 import { createAndroidDeviceController } from "./android-device.mjs";
 import { finishSpeech, startSpeech, stopSpeech } from "./speech.mjs";
 import { openBlankTerminal } from "./terminal-launch.mjs";
@@ -2565,6 +2566,14 @@ async function requireSharedComputers() {
   throw new Error("Computer sharing is turned off on this server.");
 }
 
+// The lent screen's lock on this computer, with the real reason when it
+// is refused (electron/host-screen-lease.mjs).
+const hostScreenLease = createHostScreenLease({
+  fetch: (url, init) => fetch(url, init),
+  url: () => `http://127.0.0.1:${SERVER_PORT}/api/desktop/shared-computer-control`,
+  headers: () => desktopServerHeaders({ "content-type": "application/json" }, { packaged: app.isPackaged, token: desktopMutationToken }),
+});
+
 function sharingController() {
   computerSharing ??= createComputerSharing({
     file: path.join(app.getPath("userData"), "computer-sharing.json"),
@@ -2580,17 +2589,7 @@ function sharingController() {
       // Server mode: no local server and no local bot compete for this
       // screen, so there is no local seat to lease.
       if (serverModeEnvironment(environmentsState) && !serverReady) return { renew: async () => {}, release: async () => {} };
-      const lease = async action => {
-        const response = await fetch(`http://127.0.0.1:${SERVER_PORT}/api/desktop/shared-computer-control`, {
-          method: "POST",
-          headers: desktopServerHeaders({ "content-type": "application/json" }, { packaged: app.isPackaged, token: desktopMutationToken }),
-          body: JSON.stringify({ id, action }),
-          signal: action === "release" ? AbortSignal.timeout(3000) : AbortSignal.any([signal, AbortSignal.timeout(3000)]),
-        });
-        if (!response.ok) throw new Error("This computer is in use locally or held by a person. Wait, then observe it again before acting.");
-      };
-      await lease("acquire");
-      return { renew: () => lease("acquire"), release: () => lease("release") };
+      return hostScreenLease(id, signal);
     },
   });
   return computerSharing;

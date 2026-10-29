@@ -4740,7 +4740,20 @@ const turnPromptBytes = new Map<string, { stable: number; volatile: number }>();
 const turnContextBuckets = new Map<string, NonNullable<ReturnType<typeof measureContextBuckets>>>();
 let providerFleetReloading = false;
 const turnResources = new TurnResources();
-const sharedComputerControl = new SharedComputerControl(turnResources, () => store.bots.some(bot => botComputerControlSnapshot(bot.id).held));
+// A lent screen call is refused only by what really holds this screen: a
+// person's takeover of a bot working on this computer, or a running turn's
+// claim. A takeover of another computer, or a claim whose turn has ended,
+// does not count.
+const sharedComputerControl = new SharedComputerControl(turnResources, {
+  personHolding: () => store.bots.some(bot => bot.computer === "local" && botComputerControlSnapshot(bot.id).held),
+  describe: (owner) => {
+    const bot = store.botByThread(owner.threadId);
+    return {
+      name: bot?.name ?? store.groupByThread(owner.threadId)?.name,
+      live: activeInternalGenerationByThread.get(owner.threadId) === owner.generation,
+    };
+  },
+});
 const turnResourceOwners = new Map<string, TurnOwner>();
 const turnComputerResources = new Map<string, { owner: TurnOwner; resource: string }>();
 const teamComputerTurns = new Map<string, { owner: TurnOwner; computerId: string; botId: string }>();
@@ -41632,13 +41645,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!sharedComputersEnabled(cfg) && !DESKTOP_MANAGED) return json(res, 404, { error: `no route: ${method} ${path}` });
       if (!z.string().uuid().safeParse(body?.id).success || !["acquire", "release", "renew"].includes(body?.action)) return json(res, 400, { error: "Invalid computer lease" });
       if (body.action === "release") sharedComputerControl.release(body.id);
-      else if (body.action === "renew") sharedComputerControl.renew(body.id);
+      // A lease that expired or was freed renews nothing: the desktop then
+      // asks for the screen again instead of acting without it.
+      else if (body.action === "renew") return json(res, 200, { ok: true, renewed: sharedComputerControl.renew(body.id) });
       else {
         // The desktop's own screen, lent to another computer: the organisation's
         // "this computer" setting applies here as it does to bot turns.
         const refusal = managedPolicy.computerRefusal("thisComputer");
         if (refusal) return json(res, 403, { error: refusal, code: "managed_policy" });
-        sharedComputerControl.acquire(body.id);
+        try { sharedComputerControl.acquire(body.id); }
+        catch (error) {
+          const refused = error as Error & { status?: number; code?: string; holder?: string };
+          if (refused.status !== 409) throw error;
+          return json(res, 409, { error: refused.message, code: refused.code, ...(refused.holder ? { holder: refused.holder } : {}) });
+        }
       }
       return json(res, 200, { ok: true });
     }
