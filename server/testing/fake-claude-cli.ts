@@ -23,6 +23,14 @@
 //                        call: the api-error frame and result 2.1.295 sends,
 //                        code usage_limit_reached, carrying the refused window)
 //   A prompt carrying [fake:api-error] plays that one turn as api-error.
+//   A prompt carrying [fake:context-thrash] (or FAKE_CLAUDE_MODE=context-thrash)
+//                      runs one Bash call, then stops the turn the way 2.1.312's
+//                      compaction breaker does: an api-error frame with
+//                      api_error "autocompact_thrashing" and its words, then an
+//                      error result (terminal_reason rapid_refill_breaker).
+//                      A prompt that carries Sagax's fresh-session note
+//                      ("ran out of context space") answers normally, unless
+//                      FAKE_CLAUDE_THRASH_AGAIN=1.
 //   FAKE_CLAUDE_API_ERROR_KIND the api-error frame's `error` (default: unknown); FAKE_CLAUDE_API_ERROR_STATUS its
 //                      result's api_error_status; FAKE_CLAUDE_NO_TERMINAL_REASON=1: the result has no terminal_reason,
 //                      only stop_reason "stop_sequence".
@@ -853,6 +861,19 @@ const playTurn = (prompt: JsonValue, late = false) => {
       ...(rateLimit ? { api_error_params: { rate_limit_info: rateLimit } } : {}),
     });
     out({ type: "result", subtype: "success", is_error: true, stop_reason: "stop_sequence", terminal_reason: "api_error", api_error: "usage_limit_reached", result: text });
+    turnRunning = false;
+    finishIfDone();
+    return;
+  }
+  const thrashText = promptText(prompt);
+  if ((mode === "context-thrash" || thrashText.includes("[fake:context-thrash]")) &&
+      (!thrashText.includes("ran out of context space") || process.env.FAKE_CLAUDE_THRASH_AGAIN === "1")) {
+    const id = `toolu_thrash_${Date.now()}`;
+    out({ type: "assistant", message: { content: [{ type: "tool_use", id, name: "Bash", input: { command: "nmap -p- 192.0.2.10" } }] } });
+    out({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: id, is_error: false, content: [{ type: "text", text: "PORT STATE SERVICE\n22/tcp open ssh" }] }] } });
+    const text = "Autocompact is thrashing: the context refilled to the limit within 3 turns of the previous compact, 3 times in a row. A file being read or a tool output is likely too large for the context window. Try reading in smaller chunks, or use /clear to start fresh.";
+    out({ type: "assistant", message: { model: "<synthetic>", stop_reason: "stop_sequence", content: [{ type: "text", text }] }, error: "invalid_request", is_api_error_message: true, api_error: "autocompact_thrashing" });
+    out({ type: "result", subtype: "success", is_error: true, stop_reason: "stop_sequence", terminal_reason: "rapid_refill_breaker", api_error: "autocompact_thrashing", total_cost_usd: 0.05, result: text });
     turnRunning = false;
     finishIfDone();
     return;

@@ -30,6 +30,7 @@ import { writeFileAtomic, writeFileAtomicIfChanged } from "../atomic.ts";
 import { augmentedPath } from "../env-path.ts";
 import { brokerSocketPath, cliVersionReader, describeSpawnFailure, execCli, killCliTree, spawnCli } from "../procs.ts";
 import { classifyResumeFailure, mayReplay, rebuiltSessionNotice, recoveryPromptFor } from "../resume-recovery.ts";
+import { contextFullMessage, contextRenewedNotice, isContextFullText, pushRenewalStep, renewalPrompt, type RenewalStep } from "../context-renewal.ts";
 import { hostTimeZone } from "../bot-settings.ts";
 import type { ApprovalMode } from "../../shared/approval-mode.ts";
 import { ClaudeLoginController } from "./claude-login-auth.ts";
@@ -239,6 +240,23 @@ export function claudeVersionTooOld(
 ): boolean {
   if (frame.is_api_error_message !== true && typeof frame.error !== "string") return false;
   return /\bClaude Code v?\d+(?:\.\d+)+ does not support this model\b/i.test(text);
+}
+
+/** The CLI stopping a turn because its context is full: the compaction
+ * breaker (2.1.312: an api-error frame with `api_error`
+ * "autocompact_thrashing", "Autocompact is thrashing: the context refilled
+ * to the limit within 3 turns of the previous compact, 3 times in a row…",
+ * then a result whose terminal reason is "rapid_refill_breaker"), or the
+ * API refusing a prompt past the window ("prompt is too long"). Gated on
+ * the CLI's error flag, like a sign-in failure: a reply that only talks
+ * about context is a reply. */
+export function claudeContextFull(
+  frame: { error?: unknown; is_api_error_message?: unknown; api_error?: unknown; terminal_reason?: unknown },
+  text: string,
+): boolean {
+  if (frame.api_error === "autocompact_thrashing" || frame.terminal_reason === "rapid_refill_breaker") return true;
+  if (frame.is_api_error_message !== true && typeof frame.error !== "string") return false;
+  return isContextFullText(text);
 }
 
 /** The usage window that refuses a Claude account's requests. */
@@ -1723,6 +1741,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         /** Armed by the continuation's `init`: a frame of any other kind must
          * follow within STEERED_CONTINUATION_SILENCE_MS, or the held result stands. */
         continuationSilence: ReturnType<typeof setTimeout> | null;
+        /** The CLI stopped the turn because its context is full (compaction
+         * thrashing, a prompt past the window): its close goes on in a fresh
+         * session instead of failing (server/context-renewal.ts). */
+        contextFull?: boolean;
+        /** The CLI's running cost total on the result that said so. */
+        contextFullTotal?: number;
+        /** The tool calls this turn made, for that fresh session's note. */
+        steps?: RenewalStep[];
+        /** The turn's latest reply text, for the same note. */
+        lastText?: string;
       } | null;
       idleTimer: ReturnType<typeof setTimeout> | null;
       closing: boolean;
@@ -1948,7 +1976,16 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
     });
     // retry bookkeeping lives PER THREAD, not per sendTurn call: a relaunch
     // is a fresh sendTurn, and the attempt cap must survive across launches
-    const retryState = new Map<string, { attempt: number; cancelled: boolean; rebuilt?: boolean }>();
+    const retryState = new Map<string, { attempt: number; cancelled: boolean; rebuilt?: boolean; renewed?: boolean }>();
+    /** Logical turns already moved to a fresh session once because the
+     * context filled up: a second overflow is reported, never looped. */
+    const renewedTurns = new Set<string>();
+    /** Threads whose last session filled up even when fresh: the next turn
+     * (Retry, or any new message) starts a fresh session from the chat
+     * instead of reopening that full one. */
+    const freshNextTurn = new Set<string>();
+    /** Cost of the full sessions a renewed turn left behind, by turn. */
+    const carriedCosts = new Map<string, number>();
 
     const sendTurn = async (turn: SendTurnInput, logicalTurnId?: string) => {
       if (startupModelRefresh) await startupModelRefresh;
@@ -2011,6 +2048,20 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (controlsHost && permissionMode === "bypassPermissions" && turn.approvalMode !== "full") {
         throw new Error("local computer control requires the interactive approval broker");
       }
+      // The thread's last session filled up even when fresh: reopening it
+      // would fill up again at once. This turn starts a fresh session from
+      // the chat's rebuild instead (a warm only prepares a process, so it
+      // leaves the mark for the turn that follows it). true: the rebuild
+      // replays the conversation; false: the turn's text was all there was.
+      let renewedFromChat: boolean | null = null;
+      if (!relaunch && turn.warmOnly !== true && freshNextTurn.has(threadId)) {
+        freshNextTurn.delete(threadId);
+        if (typeof turn.resumeCursor === "string" && !turn.sessionReset) {
+          const recovery = turn.recoveryText?.trim() && turn.recoveryText.trim() !== turn.text.trim() ? turn.recoveryText : undefined;
+          turn = { ...turn, resumeCursor: undefined, recoveryText: undefined, ...(recovery ? { text: recovery } : {}) };
+          renewedFromChat = Boolean(recovery);
+        }
+      }
       // Materialize before creating a broker or process. A missing/corrupt
       // attachment must fail this call without leaving a live session behind.
       const promptMsg = claudeUserMessage(turn.text, turn.images);
@@ -2025,6 +2076,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       if (!relaunch) {
         retry.cancelled = false;
         retry.rebuilt = false;
+        retry.renewed = false;
+      }
+      if (renewedFromChat !== null) {
+        retry.rebuilt = renewedFromChat;
+        retry.renewed = true;
       }
       retryState.set(threadId, retry);
       // a retry relaunches the whole CLI; the backoff is scaled down in tests
@@ -2302,8 +2358,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       // and the CLI re-reads it on every later model call. The harness never
       // sees these calls — the CLI runs the server itself — so the only place
       // to stand is between the two processes. Harness-owned mounts (the
-      // permission broker, computer, browser, agents, dweb) are already
-      // bounded and are deliberately left alone.
+      // permission broker, computer, browser, agents, dweb) are left alone
+      // here: the harness answers them itself and cuts a machine's output
+      // (a command, a file) where it answers (tool-output-bound.ts).
       // Each server's own result size limit, else the app's (customServerGate).
       // #1276: in a compact prompt every server the bot owns is gated with the
       // gate's own tool search (mcp-gate-search.ts): a big catalog lists only
@@ -2802,8 +2859,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         }
         // `total` is the CLI's running total for this process; the harness
         // books turn.completed.cost as this turn's own spend
-        const cost = turnCostFromRunningTotal(total, session.costTotal ?? null);
+        const own = turnCostFromRunningTotal(total, session.costTotal ?? null);
         if (total !== null) session.costTotal = total;
+        // a turn that went on in a fresh session also spent what the full one did
+        const carried = carriedCosts.get(t.turnId);
+        carriedCosts.delete(t.turnId);
+        renewedTurns.delete(t.turnId);
+        const cost = carried === undefined ? own : Number(((own ?? 0) + carried).toFixed(10));
         emit({ ...base(threadId, t.turnId), type: "turn.completed", ok, stopReason, cost, ...(usage ? { usage } : {}) });
         if (session.child.exitCode === null && !session.closing) armIdle(threadId);
       };
@@ -2944,9 +3006,12 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
               emit({ ...base(threadId, currentTurnId()), type: "session.started", sessionId: o.session_id, model: o.model, ...(retry.rebuilt ? { rebuilt: true } : {}) });
               // the person reads what did not carry over; announced once: a
               // steered continuation's own init re-reports the same session,
-              // which is no new rebuild
-              if (retry.rebuilt) emit({ ...base(threadId, currentTurnId()), type: "runtime.notice", message: rebuiltSessionNotice("Claude Code") });
+              // which is no new rebuild. A session started because the last
+              // one filled up says so instead.
+              if (retry.renewed) emit({ ...base(threadId, currentTurnId()), type: "runtime.notice", message: contextRenewedNotice("Claude Code") });
+              else if (retry.rebuilt) emit({ ...base(threadId, currentTurnId()), type: "runtime.notice", message: rebuiltSessionNotice("Claude Code") });
               retry.rebuilt = false;
+              retry.renewed = false;
             } else if (o.subtype === "compact_boundary") {
               // The CLI compacted its own session. Nothing reaches the chat
               // (the harness hides compactions); what the summary may have
@@ -2998,6 +3063,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
               emit({ ...base(threadId, currentTurnId()), type: "runtime.error", message: text, setup: true, claudeUpdate: true });
               break;
             }
+            // The context filled up (compaction thrashing, a prompt past the
+            // window): never the CLI's "/clear" advice in the chat. The turn
+            // goes on in a fresh session once this process closes.
+            if (claudeContextFull(o, text) && session.turn && !session.turn.settled && !o.parent_tool_use_id) {
+              session.turn.contextFull = session.turn.explained = true;
+              break;
+            }
             // The CLI's own report of any other API error is one plain error row
             // in the real cause, never a reply: the model never produced it.
             if ((o.is_api_error_message === true || typeof o.error === "string") && text.trim()) {
@@ -3006,6 +3078,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
               break;
             }
             if (text.trim()) {
+              if (session.turn && !o.parent_tool_use_id) session.turn.lastText = text.slice(-2_000);
               // fallback delta for CLIs/paths that never streamed the block
               if (!session.turn?.sawStreamDelta) emit({ ...base(threadId, currentTurnId()), type: "content.delta", streamKind: "assistant_text", delta: text });
               if (session.turn) session.turn.sawStreamDelta = false;
@@ -3016,6 +3089,9 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
                 // #1276: a call_tool on a searched server reads as the tool it runs
                 const runs = typeof b.name === "string" ? searchedToolCall(b.name, b.input, session.searchedMounts) : { name: b.name, input: b.input };
                 if (typeof b.id === "string" && typeof runs.name === "string") session.toolNames.set(b.id, runs.name);
+                if (session.turn && typeof b.id === "string" && typeof runs.name === "string" && !o.parent_tool_use_id) {
+                  pushRenewalStep(session.turn.steps ??= [], { id: b.id, name: runs.name, summary: commandSummary(runs.input) ?? toolDetailPreview(runs.input)?.slice(0, 200) });
+                }
                 emit({
                   ...base(threadId, currentTurnId()),
                   type: "item.started",
@@ -3060,6 +3136,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             for (const b of Array.isArray(o.message?.content) ? o.message.content : []) {
               if (b.type === "tool_result") {
                 const toolName = typeof b.tool_use_id === "string" ? session.toolNames.get(b.tool_use_id) : undefined;
+                const step = session.turn?.steps?.find((entry) => entry.id === b.tool_use_id);
+                if (step) {
+                  step.ok = !b.is_error;
+                  if (!isPhoneToolCallName(toolName)) step.output = toolDetailPreview(b.content)?.slice(0, 400);
+                }
                 emit({
                   ...base(threadId, currentTurnId()), type: "item.completed", itemType: "tool", itemId: b.tool_use_id, ok: !b.is_error,
                   // a phone's answer reaches the model, never the event log or the chat (phone_tool)
@@ -3110,6 +3191,17 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             // before `init` (classifyResumeFailure).
             if (o.is_error === true && sessionId && !session.sawInit && session.turn && !session.turn.settled) {
               closeSession(threadId, "resume refused");
+              break;
+            }
+            // The context filled up: the api-error frame said so, or only
+            // this result does. Nothing is settled or shown here; the close
+            // goes on in a fresh session (finalizeClose). A Stop is no
+            // failure, and a turn already renewed once is reported there.
+            if (o.is_error === true && session.turn && !session.turn.settled && !session.turn.stopRequested &&
+                (session.turn.contextFull || claudeContextFull(o, "") || isContextFullText([o.result, ...(Array.isArray(o.errors) ? o.errors : [])].filter((said) => typeof said === "string").join("\n")))) {
+              session.turn.contextFull = session.turn.explained = true;
+              if (typeof o.total_cost_usd === "number") session.turn.contextFullTotal = o.total_cost_usd;
+              closeSession(threadId, "context full");
               break;
             }
             // The usage limit refused this turn even if no frame said so: the
@@ -3283,6 +3375,67 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
               message: `claude exited ${code} before result${session.stderr ? `: ${session.stderr.trim().slice(-300)}` : ""}`,
             });
             settleResult({ ...held, ok: false, stopReason: "exit_before_result" });
+          }
+        } else if (session.turn && !session.turn.settled && session.turn.contextFull) {
+          // The CLI stopped this turn because its context filled up. The
+          // person never reads its "/clear" advice: the same logical turn
+          // goes on in a fresh session, given the conversation (the chat's
+          // rebuild, else the turn's own text) and the steps it already took.
+          // Once per turn: a fresh session that fills up too is reported in
+          // plain words, and the next send starts fresh (freshNextTurn).
+          const { turnId, input: turn, retryAbort } = session.turn;
+          const retry = retryState.get(threadId) ?? { attempt: 0, cancelled: false };
+          if (!retry.cancelled && !renewedTurns.has(turnId)) {
+            renewedTurns.add(turnId);
+            const conversation = turn.recoveryText?.trim() ? turn.recoveryText : turn.text;
+            const text = renewalPrompt({ base: conversation, steps: session.turn.steps ?? [], lastText: session.turn.lastText });
+            // what the full session already spent stays this turn's cost
+            const spent = turnCostFromRunningTotal(session.turn.contextFullTotal ?? null, session.costTotal ?? null);
+            if (spent !== null) carriedCosts.set(turnId, (carriedCosts.get(turnId) ?? 0) + spent);
+            session.broker?.close();
+            session.broker = undefined;
+            if (session.mcpConfigPath) {
+              try {
+                rmSync(dirname(session.mcpConfigPath), { recursive: true, force: true });
+              } catch {}
+              session.mcpConfigPath = null;
+            }
+            if (session.systemPromptPath) {
+              removePrivateTempDir(session.systemPromptPath);
+              session.systemPromptPath = null;
+            }
+            if (session.idleTimer) clearTimeout(session.idleTimer);
+            if (sessions.get(threadId) === session) sessions.delete(threadId);
+            session.turn = null;
+            // Same relaunch handle as a rejected resume: Stop stays reachable
+            // while the fresh process starts.
+            retry.rebuilt = Boolean(turn.recoveryText?.trim());
+            retry.renewed = true;
+            retryState.set(threadId, retry);
+            active.set(threadId, { stop: () => { retry.cancelled = true; retryAbort.abort(); }, turnId });
+            void (async () => {
+              try {
+                await sendTurn({ ...turn, resumeCursor: undefined, sessionReset: false, recoveryText: undefined, harnessCommand: undefined, text }, turnId);
+              } catch (e) {
+                renewedTurns.delete(turnId);
+                carriedCosts.delete(turnId);
+                if (active.get(threadId)?.turnId === turnId) active.delete(threadId);
+                retryState.delete(threadId);
+                emit({ ...base(threadId, turnId), type: "runtime.error", message: e instanceof Error ? e.message : String(e) });
+                emit({ ...base(threadId, turnId), type: "turn.completed", ok: false, stopReason: "exit_before_result", cost: null });
+              }
+            })();
+            return;
+          }
+          renewedTurns.delete(turnId);
+          retryState.delete(threadId);
+          const total = session.turn.contextFullTotal ?? null;
+          if (retry.cancelled) {
+            settle(false, "interrupted", total);
+          } else {
+            freshNextTurn.add(threadId);
+            emit({ ...base(threadId, currentTurnId()), type: "runtime.error", message: contextFullMessage("Claude") });
+            settle(false, "context_full", total);
           }
         } else if (session.turn && !session.turn.settled) {
           // A retained process may be running a later user turn. Its close

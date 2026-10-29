@@ -1,5 +1,6 @@
 import { hostTimeZone } from "../turn-clock.ts";
 import { USAGE_LIMIT } from "./retry.ts";
+import { contextFullMessage, isContextFullText } from "../context-renewal.ts";
 import { CODEX_USAGE_LIMIT_REACHED } from "../../shared/codex-usage-limit.ts";
 
 /** How a Codex turn reaches OpenAI: Sagax's ChatGPT plan, Codex's own sign-in, or any other provider. */
@@ -21,7 +22,15 @@ export function codexLimitMessage(said: string, timeZone = hostTimeZone()): stri
     : "Manage your Codex usage in ChatGPT, or switch this bot to another engine until it resets."}`;
 }
 
+/** Codex out of context room: its error kind (app-server v2 CodexErrorInfo
+ * contextWindowExceeded) or its words. */
+export function codexContextFull(value: string, codexErrorInfo?: unknown): boolean {
+  return codexErrorInfo === "contextWindowExceeded" || isContextFullText(value);
+}
+
 export function codexUserError(value: string, route: CodexRoute, codexErrorInfo?: unknown): string {
+  // Never its "start a new thread" advice: the next send starts one itself.
+  if (codexContextFull(value, codexErrorInfo)) return contextFullMessage("Codex");
   if (route === "plan" && value.includes("subscription_sharing_usage_limit_exceeded")) {
     return "subscription_sharing_usage_limit_exceeded: Your ChatGPT plan usage limit was reached. Manage usage in ChatGPT Settings, or explicitly choose another provider.";
   }

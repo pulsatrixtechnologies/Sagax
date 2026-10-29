@@ -27,7 +27,8 @@ import {
   ownerKeyCodexArgs,
 } from "./codex.ts";
 import { codexCliOverrides } from "./codex-process.ts";
-import { CODEX_SIGN_IN_EXPIRED, codexNotSignedIn, codexSignInRefused, codexUserError } from "./codex-errors.ts";
+import { CODEX_SIGN_IN_EXPIRED, codexContextFull, codexNotSignedIn, codexSignInRefused, codexUserError } from "./codex-errors.ts";
+import { contextFullMessage } from "../context-renewal.ts";
 import { CODEX_USAGE_LIMIT_REACHED } from "../../shared/codex-usage-limit.ts";
 import { removeTempDir } from "../testing/cleanup.ts";
 import { rebuiltSessionNotice } from "../resume-recovery.ts";
@@ -63,6 +64,12 @@ describe("CodexDriver.decodeConfig", () => {
     expect(codexUserError("provider_not_configured", "plan")).toContain("API billing will not be used");
     expect(codexUserError("x".repeat(500) + "subscription_sharing_usage_limit_exceeded", "plan")).toMatch(/^subscription_sharing_usage_limit_exceeded:/);
     expect(() => CodexDriver.decodeConfig({ authMode: "chatgpt-plan", managed: {} })).toThrow("cannot be combined");
+  });
+  it("words Codex running out of context room plainly, never its 'start a new thread' advice", () => {
+    const raw = "Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.";
+    expect(codexUserError(raw, "own", "contextWindowExceeded")).toBe(contextFullMessage("Codex"));
+    expect(codexUserError("stream disconnected", "other", "contextWindowExceeded")).toBe(contextFullMessage("Codex"));
+    expect(codexContextFull("stream disconnected before completion")).toBe(false);
   });
   it("defaults to the codex binary with fullAuto off", () => {
     expect(CodexDriver.decodeConfig({})).toEqual({ cli: "codex", fullAuto: false });

@@ -18,6 +18,7 @@ import { CALL_MARK, ENDED_MARK, INTERRUPTED_MARK, voiceCallTurn } from "../testi
 import { DATA_DIR, ensureDirs, instanceConfigs, NATIVE_DIR } from "../config.ts";
 import { TurnAuthenticationRefusedError, type ProviderInstance } from "../contracts.ts";
 import { recordEvents, type EventRecorder } from "../testing/events.ts";
+import { contextFullMessage, contextRenewedNotice } from "../context-renewal.ts";
 import {
   autoCompactWindow,
   brokerSocketCandidates,
@@ -1077,6 +1078,63 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     expect(recorder.events.some((event) => event.type === "content.delta")).toBe(false);
     expect(recorder.events.some((event) => event.type === "thread.token-usage.updated" && event.contextTokens === 0)).toBe(false);
     expect(recorder.events.at(-1)).toMatchObject({ type: "turn.completed", ok: false, stopReason });
+  });
+
+  // JC 2026-10-29 (0.8.16): "Autocompact is thrashing … use /clear to start
+  // fresh" reached the chat in the middle of a tool-heavy turn. The turn goes
+  // on in a fresh session instead, and the person never reads those words.
+  it("goes on in a fresh session when Claude's context keeps refilling, without the CLI's words", async () => {
+    const dump = join(scratch, "thrash.json");
+    await create("happy", { FAKE_CLAUDE_DUMP: dump });
+    const turn = await instance.adapter.sendTurn({
+      threadId: "t-thrash", text: "Check the ports [fake:context-thrash]", resumeCursor: "fixture-full-session",
+      recoveryText: "Earlier: the person asked about this VM.\nCheck the ports [fake:context-thrash]",
+    });
+    const done = await recorder.until((event) => event.type === "turn.completed" && event.turnId === turn.turnId);
+    expect(done).toMatchObject({ ok: true });
+    const errors = recorder.events.filter((event) => event.type === "runtime.error");
+    expect(errors).toEqual([]);
+    const said = JSON.stringify(recorder.events);
+    expect(said).not.toMatch(/Autocompact is thrashing|\/clear/);
+    expect(recorder.events.filter((event) => event.type === "runtime.notice")).toEqual([expect.objectContaining({ message: contextRenewedNotice("Claude Code") })]);
+    expect(recorder.events.filter((event) => event.type === "turn.completed")).toHaveLength(1);
+    const started = recorder.events.filter((event) => event.type === "session.started");
+    expect(started).toHaveLength(2);
+    expect(started[1]).toMatchObject({ rebuilt: true });
+    // the fresh launch resumes nothing and carries the conversation and the step already taken
+    const fresh = JSON.parse(readFileSync(dump, "utf8"));
+    expect(fresh.argv).not.toContain("--resume");
+    const prompt = JSON.stringify(fresh.prompt);
+    expect(prompt).toContain("Earlier: the person asked about this VM.");
+    expect(prompt).toContain("ran out of context space");
+    expect(prompt).toContain("nmap -p- 192.0.2.10");
+    expect(prompt).toContain("22/tcp open ssh");
+  });
+
+  it("says a second overflow in plain words, then starts the next turn fresh", async () => {
+    const dump = join(scratch, "thrash-again.json");
+    process.env.FAKE_CLAUDE_THRASH_AGAIN = "1";
+    try {
+      await create("happy", { FAKE_CLAUDE_DUMP: dump });
+      const turn = await instance.adapter.sendTurn({ threadId: "t-thrash-again", text: "Find the keys [fake:context-thrash]" });
+      await expect(recorder.until((event) => event.type === "turn.completed" && event.turnId === turn.turnId))
+        .resolves.toMatchObject({ ok: false, stopReason: "context_full" });
+      expect(recorder.events.filter((event) => event.type === "runtime.error")).toEqual([expect.objectContaining({ message: contextFullMessage("Claude") })]);
+      expect(JSON.stringify(recorder.events.filter((event) => event.type === "runtime.error"))).not.toMatch(/Autocompact|\/clear/);
+      // two launches: the turn's own and one fresh session, never a loop
+      expect(recorder.events.filter((event) => event.type === "session.started")).toHaveLength(2);
+    } finally {
+      delete process.env.FAKE_CLAUDE_THRASH_AGAIN;
+    }
+    const last = recorder.events.filter((event) => event.type === "session.started").at(-1) as { sessionId: string };
+    const retry = await instance.adapter.sendTurn({
+      threadId: "t-thrash-again", text: "Find the keys", resumeCursor: last.sessionId,
+      recoveryText: "Earlier: find the keys on the server.\nFind the keys",
+    });
+    await expect(recorder.until((event) => event.type === "turn.completed" && event.turnId === retry.turnId)).resolves.toMatchObject({ ok: true });
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.argv).not.toContain("--resume");
+    expect(JSON.stringify(seen.prompt)).toContain("Earlier: find the keys on the server.");
   });
 
   it("retires an outdated child before retry while preserving a healthy pooled session", async () => {

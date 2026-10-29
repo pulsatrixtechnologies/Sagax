@@ -62,10 +62,11 @@ import { sectionFingerprints, volatileContextNote, volatileSectionsUpdate, withC
 import type { ApprovalMode } from "../../shared/approval-mode.ts";
 import { CodexDeviceAuthController } from "./codex-device-auth.ts";
 import { codexAccountEmail, codexHome } from "./codex-identity.ts";
-import { CODEX_MISSING_CREDENTIALS, CODEX_SIGN_IN_EXPIRED, codexNotSignedIn, codexSignInExpired, codexSignInRefused, codexUserError, type CodexRoute } from "./codex-errors.ts";
+import { CODEX_MISSING_CREDENTIALS, CODEX_SIGN_IN_EXPIRED, codexContextFull, codexNotSignedIn, codexSignInExpired, codexSignInRefused, codexUserError, type CodexRoute } from "./codex-errors.ts";
 import { codexLoginCheck, codexLoginStatus, storedCodexLogin } from "./codex-login.ts";
 import { keyRejected, noteKeyAccepted, noteKeyRejected } from "../key-rejections.ts";
 import { classifyResumeFailure, mayReplay, rebuiltSessionNotice, recoveryPromptFor } from "../resume-recovery.ts";
+import { contextRenewedNotice } from "../context-renewal.ts";
 import { extractMcpImages } from "../mcp-tool-images.ts";
 import { parseProtocolAskQuestions, questionAnswersById, questionChoices } from "../../shared/ask-question.ts";
 import { codexVersionBehind, readLatestCodexRelease } from "./codex-release.ts";
@@ -860,6 +861,10 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
      * Edits and Auto launch the same sandbox and policy; only Approve for me
      * with Codex's own reviewer (auto_review) answers without Sagax. */
     const turnReviewers = new Map<string, { mode: ApprovalMode; sagaxAnswers: boolean }>();
+    /** Threads whose Codex thread ran out of context room: the next turn
+     * (Retry, or any new message) starts a new Codex thread from the chat's
+     * rebuild instead of resuming the full one (server/context-renewal.ts). */
+    const freshNextTurn = new Set<string>();
 
     const emit = (event: RuntimeEvent) => {
       for (const l of Array.from(listeners)) l(event);
@@ -1590,6 +1595,8 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         if (retryLoginRace(raw, refused)) return;
         if (refused) loginRefused();
         const message = refused ? codexSignInExpired(raw) : codexUserError(raw, route, error.codexErrorInfo);
+        // Out of context room: the next turn starts a new Codex thread.
+        if (!refused && codexContextFull(raw, error.codexErrorInfo)) freshNextTurn.add(threadId);
         const setup = refused || classifyError({ text: raw }).reason === "auth";
         if (message === state.lastError && (state.lastErrorSetup || !setup)) return;
         state.lastError = message;
@@ -2080,7 +2087,12 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           : config.authMode === "chatgpt-plan"
             ? { model: turn.model, modelProvider: "openai_chatgpt_plan" }
             : decodeCodexSelection(turn.model);
-        const cursor = typeof turn.resumeCursor === "string" ? turn.resumeCursor : null;
+        // The last Codex thread filled up: resuming it would fill up again.
+        // A new thread starts from the chat's rebuild (its turn text alone
+        // when there is nothing to replay).
+        const renewFull = freshNextTurn.has(threadId) && typeof turn.resumeCursor === "string";
+        freshNextTurn.delete(threadId);
+        const cursor = typeof turn.resumeCursor === "string" && !renewFull ? turn.resumeCursor : null;
         let startedModel: string | null = null;
         let resumedNativeThread = false;
         let rebuiltFromReplay = false;
@@ -2088,6 +2100,10 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         // `$name` with the skill's file (shared/harness-commands.ts).
         const skill = turn.harnessCommand?.path ? turn.harnessCommand : undefined;
         let promptText = skill ? `$${skill.name}${skill.args ? ` ${skill.args}` : ""}` : turn.text;
+        if (renewFull && !skill && turn.recoveryText?.trim() && turn.recoveryText.trim() !== turn.text.trim()) {
+          promptText = turn.recoveryText;
+          rebuiltFromReplay = true;
+        }
         if (cursor) {
           const resumeThread = () => request("thread/resume", {
             ...selectionConfig,
@@ -2186,7 +2202,8 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           );
         }
         emit({ ...base(threadId, turnId), type: "session.started", sessionId: codexThreadId, model: startedModel ?? turn.model ?? null, ...(rebuiltFromReplay ? { rebuilt: true } : {}) });
-        if (rebuiltFromReplay) emit({ ...base(threadId, turnId), type: "runtime.notice", message: rebuiltSessionNotice("Codex") });
+        if (renewFull) emit({ ...base(threadId, turnId), type: "runtime.notice", message: contextRenewedNotice("Codex") });
+        else if (rebuiltFromReplay) emit({ ...base(threadId, turnId), type: "runtime.notice", message: rebuiltSessionNotice("Codex") });
         const turnInput = [
           ...(skill?.path ? [{ type: "skill" as const, name: skill.name, path: skill.path }] : []),
           ...(promptText ? [{ type: "text" as const, text: promptText }] : []),
