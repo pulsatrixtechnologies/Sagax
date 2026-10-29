@@ -58,7 +58,7 @@ export interface LimitFailoverHostDeps {
   busy: (botId: string, threadId: string) => boolean;
   /** Moves the thread (not the bot); the refusal in words, or null once done. */
   switchThread: (botId: string, threadId: string, to: ModelSelection) => string | null;
-  /** One row in the thread. A switch and a return are transparent (JC,
+  /** One row in the thread. A switch and a return are transparent (the maintainer,
    * 2026-10-29): a hidden `notice:` row and a line in the Events lens; only
    * a wait the person must know of reads in the chat. Auto's own switch is
    * `switched` to "Auto". */
@@ -203,7 +203,7 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
     if (!own) return;
     // A newer turn took the thread meanwhile: it runs, this one is left as it failed.
     if (!await settled(dispatch.botId, threadId)) return;
-    // Auto (JC, 2026-10-29): the same turn goes on at once on the next model
+    // Auto (the maintainer, 2026-10-29): the same turn goes on at once on the next model
     // that works, picked as Auto picks, with the steps it already took; the
     // chat shows nothing, the Events lens says why. Another model of the same
     // engine still runs when only this model's window refused it.

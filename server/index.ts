@@ -14206,7 +14206,7 @@ function limitAfterResetMs(): number | undefined {
 }
 const limitFailoverStore = new LimitFailoverStore({ file: join(DATA_DIR, "limit-failovers.json"), now: () => Date.now(), afterResetMs: limitAfterResetMs() });
 /** A usage-limit row. A switch to another engine and the return after the
- * reset are transparent (JC, 2026-10-29): a hidden `notice:` row the server
+ * reset are transparent (the maintainer, 2026-10-29): a hidden `notice:` row the server
  * still reads back, and a line in the Events lens. A wait the person must
  * know of stays a `recovery:` row in the chat. */
 function limitFailoverRow(threadId: string, line: LimitFailoverLine): NonNullable<Message["tool"]> {

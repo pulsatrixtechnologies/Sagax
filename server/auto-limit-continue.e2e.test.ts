@@ -1,5 +1,5 @@
 // A usage limit in the middle of an Auto turn, end to end through the real
-// server and the fake Claude CLI (JC, 2026-10-29: "on switch à un modèle qui
+// server and the fake Claude CLI (the maintainer, 2026-10-29: "on switch à un modèle qui
 // fonctionne sans aviser l'utilisateur, ça doit être transparent"). No
 // provider is called.
 //
