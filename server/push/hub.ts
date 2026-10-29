@@ -15,7 +15,7 @@ import { PUSH_SEEN_GRACE_MS, PushRateLimiter, shouldPush, waitsForGrace } from "
 import type { PushDeviceStore } from "./devices.ts";
 import type { AndroidPushDeviceStore } from "./fcm-devices.ts";
 import { buildFcmMessage, type FcmSender } from "./fcm.ts";
-import { buildApnsRequest, buildReadSyncRequest, collapseId, type PushMessage } from "./payload.ts";
+import { buildApnsRequest, buildReadSyncRequest, buildSettledRequest, collapseId, type PushMessage } from "./payload.ts";
 
 export interface PushHubDeps {
   config: ApnsConfigResult;
@@ -67,6 +67,9 @@ export class PushHub {
   /** Conversations a push went out for, not yet read: a read of one tells
    * the phones (noteRead). In memory; bounded. */
   private readonly pushed = new Set<string>();
+  /** Asks (an approval or a question) a push went out for, not yet settled:
+   * person\0threadId\0requestId. In memory; bounded. */
+  private readonly pushedAsks = new Set<string>();
   private readonly readLimiter = new PushRateLimiter(30, 5 * 60_000);
   private notConfiguredLogged = false;
 
@@ -161,23 +164,52 @@ export class PushHub {
     this.syncRead(who, threadId);
   }
 
-  /** An approval or question on this conversation was answered (on any
-   * device) or expired. Its banner still waiting the grace is dropped, and
-   * the phones it buzzed hear it silently, so they withdraw the banner the
-   * same way a read does. */
-  noteSettled(threadId: string): void {
+  /** An approval or question was answered (on any device) or expired. Its
+   * push still waiting the grace is dropped, and the phones it rang hear it
+   * (buildSettledRequest): that ask's banner leaves the phone and the watch,
+   * and only that one; the conversation's other asks stay. Without a
+   * request id, every ask of the conversation is settled. */
+  noteSettled(threadId: string, requestId?: string): void {
     if (!threadId) return;
+    const matches = (message: PushMessage) => message.threadId === threadId && message.kind === "approval"
+      && (!requestId || message.requestId === requestId);
     for (const [pendingKey, entry] of this.pending) {
-      if (entry.message.threadId !== threadId || entry.message.kind !== "approval") continue;
+      if (!matches(entry.message)) continue;
       entry.cancel();
       this.pending.delete(pendingKey);
     }
-    for (const pushedKey of this.pushed) {
-      const split = pushedKey.indexOf("\0");
-      if (split <= 0 || pushedKey.slice(split + 1) !== threadId) continue;
-      this.pushed.delete(pushedKey);
-      this.syncRead(pushedKey.slice(0, split), threadId);
+    for (const askKey of this.pushedAsks) {
+      const [person, thread, request] = askKey.split("\0");
+      if (!person || thread !== threadId || !request || (requestId && request !== requestId)) continue;
+      this.pushedAsks.delete(askKey);
+      this.syncSettled(person, threadId, request);
     }
+  }
+
+  /** The settled push to this person's iPhones; Android hears a read of the
+   * conversation, as before. */
+  private syncSettled(person: string, threadId: string, requestId: string): void {
+    const sender = this.sender;
+    const fcm = this.fcm;
+    const ios = sender ? this.deps.store.list(person) : [];
+    const android = fcm ? this.androidDevices(person) : [];
+    if (!ios.length && !android.length) return;
+    if (!this.readLimiter.tryTake(person, this.now())) return;
+    const bundleId = this.deps.config.configured ? this.deps.config.config.bundleId : "";
+    const run = (async () => {
+      for (const device of ios) {
+        const outcome = await sender!.send(device, buildSettledRequest({ threadId, requestId, bundleId, nowMs: this.now() }));
+        if (!outcome.ok && outcome.prune) this.deps.store.prune(device.token);
+      }
+      for (const device of android) {
+        const outcome = await fcm!.send(device.token, buildFcmMessage({ message: { kind: "message", personId: person, title: "", body: "", threadId, at: this.now() }, token: device.token, kind: "read" }));
+        if (!outcome.ok && outcome.prune) this.deps.android?.store.prune(device.token);
+      }
+    })().catch((error) => {
+      this.log.warn(`push: settled sync failed (${error instanceof Error ? error.message : String(error)})`);
+    });
+    this.inflight.add(run);
+    void run.finally(() => this.inflight.delete(run));
   }
 
   /** The silent "read" push, at most READ_SYNC_MAX per person per window. */
@@ -233,6 +265,11 @@ export class PushHub {
     if (message.threadId && message.kind !== "nudge") {
       if (this.pushed.size >= 5_000) this.pushed.clear();
       this.pushed.add(key(message.personId, message.threadId));
+    }
+    // an ask is withdrawn by its own id once answered (noteSettled)
+    if (message.threadId && message.kind === "approval" && message.requestId) {
+      if (this.pushedAsks.size >= 5_000) this.pushedAsks.clear();
+      this.pushedAsks.add(`${message.personId}\0${message.threadId}\0${message.requestId}`);
     }
     const run = this.deliver(message).catch((error) => {
       this.log.warn(`push: send failed (${error instanceof Error ? error.message : String(error)})`);

@@ -69,5 +69,17 @@ export interface Notification {
    * the person's security key. Absent means the lock-screen Allow may
    * answer in the background, after the phone itself has unlocked. */
   needsKey?: boolean;
+  /** An approval's question in plain words, in the person's language
+   * ("Publish version 2.4 to the team?"): the phone shows it first, under
+   * the bot's name. Absent: `body` says it all. */
+  ask?: string;
+  /** A question's own choices, in order: the phone offers them as the
+   * banner's buttons (up to its limit; past it, Open). */
+  choices?: string[];
+  /** Never on a phone or a watch (2026-10-29): a conversation an AI client
+   * holds with a bot over MCP (shared/agent-conversation.ts) or a hidden
+   * one (#291). The client that asked reads the answer and the approval;
+   * the desktop still shows it. */
+  quietOnPhones?: boolean;
 }
 

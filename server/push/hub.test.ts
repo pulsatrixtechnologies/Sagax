@@ -103,31 +103,66 @@ describe("push hub", () => {
     expect(sent).toHaveLength(1);
   });
 
-  it("an approval answered elsewhere withdraws its banner: a queued one never goes, a delivered one is told silently", async () => {
+  it("an approval answered elsewhere withdraws its banner: a queued one never goes, a delivered one is taken down by its own id", async () => {
     const { store, hub, sent, fire } = setup({ connected: true });
     store.register("pr_bob", { token: TOKEN_A, platform: "ios", environment: "production", appVersion: "", deviceName: "" });
     // still in its grace: dropped
-    hub.submit(message({ kind: "approval", title: "Allow Nib to run a command?", body: "Run echo hi." }));
-    hub.noteSettled("t1");
+    hub.submit(message({ kind: "approval", requestId: "r1", title: "Allow Nib to run a command?", body: "Run echo hi." }));
+    hub.noteSettled("t1", "r1");
     await fire();
     expect(sent).toHaveLength(0);
     // delivered (no client connected), then answered on the desktop
     const offline = setup({ connected: false });
     offline.store.register("pr_bob", { token: TOKEN_A, platform: "ios", environment: "production", appVersion: "", deviceName: "" });
-    offline.hub.submit(message({ kind: "approval", title: "Allow Nib to run a command?", body: "Run echo hi." }));
+    offline.hub.submit(message({ kind: "approval", requestId: "r1", prompt: "approval", title: "Allow Nib to run a command?", body: "Run echo hi." }));
     await offline.fire();
     expect(offline.sent).toHaveLength(1);
-    offline.hub.noteSettled("t2");
+    offline.hub.noteSettled("t2", "r1");
+    offline.hub.noteSettled("t1", "r9");
     await offline.hub.drain();
     expect(offline.sent).toHaveLength(1);
-    offline.hub.noteSettled("t1");
+    offline.hub.noteSettled("t1", "r1");
     await offline.hub.drain();
     expect(offline.sent).toHaveLength(2);
-    expect(offline.sent[1]!.body).toMatchObject({ kind: "read", threadId: "t1" });
+    const settled = offline.sent[1]!;
+    // the ask's own id: the phone replaces it in place, then takes it down
+    expect(settled.headers).toMatchObject({ "apns-push-type": "alert", "apns-collapse-id": offline.sent[0]!.headers["apns-collapse-id"] });
+    expect(settled.body).toMatchObject({ kind: "settled", threadId: "t1", requestId: "r1", aps: { "mutable-content": 1, "interruption-level": "passive" } });
+    // never a sound, never the buttons of an ask that is gone
+    expect((settled.body as { aps: Record<string, unknown> }).aps.sound).toBeUndefined();
+    expect((settled.body as { aps: Record<string, unknown> }).aps.category).toBe("SAGAX_UPDATE");
     // already told
-    offline.hub.noteSettled("t1");
+    offline.hub.noteSettled("t1", "r1");
     await offline.hub.drain();
     expect(offline.sent).toHaveLength(2);
+  });
+
+  it("settles one ask at a time: another ask of the same conversation stays", async () => {
+    const { store, hub, sent } = setup({ connected: false });
+    store.register("pr_bob", { token: TOKEN_A, platform: "ios", environment: "production", appVersion: "", deviceName: "" });
+    hub.submit(message({ kind: "approval", requestId: "r1", body: "first" }));
+    hub.submit(message({ kind: "approval", requestId: "r2", body: "second" }));
+    await hub.drain();
+    expect(sent).toHaveLength(2);
+    expect(sent[0]!.headers["apns-collapse-id"]).not.toBe(sent[1]!.headers["apns-collapse-id"]);
+    hub.noteSettled("t1", "r1");
+    await hub.drain();
+    expect(sent).toHaveLength(3);
+    expect(sent[2]!.body).toMatchObject({ kind: "settled", requestId: "r1" });
+  });
+
+  it("the conversation's next line never replaces a waiting approval (its buttons would go)", async () => {
+    const { store, hub, sent, fire } = setup({ connected: true });
+    store.register("pr_bob", { token: TOKEN_A, platform: "ios", environment: "production", appVersion: "", deviceName: "" });
+    hub.submit(message({ kind: "approval", requestId: "r1", prompt: "approval", body: "Run echo hi." }));
+    hub.submit(message({ body: "a line after it" }));
+    await fire();
+    expect(sent).toHaveLength(2);
+    const approval = sent.find((row) => (row.body as { kind: string }).kind === "approval")!;
+    const line = sent.find((row) => (row.body as { kind: string }).kind === "message")!;
+    expect((approval.body as { aps: { category: string } }).aps.category).toBe("SAGAX_APPROVAL");
+    expect(approval.headers["apns-collapse-id"]).not.toBe(line.headers["apns-collapse-id"]);
+    expect(approval.headers["apns-priority"]).toBe("10");
   });
 
   it("a conversation read after it buzzed the phones tells them, silently, once", async () => {

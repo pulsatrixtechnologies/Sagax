@@ -88,6 +88,7 @@ export function buildNotification(
     needsKey?: boolean;
     routineRunId?: string;
     routineName?: string;
+    choices?: readonly string[];
   },
 ): Notification | null {
   // The toggle means what it says: off is off, including for approvals.
@@ -132,7 +133,32 @@ export function buildNotification(
   if (extra?.needsKey) notification.needsKey = true;
   if (extra?.routineRunId) notification.routineRunId = extra.routineRunId.slice(0, 128);
   if (extra?.routineName) notification.routineName = summarize(extra.routineName, 80);
+  // the card's own question, in the person's words: first on the phone
+  if ((kind === "approval" || kind === "question") && extra?.title) notification.ask = title;
+  if (kind === "question" && extra?.choices?.length) {
+    const choices = notificationChoices(extra.choices);
+    if (choices.length) notification.choices = choices;
+  }
   return notification;
+}
+
+/** At most this many choices ride a notification; the phone shows fewer. */
+export const NOTIFICATION_CHOICES_MAX = 10;
+/** A choice longer than this is clipped: a button, not a paragraph. */
+export const NOTIFICATION_CHOICE_MAX = 60;
+
+/** A question's choices as a banner can carry them: one line each, clipped,
+ * no blanks, no repeats, at most NOTIFICATION_CHOICES_MAX. */
+export function notificationChoices(raw: readonly unknown[]): string[] {
+  const out: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== "string") continue;
+    const choice = summarize(value, NOTIFICATION_CHOICE_MAX);
+    if (!choice || out.includes(choice)) continue;
+    out.push(choice);
+    if (out.length >= NOTIFICATION_CHOICES_MAX) break;
+  }
+  return out;
 }
 
 /** The same frame as buildNotification, without the bot-wide switch. Delivery
@@ -151,6 +177,7 @@ export function deliverableNotification(
     needsKey?: boolean;
     routineRunId?: string;
     routineName?: string;
+    choices?: readonly string[];
   },
 ): Notification | null {
   return buildNotification(kind, { ...bot, notifications: undefined }, threadId, detail, extra);

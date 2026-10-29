@@ -1765,6 +1765,8 @@ function achievementThreadPerson(threadId: string): string | null {
 function observePushFrame(payload: Record<string, unknown>): void {
   const kind = payload.kind;
   if (kind !== "notify" && kind !== "nudge" && kind !== "achievements") return;
+  // a conversation an AI client holds over MCP: never a phone or a watch
+  if (kind === "notify" && (payload.notification as { quietOnPhones?: unknown } | undefined)?.quietOnPhones === true) return;
   try {
     const messages = pushesForFrame(payload, {
       notificationPeople: (note) => {
@@ -11618,6 +11620,9 @@ const groupWithThread = (group: GroupRecord, viewer?: ApprovalViewer) => {
 // on exactly those frames (one whose open thread was deleted keeps its
 // composer locked until a page arrives). Every other frame stays slim, and
 // clients keep the transcript they hold when a frame carries none.
+/** Approvals already withdrawn: a card is patched several times once
+ * answered (who answered, the receipt), the phones hear it once. */
+const withdrawnApprovalNotices = new Set<string>();
 const sentThreads = new Map<string, string>();
 for (const record of [...store.bots, ...store.groups]) sentThreads.set(record.id, record.threadId);
 function pageIfThreadChanged(id: string, threadId: string) {
@@ -11637,9 +11642,13 @@ store.onChange((change) => {
     case "message":
       broadcast({ kind: "message", threadId: change.threadId, message: slimMessage(change.message) });
       break;
-    case "message.patch":
+    case "message.patch": {
       broadcast({ kind: "message.patch", threadId: change.threadId, message: slimMessage(change.message) });
+      // an answered card: its banner leaves the desktop, the phone and the watch
+      const settledRequest = settledCardRequest(change.message);
+      if (settledRequest) withdrawApprovalNotice(change.threadId, settledRequest);
       break;
+    }
     case "thread":
       broadcast({ kind: "thread", threadId: change.threadId, activeLeafId: change.activeLeafId });
       break;
@@ -14439,6 +14448,9 @@ function notify(notification: Notification | null) {
   // 2026-10-29: an outside agent's conversation (a person's AI client over
   // MCP) is silent for the person, but for what only they can answer
   if (notification && notificationInAgentConversation(notification)) return;
+  // ...and even that never rings a phone or a watch: the AI client that
+  // asked carries the approval to the person; the desktop still shows it
+  if (notification && notificationQuietOnPhones(notification)) notification = { ...notification, quietOnPhones: true };
   // the conversation on a live voice call is heard, not buzzed (notify.ts)
   if (notification && quietForCall(notification, lastPersonMessage(notification.threadId), Date.now(), Boolean(voiceCalls.active(notification.threadId)))) return;
   if (notification && QUIET_TURN_NEWS.has(notification.kind) && quietTurnThreads.has(notification.threadId)) return;
@@ -14492,9 +14504,23 @@ function scheduleApprovalExpiry(
 /** An approval was answered somewhere (or expired): every client takes its
  * banner down, and phones it buzzed hear it silently (server/push/hub.ts). */
 function withdrawApprovalNotice(threadId: string, requestId: string): void {
+  const key = `${threadId}\0${requestId}`;
+  if (withdrawnApprovalNotices.has(key)) return;
+  if (withdrawnApprovalNotices.size >= 5_000) withdrawnApprovalNotices.clear();
+  withdrawnApprovalNotices.add(key);
   broadcast({ kind: "notify-withdraw", threadId, requestId });
-  pushHub.noteSettled(threadId);
+  pushHub.noteSettled(threadId, requestId);
   reachMeService?.cardSettled(threadId, requestId);
+}
+
+/** A card with a request that is no longer open: answered, dismissed or
+ * expired, by whichever path (the engine, a safety hold, a bot's ask, the
+ * console). Its notifications go everywhere, whatever path settled it. */
+function settledCardRequest(message: unknown): string | undefined {
+  if (!message || typeof message !== "object") return undefined;
+  const card = (message as { card?: { requestId?: unknown; answered?: unknown; dismissed?: unknown; expired?: unknown } }).card;
+  if (!card || typeof card.requestId !== "string" || !card.requestId) return undefined;
+  return card.answered || card.dismissed || card.expired ? card.requestId : undefined;
 }
 
 /** Whether a notification belongs to an AI client's hidden conversation. */
@@ -14513,6 +14539,16 @@ function notificationIsInterBotChatter(notification: Notification): boolean {
   const bot = notification.threadId ? store.botByThread(notification.threadId) : undefined;
   const task = bot && notification.threadId ? store.taskByThread(bot.id, notification.threadId) : undefined;
   return Boolean(bot && task && isInterBotThread(bot.id, task));
+}
+
+/** Whether a notification comes out of a conversation an AI client holds
+ * with a bot over MCP, an outside agent's (shared/agent-conversation.ts) or a
+ * hidden one (#291): never on a phone or a watch, approvals included. */
+function notificationQuietOnPhones(notification: Notification): boolean {
+  if (!notification.threadId) return false;
+  if (notificationInHiddenThread(notification.threadId)) return true;
+  const bot = store.botByThread(notification.threadId);
+  return Boolean(bot && isAgentConversation(store.taskByThread(bot.id, notification.threadId)));
 }
 
 /** Whether a notification belongs to an outside agent's conversation with a
@@ -17520,6 +17556,8 @@ bus.subscribe((event: RuntimeEvent) => {
                 ...(event.requestId ? { requestId: event.requestId } : {}),
                 // Allow on the phone opens Sagax: this class needs the person's key.
                 ...(permission && ownerStepUp.length > 0 ? { needsKey: true } : {}),
+                // a question's own choices: the banner's buttons on the phone and the watch
+                ...(!permission && card.options?.length ? { choices: card.options } : {}),
               },
             ));
           };

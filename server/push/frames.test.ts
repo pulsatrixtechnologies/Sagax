@@ -72,5 +72,17 @@ describe("frames to pushes", () => {
     expect(person[0]?.senderLook).toBeUndefined();
     expect(asked).toEqual(["b1"]);
   });
-});
+  it("an ask carries its plain question and a question its choices", () => {
+    const approval = pushesForFrame({ kind: "notify", notification: { kind: "approval", botId: "b1", botName: "Scout", threadId: "t", title: "Publish version 2.4?", ask: "Publish version 2.4?", body: "Release notes checked.", requestId: "r1", choices: ["A"] } }, deps())[0];
+    expect(approval).toMatchObject({ ask: "Publish version 2.4?", senderName: "Scout" });
+    expect(approval?.choices).toBeUndefined();
+    const question = pushesForFrame({ kind: "notify", notification: { kind: "question", botId: "b1", threadId: "t", title: "Q", body: "Which?", requestId: "q1", choices: ["Red", "", 4, "Blue"] } }, deps())[0];
+    expect(question?.choices).toEqual(["Red", "Blue"]);
+  });
 
+  it("a conversation an AI client holds over MCP never rings a phone or a watch, approvals included", () => {
+    for (const kind of ["approval", "question", "done"]) {
+      expect(pushesForFrame({ kind: "notify", notification: { kind, botId: "b1", threadId: "t", title: "x", body: "y", requestId: "r1", quietOnPhones: true } }, deps())).toEqual([]);
+    }
+  });
+});

@@ -48,6 +48,11 @@ export interface PushMessage {
   /** A finished routine, so the banner can name it. */
   routineRunId?: string;
   routineName?: string;
+  /** An approval's question in plain words, in the person's language: the
+   * first line under the bot's name. */
+  ask?: string;
+  /** A question's choices: the phone offers them as the banner's buttons. */
+  choices?: string[];
   /** When it happened, milliseconds since 1970. */
   at: number;
   /** A string of the app's own catalog (ios/App/Localizable.xcstrings) the
@@ -192,17 +197,51 @@ export function communicationSenderName(message: Pick<PushMessage, "senderName">
 }
 
 /** One conversation shows one notification: the newest replaces the last.
+ * An approval or a question is its own notification, one per request: the
+ * next line of the conversation never replaces it (it would take its
+ * buttons away), and it is updated or withdrawn in place by its id.
  * Mirrors `PushCollapse.identifier` on the phone. */
-export function collapseId(message: Pick<PushMessage, "kind" | "threadId">): string {
-  const key = message.threadId?.trim() ? `sagax.t.${message.threadId.trim()}` : `sagax.${message.kind}`;
+export function collapseId(message: Pick<PushMessage, "kind" | "threadId"> & { requestId?: string }): string {
+  const thread = message.threadId?.trim() ?? "";
+  const request = message.kind === "approval" ? message.requestId?.trim() ?? "" : "";
+  const key = request ? `sagax.r.${thread}.${request}` : thread ? `sagax.t.${thread}` : `sagax.${message.kind}`;
   if (Buffer.byteLength(key) <= COLLAPSE_MAX) return key;
   return `sagax.h.${createHash("sha256").update(key).digest("hex").slice(0, 48)}`;
 }
 
-/** Priority 10 (at once, wakes the screen) for a nudge; 5 (when the phone
- * finds it convenient) for the rest. */
+/** Priority 10 (at once, wakes the screen) for a nudge and for what waits
+ * on the person (an approval, a question); 5 (when the phone finds it
+ * convenient) for the rest. */
 export function pushPriority(kind: PushKind): 5 | 10 {
-  return kind === "nudge" ? 10 : 5;
+  return kind === "nudge" || kind === "approval" ? 10 : 5;
+}
+
+/** The longest question line on the banner. */
+const ASK_MAX = 120;
+
+/** What the banner says under the bot's name: the question first, in plain
+ * words, then the detail. Never the question twice. */
+export function bannerBody(message: Pick<PushMessage, "kind" | "ask" | "body">): string {
+  const detail = clip(message.body, BODY_MAX);
+  const ask = message.kind === "approval" && message.ask ? clip(message.ask, ASK_MAX) : "";
+  if (!ask || ask === detail) return detail;
+  if (!detail) return ask;
+  return `${ask}\n${detail}`;
+}
+
+/** The choices a question carries to the phone, as the banner's buttons. */
+const PUSH_CHOICES_MAX = 10;
+const PUSH_CHOICE_MAX = 60;
+export function pushChoices(message: Pick<PushMessage, "kind" | "prompt" | "choices">): string[] {
+  if (message.kind !== "approval" || message.prompt !== "question" || !message.choices?.length) return [];
+  const out: string[] = [];
+  for (const raw of message.choices) {
+    const choice = clip(raw, PUSH_CHOICE_MAX);
+    if (!choice || out.includes(choice)) continue;
+    out.push(choice);
+    if (out.length >= PUSH_CHOICES_MAX) break;
+  }
+  return out;
 }
 
 export interface ApnsRequest {
@@ -223,6 +262,40 @@ export function buildReadSyncRequest(input: { threadId: string; bundleId: string
       // APNs requires priority 5 for a background push
       "apns-priority": "5",
       "apns-expiration": String(Math.floor(input.nowMs / 1000) + 60 * 60),
+    },
+    body: JSON.stringify(payload),
+  };
+}
+
+/** An approval or a question was answered (on any device) or expired.
+ * Sent as an alert (a silent push is throttled, and dropped once the app was
+ * swiped away) under the ask's own `apns-collapse-id`: the phone's
+ * Notification Service Extension takes that ask's banner down on the phone
+ * and the watch and shows nothing (ios NotificationService.swift). A phone
+ * without the extension shows, in the ask's place, one quiet line
+ * ("Answered.", no sound, passive), never the buttons of an ask that is gone. */
+export function buildSettledRequest(input: { threadId: string; requestId: string; bundleId: string; nowMs: number }): ApnsRequest {
+  const payload = {
+    aps: {
+      alert: { title: "Sagax", body: "Answered.", "loc-key": "Answered." },
+      "mutable-content": 1,
+      "content-available": 1,
+      "interruption-level": "passive",
+      "thread-id": input.threadId,
+      category: UPDATE_CATEGORY,
+    },
+    kind: "settled",
+    threadId: input.threadId,
+    requestId: input.requestId,
+    at: input.nowMs,
+  };
+  return {
+    headers: {
+      "apns-push-type": "alert",
+      "apns-topic": input.bundleId,
+      "apns-priority": "10",
+      "apns-collapse-id": collapseId({ kind: "approval", threadId: input.threadId, requestId: input.requestId }),
+      "apns-expiration": String(Math.floor(input.nowMs / 1000) + 24 * 60 * 60),
     },
     body: JSON.stringify(payload),
   };
@@ -252,7 +325,7 @@ export function buildApnsRequest(input: {
   const senderId = (message.senderId ?? message.botId ?? message.fromId)?.trim() || undefined;
   const alert: Record<string, unknown> = {
     title: senderName || clip(message.title, TITLE_MAX) || "Sagax",
-    body: clip(message.body, BODY_MAX),
+    body: bannerBody(message),
   };
   if (message.titleLocKey) {
     alert["title-loc-key"] = message.titleLocKey;
@@ -260,11 +333,10 @@ export function buildApnsRequest(input: {
   }
   if (message.bodyLocKey) alert["loc-key"] = message.bodyLocKey;
   if (message.bodyLocArgs?.length) alert["loc-args"] = message.bodyLocArgs.map((arg) => clip(arg, TITLE_MAX));
-  // The banner's title is the bot (name and face); an approval says under it
-  // what it would allow, in the card's own words.
-  if (message.kind === "approval" && senderName && message.title.trim() && message.title.trim() !== senderName) {
-    alert.subtitle = clip(message.title, TITLE_MAX);
-  } else if (message.routineName) {
+  // The banner's title is the bot (name and face); an approval says the
+  // question first in its body (bannerBody), never in a subtitle: a
+  // communication notification and the watch drop or bury the subtitle.
+  if (message.kind !== "approval" && message.routineName) {
     const name = clip(message.routineName, 80);
     alert.subtitle = clip(`Open routine ${name}`, TITLE_MAX);
     alert["subtitle-loc-key"] = "Open routine %@";
@@ -297,6 +369,8 @@ export function buildApnsRequest(input: {
   if (message.needsKey) payload.needsKey = true;
   if (message.routineRunId) payload.routineRunId = message.routineRunId;
   if (message.routineName) payload.routineName = clip(message.routineName, 80);
+  const choices = pushChoices(message);
+  if (choices.length) payload.choices = choices;
   if (senderName) payload.senderName = senderName;
   if (senderId) payload.senderId = senderId;
   if (avatarUrl) payload.avatarUrl = avatarUrl;
@@ -311,6 +385,11 @@ export function buildApnsRequest(input: {
   if (look && Buffer.byteLength(body) > APNS_PAYLOAD_MAX) {
     delete payload.senderLook;
     delete payload.senderLookVersion;
+    body = JSON.stringify(payload);
+  }
+  // ...then the choices: the question still asks, with Reply instead
+  if (payload.choices && Buffer.byteLength(body) > APNS_PAYLOAD_MAX) {
+    delete payload.choices;
     body = JSON.stringify(payload);
   }
   const headers: Record<string, string> = {

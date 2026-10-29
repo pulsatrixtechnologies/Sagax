@@ -29,6 +29,8 @@ export interface NotifyNote {
   needsKey?: boolean;
   routineRunId?: string;
   routineName?: string;
+  ask?: string;
+  choices?: string[];
 }
 
 export interface FramePushDeps {
@@ -69,7 +71,11 @@ export function pushesForFrame(payload: Record<string, unknown>, deps: FramePush
       ...(raw.needsKey === true ? { needsKey: true } : {}),
       ...(text(raw.routineRunId) ? { routineRunId: text(raw.routineRunId).slice(0, 128) } : {}),
       ...(text(raw.routineName) ? { routineName: text(raw.routineName).slice(0, 80) } : {}),
+      ...(text(raw.ask).trim() ? { ask: text(raw.ask).trim() } : {}),
+      ...(Array.isArray(raw.choices) ? { choices: raw.choices.filter((choice): choice is string => typeof choice === "string" && choice.trim().length > 0) } : {}),
     };
+    // an AI client's conversation over MCP never rings a phone or a watch
+    if (raw.quietOnPhones === true) return [];
     const people = note.audience ?? deps.notificationPeople(note);
     const unique = [...new Set(people.map((id) => id.trim().toLowerCase()).filter(Boolean))];
     const senderName = note.botName.trim();
@@ -93,6 +99,8 @@ export function pushesForFrame(payload: Record<string, unknown>, deps: FramePush
       ...(note.kind === "approval" && note.needsKey ? { needsKey: true } : {}),
       ...(note.routineRunId ? { routineRunId: note.routineRunId } : {}),
       ...(note.routineName ? { routineName: note.routineName } : {}),
+      ...(note.ask && (note.kind === "approval" || note.kind === "question") ? { ask: note.ask } : {}),
+      ...(note.kind === "question" && note.choices?.length ? { choices: note.choices } : {}),
       at,
     }));
   }

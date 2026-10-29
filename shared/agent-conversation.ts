@@ -14,8 +14,9 @@
 //     every existing rule: out of the person's stream (shared/single-stream.ts),
 //     their sidebar, unread counts and typing dots;
 //   - nothing in it notifies the person (push, watch, banner, sound), except
-//     what only they can answer: an approval or a question follows Reach me
-//     as anywhere else (`agentConversationNotifies`).
+//     what only they can answer: an approval or a question
+//     (`agentConversationNotifies`), and that on the desktop only: never a
+//     phone or a watch (`quietOnPhones`, server/index.ts notify).
 //
 // The turn still runs as the person who owns the connection, with their
 // rights and sign-ins: only where it is shown and who is told change.

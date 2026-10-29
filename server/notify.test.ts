@@ -83,8 +83,21 @@ describe("an approval notification", () => {
     const n = buildNotification("done", { id: "b", name: "Scout", threadId: "t" }, "t", "report ready", { routineRunId: "run-1", routineName: "Morning brief" });
     expect(n).toMatchObject({ kind: "done", routineRunId: "run-1", routineName: "Morning brief", body: "report ready" });
   });
-  it("keeps the old title without one", () => {
-    expect(buildNotification("approval", { id: "b", name: "Quasar", threadId: "t" }, "t", "x")?.title).toBe("Quasar needs approval");
+  it("keeps the old title without one, and then asks nothing on its own line", () => {
+    const n = buildNotification("approval", { id: "b", name: "Quasar", threadId: "t" }, "t", "x");
+    expect(n?.title).toBe("Quasar needs approval");
+    expect(n?.ask).toBeUndefined();
+  });
+  it("puts the plain question on its own line for the phone", () => {
+    const n = buildNotification("approval", { id: "b", name: "Quasar", threadId: "t" }, "t", "Run echo hi.", { title: "Allow Quasar to run a command?", requestId: "r1" });
+    expect(n?.ask).toBe("Allow Quasar to run a command?");
+  });
+  it("a question carries its choices, clean and bounded; an approval never does", () => {
+    const q = buildNotification("question", { id: "b", name: "Scout", threadId: "t" }, "t", "Which color?", { requestId: "q1", choices: ["Red", "Red", " ", "Blue", ...Array.from({ length: 20 }, (_, i) => `c${i}`)] });
+    expect(q?.choices?.slice(0, 2)).toEqual(["Red", "Blue"]);
+    expect(q?.choices).toHaveLength(10);
+    const a = buildNotification("approval", { id: "b", name: "Scout", threadId: "t" }, "t", "x", { requestId: "r", choices: ["Allow", "Deny"] });
+    expect(a?.choices).toBeUndefined();
   });
 });
 
