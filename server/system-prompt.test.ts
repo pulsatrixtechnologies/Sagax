@@ -34,6 +34,7 @@ import {
   WIDGET_APPROVAL_PROMPT,
   RUN_YOURSELF_PROMPT,
   VERIFY_FIRST_PROMPT,
+  WORK_STYLE_PROMPT,
   type ComputerPromptKind,
 } from "./system-prompt.ts";
 import { WIDGET_KIT_CSS } from "../src/lib/widget-kit.ts";
@@ -134,7 +135,7 @@ describe("buildSystemPrompt", () => {
     // memory, mentions, and recent work differ between two turns of one live
     // session (recent work relabels "2h ago" every turn), so a driver holding
     // a process open must not key that process on them
-    expect(built.stable).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT + "You are Kiwi. Search past sessions.");
+    expect(built.stable).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT + "You are Kiwi." + WORK_STYLE_PROMPT + " Search past sessions.");
     expect(built.volatile).toContain("likes tea");
     expect(built.volatile).toContain("@Fig");
     expect(built.volatile).toContain("today 20:48");
@@ -168,12 +169,13 @@ describe("buildSystemPrompt", () => {
 
   it("is the persona alone when there is no soul and no parts", () => {
     const built = buildSystemPrompt("You are Kiwi.", "", []);
-    expect(built.text).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT + "You are Kiwi.");
+    expect(built.text).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT + "You are Kiwi." + WORK_STYLE_PROMPT);
     expect(built.sections).toEqual([
       { id: "misuse-policy", label: "Security policy", text: MISUSE_POLICY_PROMPT, bytes: Buffer.byteLength(MISUSE_POLICY_PROMPT, "utf8") },
       { id: "run-yourself", label: "Do the work yourself", text: RUN_YOURSELF_PROMPT, bytes: Buffer.byteLength(RUN_YOURSELF_PROMPT, "utf8") },
       { id: "verify-first", label: "Verify, never assume", text: VERIFY_FIRST_PROMPT, bytes: Buffer.byteLength(VERIFY_FIRST_PROMPT, "utf8") },
       { id: "persona", label: "Identity", text: "You are Kiwi.", bytes: 13 },
+      { id: "work-style", label: "Work style", text: WORK_STYLE_PROMPT, bytes: Buffer.byteLength(WORK_STYLE_PROMPT, "utf8") },
     ]);
   });
 
@@ -192,19 +194,35 @@ describe("buildSystemPrompt", () => {
       { id: "memory", label: "Memory", text: " Your memory file is X." },
     ];
     const built = buildSystemPrompt("You are Kiwi.", "", parts);
-    expect(built.text).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT + "You are Kiwi. You can act on the computer. Your memory file is X.");
-    expect(built.sections.map((s) => s.id)).toEqual(["misuse-policy", "run-yourself", "verify-first", "persona", "computer", "memory"]);
+    expect(built.text).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT + "You are Kiwi." + WORK_STYLE_PROMPT + " You can act on the computer. Your memory file is X.");
+    expect(built.sections.map((s) => s.id)).toEqual(["misuse-policy", "run-yourself", "verify-first", "persona", "work-style", "computer", "memory"]);
   });
 
   it("puts the soul block directly after the persona and measures it in bytes", () => {
     const built = buildSystemPrompt("You are Kiwi.", "Be brief. é", [
       { id: "memory", label: "Memory", text: " Your memory file is X." },
     ]);
-    expect(built.sections.map((s) => s.id)).toEqual(["misuse-policy", "run-yourself", "verify-first", "persona", "soul", "memory"]);
+    expect(built.sections.map((s) => s.id)).toEqual(["misuse-policy", "run-yourself", "verify-first", "persona", "soul", "work-style", "memory"]);
     const soul = built.sections[4]!;
     expect(soul.text).toBe(soulSystemPrompt("Be brief. é"));
     expect(soul.bytes).toBe(Buffer.byteLength(soul.text, "utf8"));
-    expect(built.text).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT + "You are Kiwi." + soul.text + " Your memory file is X.");
+    expect(built.text).toBe(MISUSE_POLICY_PROMPT + RUN_YOURSELF_PROMPT + VERIFY_FIRST_PROMPT + "You are Kiwi." + soul.text + WORK_STYLE_PROMPT + " Your memory file is X.");
+  });
+
+  it("puts the work style after the soul and the rules, before memory, in the stable half (2026-10-29)", () => {
+    const built = buildSystemPrompt("You are Kiwi.", "Be brief.", [
+      { id: "memory", label: "Memory", text: " Your memory file is X." },
+      { id: "rules", label: "Rules (RULES.md)", text: " Never email a client." },
+      { id: "finish-until", label: "Do not finish until", text: " Do not finish until: the tests pass." },
+    ]);
+    expect(built.sections.map((s) => s.id)).toEqual(["misuse-policy", "run-yourself", "verify-first", "persona", "soul", "rules", "finish-until", "work-style", "memory"]);
+    expect(built.stable).toContain(WORK_STYLE_PROMPT);
+    expect(built.volatile).not.toContain("How you work");
+    // the five things the reference app's bots do that ours were measured not to
+    for (const said of ["say the plan in one or two lines", "keep going until the result is in hand", "Search before you ask", "session_search", "change what caused it and call once more", "take another route", "Never repeat the same failing call unchanged", "name that one step; do not list options", "Say the answer first, in the person's language", "no preamble"]) {
+      expect(WORK_STYLE_PROMPT).toContain(said);
+    }
+    expect(WORK_STYLE_PROMPT.startsWith("\n")).toBe(true);
   });
 });
 
