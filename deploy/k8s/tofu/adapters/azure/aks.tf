@@ -48,12 +48,17 @@ resource "azurerm_kubernetes_cluster" "this" {
   }
 
   dynamic "api_server_access_profile" {
-    for_each = length(var.api_server_authorized_ip_ranges) > 0 ? [1] : []
+    for_each = length(var.api_server_authorized_ip_ranges) > 0 || var.api_server_vnet_integration ? [1] : []
     content {
-      # The sandbox pool's kubelets reach the API from the NAT gateway address.
-      # The sandboxes behind it must not: put the API server address in
-      # SAGAX_SANDBOX_EGRESS_DENY so their policy refuses it.
-      authorized_ip_ranges = concat(var.api_server_authorized_ip_ranges, ["${azurerm_public_ip.sandbox_egress[0].ip_address}/32"])
+      # Without VNet integration the sandbox pool's kubelets reach the API
+      # from the NAT gateway address, so the sandboxes behind it reach it
+      # too, and the API's public IP changes at each cluster start: set
+      # SAGAX_SANDBOX_K8S_DENY_HOSTS to the API FQDN. With it, the nodes
+      # reach the API on a private address in its own delegated subnet and
+      # the NAT address leaves the authorized ranges.
+      authorized_ip_ranges = var.api_server_vnet_integration ? var.api_server_authorized_ip_ranges : concat(var.api_server_authorized_ip_ranges, ["${azurerm_public_ip.sandbox_egress[0].ip_address}/32"])
+      virtual_network_integration_enabled = var.api_server_vnet_integration
+      subnet_id                           = var.api_server_vnet_integration ? azurerm_subnet.api_server[0].id : null
     }
   }
 

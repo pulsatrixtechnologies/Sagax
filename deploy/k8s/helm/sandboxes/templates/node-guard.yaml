@@ -1,0 +1,89 @@
+{{- if include "sandboxes.on" (list .Values.nodeGuard "enabled" false) }}
+{{- $g := .Values.nodeGuard }}
+{{- if not (regexMatch "@sha256:[0-9a-f]{64}$" ($g.image | default "")) }}
+{{- fail "nodeGuard.image must be pinned by digest (an image with sh and nsenter, busybox for one)" }}
+{{- end }}
+# 2026-10-29: a pod reaches its own node's addresses (kubelet 10250,
+# sshd, any host port) whatever its NetworkPolicy says, because the CNI does
+# not police traffic from a pod to the node it runs on. On the sandbox
+# nodes, drop every new connection that comes in from a pod interface
+# (azv* with Azure CNI) to the node itself. Replies to what the node opened
+# (kubelet probes) stay allowed. The API server reaches the kubelet through
+# konnectivity from the system pool, never from a pod of this node, so exec,
+# logs and probes keep working.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ $g.namespace | quote }}
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+    pod-security.kubernetes.io/enforce: privileged
+    pod-security.kubernetes.io/audit: privileged
+    pod-security.kubernetes.io/warn: privileged
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: sagax-node-guard
+  namespace: {{ $g.namespace | quote }}
+  labels:
+    {{- include "sandboxes.labels" . | nindent 4 }}
+    app.kubernetes.io/component: node-guard
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sagax-node-guard
+  updateStrategy:
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: sagax-node-guard
+    spec:
+      hostNetwork: true
+      hostPID: true
+      automountServiceAccountToken: false
+      priorityClassName: system-node-critical
+      terminationGracePeriodSeconds: 5
+      nodeSelector:
+        {{- toYaml $g.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml $g.tolerations | nindent 8 }}
+      containers:
+        - name: guard
+          image: {{ $g.image | quote }}
+          securityContext:
+            privileged: true
+          resources:
+            requests:
+              cpu: 5m
+              memory: 8Mi
+            limits:
+              cpu: 50m
+              memory: 32Mi
+          env:
+            - name: POD_INTERFACES
+              value: {{ join " " $g.podInterfaces | quote }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              # The node's own iptables (its backend, its binary), from PID 1.
+              ipt() { nsenter -t 1 -m -n -- iptables -w "$@"; }
+              chain=SAGAX-NODE-GUARD
+              build() {
+                ipt -N "$chain" 2>/dev/null || true
+                ipt -C "$chain" -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN 2>/dev/null \
+                  || ipt -I "$chain" 1 -m conntrack --ctstate ESTABLISHED,RELATED -j RETURN
+                ipt -C "$chain" -j DROP 2>/dev/null || ipt -A "$chain" -j DROP
+                for i in $POD_INTERFACES; do
+                  ipt -C INPUT -i "$i" -j "$chain" 2>/dev/null || ipt -I INPUT 1 -i "$i" -j "$chain"
+                done
+              }
+              build
+              echo "sagax-node-guard: pod interfaces ($POD_INTERFACES) cannot open connections to this node"
+              # Re-checked every minute: a node agent that rewrites INPUT
+              # gets the jump back. The rules stay when the pod stops; the
+              # chart's uninstall notes say how to remove them.
+              while true; do sleep 60; build; done
+{{- end }}

@@ -256,3 +256,23 @@ backup:
     region: us-east-1
     credentialSecret: sagax-backup
     credentialKey: cloud
+
+# 2026-10-29: keeps sandbox pods off their own node (kubelet 10250, sshd,
+# host ports), which NetworkPolicy does not police. A privileged DaemonSet
+# on the sandbox nodes adds an iptables chain that drops new connections
+# from pod interfaces to the node. Off by default: it needs a digest-pinned
+# image with sh and nsenter (busybox).
+nodeGuard:
+  enabled: false
+  namespace: sagax-node-guard
+  image: ""
+  # Pod interfaces on the node, as iptables -i patterns. Azure CNI: azv+.
+  podInterfaces:
+    - azv+
+  nodeSelector:
+    sagax.io/isolation: dedicated
+  tolerations:
+    - key: sagax.io/dedicated
+      operator: Exists
+      effect: NoSchedule
+

@@ -15,7 +15,7 @@ import { createSandboxdHandler } from "../sandboxd.ts";
 import { SandboxdVerifier } from "../sandboxd-auth.ts";
 import { kubeconfigFileFromEnv, kubernetesClient, type K8sClient, type K8sResponse } from "./sandboxd-k8s-client.ts";
 import { kubernetesApi, withExecEnv } from "./sandboxd-k8s.ts";
-import { PAUSED_ANNOTATION, kubernetesSandboxConfigFromEnv } from "./sandboxd-k8s-spec.ts";
+import { PAUSED_ANNOTATION, kubernetesSandboxConfigFromEnv, sandboxEgress } from "./sandboxd-k8s-spec.ts";
 import { FakeDocker } from "../testing/fake-docker.ts";
 import { sandboxdClient } from "../user-sandbox-client.ts";
 import { SANDBOX_INSTANCE_LABEL, SANDBOX_LABEL, SANDBOX_USER_LABEL, sandboxContainerSpec, sandboxKeyForPrincipal, sandboxNames, sandboxdConfigFromEnv } from "../user-sandbox-spec.ts";
@@ -594,5 +594,34 @@ describe("a pod that does not run in time (2026-10-19, cold node pool)", () => {
     const status = await service.status(person);
     expect(status).toMatchObject({ state: "stopped", starting: true });
     expect(pods()).toBe(before);
+  });
+});
+
+function policyExcept(policy: Obj | undefined): string[] {
+  const egress = ((policy?.spec as Obj | undefined)?.egress ?? []) as { to: { ipBlock: { except?: string[] } }[] }[];
+  return egress[0]?.to[0]?.ipBlock.except ?? [];
+}
+
+describe("the cluster API is denied to every sandbox", () => {
+  it("denies the API in new policies and moves every existing one when the API moves", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-k8s-deny-"));
+    const { service, objects, api, sandbox } = harness(dir);
+    await service.installEgressPolicy();
+    expect(await api.setHostDeny(["198.51.100.20/32"])).toBe(0);
+    expect((await service.ensure(person)).state).toBe("running");
+    const path = `/apis/networking.k8s.io/v1/namespaces/sandboxes/networkpolicies/${sandboxNames(person).network}`;
+    expect(policyExcept(objects.get(path))).toContain("198.51.100.20/32");
+    expect(policyExcept(objects.get(path))).toEqual(expect.arrayContaining(sandbox.egressDeny));
+    // The cluster restarted: same name, a new public address.
+    expect(await api.setHostDeny(["203.0.113.10/32"])).toBe(1);
+    expect(policyExcept(objects.get(path))).toContain("203.0.113.10/32");
+    expect(policyExcept(objects.get(path))).not.toContain("198.51.100.20/32");
+    expect(policyExcept(objects.get(path))).toEqual(expect.arrayContaining(sandbox.egressDeny));
+    // Unchanged: nothing written.
+    expect(await api.setHostDeny(["203.0.113.10/32"])).toBe(0);
+    // The default deny keeps its shape.
+    const defaultDeny = objects.get("/apis/networking.k8s.io/v1/namespaces/sandboxes/networkpolicies/sagax-default-deny");
+    expect((defaultDeny!.spec as Obj).egress).toBeUndefined();
+    expect(sandboxEgress([])).toEqual([{ to: [{ ipBlock: { cidr: "0.0.0.0/0" } }] }]);
   });
 });

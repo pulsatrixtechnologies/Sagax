@@ -35,9 +35,11 @@ rules:
   - apiGroups: [""]
     resources: ["pods/exec"]
     verbs: ["get", "create"]
+  # patch: SAGAX_SANDBOX_K8S_DENY_HOSTS moves the denied API address in
+  # every person's policy when the cluster restarts.
   - apiGroups: ["networking.k8s.io"]
     resources: ["networkpolicies"]
-    verbs: ["get", "list", "create", "delete"]
+    verbs: ["get", "list", "create", "delete", "patch"]
   - apiGroups: [""]
     resources: ["resourcequotas"]
     verbs: ["get"]
