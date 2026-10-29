@@ -65,9 +65,10 @@ const API: Record<string, unknown> = {
     items: [
       { id: "v-1", kind: "login", name: "Docs portal", username: "alex", domains: ["docs.example.com"], hasPassword: true, hasTotp: true, hasApiKey: false, hasNotes: false, source: "local", grants: [grant("bot-0")], createdAt: NOW - 20 * DAY, updatedAt: NOW - 20 * DAY, lastUsedAt: NOW - DAY, lastUsedBy: "bot-0" },
       { id: "v-2", kind: "apiKey", name: "Weather API", domains: ["api.example.com"], hasPassword: false, hasTotp: false, hasApiKey: true, hasNotes: false, source: "local", grants: [grant("bot-1")], createdAt: NOW - 12 * DAY, updatedAt: NOW - 12 * DAY },
+      { id: "v-4", kind: "login", name: "Example signup", username: "alex@example.com", domains: ["accounts.example.com"], hasPassword: true, hasTotp: false, hasApiKey: false, hasNotes: false, source: "local", grants: [grant("bot-1")], createdAt: NOW - DAY, updatedAt: NOW - DAY },
       { id: "v-3", kind: "note", name: "Office wifi", domains: [], hasPassword: false, hasTotp: false, hasApiKey: false, hasNotes: true, source: "local", grants: [], createdAt: NOW - 6 * DAY, updatedAt: NOW - 6 * DAY },
     ],
-    wallets: { shop_pay: { chosen: false, ready: false, missing: "the Shop Pay CLI" }, link: { chosen: false, ready: false, missing: "the Link CLI" } },
+    wallets: { shop_pay: { chosen: true, ready: true, missing: "" }, link: { chosen: false, ready: false, missing: "the Link CLI" } },
     onePassword: { available: false, reason: "absent" },
   },
 };

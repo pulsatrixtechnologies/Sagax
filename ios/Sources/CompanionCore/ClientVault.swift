@@ -30,6 +30,16 @@ public struct VaultItemPublic: Decodable, Equatable, Sendable, Identifiable {
     public var address: VaultAddressPublic?
     /// "1password" for a 1Password reference (allowed once only, review of #954).
     public var source: String?
+    /// 2026-10-29: an API key is saved (shown like a password).
+    public var hasApiKey: Bool?
+
+    /// The secret the owner may show here: a password or a key of their own vault.
+    public var revealField: String? {
+        guard source != "1password" else { return nil }
+        if hasPassword { return "password" }
+        if hasApiKey == true { return "apiKey" }
+        return nil
+    }
 
     /// What the row shows. Never a number. */
     public var subtitle: String {

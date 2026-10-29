@@ -29,7 +29,10 @@ import {
   VAULT_ITEM_KINDS,
   VAULT_ONCE_GRANT_MS,
   VAULT_SINGLE_USE_MS,
+  VAULT_TURN_LEND_MS,
   itemIdFromHandle,
+  purchaseIdFromWalletHandle,
+  walletCardHandle,
   vaultHandle,
   normalizeVaultDomain,
   parseCommandVariable,
@@ -69,6 +72,7 @@ import { writeFileAtomic } from "./atomic.ts";
 import type { VaultKeySource } from "./mcp-oauth.ts";
 import { principalDir } from "./person-connections.ts";
 import { parseTotpSeed, totp } from "./totp.ts";
+import type { IssuedCard, WalletIssuer } from "./wallet-issuer.ts";
 
 export const LOCAL_VAULT_PRINCIPAL = "local";
 const FILE = "credential-vault.enc";
@@ -396,11 +400,29 @@ export function listingOf(item: StoredVaultItem, now: number = Date.now()): Vaul
   };
 }
 
+/** 2026-10-29: a login lent for one turn, held in memory only. */
+interface LentLogin {
+  principalId: string;
+  item: StoredVaultItem;
+  botId: string;
+  threadId: string;
+  /** The turn it was lent to has started: its end forgets the login. */
+  started: boolean;
+  expiresAt: number;
+}
+
+
 export class CredentialVault {
   private readonly dataDir: string;
   private readonly keySource: () => VaultKeySource;
   private readonly now: () => number;
   private readonly cache = new Map<string, VaultDocument>();
+  /** Logins lent for one turn, by item id. Never written to disk. */
+  private readonly lent = new Map<string, LentLogin>();
+  private walletIssuer: WalletIssuer | null = null;
+  /** One-time cards from a wallet, by purchase id, in memory only. */
+  private readonly issued = new Map<string, IssuedCard>();
+  private readonly issuing = new Map<string, Promise<void>>();
 
   constructor(dataDir: string, keySource: () => VaultKeySource, now: () => number = Date.now) {
     this.dataDir = dataDir;
@@ -564,6 +586,87 @@ export class CredentialVault {
     });
   }
 
+  /** 2026-10-29 ("This turn only" on a request card): a login the person
+   * typed, lent to this bot for the turn the card resumes. It is never
+   * written to disk: it lives in memory until that turn ends
+   * (turnPhase "ended"), or VAULT_TURN_LEND_MS at most. */
+  lend(principalId: string, input: VaultItemInput, grant: { botId: string; threadId: string }): VaultItemListing {
+    if (!BOT_ID.test(grant.botId)) throw new CredentialVaultError("invalid bot", "invalid_bot");
+    if (!THREAD_ID.test(grant.threadId)) throw new CredentialVaultError("A login lent for one turn needs its conversation", "invalid_thread");
+    const kind = input.kind ?? "login";
+    if (kind !== "login") throw new CredentialVaultError("Only a login is lent for one turn.", "invalid_kind");
+    const now = this.now();
+    const item: StoredVaultItem = {
+      id: newItemId(),
+      kind: "login",
+      name: "",
+      domains: [],
+      source: "local",
+      grants: [{ botId: grant.botId, mode: "once", threadId: grant.threadId, grantedAt: now, expiresAt: now + VAULT_TURN_LEND_MS }],
+      createdAt: now,
+      updatedAt: now,
+    };
+    applyInput(item, { ...input, kind: "login" }, true);
+    this.sweepLent(now);
+    this.lent.set(item.id, { principalId, item, botId: grant.botId, threadId: grant.threadId, started: false, expiresAt: now + VAULT_TURN_LEND_MS });
+    return { ...listingOf(item, now), lent: true };
+  }
+
+  /** A turn of this conversation started or ended (server/index.ts, from
+   * the bus). A login lent here is forgotten at the end of the first turn
+   * that started after it was lent: done, failed or cancelled alike. */
+  turnPhase(threadId: string, phase: "started" | "ended"): void {
+    for (const [id, row] of this.lent) {
+      if (row.threadId !== threadId) continue;
+      if (phase === "started") row.started = true;
+      else if (row.started) this.lent.delete(id);
+    }
+    this.sweepLent(this.now());
+  }
+
+  /** Forget every login lent in this conversation now (a card declined, a
+   * conversation removed). */
+  forgetLent(threadId: string): void {
+    for (const [id, row] of this.lent) if (row.threadId === threadId) this.lent.delete(id);
+  }
+
+  private sweepLent(now: number): void {
+    for (const [id, row] of this.lent) if (row.expiresAt <= now) this.lent.delete(id);
+  }
+
+  private lentItem(principalId: string, itemId: string): StoredVaultItem | undefined {
+    const row = this.lent.get(itemId);
+    if (!row || row.principalId !== principalId) return undefined;
+    if (row.expiresAt <= this.now()) {
+      this.lent.delete(itemId);
+      return undefined;
+    }
+    return row.item;
+  }
+
+  /** 2026-10-29: the wallet CLIs of this install (server/wallet-issuer.ts). */
+  setWalletIssuer(issuer: WalletIssuer | null): void {
+    this.walletIssuer = issuer;
+  }
+
+  /** Shop Pay and Link with whether each is live here (installed and
+   * signed in as the person). */
+  async walletLinksLive(principalId: string): Promise<WalletLinkView> {
+    let stored: VaultDocument["wallets"];
+    try { stored = this.load(principalId).wallets; } catch { stored = undefined; }
+    if (!this.walletIssuer) return walletLinkView(stored);
+    const ready: Partial<Record<SingleUseWallet, boolean>> = {};
+    for (const wallet of ["shop_pay", "link"] as const) {
+      try {
+        const status = await this.walletIssuer.status(wallet, principalId);
+        ready[wallet] = status.installed && status.signedIn;
+      } catch {
+        ready[wallet] = false;
+      }
+    }
+    return walletLinkView(stored, ready);
+  }
+
   /** once: this conversation for VAULT_ONCE_GRANT_MS. always: the bot,
    * anywhere, until revoked. A new grant replaces the bot's earlier one. */
   grant(principalId: string, itemId: string, grant: { botId: string; mode: VaultGrantMode; threadId?: string; singleUse?: boolean }): VaultItemListing {
@@ -606,7 +709,7 @@ export class CredentialVault {
 
   /** Whether this bot may use the item in this conversation now. */
   granted(principalId: string, itemId: string, botId: string, threadId: string): boolean {
-    const item = this.load(principalId).items[itemId];
+    const item = this.load(principalId).items[itemId] ?? this.lentItem(principalId, itemId);
     if (!item) return false;
     return activeGrants(item, this.now()).some((grant) => grant.botId === botId && (grant.mode === "always" || grant.threadId === threadId));
   }
@@ -622,6 +725,7 @@ export class CredentialVault {
       return true;
     }
     const now = this.now();
+    if ([...this.lent.values()].some((row) => row.principalId === principalId && row.botId === botId && row.threadId === threadId && row.expiresAt > now)) return true;
     return Object.values(items).some((item) => activeGrants(item, now).some((grant) => grant.botId === botId && (grant.mode === "always" || grant.threadId === threadId)));
   }
 
@@ -633,14 +737,17 @@ export class CredentialVault {
     request: { handle: unknown; field: VaultFillField; botId: string; threadId: string; pageUrl: string; form?: string },
     readOnePassword?: OnePasswordFieldReader,
   ): Promise<FillResolution> {
+    // a Shop Pay or Link one-time card, named by its purchase (2026-10-29)
+    const walletPurchase = purchaseIdFromWalletHandle(request.handle);
+    if (walletPurchase) return this.resolveWalletCard(principalId, walletPurchase, request);
     const itemId = itemIdFromHandle(request.handle);
     let item: StoredVaultItem | undefined;
     try {
-      item = itemId ? this.load(principalId).items[itemId] : undefined;
+      item = itemId ? this.load(principalId).items[itemId] ?? this.lentItem(principalId, itemId) : undefined;
     } catch (error) {
       return { ok: false, code: "unavailable", message: error instanceof Error ? error.message : "The credential vault is unavailable." };
     }
-    if (!item) return { ok: false, code: "unknown_item", message: "No saved credential has this handle. Call request_login to ask the person for one." };
+    if (!item) return { ok: false, code: "unknown_item", message: "No saved credential has this handle (a login lent for one turn ends with that turn). Call request_login to ask the person for one." };
     if (isPaymentFillField(request.field)) return this.resolvePayment(principalId, item, { ...request, field: request.field });
     if (!this.granted(principalId, item.id, request.botId, request.threadId)) {
       return { ok: false, code: "not_granted", message: `You are not allowed to use ${botName(item)} here. Call request_login so the person can allow it.` };
@@ -965,7 +1072,7 @@ export class CredentialVault {
       if (live && live.status !== "pending") {
         const listing = this.purchaseListing({ items }, live);
         if (live.wallet) {
-          return { already: true, listing, note: requestSingleUseToken({ wallet: live.wallet, chosen: true, approval: "once", merchant: live.merchant, amount: live.amount, currency: live.currency }).prompt };
+          return { already: true, listing, note: requestSingleUseToken({ wallet: live.wallet, chosen: true, approval: "once", merchant: live.merchant, amount: live.amount, currency: live.currency, ...this.fillHandleFor(live) }).prompt };
         }
         return { already: true, listing, note: purchaseBotNote("once", { merchant: live.merchant, amount: live.amount, currency: live.currency, handle: vaultHandle(card!.id) }) };
       }
@@ -1008,7 +1115,7 @@ export class CredentialVault {
       if (name) row.via = name;
       const listing = this.purchaseListing({ items }, row);
       if (row.wallet) {
-        return { listing, note: requestSingleUseToken({ wallet: row.wallet, chosen: true, approval: decision, merchant: row.merchant, amount: row.amount, currency: row.currency }).prompt };
+        return { listing, note: requestSingleUseToken({ wallet: row.wallet, chosen: true, approval: decision, merchant: row.merchant, amount: row.amount, currency: row.currency, ...this.fillHandleFor(row) }).prompt };
       }
       const handle = decision === "deny" || !row.cardId ? undefined : vaultHandle(row.cardId);
       return { listing, note: purchaseBotNote(decision, { merchant: row.merchant, amount: row.amount, currency: row.currency, ...(handle ? { handle } : {}) }) };
@@ -1029,13 +1136,14 @@ export class CredentialVault {
         .filter((candidate) => candidate.receipt === undefined && candidate.status === "once" && candidate.botId === input.botId
           && candidate.threadId === input.threadId && candidate.domain === domain && (candidate.answeredAt ?? 0) + VAULT_ONCE_GRANT_MS * 4 > now)
         .sort((a, b) => (b.answeredAt ?? 0) - (a.answeredAt ?? 0));
-      const row = rows.find((candidate) => !candidate.wallet);
+      // a wallet purchase whose one-time card was typed is closed the same way
+      const row = rows.find((candidate) => !candidate.wallet || candidate.cardFilledAt !== undefined);
       if (!row) {
         const walletRow = rows.find((candidate) => candidate.wallet);
         if (walletRow?.wallet) {
           throw new CredentialVaultError(requestSingleUseToken({
-            wallet: walletRow.wallet, chosen: true, approval: "once", merchant: walletRow.merchant, amount: walletRow.amount, currency: walletRow.currency,
-          }).prompt, "provider_unconfigured");
+            wallet: walletRow.wallet, chosen: true, approval: "once", merchant: walletRow.merchant, amount: walletRow.amount, currency: walletRow.currency, ...this.fillHandleFor(walletRow),
+          }).prompt, this.walletIssuer ? "card_not_filled" : "provider_unconfigured");
         }
         return null;
       }
@@ -1165,7 +1273,7 @@ export class CredentialVault {
             return {
               ok: false,
               code: "not_granted",
-              message: requestSingleUseToken({ wallet: walletRow.wallet, chosen: true, approval: "once", merchant: walletRow.merchant, amount: walletRow.amount, currency: walletRow.currency }).prompt,
+              message: requestSingleUseToken({ wallet: walletRow.wallet, chosen: true, approval: "once", merchant: walletRow.merchant, amount: walletRow.amount, currency: walletRow.currency, ...this.fillHandleFor(walletRow) }).prompt,
             };
           }
         } catch {
@@ -1205,6 +1313,98 @@ export class CredentialVault {
       // the fill still happens
     }
     return { ok: true, value, item: listingOf(item, stamp), field: request.field };
+  }
+
+  /** The one-time card handle of an approved wallet purchase, when this
+   * install can ask the wallet. */
+  private fillHandleFor(row: StoredPurchase): { fillHandle?: string } {
+    return this.walletIssuer && row.wallet ? { fillHandle: walletCardHandle(row.id) } : {};
+  }
+
+  /** 2026-10-29: a card field of an approved Shop Pay or Link purchase. The
+   * wallet is asked once per purchase, at the first card field, on the
+   * purchase's own page; the card stays in memory for that purchase and
+   * goes once into each card field of that one form, like a saved card. */
+  private async resolveWalletCard(
+    principalId: string,
+    purchaseId: string,
+    request: { field: VaultFillField; botId: string; threadId: string; pageUrl: string; form?: string },
+  ): Promise<FillResolution> {
+    if (!["cardNumber", "cardExpiry", "cardCvc", "cardholder"].includes(request.field)) {
+      return { ok: false, code: "no_value", message: "A one-time card fills cardNumber, cardExpiry, cardCvc and cardholder only. Nothing was filled." };
+    }
+    const domain = domainOfPage(request.pageUrl);
+    const now = this.now();
+    const formKey = paymentFormKey(request.pageUrl, request.form);
+    let row: StoredPurchase | undefined;
+    try {
+      row = this.load(principalId).purchases?.[purchaseId];
+    } catch (error) {
+      return { ok: false, code: "unavailable", message: error instanceof Error ? error.message : "The credential vault is unavailable." };
+    }
+    if (!row?.wallet || !purchaseCovers(row, request.botId, request.threadId, domain ?? "", now)
+      || (row.cardFilledAt !== undefined && (row.cardFilledAt + PURCHASE_FORM_MS <= now || row.formKey !== formKey || (row.filledFields ?? []).includes(request.field)))) {
+      return { ok: false, code: "not_granted", message: "No approved purchase covers this page for that one-time card. A payment needs request_purchase first. Nothing was filled." };
+    }
+    const wallet = row.wallet;
+    const tell = (code: string, line: string): FillResolution => ({ ok: false, code: "unavailable", message: redactCardNumbers(`Sagax purchase update (${code}): ${line} Nothing was filled or charged. Do not type a card number.`) });
+    if (!this.walletIssuer) return { ok: false, code: "unavailable", message: requestSingleUseToken({ wallet, chosen: true, approval: "once", merchant: row.merchant, amount: row.amount, currency: row.currency }).prompt };
+    if (!this.issued.has(purchaseId)) {
+      const result: { outcome?: Awaited<ReturnType<WalletIssuer["issue"]>> } = {};
+      const pending = this.issuing.get(purchaseId);
+      if (pending) await pending;
+      if (!this.issued.has(purchaseId)) {
+        const work = this.walletIssuer.issue(wallet, principalId, {
+          purchaseId, merchant: row.merchant, domain: row.domain, amount: row.amount, currency: row.currency,
+          ...(row.items ? { items: row.items } : {}),
+        }).then((answer) => {
+          result.outcome = answer;
+          if (answer.ok) {
+            this.issued.set(purchaseId, answer.card);
+            // the card serves this purchase's one form only: gone after that
+            setTimeout(() => this.issued.delete(purchaseId), PURCHASE_FORM_MS * 3).unref?.();
+          }
+        }, () => { result.outcome = { ok: false, code: "failed", detail: "the wallet command failed" }; });
+        this.issuing.set(purchaseId, work);
+        try { await work; } finally { this.issuing.delete(purchaseId); }
+        const outcome = result.outcome;
+        if (outcome && !outcome.ok) {
+          const name = walletName(wallet);
+          if (outcome.code === "provider_unconfigured") return { ok: false, code: "unavailable", message: requestSingleUseToken({ wallet, chosen: true, approval: "once", merchant: row.merchant, amount: row.amount, currency: row.currency }).prompt };
+          if (outcome.code === "not_signed_in") return tell("not_signed_in", `${name} is not signed in on this computer. Tell the person to sign in to their ${name} account (its own command line tool), then call fill_credential again with the same handle.`);
+          if (outcome.code === "waiting") return tell("waiting", `${name} asked the person to approve this card on their phone or in the ${name} app. Tell them, wait, then call fill_credential again with the same handle.`);
+          if (outcome.code === "declined") return tell("declined", `${name} did not approve a one-time card for this purchase. Tell the person; do not try another card unless they ask.`);
+          return tell("failed", `${name} did not return a one-time card. Tell the person; you may call fill_credential again once.`);
+        }
+      }
+    }
+    const card = this.issued.get(purchaseId);
+    if (!card) return tell("failed", `${walletName(wallet)} did not return a one-time card.`);
+    const value = request.field === "cardNumber" ? card.pan
+      : request.field === "cardCvc" ? card.cvc
+        : request.field === "cardExpiry" ? cardExpiryText({ expMonth: card.expMonth, expYear: card.expYear } as StoredCard)
+          : card.holder ?? "";
+    if (!value) return { ok: false, code: "no_value", message: `${walletName(wallet)}'s one-time card has no ${request.field}. Nothing was filled.` };
+    try {
+      this.mutate(principalId, (_items, purchases) => {
+        const current = purchases[purchaseId];
+        if (!current) return;
+        if (current.cardFilledAt === undefined) {
+          current.cardFilledAt = now;
+          current.formKey = formKey;
+        }
+        current.filledFields = [...(current.filledFields ?? []), request.field].slice(-20);
+      });
+    } catch (error) {
+      return { ok: false, code: "unavailable", message: error instanceof Error ? error.message : "The credential vault is unavailable." };
+    }
+    const name = walletName(wallet);
+    return {
+      ok: true,
+      value,
+      item: { id: `w${purchaseId.slice(4)}`, kind: "card", name: `${name} one-time card`, domains: [row.domain], hasPassword: false, hasTotp: false, hasApiKey: false, hasNotes: false, source: "local", grants: [], createdAt: row.createdAt, updatedAt: now },
+      field: request.field,
+    };
   }
 
   /** Forget a person's whole vault (their account is deleted). */

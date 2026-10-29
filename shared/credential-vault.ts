@@ -35,6 +35,10 @@ export const VAULT_ONCE_GRANT_MS = 15 * 60_000;
 /** 2026-10-21 (review of #954): a 1Password item allowed once is one
  * sign-in: its grant ends this long after its first fill. */
 export const VAULT_SINGLE_USE_MS = 60_000;
+/** 2026-10-29: a login lent for one turn ("This turn only" on the card) is
+ * forgotten when that turn ends; this is the latest it lives if no end is
+ * seen (a crash, a turn that never starts). Never written to disk. */
+export const VAULT_TURN_LEND_MS = 15 * 60_000;
 
 export const MAX_VAULT_ITEMS = 500;
 export const MAX_VAULT_DOMAINS = 10;
@@ -80,6 +84,8 @@ export interface VaultItemListing {
   updatedAt: number;
   lastUsedAt?: number;
   lastUsedBy?: string;
+  /** 2026-10-29: lent for one turn from a card, kept in memory only. */
+  lent?: true;
 }
 
 /** What a vault request card carries (message.secret.vault). */
@@ -99,6 +105,9 @@ export interface VaultRequestCardData {
   /** 2026-10-21 (parité R10, ligne 82): the login chosen is a 1Password
    * item, read from 1Password at fill time. */
   onePassword?: boolean;
+  /** 2026-10-29: the login typed on the card was lent for this turn only:
+   * never saved, forgotten when the turn ends. */
+  turnOnly?: boolean;
 }
 
 const HOST_LABEL = /^(?!-)[a-z0-9-]{1,63}(?<!-)$/;
@@ -186,6 +195,19 @@ export function isVaultGrantMode(value: unknown): value is VaultGrantMode {
  * item's internal file layout. */
 export function vaultHandle(itemId: string): string {
   return `cred_${itemId}`;
+}
+
+/** 2026-10-29: the handle of a Shop Pay or Link one-time card, bound to its
+ * approved purchase (pay_<16 hex>): cred_w<16 hex>. */
+export function walletCardHandle(purchaseId: string): string {
+  return `cred_w${purchaseId.replace(/^pay_/, "")}`;
+}
+
+/** The purchase a one-time card handle names, or null. */
+export function purchaseIdFromWalletHandle(handle: unknown): string | null {
+  if (typeof handle !== "string") return null;
+  const match = /^cred_w([a-f0-9]{16})$/.exec(handle.trim());
+  return match ? `pay_${match[1]}` : null;
 }
 
 export function itemIdFromHandle(handle: unknown): string | null {

@@ -1,16 +1,16 @@
 // One-time card for a purchase. The person connects a wallet they already
-// have: Shop Pay or Link. Sagax asks that wallet for a one-time token only
-// after the existing purchase approval. This build ships neither CLI and
-// holds no session, so the ask never becomes a charge and never returns a
-// card number. A number never enters the prompt or the journal.
+// have: Shop Pay or Link. Sagax asks that wallet for a one-time card only
+// after the existing purchase approval, at the bot's first card fill on the
+// merchant's page (server/wallet-issuer.ts, 2026-10-29). Where the wallet's
+// CLI is not installed or not signed in as the person, the ask stays
+// `provider_unconfigured` and nothing is charged. A number never enters the
+// prompt or the journal.
 //
-// Still missing, names only (no secret is read or stored):
-//   Shop Pay: shop CLI, `shop spend-request create`, and the person's own
-//     Shop Pay session. LINK_API_BASE_URL and LINK_AUTH_BASE_URL are the
-//     documented names for pointing that CLI at Shop Pay. Sagax does not
-//     set them.
-//   Link: @stripe/link-cli, `link-cli spend-request create`, and the
-//     person's own Link session. There is no server key to add.
+// What a live wallet needs, names only (no secret is read or stored):
+//   Shop Pay: the shop CLI (`shop spend-request create`) signed in to the
+//     person's own Shop Pay account.
+//   Link: @stripe/link-cli (`link-cli spend-request create`) signed in to the
+//     person's own Link account (`link-cli auth login`). No server key.
 
 export const SINGLE_USE_WALLETS = ["shop_pay", "link"] as const;
 export type SingleUseWallet = (typeof SINGLE_USE_WALLETS)[number];
@@ -26,14 +26,14 @@ export const SINGLE_USE_GAP = {
     sdk: "shop CLI",
     command: "shop spend-request create",
     session: "the Shop Pay account the person already has",
-    key: "LINK_API_BASE_URL and LINK_AUTH_BASE_URL are unset",
+    key: "The shop CLI is not installed or not signed in",
   },
   link: {
     wallet: "Link",
     sdk: "@stripe/link-cli",
     command: "link-cli spend-request create",
     session: "the Link account the person already has",
-    key: "no server key; the Link session is missing",
+    key: "link-cli is not installed or not signed in (link-cli auth login)",
   },
 } as const;
 
@@ -43,7 +43,9 @@ export type SingleUseCode =
   | "approval_required"
   | "declined"
   | "provider_unconfigured"
-  | "number_refused";
+  | "number_refused"
+  /** 2026-10-29: approved; the wallet is asked at the first card fill. */
+  | "issue_at_fill";
 
 export interface SingleUseExchange {
   /** This build never charges. A token is not a completed payment. */
@@ -57,8 +59,8 @@ export interface SingleUseExchange {
 
 export interface WalletLinkState {
   chosen: boolean;
-  /** Live session. False until the missing CLI and session exist. */
-  ready: false;
+  /** The wallet's CLI is installed and signed in as the person here. */
+  ready: boolean;
   missing: string;
 }
 
@@ -84,11 +86,16 @@ export function walletMissing(wallet: SingleUseWallet): string {
   return `${gap.sdk} (${gap.command}). ${gap.key}. ${gap.session} is not connected.`;
 }
 
-export function walletLinkView(stored: Partial<Record<SingleUseWallet, { chosen: true }>> | undefined): WalletLinkView {
-  return {
-    shop_pay: { chosen: stored?.shop_pay?.chosen === true, ready: false, missing: walletMissing("shop_pay") },
-    link: { chosen: stored?.link?.chosen === true, ready: false, missing: walletMissing("link") },
-  };
+export function walletLinkView(
+  stored: Partial<Record<SingleUseWallet, { chosen: true }>> | undefined,
+  ready: Partial<Record<SingleUseWallet, boolean>> = {},
+): WalletLinkView {
+  const row = (wallet: SingleUseWallet): WalletLinkState => ({
+    chosen: stored?.[wallet]?.chosen === true,
+    ready: ready[wallet] === true,
+    missing: ready[wallet] === true ? "" : walletMissing(wallet),
+  });
+  return { shop_pay: row("shop_pay"), link: row("link") };
 }
 
 function safePiece(value: unknown, max: number, fallback: string): string {
@@ -116,6 +123,9 @@ export function requestSingleUseToken(input: {
   detail?: unknown;
   /** A value someone claims is a token. Never accepted, never copied. */
   token?: unknown;
+  /** 2026-10-29: the handle of this purchase's one-time card (cred_w...),
+   * when this install can ask the wallet. Absent: provider_unconfigured. */
+  fillHandle?: string;
 }): SingleUseExchange {
   const merchant = safePiece(input.merchant, 80, "the shop");
   const amount = safePiece(input.amount, 16, "");
@@ -153,6 +163,12 @@ export function requestSingleUseToken(input: {
   }
   if (typeof input.token === "string" && hasCardNumber(input.token)) {
     return finish("number_refused", `Sagax purchase update: a card number is not a one-time token. ${gapSentence(input.wallet)} Do not type a card number.`);
+  }
+  if (input.fillHandle) {
+    // the handle is hex: it goes in after the card-number redaction, which
+    // could take a run of its digits for a number
+    const done = finish("issue_at_fill", `Sagax purchase update: the person allowed the payment of ${amount} ${currency} at ${merchant} this time, with ${name}. On the checkout page, call fill_credential with credential HANDLE_SLOT and field cardNumber, then cardExpiry, cardCvc and cardholder: Sagax asks ${name} for a one-time card and types it; ${name} may ask the person to approve on their phone first. You never receive the card number. Then place the order and call record_purchase.`);
+    return { ...done, prompt: done.prompt.replace("HANDLE_SLOT", input.fillHandle) };
   }
   return finish("provider_unconfigured", `Sagax purchase update: the person allowed the payment of ${amount} ${currency} at ${merchant} this time. ${gapSentence(input.wallet)} Do not type a card number. The next payment asks again.`);
 }

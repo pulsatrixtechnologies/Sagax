@@ -11,7 +11,9 @@
 //   POST   /api/me/credentials/onepassword/import { via, vaultId, itemId, name?, domains? }
 //   POST   /api/me/credentials/import   { format, duplicates: merge|skip, items }  items the app read from a file
 //   POST   /api/me/credentials/export   { format, acknowledge: "plaintext", stepUp? } -> { items, onePassword }
-//   POST   /api/bots/:botId/vault-cards/:messageId/grant   { threadId, itemId | item | onePassword, mode, addSite? }
+//   POST   /api/bots/:botId/vault-cards/:messageId/grant   { threadId, itemId | item | onePassword, mode, addSite?, turnOnly? }
+//          turnOnly (2026-10-29): the typed login is lent for the turn this
+//          card resumes, kept in memory only, forgotten when that turn ends
 //   POST   /api/bots/:botId/vault-cards/:messageId/onepassword { threadId } the 1Password items of the card's site
 //   POST   /api/bots/:botId/vault-cards/:messageId/dismiss { threadId }
 //   POST   /api/bots/:botId/vault-cards/:messageId/self-start { threadId } arm the bot's browser for the person
@@ -138,7 +140,7 @@ export function grantedNote(item: VaultItemListing, mode: VaultGrantMode): strin
   // sign-in (review of #954)
   const onePassword = item.source === "1password";
   const what = onePassword ? "a login from their 1Password" : `the saved login "${item.name}"`;
-  const when = mode !== "once" ? "" : onePassword ? " for one sign-in in this conversation (it ends a minute after your first fill)" : " in this conversation for the next 15 minutes";
+  const when = item.lent ? " for this turn only (it is forgotten when this turn ends; never ask for it again in chat)" : mode !== "once" ? "" : onePassword ? " for one sign-in in this conversation (it ends a minute after your first fill)" : " in this conversation for the next 15 minutes";
   return `Sagax credential update: the person allowed you to use ${what}, handle ${vaultHandle(item.id)}, on ${item.domains.join(", ")}` +
     `${when}. Fields: ${fields.join(", ") || "none"}. ` +
     (item.kind === "apiKey" && item.injection
@@ -238,6 +240,21 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
         }
         const mode = input.mode;
         if (!isVaultGrantMode(mode)) return json(res, 400, { error: "mode must be once or always" });
+        if (input.turnOnly === true) {
+          // "This turn only": the login typed on the card is lent, never saved
+          if (mode !== "once" || input.addSite === true || !input.item || typeof input.item !== "object" || input.onePassword || typeof input.itemId === "string") {
+            return json(res, 400, { error: "This turn only lends a login typed on the card, once.", code: "turn_only_new_login" });
+          }
+          const lent = deps.vault.lend(principalId, input.item as VaultItemInput, { botId: botId!, threadId });
+          await deps.browser?.endForPerson(botId!, threadId);
+          deps.audit?.("credentials.grant", auth, { botId, mode: "turn", via: "card" });
+          deps.cards.patch(botId!, threadId, messageId!, { ...secret, vault: { ...secret.vault, itemName: lent.name, mode: "once", turnOnly: true } });
+          if (!deps.cards.resume(botId!, threadId, messageId!, "provided", grantedNote(lent, "once"))) {
+            deps.vault.forgetLent(threadId);
+            return json(res, 409, { error: "this login request is no longer available" });
+          }
+          return json(res, 200, { item: lent });
+        }
         if (input.addSite === true && mode !== "always") return json(res, 400, { error: "A site is added to a login only with Always: a one-time grant changes nothing for good.", code: "add_site_once" });
         if (input.addSite === true && typeof input.itemId !== "string") return json(res, 400, { error: "Type the sites of a new login yourself.", code: "invalid_domains" });
         let item: VaultItemListing | null;
@@ -308,7 +325,7 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
         return json(res, 200, {
           items: unavailable ? [] : deps.vault.list(principalId),
           purchases: unavailable ? [] : deps.vault.pendingPurchases(principalId),
-          wallets: deps.vault.walletLinks(principalId),
+          wallets: await deps.vault.walletLinksLive(principalId),
           onePassword: await deps.onePassword.status(),
           ...(unavailable ? { unavailable } : {}),
           ...(deps.exportBlocked?.(auth) ? { exportBlocked: true } : {}),
@@ -375,9 +392,9 @@ export function createCredentialVaultRoutes(deps: CredentialVaultRouteDeps): Rou
         if (method !== "POST") return json(res, 405, { error: "POST only" });
         const input = await body();
         if (!isSingleUseWallet(input.wallet) || typeof input.chosen !== "boolean") return json(res, 400, { error: "wallet must be shop_pay or link", code: "unknown_wallet" });
-        const wallets = deps.vault.chooseWallet(principalId, input.wallet, input.chosen);
+        deps.vault.chooseWallet(principalId, input.wallet, input.chosen);
         deps.audit?.("credentials.wallet", auth, { wallet: input.wallet, chosen: input.chosen });
-        return json(res, 200, { wallets });
+        return json(res, 200, { wallets: await deps.vault.walletLinksLive(principalId) });
       }
       if (path === "/api/me/credentials/purchases") {
         if (method !== "POST") return json(res, 405, { error: "POST only" });
