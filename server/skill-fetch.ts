@@ -99,7 +99,7 @@ export function parseSkillSource(input: string): Target | { rawUrl: string } | {
   }
   // owner/repo, or owner/repo/<folder> (2026-10-29: a bot imports one
   // skill folder of a repository, e.g. owner/repo/skills/pdf)
-  const shorthand = text.match(/^([\w.-]+)\/([\w.-]+)(?:\/([\w.\/-]+?))?\/?$/);
+  const shorthand = text.match(/^([\w.-]+)\/([\w.-]+)(?:\/([\w./-]+?))?\/?$/);
   if (shorthand) {
     const path = shorthand[3] ?? "";
     if ([shorthand[1], shorthand[2], ...path.split("/")].some((part) => part === "." || part === "..") || path.includes("//")) {
