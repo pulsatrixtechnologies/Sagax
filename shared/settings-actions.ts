@@ -17,8 +17,11 @@ import { DESKTOP_APPEARANCE_KEYS } from "./desktop-appearance.ts";
 import type { SettingClass } from "./settings-actions-policy.ts";
 import { USER_PREFERENCE_KEYS } from "./user-preferences.ts";
 
-/** `self`: the change targets the bot that is speaking. */
-export type SettingClassContext = { organization: boolean; self?: boolean };
+/** `self`: the change targets the bot that is speaking. `shared` (#1545,
+ * engines of an organization server): another person's bot, or the
+ * organization's default model, uses the engine the change touches;
+ * undefined when that cannot be told. */
+export type SettingClassContext = { organization: boolean; self?: boolean; shared?: boolean };
 
 export const SETTING_FAMILIES = [
   "bot", "thread", "routine", "group", "section", "rules", "account", "appearance",
@@ -106,6 +109,13 @@ function carriesSecret(value: unknown, depth = 0): boolean {
   if (!value || typeof value !== "object" || depth > 6) return false;
   return Object.entries(value as Record<string, unknown>).some(([name, child]) => SECRETISH.test(name) || carriesSecret(child, depth + 1));
 }
+/** #1545 (2026-10-28): an engine of an organization server. Adding an
+ * account, installing, checking again, updating or renaming touches only the
+ * person who does it: the bot's level decides. Signing an engine out,
+ * removing it, or changing its program, folder or tools stops the work of
+ * other people whose bots use it: their card, unless nobody else uses it. */
+const engineReach = (_value: unknown, ctx: SettingClassContext): SettingClass[] => ctx.organization && ctx.shared !== false ? ["others"] : ["own"];
+const engineOwn = (): SettingClass[] => ["own"];
 const secretWhenKeyed = (value: unknown, ctx: SettingClassContext): SettingClass[] => carriesSecret(value) ? (ctx.organization ? ["secret", "org"] : ["secret"]) : serverWide(value, ctx);
 
 /** One path segment: a plain id as it is (a grant's `user:pr_…` keeps its
@@ -770,7 +780,8 @@ add({
   label: "An engine's settings ({displayName, configDir: a Claude account's folder, cli: the program's path, '' for the default, tools})", where: "Settings > Models > Engines > engine",
   read: () => ({ path: "/api/instances", list: "instances", match: "instanceId", shape: (row) => engineRow((row ?? {}) as EngineRow) }),
   write: (ids, v) => ({ method: "PATCH", path: `/api/instances/${enc(ids.target!)}`, body: v }),
-  classes: serverWide,
+  // a new name only: the person's own; the program, folder or tools: others' work too
+  classes: (v, ctx) => v && typeof v === "object" && Object.keys(v).every((field) => field === "displayName") ? ["own"] : engineReach(v, ctx),
 });
 add({
   key: "models.claudeAccount", family: "models", target: "none", value: "object",
@@ -780,7 +791,7 @@ add({
     if (typeof name !== "string" || !name.trim()) return "value is {name, configDir?}.";
     return { method: "POST", path: "/api/instances/claude-accounts", body: { displayName: name.trim(), ...(typeof configDir === "string" && configDir.trim() ? { configDir: configDir.trim() } : {}) } };
   },
-  classes: serverWide,
+  classes: engineOwn,
 });
 add({
   key: "models.chatgptAccount", family: "models", target: "none", value: "object",
@@ -790,7 +801,7 @@ add({
     if (typeof name !== "string" || !name.trim()) return "value is {name}.";
     return { method: "POST", path: "/api/instances/chatgpt-accounts", body: { displayName: name.trim() } };
   },
-  classes: serverWide,
+  classes: engineOwn,
 });
 add({
   key: "models.engineSignIn", family: "models", target: "engine", value: "boolean",
@@ -801,13 +812,13 @@ add({
   key: "models.engineSignOut", family: "models", target: "engine", value: "boolean",
   label: "Sign an engine or account out (value true)", where: "Settings > Models > engine > Sign out",
   write: (ids, v) => v === true ? { method: "POST", path: `/api/instances/${enc(ids.target!)}/auth/sign-out`, body: {} } : "value is true.",
-  classes: (v, ctx) => [...serverWide(v, ctx), "delete"],
+  classes: (v, ctx) => [...engineReach(v, ctx), "delete"],
 });
 add({
   key: "models.engineRemove", family: "models", target: "engine", value: "boolean",
   label: "Remove an added account (value true)", where: "Settings > Models > account > Remove",
   write: (ids, v) => v === true ? { method: "DELETE", path: `/api/instances/${enc(ids.target!)}` } : "value is true.",
-  classes: (v, ctx) => [...serverWide(v, ctx), "delete"],
+  classes: (v, ctx) => [...engineReach(v, ctx), "delete"],
 });
 add({
   key: "models.engineKeySaved", family: "models", target: "engine", value: "boolean",
@@ -820,7 +831,7 @@ function engineAction(key: string, action: string, label: string, where: string)
   add({
     key, family: "models", target: "engine", value: "boolean", label: `${label} (value true)`, where,
     write: (ids, v) => v === true ? { method: "POST", path: `/api/instances/${enc(ids.target!)}/${action}`, body: {} } : "value is true.",
-    classes: serverWide,
+    classes: engineOwn,
   });
 }
 engineAction("models.engineInstall", "install", "Install an engine", "Settings > Models > engine > Install");
@@ -834,7 +845,7 @@ add({
     if (typeof name !== "string" || !name.trim() || typeof source !== "string" || !source) return "value is {name, source}.";
     return { method: "POST", path: "/api/instances/antigravity-accounts", body: { displayName: name.trim(), sourceInstanceId: source } };
   },
-  classes: serverWide,
+  classes: engineOwn,
 });
 // an organization member's own subscriptions (Settings > Models, organization server)
 add({
@@ -1158,7 +1169,8 @@ add({
   key: "models.antigravityLeftovers", family: "models", target: "engine", value: "boolean", label: "Free up space: delete Antigravity's leftover files (get lists them; value true deletes)", where: "Settings > Models > Antigravity > Free up space",
   read: (ids) => ({ path: `/api/instances/${enc(ids.target!)}/leftover-files` }),
   write: (ids, v) => v === true ? { method: "POST", path: `/api/instances/${enc(ids.target!)}/leftover-files/remove`, body: {} } : "value is true.",
-  classes: (v, ctx) => [...serverWide(v, ctx), "delete"],
+  // files no engine uses any more: the person's own clean-up
+  classes: () => ["own", "delete"],
 });
 // people and the organization (admin)
 add({

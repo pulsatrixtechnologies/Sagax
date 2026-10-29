@@ -73,6 +73,13 @@ parties hors tableau du script.
      un niveau est appliqué jusqu'à celui du bot qui parle, jamais Full ni
      Custom sans carte ; le reste demande la carte ;
   6. sinon appliqué tout de suite.
+- Moteurs d'un serveur d'organisation (#1545, 2026-10-28) : ajouter un
+  compte, installer, vérifier de nouveau, mettre Claude Code à jour,
+  renommer et libérer l'espace ne touchent que la personne : le niveau du
+  bot décide (plus de carte en Full pour un admin). Déconnecter, retirer, ou
+  changer le programme, le dossier ou les outils d'un moteur qu'un bot d'une
+  autre personne, ou le modèle par défaut de l'organisation, utilise (autrui)
+  garde la carte à tout niveau : le travail des autres s'arrêterait.
 - Demande de la personne au bot principal (2026-10-20) : quand le bot
   principal de la personne fait le changement parce qu'elle l'a demandé
   dans son message du tour (\`quote\`, ses propres mots, vérifiés dans ce

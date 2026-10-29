@@ -614,6 +614,13 @@ permission `settings:change`, member scope `own-setup`, deferred on Claude):
   VPS computers, Antigravity's leftovers, people's tool access, reports,
   people from before, invitations, taking a page down, library skills and
   a bot's versions.
+- Engines of an organization server (#1545, 2026-10-28): no Full card for
+  what touches only the person. Adding an account, installing, checking
+  again, updating Claude Code, renaming and freeing space follow the bot's
+  level (`engineOwn`). Signing out, removing, or changing the program, folder
+  or tools of an engine another person's bot or the organization's default
+  model uses (`engineShared`, `SettingClassContext.shared`) is `others`: a
+  card at every level, since their work would stop; nobody else: the level.
 - Tests: `shared/settings-actions*.test.ts`, `server/settings-actions.test.ts`,
   `server/settings-actions.e2e.test.ts`.
 

@@ -33289,6 +33289,14 @@ function settingsActions(): ReturnType<typeof createSettingsActions> {
       return rule ? [rule.description, ...Object.values(rule.scope ?? {})].join(" ") : undefined;
     },
     instanceName: (instanceId) => registry.get(instanceId)?.displayName,
+    // #1545 (2026-10-28): an engine another person's bot, or the
+    // organization's default model, uses: changing it stops their work
+    engineShared: (instanceId, speaker) => {
+      if (!speaker) return undefined;
+      if (cfg.defaultModelSelection?.instanceId === instanceId || cfg.newBotDefaults?.profile.modelSelection?.instanceId === instanceId) return true;
+      return store.bots.some((bot) => effectiveBotOwner(bot) !== speaker
+        && (bot.modelSelection?.instanceId === instanceId || (bot.fallback ?? []).some((row) => row.instanceId === instanceId)));
+    },
     targetName: (kind, id, botId) => {
       if (kind === "bot") return store.bot(id)?.name;
       if (kind === "thread") return botId ? `${store.bot(botId)?.name ?? "Bot"}: ${store.taskByThread(botId, id)?.title ?? "conversation"}` : undefined;

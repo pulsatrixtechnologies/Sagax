@@ -385,7 +385,7 @@ describe("sagax_settings engines and preferences (#1545)", () => {
   });
 
   // criteria 3 to 5: capability is the person's rights (the route's answer),
-  // permission is the bot's level; organization settings keep their card
+  // permission is the bot's level; an engine others use keeps its card
   it("matrix: admin and member, Ask, Approve for me and Full, personal and organization server", async () => {
     const adminOnly = (method: string, path: string) => method !== "GET" && path.startsWith("/api/instances") ? 403 : 200;
     const keys: Array<{ key: string; value: unknown; target?: string }> = [
@@ -401,8 +401,11 @@ describe("sagax_settings engines and preferences (#1545)", () => {
           for (const { key, value, target } of keys) {
             const h = harness({ mode, organization: () => organization, ...(role === "member" ? { routeStatus: adminOnly } : {}) });
             const result = await h.call({ action: "set", key, value, ...(target ? { target } : {}) });
-            // a removal of the person's own engine on their own computer follows the level (2026-10-26)
-            const sensitive = organization;
+            // a removal of the person's own engine on their own computer follows the level (2026-10-26);
+            // 2026-10-28: on an organization server, adding an account or renaming
+            // one follows the level too; signing out or removing an engine whose
+            // users are unknown keeps the card (others' work may stop)
+            const sensitive = organization && (key === "models.engineSignOut" || key === "models.engineRemove");
             const expected = mode === "ask" || sensitive ? "hold" : "run";
             // never refused as UI only: the change runs, or waits on the person's card
             expect(result.body.error ?? "", `${key} ${role} ${mode}`).not.toMatch(/no read|not available|see it at/);
@@ -413,6 +416,59 @@ describe("sagax_settings engines and preferences (#1545)", () => {
           }
         }
       }
+    }
+  });
+});
+
+describe("sagax_settings engines of an organization server: the card only when others use the engine (#1545, 2026-10-28)", () => {
+  const changes: Array<{ key: string; value: unknown; target?: string; reach: boolean }> = [
+    { key: "models.claudeAccount", value: { name: "Work" }, reach: false },
+    { key: "models.chatgptAccount", value: { name: "Work" }, reach: false },
+    { key: "models.antigravityAccount", value: { name: "Work", source: "antigravity" }, reach: false },
+    { key: "models.engine", target: "claude-2", value: { displayName: "Main" }, reach: false },
+    { key: "models.engineInstall", target: "claude-2", value: true, reach: false },
+    { key: "models.engineRefresh", target: "claude-2", value: true, reach: false },
+    { key: "models.claudeUpdate", target: "claude-2", value: true, reach: false },
+    { key: "models.antigravityLeftovers", target: "antigravity", value: true, reach: false },
+    { key: "models.engine", target: "claude-2", value: { cli: "/opt/claude" }, reach: true },
+    { key: "models.engine", target: "claude-2", value: { displayName: "Main", configDir: "/x" }, reach: true },
+    { key: "models.engineSignOut", target: "claude-2", value: true, reach: true },
+    { key: "models.engineRemove", target: "claude-2", value: true, reach: true },
+  ];
+
+  it("admin and member, Ask, Approve for me and Full: no Bypass card for what touches the admin alone", async () => {
+    const adminOnly = (method: string, path: string) => method !== "GET" && path.startsWith("/api/instances") ? 403 : 200;
+    for (const used of [true, false, undefined]) {
+      for (const role of ["admin", "member"] as const) {
+        for (const mode of ["ask", "auto", "full"] as const) {
+          for (const { key, value, target, reach } of changes) {
+            const seen: Array<[string, string | null]> = [];
+            const h = harness({
+              mode, organization: () => true,
+              engineShared: (id, speaker) => { seen.push([id, speaker]); return used; },
+              ...(role === "member" ? { routeStatus: adminOnly } : {}),
+            });
+            const result = await h.call({ action: "set", key, value, ...(target ? { target } : {}) });
+            const label = `${key} ${JSON.stringify(value)} ${role} ${mode} used=${used}`;
+            // others' work: the card at every level, unless nobody else uses it
+            const expected = mode === "ask" || (reach && used !== false) ? "hold" : "run";
+            expect(h.planned.at(-1)?.effect, label).toBe(expected);
+            if (target) expect(seen, label).toEqual([[target, "pr_owner"]]);
+            if (expected === "hold" && mode !== "ask") expect(result.body.text, label).toMatch(/another person/);
+            // the person's rights stay the route's: a member is refused by the route
+            if (role === "member" && expected === "run") expect(result.status, label).toBe(403);
+            if (role === "admin" && expected === "run") expect(result.body.text, label).toMatch(/^Done/);
+          }
+        }
+      }
+    }
+  });
+
+  it("asks nothing about others on a personal server: the level decides", async () => {
+    for (const { key, value, target } of changes) {
+      const h = harness({ mode: "full", engineShared: () => true });
+      await h.call({ action: "set", key, value, ...(target ? { target } : {}) });
+      expect(h.planned.at(-1)?.effect, key).toBe("run");
     }
   });
 });
