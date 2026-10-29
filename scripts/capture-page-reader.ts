@@ -55,6 +55,14 @@ if (!made.ok) throw new Error(made.error);
 pages.publish(made.page.id, { version: 1, access: "link", expiresAt: null, by: OWNER });
 pages.setInvites(made.page.id, { people: [READER], teams: [] }, OWNER);
 const pageId = made.page.id;
+// two annotations already there (2026-10-28, Annotate), on the HTML report
+if (KIND === "html") {
+  const first = pages.addThread(pageId, { by: READER, version: 1, text: "Peut-on ajouter la comparaison avec le trimestre précédent ?",
+    anchor: { kind: "text", quote: "Le volume de demandes a augmenté de 12 %", prefix: "Faits saillants", suffix: " par rapport au mois précédent", path: "body > p:nth-of-type(2)", tag: "p" } });
+  if (first.ok) pages.reply(pageId, first.thread.id, { by: OWNER, text: "Oui, je demande au bot de l'ajouter." });
+  pages.addThread(pageId, { by: OWNER, version: 1, text: "Vérifier le délai du réseau avant l'envoi.",
+    anchor: { kind: "element", quote: "Réseau 31 5 h 10", prefix: "", suffix: "", path: "body > table > tbody > tr:nth-of-type(2)", tag: "tr" } });
+}
 const viewPath = pages.path(pages.get(pageId)!.linkId!);
 
 function who(req: IncomingMessage): string {
@@ -148,6 +156,24 @@ try {
         // what Download PDF writes: the browser's print of the wrapper
         await page.pdf({ path: join(outDir, `${prefix}-${person}-${scheme}.pdf`), format: "A4", preferCSSPageSize: true });
         console.log(join(outDir, `${prefix}-${person}-${scheme}.pdf`));
+      }
+      if (person === "reader" && await page.locator("[data-reader-annotate]").count()) {
+        await page.locator("[data-reader-annotate]").click();
+        await page.waitForSelector("[data-reader-panel] [data-thread]");
+        await shot(page, `${person}-${scheme}-annotate`);
+        // a new selection in the page: the composer opens in the panel
+        await page.frames()[1]!.evaluate(() => {
+          const target = [...document.querySelectorAll("p")].find((p) => p.textContent?.startsWith("Renouveler"))!;
+          const range = document.createRange();
+          range.setStart(target.firstChild!, 0);
+          range.setEnd(target.firstChild!, 33);
+          getSelection()!.removeAllRanges();
+          getSelection()!.addRange(range);
+          document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+        });
+        await page.waitForSelector("[data-reader-draft]");
+        await page.locator("[data-reader-draft] textarea").fill("Préciser l'échéancier.");
+        await shot(page, `${person}-${scheme}-draft`);
       }
       if (person === "owner") {
         const share = page.locator("[data-reader-share]");

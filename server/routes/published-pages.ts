@@ -52,6 +52,15 @@
 //   POST   /api/pages/:id/invite            { people, teams } (2026-10-28, Share >
 //          Add people or groups): who else reads it while it is shared with
 //          "People you invite"; the person's own choice, no admin
+// Annotations (2026-10-28, shared/page-threads.ts): anyone signed in who may
+// read the published page (its person always), from the reader's bar. No
+// admin; another reader's page reads exactly like a missing one:
+//   GET    /api/pages/:id/threads           { threads, names, owner }
+//   POST   /api/pages/:id/threads           { anchor, text }
+//   POST   /api/pages/:id/threads/:tid/replies   { text }
+//   POST   /api/pages/:id/threads/:tid/resolve   { resolved }
+//   DELETE /api/pages/:id/threads/:tid      its author or the page's person
+//   DELETE /api/pages/:id/threads/:tid/replies/:rid   the same
 import { randomBytes } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -60,6 +69,7 @@ import { join } from "node:path";
 import type { PageError, PageRecord, PageVersionRecord, PublishedPages } from "../published-pages.ts";
 import { commentAnswerDocument, pageDocument, parseReaderAssets, splitSlides, wrapperDocument, type ReaderAssets } from "../published-pages-render.ts";
 import type { ReaderBoot } from "../../shared/page-reader.ts";
+import { parsePageQuote, parseThreadText, type PageThread, type PageThreadsAnswer } from "../../shared/page-threads.ts";
 import { requestSource, type RequestAuth } from "../request-auth.ts";
 import { redactSecretsInText } from "../../shared/redact.ts";
 import { pageAudienceOf, pageMayEnter, parsePageAudience } from "../../shared/page-audience.ts";
@@ -181,8 +191,9 @@ export function readerAssetsFrom(staticDir: string | null): ReaderAssets | null 
 /** What the reader's bar is told: the page's id and Share only for the
  * page's own person; nothing about the page for a reader who is not signed
  * in beyond what the wrapper shows anyway. Pure. */
-export function readerBoot(input: { page: PageRecord; version: PageVersionRecord; viewer: PageViewer; lang: "fr" | "en"; personName: string; meName?: string }): ReaderBoot {
+export function readerBoot(input: { page: PageRecord; version: PageVersionRecord; viewer: PageViewer; lang: "fr" | "en"; personName: string; meName?: string; annotate?: boolean }): ReaderBoot {
   const owner = pageOwnedBy(input.page, input.viewer);
+  const annotate = input.annotate === true;
   const me = input.viewer?.principalId
     ? { id: input.viewer.principalId, name: owner ? input.personName : input.meName ?? "" }
     : owner ? { id: "owner", name: input.personName } : undefined;
@@ -192,10 +203,10 @@ export function readerBoot(input: { page: PageRecord; version: PageVersionRecord
     title: input.page.title ?? input.version.title,
     kind: input.version.kind,
     version: input.version.n,
-    ...(owner ? { pageId: input.page.id } : {}),
+    ...(owner || annotate ? { pageId: input.page.id } : {}),
     ...(me ? { me } : {}),
     owner: { name: input.personName },
-    can: { share: owner },
+    can: { share: owner, annotate },
   };
 }
 
@@ -299,7 +310,8 @@ function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: Serv
     lang,
     preview: input.preview,
     ...(!input.preview && input.version.kind === "presentation" ? { slides: splitSlides(options.pages?.content(input.page.id, input.version.n) ?? "").length } : {}),
-    ...(input.preview ? {} : { reader: { boot: readerBoot({ page: input.page, version: input.version, viewer, lang, personName: names.personName, ...(meName ? { meName } : {}) }), assets } }),
+    ...(input.preview ? {} : { reader: { boot: readerBoot({ page: input.page, version: input.version, viewer, lang, personName: names.personName, ...(meName ? { meName } : {}),
+      annotate: pageAnnotator(input.page, viewer, { policy: options.pages!.policy(), now: Date.now(), ...(options.teamsOf ? { teamsOf: (id: string) => options.teamsOf!(id) } : {}) }) !== null }), assets } }),
     annotate: input.annotate === true,
     ...(input.preview && input.look?.bare ? { bare: true } : {}),
     ...(input.preview && input.look?.theme ? { theme: input.look.theme } : {}),
@@ -558,6 +570,15 @@ export interface PublishedPageRouteDeps {
    * bot's proposal). Absent: kept as typed. */
   redact?(text: string): string;
   now?(): number;
+  /** Annotations: the signed-in reader this caller is (a person of the
+   * organization, or a one-person server's owner), or null. */
+  reader?(auth: RequestAuth): PageViewer;
+  /** The teams a person is in, for pages shared with a team. */
+  teamsOf?(principalId: string): readonly string[];
+  /** Names for the people and bots in a page's threads (by id). */
+  names?(ids: readonly string[]): Record<string, string>;
+  /** False when the page's person was disabled or deleted. */
+  ownerActive?(page: PageRecord): boolean;
 }
 
 const LINK_SHARING_OFF = { error: "Your organization turned off public links for pages. Choose My organization instead.", code: "link_sharing_off" };
@@ -641,6 +662,16 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
       || (method === "POST" && /^\/api\/pages\/([\w-]+)\/invite$/.exec(path) && { route: "invite", match: /^\/api\/pages\/([\w-]+)\/invite$/.exec(path)! })
       || null;
     if (extra) return pageExtras(deps, { req, res, method, auth, json, readBody }, extra);
+    // annotations: one route per line with its method, like the ones above
+    const thread: ThreadRoute | null =
+      (method === "GET" && /^\/api\/pages\/([\w-]+)\/threads$/.exec(path) && { route: "list", match: /^\/api\/pages\/([\w-]+)\/threads$/.exec(path)! })
+      || (method === "POST" && /^\/api\/pages\/([\w-]+)\/threads$/.exec(path) && { route: "add", match: /^\/api\/pages\/([\w-]+)\/threads$/.exec(path)! })
+      || (method === "POST" && /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/replies$/.exec(path) && { route: "reply", match: /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/replies$/.exec(path)! })
+      || (method === "POST" && /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/resolve$/.exec(path) && { route: "resolve", match: /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/resolve$/.exec(path)! })
+      || (method === "DELETE" && /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)$/.exec(path) && { route: "remove", match: /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)$/.exec(path)! })
+      || (method === "DELETE" && /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/replies\/([\w-]+)$/.exec(path) && { route: "removeReply", match: /^\/api\/pages\/([\w-]+)\/threads\/([\w-]+)\/replies\/([\w-]+)$/.exec(path)! })
+      || null;
+    if (thread) return pageThreads(deps, { req, res, method, auth, json, readBody }, thread);
     const match = /^\/api\/pages\/([\w-]+)(?:\/(publish|decline|revoke)|\/versions\/(\d+))?$/.exec(path);
     if (!match) return PASS;
     const page = deps.pages.get(match[1]!);
@@ -824,4 +855,67 @@ async function pageExtras(deps: PublishedPageRouteDeps, ctx: ExtrasContext, extr
     ...(by ? { by } : {}),
   });
   return result.ok ? json(res, 201, { comment: result.comment }) : json(res, result.status, { error: result.error, code: result.code });
+}
+
+type ThreadRoute = { route: "list" | "add" | "reply" | "resolve" | "remove" | "removeReply"; match: RegExpExecArray };
+
+/** Who may annotate this page: its own person always; anyone else signed in
+ * only while it is published, not expired, and readable by them. Null for
+ * everyone else (their answer is the same 404 as a missing page). Pure. */
+export function pageAnnotator(page: PageRecord, viewer: PageViewer, input: { policy: PagesPolicy; now: number; teamsOf?: (principalId: string) => readonly string[]; ownerActive?: boolean }): { by: string; owner: boolean } | null {
+  if (!viewer || input.ownerActive === false) return null;
+  if (pageOwnedBy(page, viewer)) return { by: viewer.principalId ?? "owner", owner: true };
+  if (!viewer.principalId) return null;
+  const live = page.status === "published" && page.currentVersion !== null && (page.expiresAt === null || page.expiresAt > input.now);
+  return live && pageReadable(page, viewer, input.policy, input.teamsOf) ? { by: viewer.principalId, owner: false } : null;
+}
+
+/** Annotations, from the reader's bar: the same checks for every route, the
+ * text cut and stripped of secret-shaped words, a thread or reply deleted
+ * only by its author or the page's person. */
+async function pageThreads(deps: PublishedPageRouteDeps, ctx: ExtrasContext, thread: ThreadRoute) {
+  const { req, res, auth, json, readBody } = ctx;
+  const { route, match } = thread;
+  const page = deps.pages.get(match[1]!);
+  const now = deps.now?.() ?? Date.now();
+  const who = page ? pageAnnotator(page, deps.reader?.(auth) ?? null, { policy: deps.pages.policy(), now, ...(deps.teamsOf ? { teamsOf: deps.teamsOf } : {}), ownerActive: deps.ownerActive?.(page) ?? true }) : null;
+  if (!page || !who) return json(res, 404, { error: "This page does not exist.", code: "not_found" });
+  const clean = (text: string) => (deps.redact ? deps.redact(text) : text);
+  const answer = (): PageThreadsAnswer => {
+    const threads = deps.pages.threads(page.id);
+    const ids = [...new Set(threads.flatMap((entry: PageThread) => [entry.by, ...entry.replies.map((reply) => reply.by), ...(entry.resolved ? [entry.resolved.by] : [])]))];
+    return {
+      threads: threads.map((entry) => ({ ...entry, mine: entry.by.toLowerCase() === who.by.toLowerCase() })),
+      names: deps.names?.(ids) ?? {},
+      owner: who.owner,
+    };
+  };
+  if (route === "list") return json(res, 200, answer());
+  const threadId = match[2];
+  if (route === "remove" || route === "removeReply") {
+    const target = deps.pages.threads(page.id).find((entry) => entry.id === threadId);
+    const author = route === "remove" ? target?.by : target?.replies.find((reply) => reply.id === match[3])?.by;
+    if (!target || author === undefined) return json(res, 404, { error: route === "remove" ? "This annotation does not exist." : "This reply does not exist.", code: route === "remove" ? "no_thread" : "no_reply" });
+    if (!who.owner && author.toLowerCase() !== who.by.toLowerCase()) return json(res, 403, { error: "Only its author or the page's person deletes it.", code: "not_author" });
+    const result = deps.pages.removeThreadPart(page.id, threadId!, route === "removeReply" ? match[3] : undefined);
+    return failed(result) ? json(res, result.status, { error: result.error, code: result.code }) : json(res, 200, answer());
+  }
+  const body = await readBody(req) as Record<string, unknown> | null;
+  if (route === "resolve") {
+    if (typeof body?.resolved !== "boolean") return json(res, 400, { error: "Send { resolved: true or false }.", code: "bad_body" });
+    const result = deps.pages.resolveThread(page.id, threadId!, { by: who.by, resolved: body.resolved });
+    return result.ok ? json(res, 200, answer()) : json(res, result.status, { error: result.error, code: result.code });
+  }
+  const text = parseThreadText(body?.text);
+  if (text === null) return json(res, 400, { error: "text: 1 to 2000 characters.", code: "bad_text" });
+  if (route === "reply") {
+    const result = deps.pages.reply(page.id, threadId!, { by: who.by, text: clean(text) });
+    return result.ok ? json(res, 201, answer()) : json(res, result.status, { error: result.error, code: result.code });
+  }
+  // route === "add": on the version readers get (its person: the latest)
+  const anchor = parsePageQuote(body?.anchor);
+  if (!anchor) return json(res, 400, { error: "anchor: { kind, quote, prefix, suffix, path, tag }.", code: "bad_anchor" });
+  const version = page.currentVersion ?? page.versions.at(-1)?.n ?? 1;
+  const result = deps.pages.addThread(page.id, { by: who.by, anchor, text: clean(text), version });
+  return result.ok ? json(res, 201, answer()) : json(res, result.status, { error: result.error, code: result.code });
 }

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { parseReaderBoot, READER_STRING_KEYS, READER_STRINGS_FR_KEYS, readerNotice, readerText } from "./page-reader.ts";
 
-const BOOT = { v: 1, lang: "fr", title: "Rapport", kind: "html", version: 2, pageId: "page_12345678", me: { id: "pr_x", name: "X" }, owner: { name: "X" }, can: { share: true } };
+const BOOT = { v: 1, lang: "fr", title: "Rapport", kind: "html", version: 2, pageId: "page_12345678", me: { id: "pr_x", name: "X" }, owner: { name: "X" }, can: { share: true, annotate: true } };
 
 describe("parseReaderBoot", () => {
   it("keeps a well-formed block", () => {
@@ -13,7 +13,7 @@ describe("parseReaderBoot", () => {
 
   it("a right without the page's id is no right", () => {
     const { pageId: _gone, ...rest } = BOOT;
-    expect(parseReaderBoot(rest)!.can.share).toBe(false);
+    expect(parseReaderBoot(rest)!.can).toEqual({ share: false, annotate: false });
     expect(parseReaderBoot({ ...BOOT, pageId: "../x" })!.can.share).toBe(false);
   });
 

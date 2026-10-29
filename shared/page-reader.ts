@@ -7,8 +7,9 @@
 // page stays in its sandbox (opaque origin, no network), and the wrapper's
 // script only reaches this server's own routes with the reader's own rights.
 // A reader who is not signed in gets the title, the notice and Download PDF
-// (the browser prints the page's whole height; Save as PDF writes it); the
-// page's own person also gets Share.
+// (the browser prints the page's whole height; Save as PDF writes it);
+// anyone signed in who may read the page also gets Annotate; the page's own
+// person also gets Share.
 import type { PageKind } from "./published-pages.ts";
 
 export type ReaderLang = "fr" | "en";
@@ -22,13 +23,14 @@ export interface ReaderBoot {
   /** The version readers get. */
   version: number;
   /** The page's id, only for a signed-in reader with a right on it (its own
-   * person: Share). A reader who is not signed in never gets it. */
+   * person: Share; anyone signed in who may read it: Annotate). A reader
+   * who is not signed in never gets it. */
   pageId?: string;
   /** The signed-in reader, as the bar names them. */
   me?: { id: string; name: string };
   /** The page's person, as the Share popover names them (Owner). */
   owner?: { name: string };
-  can: { share: boolean };
+  can: { share: boolean; annotate: boolean };
 }
 
 /** The id of the JSON block and of the bar's actions. */
@@ -58,7 +60,7 @@ export function parseReaderBoot(value: unknown): ReaderBoot | null {
     ...(me && typeof me.id === "string" && typeof me.name === "string" ? { me: { id: me.id, name: me.name } } : {}),
     ...(owner && typeof owner.name === "string" ? { owner: { name: owner.name } } : {}),
     // a right without the page's id is no right
-    can: { share: can.share === true && Boolean(pageId) },
+    can: { share: can.share === true && Boolean(pageId), annotate: can.annotate === true && Boolean(pageId) },
   };
 }
 
@@ -105,6 +107,27 @@ const STRINGS = {
     failed: "That did not work. Try again.",
     linkOffError: "Your organization turned off public links. Choose Anyone in your organization instead.",
     info: "About this page",
+    annotate: "Annotate",
+    annotateHint: "Select text or click a part of the page, then write your comment.",
+    comments: "Comments",
+    noComments: "No comments yet.",
+    newComment: "Comment on",
+    onPart: "Part of the page",
+    write: "Add a comment…",
+    send: "Comment",
+    reply: "Reply",
+    replyTo: "Reply…",
+    resolve: "Resolve",
+    reopen: "Reopen",
+    resolved: "Resolved",
+    showResolved: "Show resolved ({count})",
+    hideResolved: "Hide resolved",
+    delete: "Delete",
+    notFound: "Not found in this version",
+    someoneElse: "Someone",
+    justNow: "just now",
+    minutes: "{n} min",
+    hours: "{n} h",
   },
   fr: {
     share: "Partager",
@@ -139,6 +162,27 @@ const STRINGS = {
     failed: "Ça n'a pas fonctionné. Réessayez.",
     linkOffError: "Votre organisation a désactivé les liens publics. Choisissez plutôt Toute votre organisation.",
     info: "À propos de cette page",
+    annotate: "Annoter",
+    annotateHint: "Sélectionnez du texte ou cliquez sur une partie de la page, puis écrivez votre commentaire.",
+    comments: "Commentaires",
+    noComments: "Aucun commentaire pour l'instant.",
+    newComment: "Commenter",
+    onPart: "Partie de la page",
+    write: "Ajouter un commentaire…",
+    send: "Commenter",
+    reply: "Répondre",
+    replyTo: "Répondre…",
+    resolve: "Résoudre",
+    reopen: "Rouvrir",
+    resolved: "Résolu",
+    showResolved: "Afficher les résolus ({count})",
+    hideResolved: "Masquer les résolus",
+    delete: "Supprimer",
+    notFound: "Introuvable dans cette version",
+    someoneElse: "Quelqu'un",
+    justNow: "à l'instant",
+    minutes: "{n} min",
+    hours: "{n} h",
   },
 } as const;
 

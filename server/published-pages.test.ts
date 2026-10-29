@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createAgentCard, type AgentCardStore } from "./chat-widgets.ts";
 import { json, readBody } from "./harness/http.ts";
 import { pageOwnerFor, PublishedPages } from "./published-pages.ts";
-import { bannerName, escapeHtml, FRAME_PRELUDE, jsonBlock, markdownToHtml, pageDocument, parseReaderAssets, REPORT_SIZE_SOURCE, SLIDE_PRINT_MM, wrapperBanner } from "./published-pages-render.ts";
+import { bannerName, escapeHtml, FRAME_PRELUDE, jsonBlock, markdownToHtml, pageDocument, parseReaderAssets, REPORT_SIZE_SOURCE, SLIDE_PRINT_MM, wrapperBanner, ANNOTATE_BRIDGE_SOURCE } from "./published-pages-render.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import {
   createPublishedPageRoutes,
@@ -862,15 +862,16 @@ describe("the reader's bar (2026-10-28)", () => {
     expect(wrapper.body).not.toContain(pages.list(undefined)[0]!.id);
   });
 
-  it("the page's own person gets Share and the page's id; an invited reader does not", async () => {
+  it("the page's own person gets Share; an invited reader does not", async () => {
     const { pages } = store();
     const { id, path } = published(pages, "private", "pr_owner");
     pages.setInvites(id, { people: ["pr_reader"], teams: [] }, "pr_owner");
     const mine = bootOf((await hit(withAssets(pages, owner), path)).body)!;
     expect(mine).toMatchObject({ pageId: id, can: { share: true }, me: { id: "pr_owner", name: "Alice" }, owner: { name: "Alice" } });
     const theirs = bootOf((await hit(withAssets(pages, reader), path)).body)!;
-    expect(theirs.can.share).toBe(false);
-    expect(theirs.pageId).toBeUndefined();
+    // an invited reader annotates (2026-10-28), never shares
+    expect(theirs.can).toEqual({ share: false, annotate: true });
+    expect(theirs.pageId).toBe(id);
     expect(theirs.me).toEqual({ id: "pr_reader", name: "Reader" });
   });
 
@@ -933,7 +934,7 @@ describe("Download PDF (2026-10-28)", () => {
     expect(wrapper.body).toContain("height:var(--sagax-print-height,100vh)!important");
   });
 
-  it("a Markdown reading frame runs only that script, by its nonce", async () => {
+  it("a Markdown reading frame runs only our own scripts, by their nonce", async () => {
     const { pages } = store();
     const { page } = proposed(pages, "pr_owner");
     pages.edit(page.id, { kind: "markdown", content: "# Bilan\n\nTexte", by: "pr_owner" });
@@ -946,7 +947,9 @@ describe("Download PDF (2026-10-28)", () => {
     expect(nonce).toBeTruthy();
     expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
     expect(frame!.body).toContain(`<script nonce="${nonce}">${REPORT_SIZE_SOURCE}</script>`);
-    expect(frame!.body.match(/<script/g)).toHaveLength(1);
+    expect(frame!.body).toContain(`<script nonce="${nonce}">${ANNOTATE_BRIDGE_SOURCE}</script>`);
+    // our own two scripts only, both by nonce
+    expect(frame!.body.match(/<script/g)).toHaveLength(2);
     // our own dark rules are for the screen only: the PDF is on white
     expect(frame!.body).toContain("@media screen and (prefers-color-scheme:dark)");
   });
@@ -968,5 +971,106 @@ describe("Download PDF (2026-10-28)", () => {
     const { wrapper, frame } = await read(pages, pages.path(pages.get(page.id)!.linkId!), null);
     expect(wrapper.body).toContain(`@page{size:297mm ${SLIDE_PRINT_MM}mm;margin:0}iframe{height:${3 * SLIDE_PRINT_MM}mm!important}`);
     expect(frame!.body).toContain(`.slide{height:${SLIDE_PRINT_MM}mm;border:0;break-after:page}`);
+  });
+});
+
+describe("Annotate: threads on a published page (2026-10-28)", () => {
+  const OWNER_ID = "pr_owner";
+  const ANCHOR = { kind: "text", quote: "Rapport", prefix: "", suffix: "", path: "body > h1", tag: "h1" };
+  function threadRoutes(pages: PublishedPages, teams: Record<string, string[]> = {}) {
+    return createPublishedPageRoutes({
+      pages,
+      owner: (auth) => auth.kind === "session" ? auth.session.principalId : undefined,
+      isPerson: (auth) => auth.kind === "session" && Boolean(auth.session.principalId),
+      origin: () => "https://sagax.example.com",
+      reachable: () => true,
+      now: () => now,
+      reader: (auth) => auth.kind === "session" && auth.session.principalId ? { principalId: auth.session.principalId, computerOwner: false } : null,
+      teamsOf: (id) => teams[id] ?? [],
+      names: (ids) => Object.fromEntries(ids.map((id) => [id, `name of ${id}`])),
+      redact: (text) => text.replace(/sk-[a-z0-9]+/g, "[redacted]"),
+    });
+  }
+
+  it("an invited reader comments, replies and resolves; the threads name people, never by id alone", async () => {
+    const { pages } = store();
+    const { id } = published(pages, "private", OWNER_ID);
+    pages.setInvites(id, { people: ["pr_reader"], teams: [] }, OWNER_ID);
+    const handler = threadRoutes(pages);
+    const added = await call(handler, session("pr_reader"), "POST", `/api/pages/${id}/threads`, { anchor: ANCHOR, text: "Clé sk-abc123 à vérifier" });
+    expect(added.status).toBe(201);
+    const thread = added.body!.threads[0];
+    expect(thread).toMatchObject({ by: "pr_reader", version: 1, mine: true, anchor: ANCHOR, text: "Clé [redacted] à vérifier" });
+    expect((await call(handler, session(OWNER_ID), "POST", `/api/pages/${id}/threads/${thread.id}/replies`, { text: "Vu" })).status).toBe(201);
+    const resolved = await call(handler, session("pr_reader"), "POST", `/api/pages/${id}/threads/${thread.id}/resolve`, { resolved: true });
+    expect(resolved.body!.threads[0].resolved.by).toBe("pr_reader");
+    const listed = await call(handler, session(OWNER_ID), "GET", `/api/pages/${id}/threads`);
+    expect(listed.body).toMatchObject({ owner: true, names: { pr_reader: "name of pr_reader", pr_owner: "name of pr_owner" } });
+    expect(listed.body!.threads[0].replies[0]).toMatchObject({ by: OWNER_ID, text: "Vu" });
+    // a comment never moves the page in its person's list
+    expect(pages.get(id)!.updatedAt).toBe(pages.get(id)!.createdAt);
+  });
+
+  it("someone who may not read the page gets the same 404 as a missing page", async () => {
+    const { pages } = store();
+    const { id } = published(pages, "private", OWNER_ID);
+    const handler = threadRoutes(pages);
+    expect((await call(handler, session("pr_stranger"), "GET", `/api/pages/${id}/threads`)).status).toBe(404);
+    expect((await call(handler, session("pr_stranger"), "POST", `/api/pages/${id}/threads`, { anchor: ANCHOR, text: "x" })).status).toBe(404);
+    // a team invited reads and annotates
+    pages.setInvites(id, { people: [], teams: ["team_a"] }, OWNER_ID);
+    expect((await call(threadRoutes(pages, { pr_stranger: ["team_a"] }), session("pr_stranger"), "GET", `/api/pages/${id}/threads`)).status).toBe(200);
+  });
+
+  it("a page not shared yet or past its expiry: its person only", async () => {
+    const { pages } = store();
+    const { page } = proposed(pages, OWNER_ID);
+    const handler = threadRoutes(pages);
+    expect((await call(handler, session("pr_reader"), "GET", `/api/pages/${page.id}/threads`)).status).toBe(404);
+    expect((await call(handler, session(OWNER_ID), "POST", `/api/pages/${page.id}/threads`, { anchor: ANCHOR, text: "Note" })).status).toBe(201);
+    pages.publish(page.id, { version: 1, access: "org", expiresAt: now + 1000 });
+    expect((await call(handler, session("pr_reader"), "GET", `/api/pages/${page.id}/threads`)).status).toBe(200);
+    now += 2000;
+    expect((await call(handler, session("pr_reader"), "GET", `/api/pages/${page.id}/threads`)).status).toBe(404);
+  });
+
+  it("only its author or the page's person deletes a thread or a reply", async () => {
+    const { pages } = store();
+    const { id } = published(pages, "org", OWNER_ID);
+    const handler = threadRoutes(pages);
+    const thread = (await call(handler, session("pr_a"), "POST", `/api/pages/${id}/threads`, { anchor: ANCHOR, text: "A" })).body!.threads[0];
+    const reply = (await call(handler, session("pr_b"), "POST", `/api/pages/${id}/threads/${thread.id}/replies`, { text: "B" })).body!.threads[0].replies[0];
+    expect((await call(handler, session("pr_b"), "DELETE", `/api/pages/${id}/threads/${thread.id}`)).status).toBe(403);
+    expect((await call(handler, session("pr_a"), "DELETE", `/api/pages/${id}/threads/${thread.id}/replies/${reply.id}`)).status).toBe(403);
+    expect((await call(handler, session("pr_b"), "DELETE", `/api/pages/${id}/threads/${thread.id}/replies/${reply.id}`)).status).toBe(200);
+    expect((await call(handler, session(OWNER_ID), "DELETE", `/api/pages/${id}/threads/${thread.id}`)).body!.threads).toEqual([]);
+  });
+
+  it("a bad anchor or text is refused", async () => {
+    const { pages } = store();
+    const { id } = published(pages, "org", OWNER_ID);
+    const handler = threadRoutes(pages);
+    expect((await call(handler, session("pr_a"), "POST", `/api/pages/${id}/threads`, { anchor: { ...ANCHOR, tag: "<x>" }, text: "A" })).status).toBe(400);
+    expect((await call(handler, session("pr_a"), "POST", `/api/pages/${id}/threads`, { anchor: { ...ANCHOR, quote: "  " }, text: "A" })).status).toBe(400);
+    expect((await call(handler, session("pr_a"), "POST", `/api/pages/${id}/threads`, { anchor: ANCHOR, text: "x".repeat(2001) })).status).toBe(400);
+  });
+
+  it("the bar offers Annotate to a signed-in reader who may read it, never to a reader who is not signed in", async () => {
+    const { pages } = store();
+    const { id, path } = published(pages, "link", OWNER_ID);
+    const bootOf = (body: string) => parseReaderBoot(JSON.parse(new RegExp(`<script type="application/json" id="${READER_BOOT_ID}">([^<]*)</script>`).exec(body)![1]!))!;
+    const reader = bootOf((await hit(options(pages, { principalId: "pr_reader", computerOwner: false }), path)).body);
+    expect(reader).toMatchObject({ pageId: id, can: { share: false, annotate: true } });
+    const anon = bootOf((await hit(options(pages, null), path)).body);
+    expect(anon.can.annotate).toBe(false);
+    expect(anon.pageId).toBeUndefined();
+  });
+
+  it("the reading frame carries the annotation bridge, which knows no comment", async () => {
+    const { pages } = store();
+    const { path } = published(pages, "link", OWNER_ID);
+    const { frame } = await read(pages, path, null);
+    expect(frame!.body).toContain(ANNOTATE_BRIDGE_SOURCE);
+    expect(String(frame!.headers["content-security-policy"])).toContain("connect-src 'none'");
   });
 });
