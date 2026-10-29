@@ -104,19 +104,39 @@ final class PluginsUITests: XCTestCase {
 
     /// The main view: one row per app with Add or Connect, a section per
     /// category, and "N connected >" to Manage (#203, #218).
-    /// "Browse Bots" beside the search (ConnectAppsView `onBrowseBots`):
-    /// Connect apps closes, then Browse Bots opens.
+    /// "Browse Bots" in Discover (ConnectAppsView `onBrowseBots`): Connect
+    /// apps stays open on its Bots tab, Browse Bots' catalogue (2026-10-29).
     @MainActor
-    func testBrowseBotsBesideTheSearchOpensBrowseBots() {
+    func testBrowseBotsInDiscoverOpensTheBotsTab() {
         let app = launch()
         let button = app.element("connect-apps-bot-templates")
-        XCTAssertTrue(button.waitForExistence(timeout: 10), "Browse Bots beside the search")
+        XCTAssertTrue(button.waitForExistence(timeout: 10), "Browse Bots in Discover")
         XCTAssertTrue(button.label.contains("Browse Bots"), button.label)
         ParityShots.save("Connect apps Browse Bots", app)
         button.tap()
-        XCTAssertTrue(app.element("desktop-templates").waitForExistence(timeout: 10), "Browse Bots")
-        XCTAssertFalse(app.element("connect-apps-manage").exists, "Connect apps closed")
-        ParityShots.save("Browse Bots from Connect apps", app)
+        let botsTab = app.segmentedControls["connect-apps-tabs"].buttons["Bots"]
+        XCTAssertTrue(botsTab.waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(botsTab.isSelected, "the Bots tab is in front")
+        XCTAssertTrue(app.element("connect-apps-manage").exists, "Connect apps stays open")
+        XCTAssertTrue(app.element("browse-bots.category.all").waitForExistence(timeout: 10), "Browse Bots' categories in the tab")
+        ParityShots.save("Connect apps Bots tab", app)
+    }
+
+    /// One search on every tab: the bots are found from Installed too, in
+    /// their own group, and a hit opens the bot's card.
+    @MainActor
+    func testOneSearchFindsBotsFromAnyTab() {
+        let app = launch()
+        app.segmentedControls["connect-apps-tabs"].buttons["Installed"].tap()
+        let field = app.searchFields.firstMatch
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "the search shows on Installed")
+        field.tap()
+        field.typeText("Aurora")
+        let hit = app.staticTexts["Aurora"].firstMatch
+        XCTAssertTrue(hit.waitForExistence(timeout: 15), app.debugDescription)
+        ParityShots.save("Connect apps search", app)
+        hit.tap()
+        XCTAssertTrue(app.element("browse-bots.action.open").waitForExistence(timeout: 10), "the bot's card")
     }
 
     @MainActor

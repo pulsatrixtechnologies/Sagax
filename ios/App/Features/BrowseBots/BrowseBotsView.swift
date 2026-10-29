@@ -1,6 +1,7 @@
 // Browse Bots on iOS (desktop src/components/bot-catalog/BotCatalogModal.tsx,
 // BotCatalogView.tsx, BotCatalogDetailView.tsx): the organisation bot
-// catalogue as a sheet. Same sections in the same order (Featured, Shared
+// catalogue, as Connect apps' Bots tab (2026-10-29) and as a sheet (the bot
+// wizard's Browse templates, the large layout's sidebar). Same sections in the same order (Featured, Shared
 // with me, My Bots, Organization, Templates), the same search and category
 // chips, the same actions per bot (Add to my sidebar, Open, Import Bot,
 // publish, feature) and a read-only detail page. The model is CompanionCore's
@@ -27,6 +28,10 @@ final class BrowseBotsModel: ObservableObject {
     @Published var filter = BotCatalogFilter()
     @Published var notice: String?
     @Published var working: String?
+    /// The publish form's bot, and the zip import (#271), wherever the
+    /// catalogue shows (the sheet or Connect apps' Bots tab).
+    @Published var publishing: BotCatalogEntry?
+    @Published var importingZip = false
 
     func load(_ session: Session) async {
         guard let client = session.profileClient else { return }
@@ -200,36 +205,18 @@ final class BrowseBotsModel: ObservableObject {
 }
 
 /// The sheet: the home view, a section's full list and the detail page.
+/// Still opened from the bot wizard's "Browse templates" and the large
+/// layout's sidebar place; Connect apps shows the same content in its Bots
+/// tab (`BrowseBotsContent`, `BrowseBotsPresenters`).
 struct BrowseBotsSheet: View {
     @EnvironmentObject private var session: Session
     @StateObject private var model = BrowseBotsModel()
     let close: () -> Void
-    @State private var publishing: BotCatalogEntry?
-    /// Templates' "Import from zip" (#271).
-    @State private var importingZip = false
 
     var body: some View {
         NavigationStack {
             List {
-                header
-                if model.data == nil {
-                    Section {
-                        if model.failed {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("The catalog could not be loaded.").foregroundStyle(Theme.textSecondary)
-                                Button("Try again") { Task { await model.load(session) } }
-                            }
-                        } else {
-                            HStack { Text("Loading the catalog").foregroundStyle(Theme.textSecondary); Spacer(); ProgressView() }
-                        }
-                    }
-                } else if model.sections.isEmpty {
-                    Section { Text("No bot matches this search.").foregroundStyle(Theme.textSecondary) }
-                } else {
-                    ForEach(model.sections) { section in
-                        sectionView(section)
-                    }
-                }
+                BrowseBotsContent(model: model, open: open)
             }
             .listStyle(.insetGrouped)
             .searchable(text: $model.filter.query, prompt: Text("Search by creator or bot name"))
@@ -239,34 +226,58 @@ struct BrowseBotsSheet: View {
                 ToolbarItem(placement: .confirmationAction) { Button("Done", action: close) }
                 if model.data?.viewer.canCreate == true {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button { importingZip = true } label: { Label("Import from zip", systemImage: "doc.zipper") }
+                        Button { model.importingZip = true } label: { Label("Import from zip", systemImage: "doc.zipper") }
                             .accessibilityIdentifier("browse-bots.import-zip")
                     }
                 }
             }
-            .sheet(isPresented: $importingZip) {
-                BotZipImportSheet(close: { importingZip = false }) { bot in
-                    importingZip = false
-                    if let bot { open(bot) } else { Task { await model.load(session) } }
-                }
-            }
+            .modifier(BrowseBotsPresenters(model: model, open: open))
+            .task { await model.load(session) }
+            .refreshable { await model.load(session) }
+        }
+        .accessibilityIdentifier("browse-bots")
+    }
+
+    private func open(_ bot: Bot) {
+        close()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { session.openChat(threadId: bot.threadId) }
+    }
+}
+
+/// What Browse Bots pushes and presents, on the navigation stack that shows
+/// its content (the sheet's own, or Connect apps'): a bot's card, a
+/// section's full list, the publish form, the xAI import, the zip import and
+/// the short notice at the bottom.
+struct BrowseBotsPresenters: ViewModifier {
+    @EnvironmentObject private var session: Session
+    @ObservedObject var model: BrowseBotsModel
+    let open: (Bot) -> Void
+
+    func body(content: Content) -> some View {
+        content
             .navigationDestination(for: BotCatalogItem.self) { item in
-                BrowseBotsDetail(item: item, model: model, open: open, publish: { publishing = $0 })
+                BrowseBotsDetail(item: item, model: model, open: open, publish: { model.publishing = $0 })
             }
             .navigationDestination(for: BotCatalogSectionID.self) { id in
                 List {
                     if let section = model.sections.first(where: { $0.id == id }) {
-                        ForEach(section.items) { item in row(item) }
+                        ForEach(section.items) { item in BrowseBotsItemRow(model: model, item: item, open: open) }
                     }
                 }
                 .navigationTitle(BrowseBotsModel.sectionTitle(id))
             }
             .overlay(alignment: .bottom) { noticeBanner }
-            .sheet(item: $publishing) { entry in
+            .sheet(isPresented: $model.importingZip) {
+                BotZipImportSheet(close: { model.importingZip = false }) { bot in
+                    model.importingZip = false
+                    if let bot { open(bot) } else { Task { await model.load(session) } }
+                }
+            }
+            .sheet(item: $model.publishing) { entry in
                 BrowseBotsPublishSheet(entry: entry, categories: model.categories.filter { $0 != "all" }) { category in
-                    publishing = nil
+                    model.publishing = nil
                     Task { _ = await model.perform(.publish, on: .bot(entry), category: category, session: session) }
-                } cancel: { publishing = nil }
+                } cancel: { model.publishing = nil }
             }
             .sheet(item: $model.xaiImport) { target in
                 AgentImportSheet(close: { model.xaiImport = nil }, imported: { bot in
@@ -274,33 +285,50 @@ struct BrowseBotsSheet: View {
                     if let bot { open(bot) } else { Task { await model.load(session) } }
                 }, marketplaceSlug: target.slug)
             }
-            .task { await model.load(session) }
-            .refreshable { await model.load(session) }
-        }
-        .accessibilityIdentifier("browse-bots")
     }
 
-    @ViewBuilder private var header: some View {
-        Section {
-            Text(model.data?.organization == true
-                 ? String(localized: "Bots from your organization, the ones shared with you, your own and templates.")
-                 : String(localized: "Your bots and templates to start a new one."))
-                .font(.footnote)
-                .foregroundStyle(Theme.textSecondary)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(model.categories, id: \.self) { id in
-                        Button(BrowseBotsModel.categoryLabel(id)) { model.filter.category = id }
-                            .buttonStyle(.bordered)
-                            .buttonBorderShape(.capsule)
-                            .tint(model.filter.category == id ? Theme.accent : Theme.textSecondary)
-                            .font(.footnote)
+    @ViewBuilder private var noticeBanner: some View {
+        if let notice = model.notice {
+            Text(verbatim: notice)
+                .font(.footnote.weight(.medium))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.regularMaterial, in: Capsule())
+                .padding(.bottom, 16)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
+    }
+}
+
+/// The catalogue's sections inside a list: the header (what this is, the
+/// category chips, Show archived), then Featured, Shared with me, My Bots,
+/// Organization, Templates and the xAI Bot Marketplace, each with View all.
+/// `importRow`: Import from zip as a row (Connect apps has no toolbar
+/// button for it).
+struct BrowseBotsContent: View {
+    @EnvironmentObject private var session: Session
+    @ObservedObject var model: BrowseBotsModel
+    let open: (Bot) -> Void
+    var importRow = false
+
+    var body: some View {
+        BrowseBotsFilters(model: model, importRow: importRow)
+        if model.data == nil {
+            Section {
+                if model.failed {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("The catalog could not be loaded.").foregroundStyle(Theme.textSecondary)
+                        Button("Try again") { Task { await model.load(session) } }
                     }
+                } else {
+                    HStack { Text("Loading the catalog").foregroundStyle(Theme.textSecondary); Spacer(); ProgressView() }
                 }
             }
-            .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
-            if model.hasArchived {
-                Toggle("Show archived", isOn: $model.filter.showArchived).tint(Theme.toggleOn)
+        } else if model.sections.isEmpty {
+            Section { Text("No bot matches this search.").foregroundStyle(Theme.textSecondary) }
+        } else {
+            ForEach(model.sections) { section in
+                sectionView(section)
             }
         }
     }
@@ -318,7 +346,9 @@ struct BrowseBotsSheet: View {
                     Text("Nothing here yet.").foregroundStyle(Theme.textSecondary)
                 }
             } else {
-                ForEach(section.items.prefix(BotCatalogRules.sectionPreview)) { item in row(item) }
+                ForEach(section.items.prefix(BotCatalogRules.sectionPreview)) { item in
+                    BrowseBotsItemRow(model: model, item: item, open: open)
+                }
                 if section.items.count > BotCatalogRules.sectionPreview {
                     NavigationLink(value: section.id) { Text("View all") }
                 }
@@ -341,17 +371,68 @@ struct BrowseBotsSheet: View {
             }
         }
     }
+}
 
-    private func row(_ item: BotCatalogItem) -> some View {
+/// Browse Bots' header: what the catalogue holds, the category chips and
+/// Show archived (and Import from zip as a row in Connect apps). Connect
+/// apps keeps it above the search results on the Bots tab: the chips
+/// narrow the bots found.
+struct BrowseBotsFilters: View {
+    @ObservedObject var model: BrowseBotsModel
+    var importRow = false
+
+    var body: some View {
+        Section {
+            Text(model.data?.organization == true
+                 ? String(localized: "Bots from your organization, the ones shared with you, your own and templates.")
+                 : String(localized: "Your bots and templates to start a new one."))
+                .font(.footnote)
+                .foregroundStyle(Theme.textSecondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(model.categories, id: \.self) { id in
+                        Button(BrowseBotsModel.categoryLabel(id)) { model.filter.category = id }
+                            .buttonStyle(.bordered)
+                            .buttonBorderShape(.capsule)
+                            .tint(model.filter.category == id ? Theme.accent : Theme.textSecondary)
+                            .font(.footnote)
+                            .accessibilityIdentifier("browse-bots.category.\(id)")
+                    }
+                }
+            }
+            .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+            if model.hasArchived {
+                Toggle("Show archived", isOn: $model.filter.showArchived).tint(Theme.toggleOn)
+            }
+            if importRow, model.data?.viewer.canCreate == true {
+                Button { model.importingZip = true } label: {
+                    Label("Import from zip", systemImage: "doc.zipper")
+                        .foregroundStyle(Theme.textPrimary)
+                }
+                .accessibilityIdentifier("browse-bots.import-zip")
+            }
+        }
+    }
+}
+
+/// One bot or template of a section: its row (to the card) and the card's
+/// short action (Add, Use, Open...).
+struct BrowseBotsItemRow: View {
+    @EnvironmentObject private var session: Session
+    @ObservedObject var model: BrowseBotsModel
+    let item: BotCatalogItem
+    let open: (Bot) -> Void
+
+    var body: some View {
         let actions = model.actions(item)
         let card = BotCatalogRules.cardAction(actions).flatMap { action -> BotCatalogAction? in
             if action == .open, case let .bot(entry) = item, session.state.bot(entry.id) == nil { return nil }
             return action
         }
-        return HStack(spacing: 12) {
+        HStack(spacing: 12) {
             NavigationLink(value: item) { BrowseBotsRow(item: item) }
             if let card {
-                Button(BrowseBotsModel.cardLabel(card)) { run(card, item) }
+                Button(BrowseBotsModel.cardLabel(card)) { run(card) }
                     .buttonStyle(.bordered)
                     .buttonBorderShape(.capsule)
                     .font(.footnote.weight(.medium))
@@ -361,27 +442,10 @@ struct BrowseBotsSheet: View {
         }
     }
 
-    private func run(_ action: BotCatalogAction, _ item: BotCatalogItem) {
+    private func run(_ action: BotCatalogAction) {
         Haptics.selection()
         Task {
             if let bot = await model.perform(action, on: item, session: session) { open(bot) }
-        }
-    }
-
-    private func open(_ bot: Bot) {
-        close()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { session.openChat(threadId: bot.threadId) }
-    }
-
-    @ViewBuilder private var noticeBanner: some View {
-        if let notice = model.notice {
-            Text(verbatim: notice)
-                .font(.footnote.weight(.medium))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .background(.regularMaterial, in: Capsule())
-                .padding(.bottom, 16)
-                .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
 }
