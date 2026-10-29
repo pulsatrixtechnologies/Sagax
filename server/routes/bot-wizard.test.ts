@@ -142,7 +142,7 @@ describe("/api/bot-wizard", () => {
   it("serves the kits and leaves other paths to the next handler", async () => {
     const { call } = await serve();
     const kits = await call("GET", "/api/bot-wizard/kits?language=fr");
-    expect(kits.body.kits.map((kit: { id: string }) => kit.id)).toEqual(["assistant", "inbox", "research", "coder", "community", "ops"]);
+    expect(kits.body.kits.map((kit: { id: string }) => kit.id)).toEqual(["assistant", "inbox", "research", "coder", "community", "ops", "subscriptions"]);
     expect((await call("GET", "/api/bots")).body).toEqual({ from: "inline routes" });
   });
 
