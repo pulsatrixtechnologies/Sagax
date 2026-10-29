@@ -279,12 +279,28 @@ public struct WebhookListing: Decodable, Hashable, Identifiable, Sendable {
     public var sourceFilters: String
     /// The signing secret is set on the computer. The value is never here.
     public var signingSecretSet: Bool
+    /// The routine this webhook starts (2026-10-29): that routine manages it.
+    public var routineId: String?
+    /// The bearer key's last four characters: all that is ever listed.
+    public var tokenLast4: String?
+    /// A key made at server start waits to be shown once (reveal).
+    public var tokenPending: Bool
+    /// Waiting for a first test delivery.
+    public var verificationPending: Bool
+    public var verifiedAt: Double?
 
     public init(
         id: String, name: String, botId: String, enabled: Bool, deliveryCount: Int,
         endpointId: String? = nil, lastReceivedAt: Double? = nil, sourceType: String? = nil,
-        sourceEvents: [String] = [], sourceFilters: String = "", signingSecretSet: Bool = false
+        sourceEvents: [String] = [], sourceFilters: String = "", signingSecretSet: Bool = false,
+        routineId: String? = nil, tokenLast4: String? = nil, tokenPending: Bool = false,
+        verificationPending: Bool = false, verifiedAt: Double? = nil
     ) {
+        self.routineId = routineId
+        self.tokenLast4 = tokenLast4
+        self.tokenPending = tokenPending
+        self.verificationPending = verificationPending
+        self.verifiedAt = verifiedAt
         self.id = id
         self.name = name
         self.botId = botId
@@ -300,6 +316,7 @@ public struct WebhookListing: Decodable, Hashable, Identifiable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case id, name, botId, enabled, deliveryCount, endpointId, lastReceivedAt, source, signingSecretSet
+        case routineId, tokenLast4, tokenPending, verificationPending, verifiedAt
     }
 
     public init(from decoder: Decoder) throws {
@@ -312,6 +329,11 @@ public struct WebhookListing: Decodable, Hashable, Identifiable, Sendable {
         endpointId = try? c.decodeIfPresent(String.self, forKey: .endpointId)
         lastReceivedAt = try? c.decodeIfPresent(Double.self, forKey: .lastReceivedAt)
         signingSecretSet = (try? c.decodeIfPresent(Bool.self, forKey: .signingSecretSet)) ?? false
+        routineId = try? c.decodeIfPresent(String.self, forKey: .routineId)
+        tokenLast4 = try? c.decodeIfPresent(String.self, forKey: .tokenLast4)
+        tokenPending = (try? c.decodeIfPresent(Bool.self, forKey: .tokenPending)) ?? false
+        verificationPending = (try? c.decodeIfPresent(Bool.self, forKey: .verificationPending)) ?? false
+        verifiedAt = try? c.decodeIfPresent(Double.self, forKey: .verifiedAt)
         if let source = try? c.decode(WebhookSourceWire.self, forKey: .source) {
             sourceType = source.type
             sourceEvents = source.events ?? []

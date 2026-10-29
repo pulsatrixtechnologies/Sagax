@@ -1,13 +1,15 @@
-// The routine editor (matrix AU11-AU14), with the desktop's fields:
-// routine type (bot task or team goal), every Repeat choice (once, every
-// hour, day, weekday, certain days, month or year at one or more times in a
-// named zone, every N minutes or hours with days, hours and an end date; a
-// schedule none of these can say stays under Advanced), the run limit,
-// overlap, duration, the results thread and attachments. Desktop: EventEditor
-// in src/components/RoutineCalendarPage.tsx (shared/schedule-model.ts),
-// routines/ResultsDestination.tsx. The rules are RoutineScheduleForm and
-// RoutinePatch (CompanionCore): an edit sends only what changed, so a field
-// set elsewhere is never lost (S3).
+// "Edit routine" (matrix AU11-AU14), simplified 2026-10-29 as the desktop's
+// EventEditor (src/components/RoutineCalendarPage.tsx): the name with a
+// summary line under it (schedule, where results go, whom it runs as), then
+// When (the schedule in words, or "When a webhook arrives" with the
+// routine's own webhook), What (the instructions, simple, with Full screen,
+// and attachments), Where results go (compact rows, help behind "?") and
+// More options, folded, with its summary beside it. Nothing of before is
+// lost: every setting is still here. Save and Cancel stay in the bar,
+// "Not saved" shows a waiting change and closing over one asks first.
+// The rules are RoutineScheduleForm, RoutineEditorRules and RoutinePatch
+// (CompanionCore): an edit sends only what changed, so a field set
+// elsewhere is never lost (S3).
 import CompanionCore
 import PhotosUI
 import SwiftUI
@@ -47,7 +49,7 @@ struct RoutineEditorView: View {
     @State private var attaching = 0
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var choosingFile = false
-    @State private var advancedExpanded: Bool
+    @State private var moreExpanded: Bool
     @State private var saving = false
     /// Organization server: whom the routine may run as (RunAsField), and
     /// the person chosen here (nil: the routine's current person).
@@ -57,10 +59,21 @@ struct RoutineEditorView: View {
     @State private var postResults: Bool
     /// 2026-10-26: failed runs in a row that pause it (0 never).
     @State private var autoPauseAfter: Int
+    /// "Remember the last run" and the mail tag (desktop's More options).
+    @State private var continuity: Bool
+    @State private var mailAlias: String
     /// #1202 "Only when something changes": the draft, and the one it opened
     /// with (an untouched watch is never sent).
     @State private var watchDraft: RoutineWatchDraft
     private let initialWatch: RoutineWatchDraft
+    /// What the editor opened with: "Not saved" while the fields differ.
+    @State private var opened: RoutineEditorSnapshot?
+    @State private var confirmingClose = false
+    @State private var instructionsFullScreen = false
+    /// The "?" of "Where results go": its help, one tap away.
+    @State private var whereHelp = false
+    /// The routine after "Create its webhook" (the page reloads on save).
+    @State private var savedRoutine: Routine?
 
     /// `presetBotId`: a new routine made from a bot's profile starts on that bot.
     /// `seed`: a new routine from the Automations calendar ("More options"
@@ -85,40 +98,46 @@ struct RoutineEditorView: View {
         _overlap = State(initialValue: source?.overlap ?? "skip")
         _results = State(initialValue: routine == nil ? .newThread : .keep)
         _attachments = State(initialValue: source?.target == "room-goal" ? [] : source?.attachments ?? [])
-        _advancedExpanded = State(initialValue: false)
+        // read only, everything shows at once
+        _moreExpanded = State(initialValue: Self.debugFlag("parityRoutineMoreOpen") || RoutineEditorRules.readOnly(routine) || Self.debugFlag("parityRoutineReadOnly"))
         _onlyWhenPresent = State(initialValue: source?.onlyWhenPresent == true)
         // Default silent for a new routine; an existing one keeps its choice.
         _postResults = State(initialValue: source?.postResults == true)
         _autoPauseAfter = State(initialValue: source.map(RoutineAutoPause.after) ?? RoutineAutoPause.defaultAfter)
+        _continuity = State(initialValue: source?.continuity == true)
+        _mailAlias = State(initialValue: source?.mailAlias ?? "")
         let watch = RoutineWatchDraft(precheck: source?.precheck)
         initialWatch = watch
         _watchDraft = State(initialValue: watch)
     }
 
     private var advanced: Bool { session.surfaceGate.allows(.routineAdvancedEditor) }
+    /// Someone else's routine (canEdit false or redacted): seen, not changed.
+    /// DEBUG captures: `-parityRoutineReadOnly YES`.
+    private var readOnly: Bool { RoutineEditorRules.readOnly(routine) || Self.debugFlag("parityRoutineReadOnly") }
     private var isTeamGoal: Bool { target == "room-goal" }
-    /// As on the desktop: a bot routine that repeats.
-    private var watchAllowed: Bool { RoutineWatchRules.allowed(target: target, repeats: form.recurrence != .none) }
+    /// As on the desktop: a bot routine that repeats on the clock.
+    private var watchAllowed: Bool { RoutineWatchRules.allowed(target: target, repeats: form.recurrence.repeatsOnClock) }
     private var watchSection: some View {
         RoutineWatchSection(draft: $watchDraft, botId: botId, routineId: routine?.id,
                             runOn: isTeamGoal ? RoutineRunLocation.maus.rawValue : runOn.rawValue)
     }
-    /// DEBUG captures only (`-parityRoutineWatchFirst YES`): the section on
-    /// top, so a headless screenshot shows it without scrolling.
-    private var watchFirst: Bool {
+    /// DEBUG captures only: `-parityRoutineWatchFirst YES` puts the watch on
+    /// top, `-parityRoutineMoreOpen YES` opens More options,
+    /// `-parityRoutineEditorScroll when|what|where|more` scrolls there.
+    private static func debugFlag(_ key: String) -> Bool {
 #if DEBUG
-        UserDefaults.standard.bool(forKey: "parityRoutineWatchFirst")
+        UserDefaults.standard.bool(forKey: key)
 #else
         false
 #endif
     }
-    /// DEBUG captures only (`-parityRoutineScheduleFirst YES`): the schedule
-    /// on top, so a headless screenshot shows it without scrolling.
-    private var scheduleFirst: Bool {
+    private var watchFirst: Bool { Self.debugFlag("parityRoutineWatchFirst") }
+    private var debugScroll: String? {
 #if DEBUG
-        UserDefaults.standard.bool(forKey: "parityRoutineScheduleFirst")
+        UserDefaults.standard.string(forKey: "parityRoutineEditorScroll")
 #else
-        false
+        nil
 #endif
     }
     private var watchEdit: Result<RoutineWatchEdit, RoutineWatchProblem> {
@@ -129,32 +148,75 @@ struct RoutineEditorView: View {
     private var room: Room? { rooms.first { $0.id == groupId } }
     private var roomMembers: [Bot] { RoutineTeamGoal.members(of: room, bots: session.state.bots) }
 
+    // MARK: Not saved
+
+    private var snapshot: RoutineEditorSnapshot {
+        RoutineEditorSnapshot(
+            name: name, prompt: prompt, botId: botId, target: target, groupId: groupId, runOn: runOn.rawValue,
+            form: form, durationMinutes: duration, timeoutMinutes: timeoutMinutes, overlap: overlap,
+            results: results, attachmentIds: attachments.map(\.id), runAs: runAs, onlyWhenPresent: onlyWhenPresent,
+            postResults: postResults, autoPauseAfter: autoPauseAfter, continuity: continuity, mailAlias: mailAlias,
+            watch: watchDraft
+        )
+    }
+
+    private var dirty: Bool { opened.map { snapshot.differs(from: $0) } ?? false }
+
+    private func requestClose() {
+        if dirty && !saving { confirmingClose = true } else { dismiss() }
+    }
+
     var body: some View {
         NavigationStack {
-            ThemedForm {
-                if watchFirst && watchAllowed { watchSection }
-                if scheduleFirst { scheduleSection }
-                if advanced { typeSection }
-                workSection
-                if advanced && !isTeamGoal { resultsSection }
-                if RoutineRunAsField.shown(runAsOptions) { runAsSection }
-                runOnSection
-                if !scheduleFirst { scheduleSection }
-                advancedSection
-                if watchAllowed && !watchFirst { watchSection }
-                if advanced && session.surfaceGate.allows(.routineAttachments) { attachmentsSection }
-            }
-            .navigationTitle(routine == nil ? "New routine" : "Edit routine")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(saveLabel) { Task { await save() } }
-                        .disabled(saving || attaching > 0 || !valid)
-                        .accessibilityIdentifier("routine-editor-save")
+            ScrollViewReader { proxy in
+                ThemedForm {
+                    if watchFirst && watchAllowed { watchSection.disabled(readOnly) }
+                    headerSection.disabled(readOnly)
+                    whenSection.id("when")
+                    if watchAllowed && !watchFirst { watchSection.disabled(readOnly) }
+                    whatSection.disabled(readOnly).id("what")
+                    whereSection.id("where")
+                    moreSection.id("more")
+                }
+                .task {
+                    guard let place = debugScroll else { return }
+                    try? await Task.sleep(nanoseconds: 1_200_000_000)
+                    proxy.scrollTo(place, anchor: .top)
                 }
             }
-            .onAppear { if botId.isEmpty { botId = bots.first?.id ?? "" } }
+            .navigationTitle(readOnly ? Text("Routine") : routine == nil ? Text("New routine") : Text("Edit routine"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) { titleView }
+                if readOnly {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                            .accessibilityIdentifier("routine-editor-done")
+                    }
+                } else {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") { requestClose() }
+                            .accessibilityIdentifier("routine-editor-cancel")
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button(saveLabel) { Task { await save() } }
+                            .disabled(saving || attaching > 0 || !valid)
+                            .accessibilityIdentifier("routine-editor-save")
+                    }
+                }
+            }
+            // a swipe down never loses a change: Cancel asks first
+            .interactiveDismissDisabled(dirty)
+            .confirmationDialog(String(localized: "Close without saving your changes?"), isPresented: $confirmingClose, titleVisibility: .visible) {
+                Button(String(localized: "Close without saving"), role: .destructive) { dismiss() }
+                    .accessibilityIdentifier("routine-editor-discard")
+                Button(String(localized: "Keep editing"), role: .cancel) {}
+            }
+            .sheet(isPresented: $instructionsFullScreen) { instructionsSheet }
+            .onAppear {
+                if botId.isEmpty { botId = bots.first?.id ?? "" }
+                if opened == nil { opened = snapshot }
+            }
             .onValueChange(of: photoItems) { items in
                 guard !items.isEmpty else { return }
                 Task { await importPhotos(items) }
@@ -168,6 +230,26 @@ struct RoutineEditorView: View {
             }
             // asked again when the bot, the routine type or the room changes
             .task(id: "\(botId)|\(target)|\(groupId)") { await loadRunAsOptions() }
+        }
+    }
+
+    /// "Edit routine" and, while a change waits, "Not saved".
+    private var titleView: some View {
+        VStack(spacing: 1) {
+            (readOnly ? Text("Routine") : routine == nil ? Text("New routine") : Text("Edit routine"))
+                .font(.headline)
+                .lineLimit(1)
+            if dirty {
+                HStack(spacing: 4) {
+                    Circle().fill(Theme.accent).frame(width: 5, height: 5)
+                    Text("Not saved")
+                }
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(Theme.accentText)
+                .accessibilityElement(children: .combine)
+                .accessibilityHint(Text("You have unsaved changes."))
+                .accessibilityIdentifier("routine-editor-unsaved")
+            }
         }
     }
 
@@ -185,70 +267,135 @@ struct RoutineEditorView: View {
         runAsOptions = options
         // a person who cannot run the newly chosen bot is no longer the choice
         runAs = RoutineRunAsField.keep(runAs, in: options)
+        // the first answer is the state the editor opened with
+        if let opened, opened.runAs == nil, !dirtyExcludingRunAs { self.opened?.runAs = runAs }
     }
 
-    @ViewBuilder
-    private var runAsSection: some View {
-        if let options = runAsOptions {
-            let chosen = RoutineRunAsField.chosen(options, selected: runAs)
-            let name = chosen.map(RoutineRunAsField.name) ?? ""
-            Section {
-                if options.canChoose {
-                    NavigationLink {
-                        RoutineRunAsPicker(options: options, selected: $runAs)
-                    } label: {
-                        HStack(spacing: 10) {
-                            PersonAvatar(initials: People.initials(name.isEmpty ? "?" : name), size: 24, avatarUrl: chosen?.avatarUrl)
-                            Text("Runs as")
-                            Spacer(minLength: 8)
-                            Text(verbatim: name).foregroundStyle(Theme.textSecondary).lineLimit(1)
-                        }
-                    }
-                    .accessibilityIdentifier("routine-editor-run-as")
-                } else {
-                    HStack(spacing: 10) {
-                        PersonAvatar(initials: People.initials(name.isEmpty ? "?" : name), size: 24, avatarUrl: chosen?.avatarUrl)
-                        Text(String(localized: "Runs as \(name)")).lineLimit(1)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("routine-editor-run-as-line")
-                }
-                if chosen?.pending == true {
-                    Text(String(localized: "Will run once \(name) signs in"))
+    private var dirtyExcludingRunAs: Bool {
+        guard var base = opened else { return false }
+        base.runAs = runAs
+        return snapshot.differs(from: base)
+    }
+
+    // MARK: Header: the name and the summary line
+
+    private var headerSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("Routine name", text: $name)
+                    .font(.title3.weight(.semibold))
+                    .accessibilityIdentifier("routine-editor-name")
+                let line = summaryLine
+                if !line.isEmpty {
+                    Text(verbatim: line)
                         .font(.footnote)
                         .foregroundStyle(Theme.textSecondary)
-                        .accessibilityIdentifier("routine-editor-run-as-pending")
-                }
-            } footer: {
-                if options.canChoose {
-                    Text("The routine acts with this person's access and their rights on the bot. Every change is recorded in the admin activity log.")
+                        .accessibilityIdentifier("routine-editor-headline")
                 }
             }
+            .padding(.vertical, 4)
         }
     }
 
-    // MARK: Sections
+    /// "Every weekday at 9:00 AM · Results in the main thread · As Alex".
+    private var summaryLine: String {
+        let scheduleText = (try? form.schedule(savedAt: Date())).map(RoutineWording.compact)
+        let place: String?
+        if isTeamGoal {
+            place = room?.name
+        } else {
+            switch RoutineEditorRules.resultsPlace(results, original: routine, threadTitle: threadTitle) {
+            case .main: place = String(localized: "Results in the main thread")
+            case let .thread(title): place = String(localized: "Results in \(title)")
+            }
+        }
+        let person = runAsName.map { String(localized: "As \($0)") }
+        return RoutineEditorRules.summary(schedule: scheduleText, results: place, runAs: person)
+    }
 
-    private var typeSection: some View {
+    private func threadTitle(_ id: String) -> String? {
+        RoutineResults.groups(for: session.state.bot(botId)).flatMap(\.threads).first { $0.threadId == id }?.title
+    }
+
+    private var runAsName: String? {
+        guard let options = runAsOptions, let chosen = RoutineRunAsField.chosen(options, selected: runAs) else { return nil }
+        let name = RoutineRunAsField.name(chosen)
+        return name.isEmpty ? nil : name
+    }
+
+    // MARK: When
+
+    private var whenSection: some View {
         Section {
-            Picker(String(localized: "Routine type"), selection: Binding(get: { target }, set: selectTarget)) {
-                Text("Bot task").tag("bot")
-                Text("Team goal").tag("room-goal")
+            Picker("Repeats", selection: Binding(get: { form.recurrence }, set: selectRecurrence)) {
+                ForEach(RoutineEditorRules.repeatChoices(current: form.recurrence, teamGoal: isTeamGoal), id: \.self) { choice in
+                    Text(verbatim: Self.repeatLabel(choice)).tag(choice)
+                }
             }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier("routine-editor-type")
+            .accessibilityIdentifier("routine-editor-repeat")
+            .disabled(readOnly)
+            switch form.recurrence {
+            case .webhook:
+                RoutineWebhookPanel(
+                    routine: (savedRoutine ?? routine).flatMap { $0.schedule.type == .webhook ? $0 : nil },
+                    bot: session.state.bot(botId),
+                    onRoutineChanged: { savedRoutine = $0 }
+                )
+            case .email:
+                Text("Starts when an email arrives at the bot’s address.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textSecondary)
+            default:
+                Group {
+                    RoutineScheduleFields(form: $form)
+                    if form.recurrence.repeatsOnClock { RoutineTimingFields(form: $form) }
+                }
+                .disabled(readOnly)
+            }
+            if let problem = form.problem {
+                Text(verbatim: RoutineEditorWording.problem(problem))
+                    .font(.footnote)
+                    .foregroundStyle(Theme.danger)
+                    .accessibilityIdentifier("routine-editor-problem")
+            }
         } header: {
-            Text("Routine type")
+            Label("When", systemImage: "clock")
         } footer: {
-            Text(isTeamGoal ? "A lead coordinates the group until the goal settles." : "One bot owns and completes each run.")
+            if !form.recurrence.isTrigger {
+                Text("Runs while Sagax is open on this computer: it cannot wake a sleeping Mac. A run missed by less than 12 hours still happens when the app is back; for 24/7, run Sagax on a VPS.")
+            }
         }
     }
+
+    static func repeatLabel(_ choice: RoutineRecurrence) -> String {
+        switch choice {
+        case .none: String(localized: "Does not repeat")
+        case .hourly: String(localized: "Every hour")
+        case .daily: String(localized: "Every day")
+        case .weekdays: String(localized: "Weekdays")
+        case .days: String(localized: "Certain days")
+        case .monthly: String(localized: "Every month")
+        case .yearly: String(localized: "Every year")
+        case .interval: String(localized: "Every N minutes or hours")
+        case .advanced: String(localized: "Advanced")
+        case .webhook: String(localized: "When a webhook arrives")
+        case .email: String(localized: "When email arrives")
+        }
+    }
+
+    // MARK: What
 
     @ViewBuilder
-    private var workSection: some View {
-        Section("Work") {
-            TextField("Routine name", text: $name)
-                .accessibilityIdentifier("routine-editor-name")
+    private var whatSection: some View {
+        Section {
+            if advanced {
+                Picker(String(localized: "Routine type"), selection: Binding(get: { target }, set: selectTarget)) {
+                    Text("Bot task").tag("bot")
+                    Text("Team goal").tag("room-goal")
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("routine-editor-type")
+            }
             if isTeamGoal {
                 if rooms.isEmpty {
                     Text("Create a group from the sidebar first, then come back to schedule its goal.")
@@ -276,146 +423,265 @@ struct RoutineEditorView: View {
                     Text("Choose an agent").tag("")
                     ForEach(bots) { bot in Text(bot.name).tag(bot.id) }
                 }
+                .accessibilityIdentifier("routine-editor-agent")
             }
-            // the markdown editor (desktop RoutineCalendarPage EventEditor, #258)
+            // the markdown editor, simple: writing straight away, Preview one
+            // tap away, Full screen for long instructions
             MarkdownEditor(
                 text: $prompt,
-                placeholder: isTeamGoal ? String(localized: "What should the team accomplish?") : String(localized: "What should the agent do?"),
-                minHeight: 140, accessibilityLabel: String(localized: "Instructions"), identifier: "routine-editor-prompt"
+                placeholder: instructionsPlaceholder,
+                minHeight: 120, accessibilityLabel: String(localized: "Instructions"), identifier: "routine-editor-prompt",
+                compact: true, onExpand: { instructionsFullScreen = true }
             )
+            if advanced && session.surfaceGate.allows(.routineAttachments) { attachmentRows }
+        } header: {
+            Label("What", systemImage: "doc.text")
+        } footer: {
+            if advanced && session.surfaceGate.allows(.routineAttachments) {
+                Text(isTeamGoal
+                     ? "Team goals cannot carry routine attachments. Put shared context in the goal instructions or the group instructions."
+                     : "Attachments are passed to each local routine run and excluded from shared team files.")
+            } else if advanced {
+                Text(isTeamGoal ? "A lead coordinates the group until the goal settles." : "One bot owns and completes each run.")
+            }
         }
     }
 
-    private var resultsSection: some View {
-        let bot = session.state.bot(botId)
-        return Section {
-            Picker(String(localized: "Post results to"), selection: $results) {
-                if routine != nil { Text("Keep current destination").tag(RoutineResultsDestination.keep) }
-                Text("The bot's main thread").tag(RoutineResultsDestination.newThread)
-                // One conversation (threads hidden): the main thread is the
-                // only destination the person can see, so it is the only one.
-                if threadPrefs.threads.shown {
-                    if RoutineResults.isMissing(results, bot: bot) {
-                        Text("Thread unavailable. Choose another").tag(results).rowSelectionDisabled()
-                    }
-                    ForEach(RoutineResults.groups(for: bot), id: \.self) { group in
-                        Section(group.folder ?? String(localized: "No folder")) {
-                            ForEach(group.threads, id: \.threadId) { thread in
-                                Text(verbatim: thread.title).tag(RoutineResultsDestination.thread(thread.threadId))
-                            }
-                        }
-                    }
+    private var instructionsPlaceholder: String {
+        isTeamGoal ? String(localized: "What should the team accomplish?") : String(localized: "What should the agent do?")
+    }
+
+    /// Long instructions get the whole screen, with every markdown tool.
+    private var instructionsSheet: some View {
+        NavigationStack {
+            MarkdownEditor(
+                text: $prompt,
+                placeholder: instructionsPlaceholder,
+                minHeight: 320, accessibilityLabel: String(localized: "Instructions"), identifier: "routine-editor-prompt-full"
+            )
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .frame(maxHeight: .infinity, alignment: .top)
+            .background(Theme.bg.ignoresSafeArea())
+            .navigationTitle(Text("Instructions"))
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { instructionsFullScreen = false }
+                        .accessibilityIdentifier("routine-editor-prompt-done")
                 }
-            }
-            .disabled(bot == nil)
-            .accessibilityIdentifier("routine-editor-results")
-        } footer: {
-            if threadPrefs.threads.shown {
-                Text("Each run starts with fresh context. Dated results collect in the bot's main thread unless you choose another; full execution details stay in Run logs.")
-            } else {
-                Text("Each run starts with fresh context. Dated results collect in the bot's main thread; full execution details stay in Run logs.")
             }
         }
     }
 
     @ViewBuilder
-    private var runOnSection: some View {
-        if isTeamGoal {
-            Section {
-                Label("Runs on this computer", systemImage: "scope")
-            } footer: {
+    private var attachmentRows: some View {
+        if !isTeamGoal {
+            ForEach(attachments, id: \.id) { attachment in
+                Label(attachment.name, systemImage: attachment.kind == "image" ? "photo" : "doc.text")
+                    .lineLimit(1)
+                    .swipeActions {
+                        Button(String(localized: "Remove"), role: .destructive) { remove(attachment) }
+                    }
+                    .contextMenu {
+                        Button(String(localized: "Remove \(attachment.name)"), systemImage: "xmark", role: .destructive) { remove(attachment) }
+                    }
+                    .accessibilityIdentifier("routine-editor-attachment.\(attachment.name)")
+            }
+            if attaching > 0 {
+                ProgressView(String(localized: "Attaching…"))
+            }
+            if attachments.count < 20 {
+                Menu {
+                    PhotosPicker(selection: $photoItems, maxSelectionCount: 20 - attachments.count, matching: .images) {
+                        Label("Photo Library", systemImage: "photo.on.rectangle")
+                    }
+                    Button(String(localized: "Choose File"), systemImage: "doc") { choosingFile = true }
+                } label: {
+                    Label("Add attachment", systemImage: "paperclip")
+                }
+                .accessibilityIdentifier("routine-editor-add-attachment")
+            }
+        }
+    }
+
+    // MARK: Where results go
+
+    private var whereSection: some View {
+        Section {
+            // someone else's routine says whose it is
+            if let owner = routine?.foreignOwnerName {
+                LabeledContent(String(localized: "Owner"), value: owner)
+                    .accessibilityIdentifier("routine-editor-owner")
+            }
+            Group {
+                if advanced && !isTeamGoal { resultsRow }
+                if RoutineRunAsField.shown(runAsOptions) { runAsRows }
+                runOnRows
+            }
+            .disabled(readOnly)
+        } header: {
+            HStack {
+                Label("Where results go", systemImage: "paperplane")
+                Spacer(minLength: 8)
+                Button {
+                    withAnimation { whereHelp.toggle() }
+                } label: {
+                    Image(systemName: whereHelp ? "questionmark.circle.fill" : "questionmark.circle")
+                        .imageScale(.medium)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel(Text(whereHelp ? "Hide help" : "Help"))
+                .accessibilityIdentifier("routine-editor-where-help")
+            }
+        } footer: {
+            if whereHelp { whereHelpText }
+        }
+    }
+
+    @ViewBuilder
+    private var whereHelpText: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if advanced && !isTeamGoal {
+                if threadPrefs.threads.shown {
+                    Text("Each run starts with fresh context. Dated results collect in the bot's main thread unless you choose another; full execution details stay in Run logs.")
+                } else {
+                    Text("Each run starts with fresh context. Dated results collect in the bot's main thread; full execution details stay in Run logs.")
+                }
+            }
+            if runAsOptions?.canChoose == true {
+                Text("The routine acts with this person's access and their rights on the bot. Every change is recorded in the admin activity log.")
+            }
+            if isTeamGoal {
                 Text("Sagax keeps the group and its member hand-offs together for the full goal.")
+            } else if runOn == .maus {
+                Text("Uses this agent's selected model and computer setting on the paired computer.")
+            } else if runAvailability?.cloudReady == true {
+                Text("Runs the agent and its tools inside its Boat virtual machine. The VM wakes automatically for each run; keep Sagax running so its scheduler can launch the job.")
+            } else {
+                Text("This existing Cloud VM choice is preserved, but it cannot run until the paired computer has a configured Boat API key and an available Boat agent.")
+            }
+        }
+        .accessibilityIdentifier("routine-editor-where-help-text")
+    }
+
+    private var resultsRow: some View {
+        let bot = session.state.bot(botId)
+        return Picker(String(localized: "Results"), selection: $results) {
+            if routine != nil { Text("Keep current destination").tag(RoutineResultsDestination.keep) }
+            Text("The bot's main thread").tag(RoutineResultsDestination.newThread)
+            // One conversation (threads hidden): the main thread is the
+            // only destination the person can see, so it is the only one.
+            if threadPrefs.threads.shown {
+                if RoutineResults.isMissing(results, bot: bot) {
+                    Text("Thread unavailable. Choose another").tag(results).rowSelectionDisabled()
+                }
+                ForEach(RoutineResults.groups(for: bot), id: \.self) { group in
+                    Section(group.folder ?? String(localized: "No folder")) {
+                        ForEach(group.threads, id: \.threadId) { thread in
+                            Text(verbatim: thread.title).tag(RoutineResultsDestination.thread(thread.threadId))
+                        }
+                    }
+                }
+            }
+        }
+        .disabled(bot == nil)
+        .accessibilityIdentifier("routine-editor-results")
+    }
+
+    @ViewBuilder
+    private var runAsRows: some View {
+        if let options = runAsOptions {
+            let chosen = RoutineRunAsField.chosen(options, selected: runAs)
+            let name = chosen.map(RoutineRunAsField.name) ?? ""
+            if options.canChoose {
+                NavigationLink {
+                    RoutineRunAsPicker(options: options, selected: $runAs)
+                } label: {
+                    HStack(spacing: 10) {
+                        Text("Runs as")
+                        Spacer(minLength: 8)
+                        PersonAvatar(initials: People.initials(name.isEmpty ? "?" : name), size: 22, avatarUrl: chosen?.avatarUrl)
+                        Text(verbatim: name).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                    }
+                }
+                .accessibilityIdentifier("routine-editor-run-as")
+            } else {
+                HStack(spacing: 10) {
+                    Text("Runs as")
+                    Spacer(minLength: 8)
+                    PersonAvatar(initials: People.initials(name.isEmpty ? "?" : name), size: 22, avatarUrl: chosen?.avatarUrl)
+                    Text(verbatim: name).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("routine-editor-run-as-line")
+            }
+            if chosen?.pending == true {
+                Text(String(localized: "Will run once \(name) signs in"))
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textSecondary)
+                    .accessibilityIdentifier("routine-editor-run-as-pending")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var runOnRows: some View {
+        if isTeamGoal {
+            LabeledContent(String(localized: "Runs on")) {
+                Text("This computer")
             }
         } else {
-            Section {
-                Picker("Run location", selection: $runOn) {
-                    Label("This computer", systemImage: "laptopcomputer")
-                        .tag(RoutineRunLocation.maus)
-                    Label("Cloud VM", systemImage: "cloud")
-                        .tag(RoutineRunLocation.cloud)
-                        .rowSelectionDisabled(!cloudSelectable)
-                }
-                .pickerStyle(.inline)
-
-                if !availabilityLoaded {
-                    ProgressView("Checking Cloud VM availability…")
-                } else if runAvailability == nil {
-                    Label("Cloud VM status is unavailable", systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(Theme.textSecondary)
-                }
-            } header: {
-                Text("Where does it run?")
-            } footer: {
-                if runOn == .maus {
-                    Text("Uses this agent's selected model and computer setting on the paired computer.")
-                } else if runAvailability?.cloudReady == true {
-                    Text("Runs the agent and its tools inside its Boat virtual machine. The VM wakes automatically for each run; keep Sagax running so its scheduler can launch the job.")
-                } else {
-                    Text("This existing Cloud VM choice is preserved, but it cannot run until the paired computer has a configured Boat API key and an available Boat agent.")
-                }
+            Picker("Runs on", selection: $runOn) {
+                Label("This computer", systemImage: "laptopcomputer")
+                    .tag(RoutineRunLocation.maus)
+                Label("Cloud VM", systemImage: "cloud")
+                    .tag(RoutineRunLocation.cloud)
+                    .rowSelectionDisabled(!cloudSelectable)
             }
-        }
-    }
-
-    private var scheduleSection: some View {
-        Section {
-            Picker("Repeats", selection: Binding(get: { form.recurrence }, set: selectRecurrence)) {
-                Text("Does not repeat").tag(RoutineRecurrence.none)
-                Text("Every hour").tag(RoutineRecurrence.hourly)
-                Text("Every day").tag(RoutineRecurrence.daily)
-                Text("Weekdays").tag(RoutineRecurrence.weekdays)
-                Text("Certain days").tag(RoutineRecurrence.days)
-                Text("Every month").tag(RoutineRecurrence.monthly)
-                Text("Every year").tag(RoutineRecurrence.yearly)
-                Text("Every N minutes or hours").tag(RoutineRecurrence.interval)
-                if form.recurrence == .advanced {
-                    Text("Advanced").tag(RoutineRecurrence.advanced)
-                }
-            }
-            .accessibilityIdentifier("routine-editor-repeat")
-            RoutineScheduleFields(form: $form)
-            if form.recurrence != .none { RoutineTimingFields(form: $form) }
-            if !isTeamGoal {
-                Toggle(isOn: $onlyWhenPresent) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Only when I'm here")
-                        Text("While you are away (computer idle or locked), this routine skips its runs and tells you how many when you are back. A one-time routine waits for you.")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                }
-                .accessibilityIdentifier("routine-editor-only-when-present")
-                Toggle(isOn: $postResults) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Post results in the conversation")
-                        Text("When on, this routine posts its result as a message in the conversation. When off, it runs in the background and the result stays in Automations. Questions, approvals and errors always reach you, and the routine's instructions are never posted.")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.textSecondary)
-                    }
-                }
-                .accessibilityIdentifier("routine-editor-post-results")
-            }
-            if let problem = form.problem {
-                Text(verbatim: RoutineEditorWording.problem(problem))
+            .accessibilityIdentifier("routine-editor-run-on")
+            if !availabilityLoaded {
+                ProgressView("Checking Cloud VM availability…")
+            } else if runAvailability == nil {
+                Label("Cloud VM status is unavailable", systemImage: "exclamationmark.triangle")
                     .font(.footnote)
-                    .foregroundStyle(Theme.danger)
-                    .accessibilityIdentifier("routine-editor-problem")
-            }
-        } header: {
-            Text("Schedule")
-        } footer: {
-            VStack(alignment: .leading, spacing: 6) {
-                if form.recurrence == .interval {
-                    Text(overlap == "queue" ? "Keep one scheduled run waiting until this routine finishes. Skip further occurrences until it starts. Manual runs are separate." : "Skip scheduled occurrences while this routine is working. Manual runs are separate.")
-                }
-                Text("Runs while Sagax is open on this computer: it cannot wake a sleeping Mac. A run missed by less than 12 hours still happens when the app is back; for 24/7, run Sagax on a VPS.")
+                    .foregroundStyle(Theme.textSecondary)
             }
         }
     }
 
-    private var advancedSection: some View {
+    // MARK: More options
+
+    private var moreSummary: String {
+        RoutineEditorRules.moreSummary(timeoutMinutes: timeoutMinutes, overlap: overlap, recurrence: form.recurrence).map { part in
+            switch part {
+            case .noLimit: String(localized: "No time limit")
+            case let .limit(minutes): String(localized: "Stops after \(RoutineDurations.label(minutes))")
+            case .overlapSkip: String(localized: "Skip this occurrence")
+            case .overlapQueue: String(localized: "Queue one run")
+            }
+        }.joined(separator: " · ")
+    }
+
+    private var moreSection: some View {
         Section {
-            DisclosureGroup(isExpanded: $advancedExpanded) {
+            DisclosureGroup(isExpanded: $moreExpanded) {
+                moreFields.disabled(readOnly)
+            } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("More options")
+                    Text(verbatim: moreSummary)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.textSecondary)
+                        .accessibilityIdentifier("routine-editor-more-summary")
+                }
+            }
+            .accessibilityIdentifier("routine-editor-advanced")
+        }
+    }
+
+    @ViewBuilder
+    private var moreFields: some View {
                 Picker("Stop if still running after", selection: $timeoutMinutes) {
                     Text("No limit").tag(nil as Int?)
                     ForEach(RoutineDurations.options, id: \.self) { minutes in
@@ -423,21 +689,24 @@ struct RoutineEditorView: View {
                     }
                 }
                 .accessibilityIdentifier("routine-editor-timeout")
-                if advanced && form.recurrence != .none {
+                moreHelp("Optional. The clock starts when work actually begins and does not control how often the routine starts.")
+                if advanced && form.recurrence.repeatsOnClock {
                     Picker(String(localized: "If the previous run is still working"), selection: $overlap) {
                         Text("Skip this occurrence").tag("skip")
                         Text("Queue one run").tag("queue")
                     }
                     .accessibilityIdentifier("routine-editor-overlap")
+                    moreHelp(overlap == "queue" ? "Keep one scheduled run waiting until this routine finishes. Skip further occurrences until it starts. Manual runs are separate." : "Skip scheduled occurrences while this routine is working. Manual runs are separate.")
                 }
                 // the person's own choice for their routine, no admin
-                if form.recurrence != .none {
+                if form.recurrence.repeatsOnClock {
                     Picker(String(localized: "Pause automatically"), selection: $autoPauseAfter) {
                         ForEach(RoutineAutoPause.choices(keeping: autoPauseAfter), id: \.self) { count in
                             Text(verbatim: RoutineWording.autoPauseOption(count)).tag(count)
                         }
                     }
                     .accessibilityIdentifier("routine-editor-auto-pause")
+                    moreHelp("When this many runs fail in a row, the routine pauses itself and tells you. Resume turns it back on and starts the count again. Failed runs stay in the history.")
                 }
                 if advanced {
                     Picker(String(localized: "Duration"), selection: $duration) {
@@ -446,72 +715,49 @@ struct RoutineEditorView: View {
                         }
                     }
                     .accessibilityIdentifier("routine-editor-duration")
+                    moreHelp("Duration is how long the routine fills on the calendar.")
                 }
-            } label: {
-                timeoutMinutes.map { Text("Advanced · \(RoutineDurations.label($0)) run limit") } ?? Text("Advanced · no run limit")
-            }
-            .accessibilityIdentifier("routine-editor-advanced")
-        } footer: {
-            if advancedExpanded {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Optional. The clock starts when work actually begins and does not control how often the routine starts.")
-                    if advanced && form.recurrence != .none {
-                        Text(overlap == "queue" ? "Keep one scheduled run waiting until this routine finishes. Skip further occurrences until it starts. Manual runs are separate." : "Skip scheduled occurrences while this routine is working. Manual runs are separate.")
-                    }
-                    if advanced { Text("Duration is how long the routine fills on the calendar.") }
-                    if form.recurrence != .none {
-                        Text("When this many runs fail in a row, the routine pauses itself and tells you. Resume turns it back on and starts the count again. Failed runs stay in the history.")
-                    }
+                if !isTeamGoal && form.recurrence.repeatsOnClock {
+                    toggle($continuity, "Remember the last run",
+                           "Each run starts with the previous run's report, so the bot knows what it found last time. Good for checks like QA or monitoring.",
+                           id: "routine-editor-continuity")
                 }
-            }
-        }
+                if !isTeamGoal {
+                    toggle($onlyWhenPresent, "Only when I'm here",
+                           "While you are away (computer idle or locked), this routine skips its runs and tells you how many when you are back. A one-time routine waits for you.",
+                           id: "routine-editor-only-when-present")
+                    VStack(alignment: .leading, spacing: 4) {
+                        LabeledContent("Mail tag") {
+                            TextField(String(localized: "reports"), text: Binding(get: { mailAlias }, set: { mailAlias = RoutineMailTag.clean($0) }))
+                                .multilineTextAlignment(.trailing)
+                                .textInputAutocapitalization(.never)
+                                .autocorrectionDisabled()
+                                .accessibilityIdentifier("routine-editor-mail-tag")
+                        }
+                        moreHelp("Added after + on this bot's mail address. Mail that arrives with this tag is marked for this routine. Sends still leave from the connector's address.")
+                    }
+                    toggle($postResults, "Post results in the conversation",
+                           "When on, this routine posts its result as a message in the conversation. When off, it runs in the background and the result stays in Automations. Questions, approvals and errors always reach you, and the routine's instructions are never posted.",
+                           id: "routine-editor-post-results")
+                }
     }
 
-    @ViewBuilder
-    private var attachmentsSection: some View {
-        if isTeamGoal {
-            Section {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Use the group’s shared context").font(.subheadline.weight(.medium))
-                    Text("Team goals cannot carry routine attachments. Put shared context in the goal instructions or the group instructions.")
-                        .font(.footnote).foregroundStyle(Theme.textSecondary)
-                }
-            } header: {
-                Text("Attachments")
-            }
-        } else {
-            Section {
-                ForEach(attachments, id: \.id) { attachment in
-                    Label(attachment.name, systemImage: attachment.kind == "image" ? "photo" : "doc.text")
-                        .lineLimit(1)
-                        .swipeActions {
-                            Button(String(localized: "Remove"), role: .destructive) { remove(attachment) }
-                        }
-                        .contextMenu {
-                            Button(String(localized: "Remove \(attachment.name)"), systemImage: "xmark", role: .destructive) { remove(attachment) }
-                        }
-                        .accessibilityIdentifier("routine-editor-attachment.\(attachment.name)")
-                }
-                if attaching > 0 {
-                    ProgressView(String(localized: "Attaching…"))
-                }
-                if attachments.count < 20 {
-                    Menu {
-                        PhotosPicker(selection: $photoItems, maxSelectionCount: 20 - attachments.count, matching: .images) {
-                            Label("Photo Library", systemImage: "photo.on.rectangle")
-                        }
-                        Button(String(localized: "Choose File"), systemImage: "doc") { choosingFile = true }
-                    } label: {
-                        Label("Add attachment", systemImage: "paperclip")
-                    }
-                    .accessibilityIdentifier("routine-editor-add-attachment")
-                }
-            } header: {
-                Text("Attachments")
-            } footer: {
-                Text("Attachments are passed to each local routine run and excluded from shared team files.")
+    private func moreHelp(_ text: LocalizedStringKey) -> some View {
+        Text(text)
+            .font(.footnote)
+            .foregroundStyle(Theme.textSecondary)
+    }
+
+    private func toggle(_ value: Binding<Bool>, _ title: LocalizedStringKey, _ help: LocalizedStringKey, id: String) -> some View {
+        Toggle(isOn: value) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                Text(help)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.textSecondary)
             }
         }
+        .accessibilityIdentifier(id)
     }
 
     // MARK: Changes (the desktop's handlers)
@@ -530,6 +776,8 @@ struct RoutineEditorView: View {
         }
         runOn = .maus
         attachments = []
+        // a team goal starts on the clock, never from a webhook
+        if form.recurrence.isTrigger { form.select(.none) }
         let chosen = room ?? rooms.first
         groupId = chosen?.id ?? ""
         selectBot(RoutineTeamGoal.preferredLead(of: chosen, bots: session.state.bots, preferredId: botId)?.id ?? "")
@@ -632,9 +880,13 @@ struct RoutineEditorView: View {
             input.onlyWhenPresent = onlyWhenPresent
             input.postResults = postResults
         }
-        if form.recurrence != .none { input.autoPauseAfter = autoPauseAfter }
+        if form.recurrence.repeatsOnClock { input.autoPauseAfter = autoPauseAfter }
+        if !isTeamGoal {
+            input.continuity = form.recurrence.repeatsOnClock && continuity
+            input.mailAlias = mailAlias
+        }
         if case let .success(edit) = watchEdit { input.watch = edit }
-        if await session.saveRoutine(input, original: routine) != nil {
+        if await session.saveRoutine(input, original: savedRoutine ?? routine) != nil {
             await onSaved()
             dismiss()
         }
@@ -733,6 +985,9 @@ struct RoutineScheduleFields: View {
             previewRows
             Button("Choose a simple schedule") { form.chooseSimpleSchedule() }
                 .accessibilityIdentifier("routine-editor-simple-schedule")
+        case .webhook, .email:
+            // started by a trigger: the editor shows the webhook instead
+            EmptyView()
         }
     }
 

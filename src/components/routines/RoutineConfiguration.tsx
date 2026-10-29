@@ -16,6 +16,7 @@ import type { Bot, Group } from "@/state/store";
 import { BotAvatar } from "@/components/Avatar";
 import { CronSchedulePreview } from "./CronScheduleFields";
 import { RoutineOwnerBadge } from "./RoutineScopeBar";
+import { RoutineWebhookPanel } from "./RoutineWebhookPanel";
 
 const LABEL = "text-[11px] font-medium uppercase tracking-wider text-ink-secondary";
 const VALUE = "mt-1 text-[12.5px] leading-relaxed text-ink";
@@ -73,6 +74,7 @@ export function RoutineConfiguration({ routine, run, bots, groups = [], viewerPr
         {routine && <Row label={t("routines.drawer.schedule")} data-routine-config-schedule="">
           <span>{scheduleLabel(routine.schedule)}</span>
           {routine.schedule.type === "cron" && <div className="mt-2"><CronSchedulePreview schedule={routine.schedule} paused={!routine.enabled} /></div>}
+          {routine.schedule.type === "webhook" && <div className="mt-2"><RoutineWebhookPanel routine={routine} bot={bot} /></div>}
           {routine.precheck?.kind === "watch" && <div className="mt-1 text-ink-secondary">{t("routineWatch.badge")}</div>}
         </Row>}
         <Row label={t("routines.drawer.runLimit")}>{limit == null ? t("routineCalendar.noTimeLimit") : t("routineCalendar.stopsAfter", { duration: durationLabel(limit) })}</Row>

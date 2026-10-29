@@ -1952,6 +1952,12 @@ public struct RoutineSchedule: Codable, Hashable, Sendable {
         /// A five-field cron expression in an explicit IANA zone
         /// (`shared/routine-schedule.ts`). Shown raw; the phone does not edit it.
         case cron
+        /// Starts when the routine's own webhook receives a delivery
+        /// (`{ type: "webhook" }`, 2026-10-29: chosen in the editor).
+        case webhook
+        /// Starts when an email arrives (`{ type: "event", source: "email" }`).
+        /// Kept as it is: the editor never makes one.
+        case event
         /// A schedule introduced by a newer desktop. It remains visible but
         /// cannot be toggled or saved until the user chooses a supported kind.
         case unknown
@@ -1987,6 +1993,11 @@ public struct RoutineSchedule: Codable, Hashable, Sendable {
     public var timing: String? = nil
     public var windowEarlyMinutes: Int? = nil
     public var windowLateMinutes: Int? = nil
+    /// `event`: what starts it ("email").
+    public var source: String? = nil
+
+    /// Started by a webhook or an email, not by the clock.
+    public var isTrigger: Bool { type == .webhook || type == .event }
 
     public init(
         type: Kind, at: Double? = nil, time: String? = nil, weekdays: [Int]? = nil,
@@ -2148,6 +2159,10 @@ public struct Routine: Codable, Hashable, Identifiable, Sendable {
     /// Absent inherits the installation default; a quiet run stays silent and
     /// questions, approvals and errors always reach the person.
     public var postResults: Bool? = nil
+    /// "Remember the last run": each run starts with the previous report.
+    public var continuity: Bool? = nil
+    /// The tag after + on the bot's mail address (letters and digits).
+    public var mailAlias: String? = nil
     /// Skipped runs to report once the person is back.
     public var awaySkips: RoutineAwaySkips? = nil
     /// The pre-check run before each scheduled turn, kept as sent: a watch
@@ -2250,6 +2265,10 @@ public struct RoutineInput: Encodable, Sendable {
     public var autoPauseAfter: Int? = nil
     /// "Only when something changes": keep (nothing sent), set or remove.
     public var watch: RoutineWatchEdit = .keep
+    /// "Remember the last run". Nil leaves the stored value alone.
+    public var continuity: Bool? = nil
+    /// The mail tag. Nil leaves it alone; empty clears it.
+    public var mailAlias: String? = nil
 
     public init(
         name: String, prompt: String, botId: String, runOn: String = "maus",
@@ -2339,6 +2358,8 @@ public extension Routine {
             (schedule.at ?? -.infinity) > date.timeIntervalSince1970 * 1_000
         case .cron:
             !(schedule.expression ?? "").isEmpty && !(schedule.timeZone ?? "").isEmpty
+        case .webhook, .event:
+            true
         case .unknown:
             false
         }

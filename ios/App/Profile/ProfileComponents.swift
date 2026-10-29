@@ -408,6 +408,10 @@ enum RoutineWording {
                 return String(localized: "\(every), from \(start) to \(end)")
             }
             return every
+        case .webhook:
+            return String(localized: "When a webhook fires")
+        case .event:
+            return String(localized: "When email arrives")
         case .unknown:
             return String(localized: "Newer schedule")
         case .daily:

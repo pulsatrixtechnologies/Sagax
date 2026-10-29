@@ -342,10 +342,12 @@ final class ProfileUITests: XCTestCase {
         active.tap()
         try eventually("the routine is active again") { try enabled() == true }
 
-        element("routine-instruction", in: app).tap()
-        let text = app.staticTexts["text-card-body"]
+        // 2026-10-29: the one-line summary opens the editor, where the
+        // instruction (and the whole configuration) is
+        element("routine-summary", in: app).tap()
+        let text = app.textViews["routine-editor-prompt"]
         XCTAssertTrue(text.waitForExistence(timeout: 5))
-        XCTAssertTrue(text.label.contains("Texte de remplacement"))
+        XCTAssertTrue((text.value as? String ?? "").contains("Texte de remplacement"))
     }
 
     @MainActor

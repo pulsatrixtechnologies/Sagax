@@ -321,7 +321,7 @@ struct TasksRoutinesView: View {
         .sheet(item: $rescheduling) { item in
             AutomationsRescheduleSheet(item: item) { await reload() }
         }
-        .sheet(item: $openRun) { run in
+        .routineRunDetail(item: $openRun) { run in
             RoutineRunDetailView(run: run, routine: routines.first { $0.id == run.routineId }) { updated in
                 runs = RoutineRunLog.replacing(runs, with: [updated])
             }

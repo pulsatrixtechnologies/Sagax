@@ -1,6 +1,7 @@
 // Triggers already on the computer (parity T5, T6). The phone can read the
-// public URL, the last delivery and turn one on or off. Creating, rotating
-// and the signing secret stay on the paired computer.
+// public URL, the last delivery and turn one on or off. A routine's webhook
+// is managed in its routine (2026-10-29, RoutineWebhookPanel); creating a
+// webhook of its own and a signing secret stay on the paired computer.
 import CompanionCore
 import SwiftUI
 
@@ -62,7 +63,7 @@ struct RoutineTriggersSection: View {
         } header: {
             Text("Triggers")
         } footer: {
-            Text("Creating or rotating a webhook changes an internet-reachable trigger and signing secret, so webhook management remains on the paired computer. Webhook run receipts still appear in Run logs.")
+            Text("A routine’s webhook is managed in that routine, its key included. A webhook of its own is created on the paired computer. Webhook run receipts still appear in Run logs.")
         }
     }
 

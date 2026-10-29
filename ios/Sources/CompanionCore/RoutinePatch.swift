@@ -58,6 +58,10 @@ public enum RoutinePatch {
         case let .set(watch): if watch != original.precheck { body["precheck"] = watch.bodyValue }
         case .remove: if RoutineWatchRules.watch(original.precheck) != nil { body["precheck"] = NSNull() }
         }
+        if let continuity = input.continuity, continuity != (original.continuity == true) { body["continuity"] = continuity }
+        if let alias = input.mailAlias.map(RoutineMailTag.clean), alias != (original.mailAlias ?? "") {
+            body["mailAlias"] = alias.isEmpty ? NSNull() : alias
+        }
         return body
     }
 
@@ -87,6 +91,8 @@ public enum RoutinePatch {
         if let postResults = input.postResults { body["postResults"] = postResults }
         if let after = input.autoPauseAfter, after != RoutineAutoPause.defaultAfter { body["autoPauseAfter"] = after }
         if case let .set(watch) = input.watch { body["precheck"] = watch.bodyValue }
+        if input.continuity == true { body["continuity"] = true }
+        if let alias = input.mailAlias.map(RoutineMailTag.clean), !alias.isEmpty { body["mailAlias"] = alias }
         return body
     }
 
@@ -109,6 +115,7 @@ public enum RoutinePatch {
         if let timeZone = schedule.timeZone { body["timeZone"] = timeZone }
         if let window = schedule.window { body["window"] = ["start": window.start, "end": window.end] }
         if let endsAt = schedule.endsAt { body["endsAt"] = endsAt }
+        if let source = schedule.source { body["source"] = source }
         if clearingAbsent && schedule.type == .interval {
             if schedule.weekdays == nil { body["weekdays"] = NSNull() }
             if schedule.window == nil { body["window"] = NSNull() }
@@ -130,6 +137,7 @@ public enum RoutinePatch {
             && a.timeZone == b.timeZone
             && a.window == b.window
             && a.endsAt == b.endsAt
+            && a.source == b.source
             && sameTiming(a, b)
     }
 
@@ -139,5 +147,14 @@ public enum RoutinePatch {
         guard modeA == modeB else { return false }
         guard modeA == "flexible" else { return true }
         return a.windowEarlyMinutes == b.windowEarlyMinutes && a.windowLateMinutes == b.windowLateMinutes
+    }
+}
+
+/// A routine's mail tag (`shared/routine-mail-alias.ts`): letters and
+/// digits only, lowercase, 32 at most, so it cannot change the domain or
+/// add a recipient.
+public enum RoutineMailTag {
+    public static func clean(_ text: String) -> String {
+        String(text.lowercased().filter { ("a"..."z").contains($0) || ("0"..."9").contains($0) }.prefix(32))
     }
 }

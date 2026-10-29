@@ -3373,6 +3373,25 @@ final class Session: ObservableObject {
         catch { actionError = error.localizedDescription; return nil }
     }
 
+    /// The webhooks and where deliveries land (a routine's webhook block).
+    func loadWebhooks() async -> WebhooksResponse? {
+        guard let client else { return nil }
+        return try? await client.webhooks()
+    }
+
+    /// Show a webhook's key: the one waiting since creation, or a new one.
+    /// The key is returned to the screen, never kept here.
+    func webhookKey(id: String, action: RoutineWebhook.KeyAction) async throws -> WebhookKeyResponse {
+        guard let client else { throw APIError.transport(String(localized: "Not connected")) }
+        return try await client.webhookKey(id: id, action: action)
+    }
+
+    /// "Create its webhook" for a webhook routine saved without one.
+    func createRoutineWebhook(_ routine: Routine) async throws -> Routine {
+        guard let client else { throw APIError.transport(String(localized: "Not connected")) }
+        return try await client.createRoutineWebhook(routineId: routine.id)
+    }
+
     func runRoutine(_ routine: Routine) async -> RoutineRun? {
         guard let client else { return nil }
         do { return try await client.runRoutine(id: routine.id) }

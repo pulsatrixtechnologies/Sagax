@@ -112,3 +112,27 @@ describe("MarkdownEditor", () => {
     expect(host.querySelector("[data-markdown-count]")?.textContent).toContain("3 / 10");
   });
 });
+
+describe("compact and full screen (routine instructions, 2026-10-29)", () => {
+  it("keeps the everyday buttons even in Advanced mode, with Preview as one toggle", () => {
+    setInterfaceMode("advanced");
+    render({ value: "Hello", onChange: () => {}, compact: true });
+    const tools = [...host.querySelectorAll("[data-md-tool]")].map((button) => button.getAttribute("data-md-tool"));
+    expect(tools).toEqual(["bold", "italic", "bullet", "task", "link", "more"]);
+    expect(host.textContent).not.toContain("Side by side");
+    expect(host.textContent).toContain("Preview");
+    expect(host.textContent).not.toContain("Write");
+  });
+
+  it("opens full screen and comes back", () => {
+    render({ value: "Long instructions", onChange: () => {}, compact: true, expandable: true });
+    const button = host.querySelector<HTMLButtonElement>("[data-md-full]")!;
+    expect(button.getAttribute("aria-label")).toBe("Full screen");
+    flushSync(() => button.click());
+    const shell = host.querySelector<HTMLElement>("[data-markdown-editor]")!;
+    expect(shell.className).toContain("fixed");
+    expect(button.getAttribute("aria-label")).toBe("Exit full screen");
+    flushSync(() => button.click());
+    expect(shell.className).not.toContain("fixed");
+  });
+});

@@ -744,6 +744,7 @@ import { runAsOptions, runAsRefusal, type RunAsChooser, type RunAsPerson } from 
 import { parseRoutineScopeQuery, routineRunClearable, routineScopeRefusal, scopedRoutineListing, type RoutineScopeCaller, type RoutineScopeDeps, type RoutineScopeFacts } from "./routine-scope.ts";
 import { recordRoutineChange, recordRoutineToggle, routineToggleForViewer } from "./routine-chat-events.ts";
 import { botReplyQuoteId } from "./reply-to-turn.ts";
+import { isTriggerSchedule } from "../shared/routines.ts";
 import { nextOccurrence, PREWARM_ENGINE_LEAD_MS, ROUTINE_RESTARTED, ROUTINE_RESUME_PROMPT, RoutineManager, setRoutineTimeZone, type Routine, type RoutineAdmission, type RoutineMemoryHint, type RoutineRun, type RoutineRunOn, type RoutineRunTrigger, type RoutineSuspendReason } from "./routines.ts";
 import { RoutineConsents, routineRenewMs, type RoutineConsentEnd } from "./org-routine-consent.ts";
 import { CalendarCallManager, type CalendarCall } from "./calendar-calls.ts";
@@ -24187,6 +24188,9 @@ routines = new RoutineManager({
   botState: unattendedDispatchState,
   onTriggerRoutineRemoved: (routine) => { webhooks.removeOwnedRoutine(routine.id); },
   onTriggerRoutineUpdated: (routine) => {
+    // 2026-10-29: a routine switched to "When a webhook arrives" in the app
+    // gets its webhook here (idempotent when it already has one).
+    bindOwnedTrigger(routine);
     webhooks.syncOwned({
       id: routine.id,
       name: routine.name,
@@ -24667,18 +24671,7 @@ const routineRequests = new RoutineRequestService({
     }
     return null;
   },
-  bindTrigger: (routine) => {
-    webhooks.createOwned({
-      routineId: routine.id,
-      name: routine.name,
-      prompt: routine.prompt,
-      botId: routine.botId,
-      runOn: routine.runOn,
-      kind: routine.schedule.type === "event" ? "email" : "webhook",
-      // the trigger starts as its routine does (active unless created paused)
-      enabled: routine.enabled,
-    });
-  },
+  bindTrigger: (routine) => bindOwnedTrigger(routine),
   rotateTrigger: (routine) => {
     if (!webhooks.rotateOwned(routine.id)) throw new Error("That routine has no trigger");
   },
@@ -25627,6 +25620,20 @@ const webhooks = new WebhookManager({
     return store.createTask(trigger.botId, "Updates", false)?.threadId;
   },
 });
+/** A routine that starts from a webhook or an email owns its trigger:
+ * made once, idempotent, active when the routine is. */
+function bindOwnedTrigger(routine: Routine): void {
+  webhooks.createOwned({
+    routineId: routine.id,
+    name: routine.name,
+    prompt: routine.prompt,
+    botId: routine.botId,
+    runOn: routine.runOn,
+    kind: routine.schedule.type === "event" ? "email" : "webhook",
+    // the trigger starts as its routine does (active unless created paused)
+    enabled: routine.enabled,
+  });
+}
 
 let webhookIngress: WebhookIngress | null = null;
 let webhookIngressError: string | null = null;
@@ -46261,6 +46268,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if ("refusal" in runAsChoice) return json(res, runAsChoice.refusal.status, { error: runAsChoice.refusal.error, code: runAsChoice.refusal.code, ...(runAsChoice.refusal.permission ? { permission: runAsChoice.refusal.permission } : {}) });
       const writer = auth.kind === "session" ? actorKey(auth) : CLOUD_NOBODY_KEY;
       const routine = withRoutineWriter(writer, () => routines!.create(body, undefined, { ...routineActor(auth), ...runAsChoice }));
+      // A routine made in the app to start from a webhook gets its webhook
+      // (the confirmation path of a bot's request binds its own).
+      if (isTriggerSchedule(routine.schedule)) bindOwnedTrigger(routine);
       auditRoutineRunAs(auth, routine, routineActor(auth)?.actorPrincipalId);
       // On a Cloud home, a routine the owner writes from their own device may
       // use their lent Mac when it runs (server/cloud-lending.ts).

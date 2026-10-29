@@ -83,14 +83,23 @@ struct RoutineDetailView: View {
 
     private let margin = Theme.Profile.routineMargin
 
+    /// "Every Monday at 7:02 AM · in 3 days · Ara", "When a webhook fires · Ara".
+    private var summary: String {
+        RoutineEditorRules.pageSummary(
+            trigger: RoutineWording.compact(routine.schedule),
+            nextRun: routine.schedule.isTrigger ? nil : RoutineWording.nextRun(routine),
+            bot: session.state.bot(routine.botId)?.name
+        )
+    }
+
     var body: some View {
         RoutineScreen(title: routine.name) {
-            GlassCircleButton(systemImage: "pencil", accessibilityLabel: "Edit routine", glyphSize: 17) { editing = true }
+            GlassCircleButton(systemImage: routine.mayEdit ? "pencil" : "eye", accessibilityLabel: routine.mayEdit ? LocalizedStringKey("Edit routine") : LocalizedStringKey("Routine"), glyphSize: 17) { editing = true }
                 .chatGlassRim(Circle())
                 // BP12: a long press offers Delete, as the desktop's routine
                 // panel does beside Pause and Edit (RoutinesSection.tsx)
                 .contextMenu {
-                    Button(String(localized: "Edit routine"), systemImage: "pencil") { editing = true }
+                    Button(routine.mayEdit ? String(localized: "Edit routine") : String(localized: "Routine"), systemImage: routine.mayEdit ? "pencil" : "eye") { editing = true }
                     Button(String(localized: "Duplicate"), systemImage: "plus.square.on.square") { duplicating = true }
                         .accessibilityIdentifier("routine-duplicate")
                     // AU15: the results thread, as the desktop's routine
@@ -135,44 +144,30 @@ struct RoutineDetailView: View {
                 }
             }
 
-            ProfileSectionLabel(text: "Schedule", margin: margin)
-                .padding(.top, Theme.Profile.cardGap)
-            ProfileCard(margin: margin) {
-                ProfileRow(title: Text(verbatim: RoutineWording.schedule(routine.schedule)), height: Theme.Profile.singleRow) { EmptyView() }
-                    
-                    .accessibilityIdentifier("routine-schedule")
-                ProfileDivider(leading: Theme.Profile.textInset)
-                ProfileRow(title: Text("Next run"), height: Theme.Profile.row) {
-                    Text(verbatim: RoutineWording.nextRun(routine))
-                        .font(Theme.Font.body)
-                        .foregroundStyle(Theme.parity(Color(hex: 0x9C9BA0), Theme.textSecondary))
-                        .padding(.trailing, 18.7)
-                        .accessibilityIdentifier("routine-next-run")
-                }
-                // #149: routines act in their owner's name, no consent
-                if let runAs = routine.runAs {
-                    ProfileDivider(leading: Theme.Profile.textInset)
-                    ProfileRow(title: Text("Runs as"), height: Theme.Profile.row) {
-                        Text(verbatim: runAs.name.isEmpty ? runAs.principalId : runAs.name)
-                            .font(Theme.Font.body)
-                            .foregroundStyle(Theme.parity(Color(hex: 0x9C9BA0), Theme.textSecondary))
-                            .padding(.trailing, 18.7)
-                            .accessibilityIdentifier("routine-run-as")
-                    }
-                }
-                
-            }
-
+            // 2026-10-29: one line, trigger · next run · bot; the whole
+            // configuration is seen and changed in the editor (read only for
+            // someone else's routine), so the page repeats none of it.
             ProfileCard(margin: margin) {
                 Button {
                     Haptics.selection()
-                    showingInstruction = true
+                    editing = true
                 } label: {
-                    ProfileRow(title: Text("Instruction"), height: Theme.Profile.singleRow) { ProfileChevronTrailing() }
-                        
+                    HStack(spacing: 8) {
+                        Text(verbatim: summary)
+                            .font(Theme.Font.body)
+                            .foregroundStyle(Theme.textPrimary)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        ProfileChevronTrailing()
+                    }
+                    .padding(.leading, Theme.Profile.textInset)
+                    .padding(.vertical, 14)
+                    .frame(minHeight: Theme.Profile.singleRow)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .accessibilityIdentifier("routine-instruction")
+                .accessibilityHint(routine.mayEdit ? Text("Edit routine") : Text("Routine"))
+                .accessibilityIdentifier("routine-summary")
             }
             .padding(.top, Theme.Profile.cardGap)
 
@@ -226,7 +221,7 @@ struct RoutineDetailView: View {
         .sheet(isPresented: $duplicating) {
             RoutineEditorView(routine: nil, copyOf: routine) { await onChange() }
         }
-        .sheet(item: $openRun) { run in
+        .routineRunDetail(item: $openRun) { run in
             RoutineRunDetailView(run: run, routine: routine) { updated in
                 runs = RoutineRunLog.replacing(runs, with: [updated])
             }
