@@ -318,6 +318,20 @@ before). The tabs' own filters (category pills) stay in their tab. Tests:
 `src/lib/connect-apps-search.test.ts`, `src/components/PluginsPanel.gestures.test.ts`,
 captures `scripts/capture-bots-tab.mjs`.
 
+## A bot writes the memory's topic files (2026-10-29)
+
+No bot could write `memory/*.md` beside MEMORY.md, not even the Primary Bot:
+its own memory tool writes MEMORY.md only. `sagax_settings` now reads and
+changes them by the Memory panel's own routes (server/routes/bot-memory.ts),
+with the person's rights (the bot's owner, an edit grant or an admin), on the
+speaking bot or another of the person's bots: `bot.memoryFiles` lists them,
+`bot.memoryFile` reads one (get's value: its path) and writes, renames
+(`POST /api/bots/:id/memory/rename`, a topic only, never onto a file that
+exists) or deletes it, `bot.memoryUndo` lists the last changes and puts a
+file back. Every change is journaled as the person's, `via: "bot"` (an act
+replay carries `x-sagax-bot-act`), and stays undoable. The level decides:
+a card at Ask, none at Approve for me or Full for the person's own bot.
+Tests: `server/routes/bot-memory.test.ts`, `server/settings-actions.test.ts`.
 ## Every routine of a bot, several at once, and a clicked option is the person's word (2026-10-29, #1643)
 
 A bot read back 3 of its 23 routines: `list_routines` answered every routine

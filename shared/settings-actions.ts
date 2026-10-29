@@ -266,6 +266,41 @@ add({
   read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/memory` }),
   write: (ids, v) => ({ method: "PUT", path: `/api/bots/${enc(ids.target!)}/memory`, body: { text: v } }),
 });
+// 2026-10-29: the memory's topic files (memory/<topic>.md) beside MEMORY.md,
+// by the Memory panel's own routes (server/routes/bot-memory.ts): journaled
+// as the person's change via a bot, each one undoable (bot.memoryUndo)
+const memoryPathOf = (value: unknown): string | undefined => {
+  const path = typeof value === "string" ? value : value && typeof value === "object" ? (value as { path?: unknown }).path : undefined;
+  return typeof path === "string" && path.trim() ? path.trim() : undefined;
+};
+add({
+  key: "bot.memoryFiles", family: "bot", target: "bot", value: "object", label: "The memory's files (read only: MEMORY.md and the topics memory/<topic>.md, their size; bot.memoryFile reads and changes one)", where: "Bot editor > Memory",
+  read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/memory`, shape: (v) => {
+    const r = (v ?? {}) as Record<string, unknown>;
+    return { index: r.index, topics: r.topics, ...(r.logs ? { logs: r.logs } : {}) };
+  } }),
+  write: () => "bot.memoryFiles is read only: bot.memoryFile writes, renames or deletes one file.",
+});
+add({
+  key: "bot.memoryFile", family: "bot", target: "bot", value: "object",
+  label: "One memory file (get: value its path, e.g. memory/clients.md; set: {path, text, expectedHash?} writes or creates it, {path, renameTo} renames a topic, {path, delete: true} deletes it)", where: "Bot editor > Memory",
+  read: (ids, arg) => ({ path: `/api/bots/${enc(ids.target!)}/memory/file`, query: { path: memoryPathOf(arg) ?? "MEMORY.md" }, maxChars: 60_000 }),
+  write: (ids, v) => {
+    const r = (v ?? {}) as { path?: unknown; text?: unknown; expectedHash?: unknown; renameTo?: unknown; delete?: unknown };
+    const path = memoryPathOf(v);
+    if (!path) return "value.path is a memory file: MEMORY.md or memory/<topic>.md (bot.memoryFiles lists them).";
+    if (r.delete === true) return { method: "DELETE", path: `/api/bots/${enc(ids.target!)}/memory/file`, query: { path } };
+    if (typeof r.renameTo === "string" && r.renameTo.trim()) return { method: "POST", path: `/api/bots/${enc(ids.target!)}/memory/rename`, body: { from: path, to: r.renameTo.trim(), ...(typeof r.expectedHash === "string" ? { expectedHash: r.expectedHash } : {}) } };
+    if (typeof r.text !== "string") return "value is {path, text} to write, {path, renameTo} or {path, delete: true}.";
+    return { method: "PUT", path: `/api/bots/${enc(ids.target!)}/memory/file`, body: { path, text: r.text, ...(typeof r.expectedHash === "string" ? { expectedHash: r.expectedHash } : {}) } };
+  },
+  classes: (v) => (v as { delete?: unknown } | null)?.delete === true ? ["delete"] : ["own"],
+});
+add({
+  key: "bot.memoryUndo", family: "bot", target: "bot", value: "string", label: "Undo a change of the memory (get lists the last changes; set with a change's id puts the file back)", where: "Bot editor > Memory > History",
+  read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/memory/journal`, query: { limit: "30" }, field: "entries" }),
+  write: (ids, v) => typeof v === "string" && /^[\w-]+$/.test(v) ? { method: "POST", path: `/api/bots/${enc(ids.target!)}/memory/journal/${enc(v)}/revert`, body: {} } : "value is a change's id (get bot.memoryUndo).",
+});
 add({
   key: "bot.perspicaxProfiles", family: "bot", target: "bot", value: "array", label: "Perspicax tools (profiles)", where: "Bot editor > Perspicax", classes: selfReach,
   read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/perspicax` }),

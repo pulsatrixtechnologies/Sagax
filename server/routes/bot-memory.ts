@@ -20,6 +20,7 @@ import {
   memoryCapacity,
   memoryOverview,
   openMemoryLocation,
+  parseMemoryPath,
   readMemoryDoc,
 } from "../memory-store.ts";
 import {
@@ -33,6 +34,7 @@ import {
 import { upkeepEnabled, type MemoryUpkeep } from "../memory-upkeep.ts";
 import { listLearnedFacts, removeLearned } from "../profile-learned.ts";
 import type { RequestAuth } from "../request-auth.ts";
+import { BOT_ACT_ROUTE_HEADER } from "./remote-session-files.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
 export interface BotMemoryRouteDeps {
@@ -92,6 +94,9 @@ export function createBotMemoryRoutes(deps: BotMemoryRouteDeps): RouteHandler {
     /** scratch for route matches, shared by every `path.match` below */
     let m: RegExpMatchArray | null = null;
     const write = <T>(botId: string, change: () => T): T => deps.ownersWrite ? deps.ownersWrite(auth, botId, change) : change();
+    // 2026-10-29: a bot's sagax_settings replays these routes as the person
+    // (server/settings-actions.ts): the journal says the person, via a bot
+    const via = (screen: string) => req.headers[BOT_ACT_ROUTE_HEADER] !== undefined ? "bot" : screen;
     const gate = path.match(/^\/api\/bots\/([\w-]+)\/memory(?:\/|$)/);
     if (gate && deps.mayEdit && deps.bot(gate[1]) && !deps.mayEdit(auth, gate[1])) {
       return json(res, 403, { error: "forbidden: only this bot's owner or an admin can read or change its memory", code: "bot_memory_owner_only" });
@@ -163,7 +168,7 @@ export function createBotMemoryRoutes(deps: BotMemoryRouteDeps): RouteHandler {
         const botId = m[1];
         const { doc, entry } = write(botId, () => journalMemoryWrite(botId, parsed.data.path, parsed.data.text, {
           actor: "person",
-          via: "ui",
+          via: via("ui"),
           expectedHash: parsed.data.expectedHash,
         }));
         return json(res, 200, { ok: true, ...doc, entry: entry ? journalEntryForClient(m[1], entry) : null, overview: memoryOverview(m[1]) });
@@ -176,8 +181,35 @@ export function createBotMemoryRoutes(deps: BotMemoryRouteDeps): RouteHandler {
       const file = url.searchParams.get("path") ?? "";
       try {
         const botId = m[1];
-        const entry = write(botId, () => journalMemoryDelete(botId, file, { actor: "person", via: "ui" }));
+        const entry = write(botId, () => journalMemoryDelete(botId, file, { actor: "person", via: via("ui") }));
         return json(res, 200, { ok: true, path: file, entry: entry ? journalEntryForClient(m[1], entry) : null, overview: memoryOverview(m[1]) });
+      } catch (error) {
+        return replyMemoryError(res, error);
+      }
+    }
+    // 2026-10-29: rename a topic file (memory/<topic>.md): the text written
+    // under the new name, the old one removed, both journaled (each one
+    // undoable); never onto a file that already holds text
+    m = path.match(/^\/api\/bots\/([\w-]+)\/memory\/rename$/);
+    if (m && method === "POST") {
+      if (!deps.bot(m[1])) return json(res, 404, { error: "no such bot" });
+      const parsed = z.object({ from: z.string().min(1).max(200), to: z.string().min(1).max(200), expectedHash: z.string().optional() }).safeParse(await readBody(req));
+      if (!parsed.success) return json(res, 400, { error: "send { from, to }: two memory/<topic>.md paths" });
+      const { from, to, expectedHash } = parsed.data;
+      if (from === to) return json(res, 400, { error: "from and to are the same file" });
+      try {
+        const botId = m[1];
+        if (parseMemoryPath(from).kind !== "topic" || parseMemoryPath(to).kind !== "topic") return json(res, 400, { error: "only a topic file (memory/<topic>.md) is renamed" });
+        const source = readMemoryDoc(botId, from);
+        if (!source.exists) return json(res, 404, { error: `no such memory file: ${from}` });
+        if (expectedHash && expectedHash !== source.hash) return json(res, 409, { error: "the file changed since it was read", code: "conflict", currentHash: source.hash });
+        if (readMemoryDoc(botId, to).exists) return json(res, 409, { error: `${to} already exists: choose another name, or merge them by hand`, code: "exists" });
+        const entries = write(botId, () => {
+          const written = journalMemoryWrite(botId, to, source.text, { actor: "person", via: via("ui") });
+          const removed = journalMemoryDelete(botId, from, { actor: "person", via: via("ui") });
+          return [written.entry, removed].filter((entry): entry is MemoryJournalEntry => entry !== null);
+        });
+        return json(res, 200, { ok: true, from, to, entries: entries.map((entry) => journalEntryForClient(botId, entry)), overview: memoryOverview(botId) });
       } catch (error) {
         return replyMemoryError(res, error);
       }

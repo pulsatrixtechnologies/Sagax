@@ -19,7 +19,7 @@ import { launchVerificationServer, type VerificationServer } from "../../scripts
 import { createBotMemoryRoutes, type BotMemoryRouteDeps } from "./bot-memory.ts";
 import { dispatchRoutes } from "./table.ts";
 
-const BOTS: Record<string, { id: string }> = { "bot-123": { id: "bot-123" } };
+const BOTS: Record<string, { id: string }> = { "bot-123": { id: "bot-123" }, "bot-topics": { id: "bot-topics" } };
 const servers: Server[] = [];
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise((done) => server.close(done))));
@@ -292,5 +292,37 @@ describe("the bot-memory family behind the gate on a real server", () => {
       // a bot's own memory arm reaches the handler (no such bot here); the rest is admin
       expect(path.startsWith("/api/bots/b1/memory") && !path.endsWith("/open") ? [403, 404] : [403], `${method} ${path}`).toContain(status);
     }
+  });
+});
+
+// 2026-10-29: a bot writes, renames, deletes and undoes the memory's topic
+// files for the person (sagax_settings bot.memoryFile, bot.memoryUndo), by
+// these routes: journaled as the person's, via a bot
+describe("topic files by a bot, as the person", () => {
+  const bot = { "x-sagax-bot-act": "1", "content-type": "application/json" };
+  it("writes, renames, refuses a rename onto a file with text, deletes and undoes, each journaled via bot", async () => {
+    const base = await serve();
+    const at = `${base}/api/bots/bot-topics/memory`;
+    const put = await fetch(`${at}/file`, { method: "PUT", headers: bot, body: JSON.stringify({ path: "memory/clients.md", text: "# Clients\n- weekly report on Mondays\n" }) });
+    expect(put.status).toBe(200);
+    expect(await put.json()).toMatchObject({ entry: { path: "memory/clients.md", actor: "person", via: "bot" } });
+    await fetch(`${at}/file`, { method: "PUT", headers: bot, body: JSON.stringify({ path: "memory/other.md", text: "x" }) });
+    expect((await fetch(`${at}/rename`, { method: "POST", headers: bot, body: JSON.stringify({ from: "memory/clients.md", to: "memory/other.md" }) })).status).toBe(409);
+    expect((await fetch(`${at}/rename`, { method: "POST", headers: bot, body: JSON.stringify({ from: "MEMORY.md", to: "memory/x.md" }) })).status).toBe(400);
+    const renamed = await fetch(`${at}/rename`, { method: "POST", headers: bot, body: JSON.stringify({ from: "memory/clients.md", to: "memory/customers.md" }) });
+    expect(renamed.status).toBe(200);
+    const body = await renamed.json() as { entries: Array<{ path: string; via: string }> };
+    expect(body.entries.map((entry) => [entry.path, entry.via])).toEqual([["memory/customers.md", "bot"], ["memory/clients.md", "bot"]]);
+    expect(await (await fetch(`${at}/file?path=memory/customers.md`)).json()).toMatchObject({ exists: true, text: expect.stringContaining("weekly report") });
+    expect(await (await fetch(`${at}/file?path=memory/clients.md`)).json()).toMatchObject({ exists: false });
+    const removed = await fetch(`${at}/file?path=memory/customers.md`, { method: "DELETE", headers: bot });
+    const entry = (await removed.json() as { entry: { id: string; via: string } }).entry;
+    expect(entry.via).toBe("bot");
+    // Undo puts the file back
+    expect((await fetch(`${at}/journal/${entry.id}/revert`, { method: "POST", headers: bot, body: "{}" })).status).toBe(200);
+    expect(await (await fetch(`${at}/file?path=memory/customers.md`)).json()).toMatchObject({ exists: true });
+    // the screen's own write stays via ui
+    const ui = await fetch(`${at}/file`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ path: "memory/ui.md", text: "y" }) });
+    expect(await ui.json()).toMatchObject({ entry: { via: "ui" } });
   });
 });
