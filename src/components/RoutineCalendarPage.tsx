@@ -120,7 +120,7 @@ import {
   type RoutineScheduleInput,
   type RoutineTarget,
 } from "@/lib/routines";
-import { api, openBotThread, openNotificationTarget, useStore, type Bot, type Group } from "@/state/store";
+import { api, continueRoutineRunInConversation, openBotThread, useStore, type Bot, type Group } from "@/state/store";
 import { viewerCanCreateBots } from "@/lib/viewer";
 import { answerWasLost, isRawStatusText, routineCreatedBy } from "@/lib/routine-save-recovery";
 import { RoutineScheduleNote } from "./RoutineScheduleNote";
@@ -1994,12 +1994,6 @@ export function EventDetails({
   const editable = !routine || routine.canEdit !== false;
   const executionOwner = isRoomGoal ? goalGroup : primary;
   const canOpenExecution = Boolean(executionThreadId && (executionOwner?.threadId === executionThreadId || executionOwner?.tasks?.some((task) => task.threadId === executionThreadId)));
-  // A run snapshots where it reported (older runs: the chat that made the
-  // routine). A routine without a chosen thread reports to the main thread,
-  // which its own view opens; a run never redirects to it.
-  const resultsThreadId = run ? run.resultsThreadId ?? run.sourceThreadId : routine?.resultsThreadId;
-  const openResultsId = resultsThreadId ?? (!run && routine?.target === "bot" ? primary?.mainThreadId : undefined);
-  const canOpenResults = Boolean(openResultsId && [...state.bots, ...state.groups].some((owner) => owner.threadId === openResultsId || owner.tasks?.some((task) => task.threadId === openResultsId)));
   const title = call?.name ?? run?.routineName ?? routine?.name ?? t("botPanel.coding.kind.routine");
   const description = call?.description ?? "";
   const attachments = call?.attachments ?? [];
@@ -2010,18 +2004,14 @@ export function EventDetails({
   const goBack = () => { setOpenedRun(null); setShowRoutinePage(false); setSubmittedRun(undefined); };
 
   const openRunTask = () => {
-    if (!executionThreadId) return;
-    if (isRoomGoal && goalGroupId) {
+    if (isRoomGoal && goalGroupId && executionThreadId) {
       dispatch({ type: "switchGroupTask", groupId: goalGroupId, threadId: executionThreadId });
       onOpenRoom(goalGroupId);
-    } else if (primary) {
-      openBotThread(dispatch, primary, executionThreadId, showThreads);
+    } else if (primary && run) {
+      // 2026-10-29: the bot's one conversation, the report quoted, never
+      // the run's own task in a column beside it.
+      continueRoutineRunInConversation(dispatch, primary, run, showThreads);
     }
-    onClose();
-  };
-  const openResults = () => {
-    if (!openResultsId) return;
-    openNotificationTarget(dispatch, { botId: botIds[0]!, threadId: openResultsId }, state, showThreads);
     onClose();
   };
 
@@ -2167,14 +2157,12 @@ export function EventDetails({
               canRunAgain={Boolean(routine && canRunRoutineNow(state.config, routine, primary))}
               inFlight={routineInFlight}
               working={working || starting}
-              canContinue={canOpenExecution}
-              canOpenResults={canOpenResults}
+              canContinue={isRoomGoal ? canOpenExecution : Boolean(primary && run.target === "bot")}
               onReply={executionThreadId && !isRoomGoal ? reply : undefined}
               onStop={() => void invoke(`/api/routine-runs/${run.id}/cancel`)}
               onRunAgain={runRoutineNow}
               onResume={routine && run.autoPaused && !routine.enabled ? toggleRoutine : undefined}
               onContinue={openRunTask}
-              onOpenResults={openResults}
               onOpenRoutine={routine ? () => { setOpenedRun(null); setSubmittedRun(undefined); setShowRoutinePage(true); } : undefined}
               onLogs={openLogs}
               renderConversation={(target) => conversation(target, () => { if (primary) openBotThread(dispatch, primary, target.threadId, showThreads); onClose(); })}
@@ -2193,7 +2181,6 @@ export function EventDetails({
             inFlight={routineInFlight}
             starting={starting}
             working={working}
-            canOpenResults={canOpenResults}
             error={error}
             onOpenRun={(opened) => { setSubmittedRun(undefined); setOpenedRun(opened); if (["failed", "missed"].includes(opened.status) && !opened.seenAt && !opened.redacted) dispatch({ type: "markRoutineRunSeen", runId: opened.id }); }}
             onRunNow={runRoutineNow}
@@ -2202,7 +2189,6 @@ export function EventDetails({
             onDuplicate={onDuplicate ? () => onDuplicate(routine) : undefined}
             onDelete={() => void deleteEvent()}
             onLogs={openLogs}
-            onOpenResults={openResults}
             onOpenGroup={goalGroup ? () => { onOpenRoom(goalGroup.id); onClose(); } : undefined}
             onConfigure={onEdit}
           />

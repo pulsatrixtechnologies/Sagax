@@ -71,12 +71,12 @@ describe("sagax_settings", () => {
     expect(h.audits).toEqual([expect.objectContaining({ key: "bot.approvalMode", value: "auto", how: "run", actor: "pr_owner" })]);
   });
 
-  it("applies the managed teams of the owner's Primary Bot and a routine put in their own conversation", async () => {
+  it("applies the managed teams of the owner's Primary Bot and a routine's new name", async () => {
     const h = harness();
     await h.call({ action: "set", key: "bot.managedSections", value: ["Built-in"] });
-    await h.call({ action: "set", key: "routine.thread", target: "r1", value: "th1" });
+    await h.call({ action: "set", key: "routine.name", target: "r1", value: "Morning" });
     expect(h.planned.map((row) => row.effect)).toEqual(["run", "run"]);
-    expect(h.planned[1]).toMatchObject({ path: "/api/routines/r1", body: { resultsThreadId: "th1" } });
+    expect(h.planned[1]).toMatchObject({ path: "/api/routines/r1", body: { name: "Morning" } });
   });
 
   it("keeps a card for Full, another person and the organization; the person's own secret follows the level (#1545, 2026-10-28)", async () => {
@@ -1006,7 +1006,7 @@ describe("sagax_settings: several bots in one call (2026-10-29, Edit N bots)", (
 
   it("splits only a bot key's target", async () => {
     const h = harness();
-    const result = await h.call({ action: "set", key: "routine.thread", target: "r1,r2", value: "th1" });
+    const result = await h.call({ action: "set", key: "routine.name", target: "r1,r2", value: "Morning" });
     expect(result.status).toBe(400);
     expect(h.planned).toEqual([]);
   });

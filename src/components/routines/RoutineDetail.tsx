@@ -7,7 +7,7 @@
 // the person cannot change; the page keeps no second copy.
 // The actions: Run now, Pause or Resume, Edit, Duplicate, Delete, plus the
 // run logs filtered on it and where it reports.
-import { CirclePlay, Copy, ExternalLink, History, Inbox, Loader2, Pause, Pencil, Play, Settings2, Trash2, UsersRound } from "lucide-react";
+import { CirclePlay, Copy, ExternalLink, History, Loader2, Pause, Pencil, Play, Settings2, Trash2, UsersRound } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { Routine, RoutineRun } from "@/lib/routines";
@@ -56,7 +56,7 @@ export function RunHistoryRow({ run, now, onOpen }: { run: RoutineRun; now: numb
   );
 }
 
-export function RoutineDetail({ routine, runs, bots, groups = [], now = Date.now(), compact = false, editable = true, canRun = false, inFlight = false, starting = false, working = false, canOpenResults = false, error, onOpenRun, onRunNow, onToggle, onEdit, onDuplicate, onDelete, onLogs, onOpenResults, onOpenGroup, onConfigure, actions = true }: {
+export function RoutineDetail({ routine, runs, bots, groups = [], now = Date.now(), compact = false, editable = true, canRun = false, inFlight = false, starting = false, working = false, error, onOpenRun, onRunNow, onToggle, onEdit, onDuplicate, onDelete, onLogs, onOpenGroup, onConfigure, actions = true }: {
   routine: Routine;
   /** Every run kept for this routine, any order. */
   runs: RoutineRun[];
@@ -71,7 +71,6 @@ export function RoutineDetail({ routine, runs, bots, groups = [], now = Date.now
   inFlight?: boolean;
   starting?: boolean;
   working?: boolean;
-  canOpenResults?: boolean;
   error?: string;
   onOpenRun: (run: RoutineRun) => void;
   onRunNow?: () => void;
@@ -80,7 +79,6 @@ export function RoutineDetail({ routine, runs, bots, groups = [], now = Date.now
   onDuplicate?: () => void;
   onDelete?: () => void;
   onLogs?: () => void;
-  onOpenResults?: () => void;
   /** A team goal: its group. */
   onOpenGroup?: () => void;
   /** Open the routine's configuration (the editor modal). */
@@ -136,7 +134,6 @@ export function RoutineDetail({ routine, runs, bots, groups = [], now = Date.now
           {canRun && onRunNow && <button type="button" data-run-now onClick={onRunNow} disabled={working || inFlight} title={inFlight ? t("routines.runNow.inFlight") : t("routines.runNow")} className={cn(PRIMARY_PILL, "gap-1.5")}>{starting ? <Loader2 size={13} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <Play size={13} fill="currentColor" aria-hidden="true" />}{starting ? t("routines.runNow.starting") : t("routines.runNow")}</button>}
           {editable && onToggle && <button type="button" data-routine-toggle onClick={onToggle} disabled={working} title={routine.enabled ? t("routineCalendar.pauseRoutine") : t("routineCalendar.resumeRoutine")} className={cn(PILL, "gap-1.5")}>{routine.enabled ? <Pause size={13} aria-hidden="true" /> : <CirclePlay size={13} aria-hidden="true" />}{routine.enabled ? t("routineCalendar.pauseRoutine") : t("routineCalendar.resumeRoutine")}</button>}
           {isRoomGoal && onOpenGroup && <button type="button" onClick={onOpenGroup} className={cn(PILL, "gap-1.5")}><ExternalLink size={13} aria-hidden="true" />{t("routineCalendar.openGroup")}</button>}
-          {canOpenResults && onOpenResults && <button type="button" data-routine-open-results onClick={onOpenResults} title={t("routines.results.open")} className={cn(PILL, "gap-1.5")}><Inbox size={13} aria-hidden="true" />{t("routines.results.open")}</button>}
           <div className="ml-auto flex items-center gap-1">
             {onLogs && <button type="button" data-routine-logs onClick={onLogs} title={t("routines.logs")} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><History size={13} aria-hidden="true" />{t("routines.logs")}</button>}
             {editable && onEdit && <button type="button" data-routine-edit onClick={onEdit} title={t("routines.edit")} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><Pencil size={13} aria-hidden="true" />{t("routines.edit")}</button>}

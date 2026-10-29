@@ -3,7 +3,8 @@
 // stream from the harness server into local state. The reducer stays
 // pure; everything async lives in the wrapped dispatch + SSE fold.
 import { devPodsTurnField } from "@/components/dev-pods/prefs";
-import { restoreComposerDraft } from "@/lib/drafts";
+import { appendDraftAttachments, restoreComposerDraft } from "@/lib/drafts";
+import { citationAttachment, CITATION_MAX_QUOTE_LENGTH } from "@/lib/citations";
 import { beginLocalSend, claimInFlightSend, finishSend } from "@/lib/send-cancel";
 import { receiveThreadReadFrame } from "@/lib/read-receipts-feed";
 import { personaCategoryForSection } from "@/lib/persona-sections";
@@ -1866,6 +1867,46 @@ export function openRoutineRun(
   dispatch({ type: "showRoutines", section: "logs", runId: run.runId, ...(run.routineId ? { routineId: run.routineId } : {}) });
 }
 
+/** 2026-10-29 (maintainer: "we are in a unified chat"): Continue in the
+ * conversation opens the bot's one conversation in the main pane, never a
+ * column beside it (the run's own task stays in the run's detail and Run
+ * logs). The run's report is scrolled to and quoted in the composer, ready
+ * for a reply. A report that went to a thread outside the conversation (an
+ * older version's results thread) opens the conversation all the same.
+ * Returns the conversation it opened. */
+export function continueRoutineRunInConversation(
+  dispatch: (action: Action) => void,
+  bot: Pick<NotificationThreadOwner, "id" | "threadId" | "mainThreadId" | "tasks"> & { messages?: readonly Message[] },
+  run: Pick<RoutineRun, "id" | "output" | "resultsThreadId" | "sourceThreadId">,
+  threadsShown: boolean,
+): string {
+  const home = botOpensTo(bot, false);
+  const reported = run.resultsThreadId ?? run.sourceThreadId;
+  const task = reported ? bot.tasks?.find((candidate) => candidate.threadId === reported) : undefined;
+  const inConversation = Boolean(task && typeof task.createdAt === "number" && isStreamSegment({ ...task, createdAt: task.createdAt }));
+  const target = reported && (reported === home || inConversation) ? reported : home;
+  openBotThread(dispatch, bot, target, threadsShown);
+  // The report itself, when this window holds it (the topic on screen).
+  const report = target === bot.threadId
+    ? bot.messages?.find((message) => message.kind === "routine.run" && message.routineRun?.runId === run.id)
+    : undefined;
+  if (report) dispatch({ type: "focusMessage", threadId: target, messageId: report.id });
+  const quote = (report?.routineRun?.summary ?? run.output ?? "").trim().slice(0, CITATION_MAX_QUOTE_LENGTH);
+  if (quote) {
+    try {
+      // the composer of the conversation now on screen
+      const composerThread = threadsShown ? target : home;
+      appendDraftAttachments(`bot:${bot.id}:${composerThread}`, [citationAttachment(
+        { ownerType: "bot", ownerId: bot.id, threadId: target, messageId: report?.id ?? `routine-run:${run.id}` },
+        { text: quote, start: 0, end: quote.length, prefix: "", suffix: "" },
+      )]);
+    } catch {
+      // no quote: the conversation is open all the same
+    }
+  }
+  return target;
+}
+
 /** The routine run a thread is the execution of, if any. */
 export function routineRunOfThread(state: NotificationRoutingState, threadId: string | undefined): string | undefined {
   if (!threadId) return undefined;
@@ -2097,6 +2138,20 @@ export function openBotThread(
     if (isEarlierSegment(bot.tasks, threadId, bot.threadId)) {
       dispatch({ type: "focusMessage", threadId, messageId: "", segment: true });
       openBot(dispatch, bot, false, { landing: false });
+      return;
+    }
+    // 2026-10-29: a routine's report never opens a column beside the
+    // conversation. A run's own task opens its detail (logs, approvals,
+    // reply); an older version's results thread, read there and in Run
+    // logs, opens the conversation its reports now go to.
+    const task = threadId !== bot.threadId ? bot.tasks?.find((candidate) => candidate.threadId === threadId) : undefined;
+    if (task && typeof task.routineRunId === "string" && task.routineRunId) {
+      openRoutineRun(dispatch, { runId: task.routineRunId });
+      return;
+    }
+    const home = task?.routineResults === true ? botOpensTo(bot, false) : undefined;
+    if (home && home !== threadId) {
+      openBotThread(dispatch, bot, home, false);
       return;
     }
     if (threadId !== bot.threadId && opensBesideStream(bot, threadId)) {

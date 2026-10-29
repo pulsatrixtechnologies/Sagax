@@ -106,23 +106,18 @@ The final startup JSON includes the server `url`, `previewUrl`, `pepperId`,
    **Back to results**. **Run logs** retains the full execution history.
    A user follow-up sent in a completed execution makes it an ordinary visible
    thread; marking the older run seen must not hide that conversation again.
-10. In the routine editor, **Post results to** defaults to **The bot's main
-    thread**. With conversation threads shown it also offers the bot's visible
-    threads grouped by folder. In one conversation (threads hidden, the
-    default) the menu is only **The bot's main thread**, plus **Keep current
-    destination** on an existing routine, on the desktop and on iPhone. With
-    threads shown, save to Fleet health reports, reload, and confirm the
-    selection persists. In quick create,
-    **More options** must preserve the chosen destination. Changing the owning
-    bot, including via Call/Team goal selectors, must reset a foreign destination.
-    Run a new routine twice: both reports use the chosen thread, while Run logs
-    links to two different executions. The default reports every run into the
-    bot's main thread and never creates a "· Results" thread. Every run, and
-    the thread its results go to, uses the bot's current approval level: set
-    Full after the routine exists and the next run runs at Full.
+10. The routine editor has no **Post results to** (2026-10-29): every run
+    reports into the bot's one conversation, the whole report, dated, with
+    **View run**. **Post results in the conversation** only turns that report
+    on or off. Run a new routine twice: both reports land in the
+    conversation, while Run logs links to two different executions; no
+    "· Results" thread is ever created. In a run's detail, **Continue in the
+    conversation** opens the conversation in the main pane, the report
+    quoted in the composer; no column opens beside it and there is no
+    **Open results thread**. Every run uses the bot's current approval
+    level: set Full after the routine exists and the next run runs at Full.
 
-Every routine reports into its bot's main thread unless the user chooses another
-destination, whether it was made in a chat, the editor or the API, and whether a
+Every routine reports into its bot's main thread, whether it was made in a chat, the editor or the API, and whether a
 teammate (such as a Chief) asked for it. The main thread is the open
 conversation a person last wrote in (until anyone has, the selected one, then
 the oldest); a bot with hidden threads opens there too. Conversations from

@@ -73,7 +73,8 @@ it("reports every run into the bot's main thread while fresh executions, approva
       expect(runTask).not.toHaveProperty("approvalOwn");
     }
 
-    await api("PATCH", `/api/routines/${routine.id}`, { resultsThreadId: completed[0].threadId }, 400);
+    // 2026-10-29: a thread an older app still sends is no destination.
+    expect((await api("PATCH", `/api/routines/${routine.id}`, { resultsThreadId: completed[0].threadId })).routine.resultsThreadId).toBeUndefined();
     // Open run remains a usable normal conversation. Marking its historical
     // receipt seen must not reclassify later human conversation as internal.
     await api("POST", `/api/bots/${bot.id}/messages`, { threadId: completed[0].threadId, text: "Explain that completed report." }, 202);
@@ -86,30 +87,20 @@ it("reports every run into the bot's main thread while fresh executions, approva
     // and the phone show), so it is the bot's main thread now.
     const live = completed[0].threadId as string;
     expect((await currentBot()).mainThreadId).toBe(live);
-    // A thread the person chooses keeps winning; null goes back to the main
-    // thread, which each run asks for again and the routine never saves.
+    // 2026-10-29 (maintainer: "we are in a unified chat"): no thread of the
+    // routine's own. "Chosen reports", the topic the person opened last, is
+    // the one conversation now (2026-10-28), so reports go there; a thread
+    // an older app still sends is left out and changes nothing.
     const { task: chosenTask } = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Chosen reports" }, 201);
     const dedicated = chosenTask.threadId as string;
-    await api("PATCH", `/api/routines/${routine.id}`, { resultsThreadId: dedicated });
-    expect((await api("PATCH", `/api/routines/${routine.id}`, { name: "Retained destination" })).routine.resultsThreadId).toBe(dedicated);
-    expect((await api("PATCH", `/api/routines/${routine.id}`, { resultsThreadId: null })).routine.resultsThreadId).toBeUndefined();
-    // A legacy automatic "<name> · Results" thread is not a choice: the next
-    // run moves to the main thread and the old thread and its reports stay.
-    // The main thread is the newest conversation: "Chosen reports" now, the
-    // topic the person opened last (2026-10-28, one conversation).
-    const { task: legacy } = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Retained destination · Results" }, 201);
-    await api("PATCH", `/api/routines/${routine.id}`, { resultsThreadId: legacy.threadId });
+    expect((await api("PATCH", `/api/routines/${routine.id}`, { resultsThreadId: originalThread })).routine.resultsThreadId).toBeUndefined();
     const { run: moved } = await api("POST", `/api/routines/${routine.id}/run`, undefined, 201);
     expect(moved.resultsThreadId).toBe(dedicated);
     await expect.poll(async () => (await runState(moved.id))?.status, { timeout: 15_000 }).toBe("completed");
     expect((await api("GET", "/api/routines")).routines.find((candidate: any) => candidate.id === routine.id).resultsThreadId).toBeUndefined();
-    expect((await currentBot()).tasks.some((task: any) => task.threadId === legacy.threadId)).toBe(true);
     expect((await messages(dedicated)).filter((message) => message.kind === "routine.run")).toHaveLength(1);
     expect((await messages(live)).filter((message) => message.kind === "routine.run")).toHaveLength(0);
     expect((await messages(originalThread)).filter((message) => message.kind === "routine.run")).toHaveLength(2);
-    // the legacy results thread is marked as such, never a topic of the conversation
-    expect((await currentBot()).tasks.find((task: any) => task.threadId === legacy.threadId).routineResults).toBe(true);
-    await api("PATCH", `/api/routines/${routine.id}`, { resultsThreadId: dedicated });
 
     const gate = join(fixture.info.dataDir, "results-finish");
     const wrapper = join(fixture.info.dataDir, "results-slow.mjs");
@@ -160,7 +151,7 @@ it("reports every run into the bot's main thread while fresh executions, approva
     expect((await currentBot()).tasks.some((task: any) => task.threadId === dedicated)).toBe(false);
     expect((await messages(live)).find((message) => message.routineRun?.runId === replacement.id)?.routineRun)
       .toMatchObject({ status: "completed", executionThreadId: (await runState(replacement.id)).threadId });
-    expect((await currentBot()).tasks.some((task: any) => task.title.endsWith("· Results") && task.threadId !== legacy.threadId)).toBe(false);
+    expect((await currentBot()).tasks.some((task: any) => task.title.endsWith("· Results"))).toBe(false);
     evidence.push({ cards, final: await api("GET", "/api/routines"), bot: await currentBot(), fallback });
   } finally {
     broker?.destroy();
@@ -289,6 +280,32 @@ async function resultsFixture() {
   return { api, control, messages, savedBot, destination, routine, report, restart, close };
 }
 
+// 2026-10-29 (maintainer, "we are in a unified chat", with "Post results in
+// the conversation" on): a routine an older version saved a destination on
+// ("Post results to" an older thread) reports into the bot's one
+// conversation, never into that thread.
+it("with Post results on, a destination an older version saved never takes the report from the conversation", async () => {
+  const f = await resultsFixture();
+  try {
+    const { bot } = await f.control("new-bot", "--name", "Unified results");
+    const older = bot.activeTaskId as string;
+    const { task } = await f.api("POST", `/api/bots/${bot.id}/tasks`, { title: "Today" }, 201);
+    const live = task.threadId as string;
+    const routine = await f.routine(bot.id);
+    await f.restart((file) => {
+      file.routines.find((candidate: any) => candidate.id === routine).resultsThreadId = older;
+    });
+    expect((await f.api("GET", "/api/routines")).routines.find((candidate: any) => candidate.id === routine)).toMatchObject({ postResults: true });
+    expect(await f.destination(routine)).toBeUndefined();
+    expect(await f.report(routine)).toBe(live);
+    expect((await f.messages(live)).filter((message) => message.kind === "routine.run")).toHaveLength(1);
+    expect((await f.messages(older)).some((message) => message.kind === "routine.run")).toBe(false);
+    expect((await f.savedBot(bot.id)).mainThreadId).toBe(live);
+  } finally {
+    await f.close();
+  }
+}, 90_000);
+
 it("reports into the conversation the person is in, the one a bot with hidden threads opens, after they used threads", async () => {
   const f = await resultsFixture();
   try {
@@ -378,11 +395,12 @@ it("clears the oldest thread v0.1.98 to v0.1.107 saved as a routine's destinatio
     expect(await f.report(routine)).toBe(task.threadId);
     expect(await f.destination(tidiedRoutine)).toBeUndefined();
     expect(await f.report(tidiedRoutine)).toBe(kept.threadId);
-    // Picked after the upgrade, the oldest thread is a person's choice.
-    expect((await f.api("PATCH", `/api/routines/${routine}`, { resultsThreadId: oldest })).routine.resultsThreadId).toBe(oldest);
+    // 2026-10-29: a thread picked since is no destination either (one
+    // conversation): the report stays in the conversation.
+    expect((await f.api("PATCH", `/api/routines/${routine}`, { resultsThreadId: oldest })).routine.resultsThreadId).toBeUndefined();
     await f.restart();
-    expect(await f.destination(routine)).toBe(oldest);
-    expect(await f.report(routine)).toBe(oldest);
+    expect(await f.destination(routine)).toBeUndefined();
+    expect(await f.report(routine)).toBe(task.threadId);
   } finally {
     await f.close();
   }

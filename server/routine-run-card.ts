@@ -4,14 +4,22 @@ import type { RoutineRunCardData } from "../shared/routine-run.ts";
 import { redactSecretsInText } from "./redact.ts";
 import type { RoutineRun } from "./routines.ts";
 
-export function routineRunCard(run: RoutineRun, cardThreadId?: string): RoutineRunCardData {
+/** The longest report a run's message carries in the conversation
+ * (2026-10-29): the whole report, not the 2 000 characters the run's record
+ * keeps, so nobody has to open the run's own task to read it. */
+export const ROUTINE_REPORT_POST_MAX = 20_000;
+
+/** `fullReport`: the bot's whole final message, read from the run's task
+ * (syncRoutineRunToSource), when the run's record holds only its start. */
+export function routineRunCard(run: RoutineRun, cardThreadId?: string, fullReport?: string): RoutineRunCardData {
   // A run that joined the conversation it reports to (routines in
   // conversation) already wrote its whole report there, just under the
   // card: the card keeps only its state, or the report shows twice
   // (2026-10-19, production). A wait or a failure keeps its line.
   const joined = Boolean(cardThreadId && run.threadId === cardThreadId);
-  const visibleSummary = run.status === "waiting" ? run.attention : joined || run.quiet ? undefined : run.output;
-  const summary = visibleSummary ? redactSecretsInText(visibleSummary).slice(0, 2_000) : undefined;
+  const report = fullReport?.trim() || run.output;
+  const visibleSummary = run.status === "waiting" ? run.attention : joined || run.quiet ? undefined : report;
+  const summary = visibleSummary ? redactSecretsInText(visibleSummary).slice(0, run.status === "waiting" ? 2_000 : ROUTINE_REPORT_POST_MAX) : undefined;
   const error = run.error ? redactSecretsInText(run.error).slice(0, 500) : undefined;
   const card: RoutineRunCardData = {
     runId: run.id,

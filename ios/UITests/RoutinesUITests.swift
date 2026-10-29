@@ -353,9 +353,8 @@ final class RoutinesUITests: XCTestCase {
         }
     }
 
-    // MARK: Results thread (AU15)
+    // MARK: Runs as, and Continue in the conversation (AU15)
 
-    /// A run's detail opens its results thread (Aurora's conversation).
     /// "Runs as" (the desktop's RunAsField, organization server): the
     /// editor shows the person the routine runs as; the list names who may
     /// run it and lists the others, not choosable, with the reason.
@@ -390,17 +389,17 @@ final class RoutinesUITests: XCTestCase {
         add(attachment)
     }
 
+    /// 2026-10-29: a run's Continue in the conversation opens the bot's one
+    /// conversation (Aurora's chat), never a separate results thread.
     @MainActor
-    func testRunOpensTheResultsThread() throws {
-        let results = try XCTUnwrap(try routine(named: lab)?["resultsThreadId"] as? String)
-        let aurora = try XCTUnwrap(try bot(named: "Aurora"))
-        XCTAssertEqual(aurora["threadId"] as? String, results)
+    func testRunContinuesInTheConversation() throws {
         let app = openRoutines()
         showLogs(app)
         let row = element("routine-run-row.lab-run-done", in: app)
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.tap()
-        let open = element("routine-run-open-results", in: app)
+        XCTAssertFalse(element("routine-run-open-results", in: app).exists, "no Open results thread")
+        let open = element("routine-run-open-thread", in: app)
         XCTAssertTrue(open.waitForExistence(timeout: 10))
         open.tap()
         XCTAssertTrue(app.staticTexts["Aurora"].firstMatch.waitForExistence(timeout: 15), "Aurora's chat opens")

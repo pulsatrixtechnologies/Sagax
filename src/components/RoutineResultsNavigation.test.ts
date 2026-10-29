@@ -107,70 +107,54 @@ function navigationCalls(): unknown[][] {
 }
 
 describe("routine results navigation", () => {
-  it("opens a historical run's source, not a destination configured after that run", () => {
-    const { buttons, onClose } = details();
-    expect(buttons.has("Open results thread")).toBe(true);
-    buttons.get("Open results thread")!.onClick!();
-    expect(navigationCalls()).toEqual([
-      [{ type: "select", id: bot.id }],
-      [{ type: "switchTask", botId: bot.id, threadId: "original-source" }],
-    ]);
-    expect(onClose).toHaveBeenCalledOnce();
+  // 2026-10-29 (maintainer: "we are in a unified chat"): a run's report is
+  // in the bot's one conversation; nothing opens a separate results thread.
+  it("offers no Open results thread, on a run or on its routine", () => {
+    expect(details().buttons.has("Open results thread")).toBe(false);
+    expect(details(null).buttons.has("Open results thread")).toBe(false);
   });
 
-  it("uses the definition's destination only for a definition-only view", () => {
-    details(null).buttons.get("Open results thread")!.onClick!();
-    expect(navigationCalls().at(-1)).toEqual([{ type: "switchTask", botId: bot.id, threadId: "new-results" }]);
-  });
-
-  it("opens the bot's main thread for a definition with no thread of its own, never for a run", () => {
-    const { resultsThreadId: _chosen, ...unchosen } = routine;
-    fixture.state!.bots = [{ ...bot, mainThreadId: "original-source" }];
-    details(null, unchosen).buttons.get("Open results thread")!.onClick!();
-    expect(navigationCalls().at(-1)).toEqual([{ type: "switchTask", botId: bot.id, threadId: "original-source" }]);
-    expect(details({ ...run, sourceThreadId: undefined }, unchosen).buttons.has("Open results thread")).toBe(false);
-  });
-
-  it("does not redirect a deleted run destination to its source or the current definition", () => {
-    expect(details({ ...run, resultsThreadId: "deleted-destination" }).buttons.has("Open results thread")).toBe(false);
-    expect(details({ ...run, sourceThreadId: undefined }).buttons.has("Open results thread")).toBe(false);
-  });
-
-  it("opens the original group task from a historical run even when the definition has changed", () => {
-    details({ ...run, sourceThreadId: "original-room-source" }).buttons.get("Open results thread")!.onClick!();
-    expect(navigationCalls()).toEqual([
-      [{ type: "select", id: group.id }],
-      [{ type: "switchGroupTask", groupId: group.id, threadId: "original-room-source" }],
-    ]);
-  });
-
-  it("with threads hidden opens the run's results in the one conversation, scrolled back, and the run's thread beside it", () => {
+  it("with threads hidden, Continue opens the one conversation at the report's topic, never the run's task beside it", () => {
     fixture.showThreads = false;
-    const { buttons } = details();
-    buttons.get("Open results thread")!.onClick!();
-    // "original-source" is an earlier topic of the single stream: the stream
-    // opens at its newest topic, the earlier one drawn above, scrolled to.
+    closeSideThread();
+    const { buttons, onClose } = details();
+    buttons.get("Continue in the conversation")!.onClick!();
+    // "original-source" (where the report went) is an earlier topic of the
+    // stream: the conversation opens and scrolls back to it.
     expect(navigationCalls()).toEqual([
       [{ type: "focusMessage", threadId: "original-source", messageId: "", segment: true }],
       [{ type: "switchTask", botId: bot.id, threadId: "new-results" }],
     ]);
-    fixture.dispatch.mockClear();
-    // Continue in the conversation, from a run whose bot is on its results thread: the run's
-    // thread is not part of the conversation, so it opens beside it
-    // (SideThreadPanel) and the conversation stays.
-    fixture.state!.bots = [{ ...bot, threadId: "new-results" }];
-    details().buttons.get("Continue in the conversation")!.onClick!();
-    expect(navigationCalls()).toEqual([[{ type: "select", id: bot.id }]]);
-    expect(currentSideThread()).toEqual({ botId: bot.id, threadId: "execution" });
+    expect(currentSideThread()).toBeNull();
+    expect(navigationCalls().some(([action]) => (action as { threadId?: string }).threadId === "execution")).toBe(false);
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("a report that went to an older version's results thread continues in the conversation", () => {
+    fixture.showThreads = false;
     closeSideThread();
-    // With threads shown, as before.
-    fixture.showThreads = true;
-    fixture.dispatch.mockClear();
+    fixture.state!.bots = [{ ...bot, threadId: "new-results", tasks: [...bot.tasks!, { threadId: "legacy-results", title: "Daily report · Results", createdAt: 3, routineResults: true }] }];
+    details({ ...run, resultsThreadId: "legacy-results" }).buttons.get("Continue in the conversation")!.onClick!();
+    expect(navigationCalls()).toEqual([
+      [{ type: "select", id: bot.id }],
+      [{ type: "switchTask", botId: bot.id, threadId: "new-results" }],
+    ]);
+    expect(currentSideThread()).toBeNull();
+  });
+
+  it("with threads shown, Continue opens the thread the report is in, not the run's task", () => {
     details().buttons.get("Continue in the conversation")!.onClick!();
     expect(navigationCalls()).toEqual([
       [{ type: "select", id: bot.id }],
-      [{ type: "switchTask", botId: bot.id, threadId: "execution" }],
+      [{ type: "switchTask", botId: bot.id, threadId: "original-source" }],
     ]);
+  });
+
+  it("a team goal still opens its group's thread", () => {
+    const goal = { ...run, target: "room-goal" as const, groupId: group.id, threadId: "current-room-thread" };
+    fixture.state!.routineRuns = [goal];
+    details(goal, { ...routine, target: "room-goal", groupId: group.id }).buttons.get("Open group thread")!.onClick!();
+    expect(navigationCalls()).toContainEqual([{ type: "switchGroupTask", groupId: group.id, threadId: "current-room-thread" }]);
   });
 
   it("shows no Run details bar at the top of an execution's chat", () => {

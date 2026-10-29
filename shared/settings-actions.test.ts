@@ -24,7 +24,7 @@ describe("the settings registry", () => {
 
   it("covers what Owner listed: model, effort, approval level, managed teams, title, persona, mascot, skin, routine schedule, conversation, on/off and engine", () => {
     for (const key of ["bot.model", "bot.effort", "bot.approvalMode", "bot.managedSections", "bot.title", "bot.persona", "bot.mascot", "bot.skin",
-      "routine.schedule", "routine.thread", "routine.enabled", "routine.engine", "group.name", "section.bots", "org.allowFullAccess",
+      "routine.schedule", "routine.enabled", "routine.engine", "group.name", "section.bots", "org.allowFullAccess",
       "credentials.item", "connections.mcpServer", "notifications.sounds", "appearance.skin", "server.showToolCalls"]) {
       expect(settingSpec(key), key).toBeDefined();
     }
@@ -68,7 +68,8 @@ describe("the settings registry", () => {
   it("writes the managed teams with the screen's acknowledgement and Full with its confirmation", () => {
     expect(settingSpec("bot.managedSections")!.write({ target: "b1" }, ["Built-in"])).toEqual({ method: "PATCH", path: "/api/bots/b1", body: { managedSections: ["Built-in"], acknowledgePeerScope: true } });
     expect(settingSpec("bot.approvalMode")!.write({ target: "b1" }, "full")).toEqual({ method: "PATCH", path: "/api/bots/b1", body: { approvalMode: "full", confirmFullAccess: true } });
-    expect(settingSpec("routine.thread")!.write({ target: "r1" }, "th")).toEqual({ method: "PATCH", path: "/api/routines/r1", body: { resultsThreadId: "th" } });
+    // 2026-10-29: a routine has no destination of its own (one conversation).
+    expect(settingSpec("routine.thread")).toBeUndefined();
   });
 
   it("checks a value's kind", () => {

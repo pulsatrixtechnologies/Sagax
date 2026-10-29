@@ -1615,6 +1615,20 @@ export class RoutineManager {
     this.save();
   }
 
+  /** 2026-10-29: a bot routine has no destination of its own any more; it
+   * reports into its bot's one conversation (resolveResultsThread). Clear
+   * the one an older version saved ("Post results to"), except where `keep`
+   * says the routine may not report there (a Cloud guest's own thread). */
+  clearChosenResultsThreads(keep: (routine: Routine) => boolean): void {
+    let changed = false;
+    for (const routine of this.routines) {
+      if (routine.target !== "bot" || routine.resultsThreadId === undefined || keep(routine)) continue;
+      delete routine.resultsThreadId;
+      changed = true;
+    }
+    if (changed) this.save();
+  }
+
   /** Successful delegated/provider turns are not successful runs until the
    * routine settles. Cancellation and missed schedules are not attempts. */
   private outcomesNewestFirst(routineId: string, exceptRunId?: string): RoutineRun[] {
@@ -3494,10 +3508,9 @@ export class RoutineManager {
       routine.resultsThreadId = destination.threadId;
       return () => this.options.discardResultsThread?.(routine.botId, destination.threadId);
     }
-    if (typeof value !== "string" || !value.trim() || !this.options.isResultsThread?.(routine.botId, value.trim())) {
-      throw Object.assign(new Error("Choose a visible results thread belonging to this bot"), { status: 400 });
-    }
-    routine.resultsThreadId = value.trim();
+    // 2026-10-29: a thread chosen by an older app ("Post results to") is
+    // no destination any more: every run reports into the bot's one
+    // conversation. Accepted and left out, so an older client still saves.
   }
 
   // ── routine folders (2026-10-28, shared/routine-folders.ts) ─────────────

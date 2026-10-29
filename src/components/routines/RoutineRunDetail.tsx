@@ -13,7 +13,7 @@
 // The steps and the conversation come from the run's activity entry
 // (GET /api/bots/:id/activity/item?runId=, the same one History shows).
 import { lazy, Suspense, useCallback, useEffect, useState, type ReactNode } from "react";
-import { CalendarClock, ChevronDown, ChevronRight, CircleAlert, CirclePlay, FileText, History, Inbox, Loader2, MessageSquareText, RotateCcw, Square } from "lucide-react";
+import { CalendarClock, ChevronDown, ChevronRight, CircleAlert, CirclePlay, FileText, History, Loader2, MessageSquareText, RotateCcw, Square } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { api, type Bot, type Group } from "@/state/store";
@@ -86,7 +86,7 @@ function Fold({ id, label, count, defaultOpen = false, children }: { id: string;
   );
 }
 
-export function RoutineRunDetail({ run, routine, bots, groups = [], viewerPrincipalId, now = Date.now(), wide = false, detail = null, detailError = false, waiting = [], onOpenThread, editable = true, canRunAgain = false, inFlight = false, working = false, canContinue = false, canOpenResults = false, onReply, onStop, onRunAgain, onResume, onContinue, onOpenResults, onOpenRoutine, onLogs, renderConversation, error }: {
+export function RoutineRunDetail({ run, routine, bots, groups = [], viewerPrincipalId, now = Date.now(), wide = false, detail = null, detailError = false, waiting = [], onOpenThread, editable = true, canRunAgain = false, inFlight = false, working = false, canContinue = false, onReply, onStop, onRunAgain, onResume, onContinue, onOpenRoutine, onLogs, renderConversation, error }: {
   run: RoutineRun;
   /** Null: the routine was deleted since (the run stays, #1567). */
   routine: Routine | null;
@@ -108,7 +108,6 @@ export function RoutineRunDetail({ run, routine, bots, groups = [], viewerPrinci
   inFlight?: boolean;
   working?: boolean;
   canContinue?: boolean;
-  canOpenResults?: boolean;
   /** A message into the run (an answer while it waits, a nudge while it runs). */
   onReply?: (text: string) => Promise<void>;
   onStop?: () => void;
@@ -116,7 +115,6 @@ export function RoutineRunDetail({ run, routine, bots, groups = [], viewerPrinci
   /** 2026-10-26: this failure paused the routine; turn it back on. */
   onResume?: () => void;
   onContinue?: () => void;
-  onOpenResults?: () => void;
   /** The routine's own page (absent for a deleted routine). */
   onOpenRoutine?: () => void;
   onLogs?: () => void;
@@ -224,7 +222,6 @@ export function RoutineRunDetail({ run, routine, bots, groups = [], viewerPrinci
     <div data-run-actions className="flex flex-wrap items-center gap-2 border-t border-hairline/40 px-4 py-3">
       {!live && canRunAgain && onRunAgain && <button type="button" data-run-again onClick={onRunAgain} disabled={working || inFlight} title={inFlight ? t("routines.runNow.inFlight") : t("routineRun.runAgain")} className={cn(PRIMARY_PILL, "gap-1.5")}>{working ? <Loader2 size={13} className="animate-spin motion-reduce:animate-none" aria-hidden="true" /> : <RotateCcw size={13} aria-hidden="true" />}{t("routineRun.runAgain")}</button>}
       {canContinue && onContinue && <button type="button" data-run-continue onClick={onContinue} title={isRoomGoal ? t("routineCalendar.openGroupThread") : t("routineRun.continue")} className={cn(PILL, "gap-1.5")}><MessageSquareText size={13} aria-hidden="true" />{isRoomGoal ? t("routineCalendar.openGroupThread") : t("routineRun.continue")}</button>}
-      {canOpenResults && onOpenResults && <button type="button" data-run-open-results onClick={onOpenResults} title={t("routines.results.open")} className={cn(PILL, "gap-1.5")}><Inbox size={13} aria-hidden="true" />{t("routines.results.open")}</button>}
       <div className="ml-auto flex items-center gap-1">
         {routine && onOpenRoutine && <button type="button" data-run-open-routine onClick={onOpenRoutine} title={t("routineRun.openRoutine")} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><CalendarClock size={13} aria-hidden="true" />{t("routineRun.openRoutine")}</button>}
         {onLogs && <button type="button" data-run-logs onClick={onLogs} title={t("routines.logs")} className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink"><History size={13} aria-hidden="true" />{t("routines.logs")}</button>}

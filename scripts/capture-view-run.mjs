@@ -52,6 +52,17 @@ try {
     await page.waitForTimeout(1_500);
     await page.screenshot({ path: join(outDir, `${prefix}-click-${skin.label}.png`) });
     console.log(`${prefix} ${skin.label}: ${await page.locator("[data-gallery-sample]").getAttribute("data-gallery-sample")}`);
+    // 2026-10-29: Continue in the conversation opens the bot's one
+    // conversation in the main pane, never the run's task in a column.
+    const resultsButton = await page.locator("[data-run-open-results]").count();
+    const proceed = page.locator("[data-run-continue]");
+    if (await proceed.count()) {
+      await proceed.first().click();
+      await page.waitForTimeout(1_500);
+      await page.screenshot({ path: join(outDir, `${prefix}-continue-${skin.label}.png`) });
+      const side = await page.locator("[data-side-thread-header]").count();
+      console.log(`${prefix} ${skin.label} continue: ${await page.locator("[data-gallery-sample]").getAttribute("data-gallery-sample")}, side column ${side ? "open" : "none"}, Open results thread ${resultsButton ? "shown" : "gone"}`);
+    }
     await page.close();
   }
   // 2026-10-29: the action bars of a routine (bot panel, routine page) and

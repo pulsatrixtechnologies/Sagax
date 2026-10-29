@@ -736,7 +736,7 @@ import { dispatchLoopStop, makeLoopStopSubscriber } from "./loop-detector.ts";
 import { redactSecretsInText } from "./redact.ts";
 import { routineRunCard } from "./routine-run-card.ts";
 import { routineAutoPauseAfter } from "../shared/routine-auto-pause.ts";
-import { routineRunReportable } from "./routine-report.ts";
+import { routineReportOutcome, routineRunReportable } from "./routine-report.ts";
 import type { HeadlessBot } from "./headless-cli.ts";
 import { createHeadlessTaskRunner } from "./headless-task-runner.ts";
 import * as vps from "./vps-computer.ts";
@@ -23738,6 +23738,20 @@ function routineRunFallbackText(card: NonNullable<Message["routineRun"]>): strin
   return `Routine “${card.routineName}” ${state}${paused}${detail ? `\n\n${detail}` : ""}`;
 }
 
+/** The bot's whole report for a completed run (2026-10-29): its final
+ * message in the run's own task, the marker left out. The run's record keeps
+ * only its first 2 000 characters; the report posted in the conversation is
+ * whole, so the person never opens the run's task to read it. Undefined when
+ * that message is not the record's report (nothing else is ever posted). */
+function routineFullReport(run: RoutineRun): string | undefined {
+  if (run.status !== "completed" || run.quiet || !run.output || !run.threadId) return undefined;
+  const last = store.messagesFor(run.threadId).findLast((message) => message.role === "bot" && !message.kind && typeof message.text === "string" && message.text.trim());
+  if (!last?.text) return undefined;
+  const report = routineReportOutcome(redactSecretsInText(last.text)).report;
+  const head = run.output.slice(0, 200);
+  return report.length > run.output.length && report.startsWith(head) ? report : undefined;
+}
+
 /** An approval or question card in a run's own task waits on the person. */
 function routineRunNeedsPerson(run: RoutineRun): boolean {
   return Boolean(run.threadId && store.messagesFor(run.threadId).some((message) => message.card && !message.card.answered));
@@ -23800,7 +23814,7 @@ function syncRoutineRunToSource(run: RoutineRun): string | null {
   );
   // Never posted and nothing for the person: the chat is left alone.
   if (!existing && !reportable) return sourceThreadId;
-  const card = routineRunCard(run, sourceThreadId);
+  const card = routineRunCard(run, sourceThreadId, routineFullReport(run));
   const text = routineRunFallbackText(card);
   const statusChanged = existing?.routineRun?.status !== run.status;
   if (existing) {
@@ -24339,8 +24353,11 @@ routines = new RoutineManager({
     // Every run reports into the routine's bot's main thread, wherever the
     // routine was made (chat, editor, API, or a teammate's request), asked
     // again for each run so results follow the person. A run still executes
-    // in its own hidden task, which Run logs and Open run use. A thread the
-    // person chose in "Post results to" keeps winning.
+    // in its own hidden task, which Run logs and Open run use.
+    // 2026-10-29 (maintainer: "we are in a unified chat"): no thread of the
+    // routine's own wins over the one conversation any more, a chosen one
+    // ("Post results to", gone) included. Only a routine that may not
+    // report there (a Cloud guest's) keeps a results thread of its own.
     // Private threads (organization server): a run that acts for a person
     // reports into a thread of theirs, never the bot's main thread.
     const runAs = privateThreads() && routine.runAs ? routine.runAs : undefined;
@@ -24366,8 +24383,7 @@ routines = new RoutineManager({
     // desktop and the phone read), never a thread nobody looks at.
     const main = bot && !bot.hidden ? (runAs ? personMainThread(bot, runAs) ?? ensureViewerThread(bot, runAs) : botMainThread(bot.id) ?? startConversationFor(bot)) : undefined;
     const mainAllowed = main && !store.isConfidentialThread(main) && (!CLOUD_HOME || (opener === CLOUD_OWNER_KEY && !cloudGuestOpened(main)));
-    const keepChosen = chosen && !chosen.routineRunId && chosen.confidential !== true &&
-      !(mainAllowed && (chosen.routineResults === true || legacyResultsThread(routine.name, chosen)));
+    const keepChosen = chosen && !mainAllowed && !chosen.routineRunId && chosen.confidential !== true;
     if (keepChosen) return { threadId: chosen.threadId };
     if (mainAllowed) return { threadId: main, main: true };
     if (!CLOUD_HOME && !runAs) return undefined;
@@ -24524,6 +24540,10 @@ if (CLOUD_HOME && CLOUD_OWNER_KEY && cloudRoutineAuthors) {
 // only now: an earlier key of the owner's is theirs once settled.
 routines.clearFrozenResultsThreads();
 markRoutineResultsThreads();
+// 2026-10-29: a routine's own destination ("Post results to") is gone; every
+// bot routine reports into the one conversation. Cleared at each start (a
+// file an older version wrote), except a Cloud guest's results thread.
+routines.clearChosenResultsThreads((routine) => Boolean(CLOUD_HOME) && routineOpener(routine.id) !== CLOUD_OWNER_KEY);
 orgLibrary = new OrgLibrary({
   dataDir: DATA_DIR,
   store,

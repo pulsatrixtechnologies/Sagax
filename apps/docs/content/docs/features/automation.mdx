@@ -12,15 +12,11 @@ A routine runs once, at a repeating interval, or on selected weekdays. Each run 
 
 Run receipts distinguish queued, active, waiting, completed, missed, failed, and cancelled work. Sagax must be running when a local routine becomes due.
 
-### Keep reports in one thread
+### Reports land in the bot's conversation
 
-In a routine's editor, use **Post results to** to choose an existing thread, or leave it on **The bot's main thread**: the conversation you last wrote in, which is also the one conversation you see with threads hidden. You can move a results thread into a folder, such as **OMB management**, just like any other thread.
-
-Each run gets its own execution context, while dated reports collect in the chosen thread. Background execution threads stay out of the normal sidebar and mobile thread pickers. Use **Open run** on a report for its conversation and any approvals, then **Back to results** to return. **Run logs** keeps the execution history, including failures and waiting runs.
+Each run works in its own execution context, then posts its whole report into the bot's one conversation, dated, with **View run** for the run's detail (its conversation, approvals and logs). There is no separate results thread. **Post results in the conversation** turns that report on or off; approvals, questions and errors always reach you. In a run's detail, **Continue in the conversation** opens that conversation with the report quoted, ready for your reply. **Run logs** keeps the execution history, including failures and waiting runs.
 
 A bot schedules, changes, pauses, resumes, and deletes its own routines from chat without asking, and each change shows as one line with **Undo** (see [Changes a bot makes to itself](/docs/features/approvals-and-inspector#changes-a-bot-makes-to-itself)). A routine for another bot asks first unless the conversation has Full access.
-
-Without a chosen thread, each run reports into the bot's main thread as it is when the run starts, wherever the routine was made, so results follow you to the conversation you are in. Changing the destination affects future runs, not the report links for older runs. If you delete a results thread, its hidden execution threads become visible so you can still inspect their work and respond to approvals.
 
 ### Remember the last run
 
