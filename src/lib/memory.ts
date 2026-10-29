@@ -166,6 +166,19 @@ export interface SemanticRecallStatus {
   conversationPassages: number;
 }
 
+/** The installation's recall-by-meaning settings, as GET /api/config reports them. */
+export interface SemanticRecallConfig {
+  semanticRecall?: boolean;
+  embeddingsUrl?: string;
+  embeddingsModel?: string;
+}
+
+/** The `memory` block of a config response (a server without it: undefined). */
+export function semanticRecallConfig(config: unknown): SemanticRecallConfig | undefined {
+  const memory = config && typeof config === "object" ? (config as { memory?: unknown }).memory : undefined;
+  return memory && typeof memory === "object" ? memory as SemanticRecallConfig : undefined;
+}
+
 export function fetchSemanticRecallStatus(botId: string): Promise<SemanticRecallStatus> {
   return api(`/api/bots/${botId}/memory/semantic`);
 }

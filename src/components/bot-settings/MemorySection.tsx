@@ -30,6 +30,8 @@ import {
   saveMemoryDoc,
   fetchUpkeepStatus,
   fetchSemanticRecallStatus,
+  semanticRecallConfig,
+  type SemanticRecallConfig,
   type SemanticRecallStatus,
   tidyMemoryNow,
   tidySummary,
@@ -584,7 +586,7 @@ export function MemorySection({ bot, active = true, onToggle }: { bot: Bot; acti
         />}
         {bot.memoryEnabled !== false && semantic && <SemanticRecallCard
           status={semantic}
-          config={state.config?.memory}
+          config={semanticRecallConfig(state.config)}
           editable={canEditConfig(state.config)}
           onSave={async (patch) => {
             const config = await api<ConfigStatus>("/api/config", { method: "PATCH", body: JSON.stringify({ memory: patch }) });
@@ -692,7 +694,7 @@ export function SemanticRecallCard({
   onSave,
 }: {
   status: SemanticRecallStatus;
-  config: ConfigStatus["memory"];
+  config: SemanticRecallConfig | undefined;
   editable: boolean;
   onSave: (patch: { semanticRecall?: boolean; embeddingsUrl?: string; embeddingsModel?: string }) => Promise<void>;
 }) {
