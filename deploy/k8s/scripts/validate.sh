@@ -178,6 +178,18 @@ if grep -q "name: sandboxes-provisioner-guard" "$tmp/default.yaml"; then
   exit 1
 fi
 
+# The node guard must tolerate the sandbox pool taint by default.
+helm template sandboxes "$chart" --set nodeGuard.enabled=true --set nodeGuard.image=registry.example.com/busybox@sha256:$(printf 'ab%.0s' $(seq 1 32)) > "$tmp/node-guard.yaml"
+guard_ds="$(awk 'BEGIN{RS="\n---\n"} /kind: DaemonSet/ && /sagax-node-guard/' "$tmp/node-guard.yaml")"
+if ! printf '%s\n' "$guard_ds" | grep -B1 -A1 'key: sagax.io/sandboxes' | grep -q 'effect: NoSchedule'; then
+  echo "the node guard does not tolerate the sagax.io/sandboxes taint by default" >&2
+  exit 1
+fi
+if ! printf '%s\n' "$guard_ds" | grep -q 'key: sagax.io/dedicated'; then
+  echo "the node guard lost its sagax.io/dedicated toleration" >&2
+  exit 1
+fi
+
 check_stack() {
   stack="$1"
   echo "tofu validate $stack"
