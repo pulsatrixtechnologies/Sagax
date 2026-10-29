@@ -47,7 +47,7 @@ import { LeaveGroupDialog } from "./LeaveGroupDialog";
 import { otherAuthorName, viewerActorId, viewerIsOrgMember } from "@/lib/viewer";
 import { showBotArchive, showBotDelete, showBotRename, showServerSectionMove } from "@/lib/bot-capabilities";
 import { viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
-import { BulkEditBotsDialog } from "./BulkEditBotsDialog";
+import { BulkEditBotsDialog } from "./lazy-screens";
 import { llmThreadTitlesEnabled } from "@/lib/feature-flags";
 import { templatesEntryActions } from "@/lib/templates-entry";
 import { useAdvancedMode } from "@/lib/interface-mode";
