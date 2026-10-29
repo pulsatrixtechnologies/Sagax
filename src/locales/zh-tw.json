@@ -3708,5 +3708,8 @@
   "room.leave.owner": "你是這個群組的擁有者：它將轉交給加入時間最長的人。",
   "room.leave.last": "你是最後一個人：群組將被封存。",
   "room.roster.left": "{name} 已退出群組",
-  "access.signInRequested": "{bot} 請你登入 {engine}。由你自己登入；機器人永遠看不到你的登入資訊。"
+  "access.signInRequested": "{bot} 請你登入 {engine}。由你自己登入；機器人永遠看不到你的登入資訊。",
+  "appearance.playMove": "播放動作",
+  "appearance.randomize": "隨機",
+  "appearance.tabs": "自訂"
 }

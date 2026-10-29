@@ -15,7 +15,7 @@ import { SHAPE_ART, shapeSkinPaint } from "@/components/ShapeMascot";
 import { SHAPE_MOVES } from "@/components/shape-engine";
 import { botMascotLook, CHARACTER_PAINT, completeMascotLook, MASCOT_SHAPES, SHAPE_SKINS, TROMBI_SKINS } from "../../../shared/mascot-look";
 import { MASCOTS, mascotFor, motion25dTransform, SHAPE_CHOICES, trombiPoseFor } from "./mascots";
-import MascotLookEditor, { CHARACTER_LABEL, SHAPE_LABEL, SHAPE_SKIN_LABEL, TROMBI_SKIN_LABEL } from "./MascotLookEditor";
+import MascotLookEditor, { EDITOR_TABS, CHARACTER_LABEL, SHAPE_LABEL, SHAPE_SKIN_LABEL, TROMBI_SKIN_LABEL } from "./MascotLookEditor";
 import { REST } from "./clips";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -180,8 +180,14 @@ describe("the mascot registry", () => {
 
 describe("the Appearance gallery", () => {
   beforeEach(() => resetAchievementsForTests({ unlocks: NOTHING_LOCKED }));
+  /** The editor with each of its tabs open in turn: the whole page, then every other tab's grid. */
   const render = (mascotLook?: Parameters<typeof botMascotLook>[0], mascotSkin = "none") =>
-    renderToStaticMarkup(createElement(MascotLookEditor, { bot: { color: "blue", mascotSkin: mascotSkin as never, mascotLook: botMascotLook(mascotLook) }, onPatch: () => undefined }));
+    EDITOR_TABS.map((initialTab, index) => {
+      const html = renderToStaticMarkup(createElement(MascotLookEditor, { bot: { color: "blue", mascotSkin: mascotSkin as never, mascotLook: botMascotLook(mascotLook) }, onPatch: () => undefined, initialTab }));
+      if (index === 0) return html;
+      // a tab this character does not offer opens Mascot, already drawn
+      return html.includes(`data-appearance-tab-panel="${initialTab}"`) ? html.slice(html.indexOf('id="appearance-tab-panel"')) : "";
+    }).join("");
   const enforce = (rewards: string[]) => resetAchievementsForTests({ status: "ready", snapshot: { rewards, items: [] } as unknown as AchievementSnapshot });
 
   afterEach(() => {

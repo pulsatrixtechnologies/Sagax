@@ -3819,5 +3819,8 @@
   "room.leave.owner": "このグループの所有者はあなたです。最も長く参加している人に引き継がれます。",
   "room.leave.last": "あなたが最後のメンバーです。グループはアーカイブされます。",
   "room.roster.left": "{name} がグループから退出しました",
-  "access.signInRequested": "{bot} が {engine} へのサインインをお願いしています。サインインはご自身で行います。ボットがサインイン情報を見ることはありません。"
+  "access.signInRequested": "{bot} が {engine} へのサインインをお願いしています。サインインはご自身で行います。ボットがサインイン情報を見ることはありません。",
+  "appearance.playMove": "動きを再生",
+  "appearance.randomize": "ランダム",
+  "appearance.tabs": "カスタマイズ"
 }

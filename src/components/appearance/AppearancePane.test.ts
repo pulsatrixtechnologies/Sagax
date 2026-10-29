@@ -1,6 +1,7 @@
 // The persona editor's Appearance: the source control (Mascot, Generate,
-// Upload) and Reset, the picture sources, and the Mascot gallery with its
-// detail column (MascotLookEditor), clicked through in a happy-dom window
+// Upload) and Reset, the picture sources, and the Mascot view
+// (MascotLookEditor): the preview band, then the Mascot, Shape, Color and
+// Skin tabs, clicked through in a happy-dom window
 // installed by hand (src/testing/happy-window.ts).
 import { act, createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -13,7 +14,8 @@ import { StoreProvider, type Bot } from "@/state/store";
 import { NOTHING_LOCKED, type AchievementSnapshot } from "../../../shared/achievements";
 import { botMascotLook, completeMascotLook, CRAB_SKINS } from "../../../shared/mascot-look";
 import { MASCOT_SKIN_IDS } from "../../../shared/mascot-skins";
-import MascotLookEditor, { type MascotLookPatch } from "../floating-bots/MascotLookEditor";
+import MascotLookEditor, { editorTabsFor, randomLook, type EditorTab, type MascotLookPatch } from "../floating-bots/MascotLookEditor";
+import { MASCOTS } from "../floating-bots/mascots";
 import { AppearancePane, initialAppearanceMode } from "./AppearancePane";
 
 const closeWindow = installHappyWindow();
@@ -36,7 +38,7 @@ function makeBot(overrides: Partial<Bot> = {}): Bot {
 }
 
 const renderPane = (bot: Bot) => renderToStaticMarkup(createElement(StoreProvider, null, createElement(AppearancePane, { bot, onPatch: vi.fn() })));
-const renderEditor = (bot: Bot) => renderToStaticMarkup(createElement(MascotLookEditor, { bot, onPatch: vi.fn() }));
+const renderEditor = (bot: Bot, initialTab?: EditorTab) => renderToStaticMarkup(createElement(MascotLookEditor, { bot, onPatch: vi.fn(), initialTab }));
 const enforce = (rewards: string[]) => resetAchievementsForTests({ status: "ready", snapshot: { rewards, items: [] } as unknown as AchievementSnapshot });
 
 beforeEach(() => resetAchievementsForTests({ unlocks: NOTHING_LOCKED }));
@@ -74,34 +76,25 @@ describe("the Appearance pane", () => {
 describe("the Mascot gallery", () => {
   it("still offers every bot color for the mascot, on its palette's tab", () => {
     for (const color of MAUS_COLOR_NAMES) {
-      expect(renderEditor(makeBot({ color }))).toMatch(new RegExp(`aria-checked="true"[^>]*aria-label="Use ${color} mascot color"`));
+      expect(renderEditor(makeBot({ color }), "color")).toMatch(new RegExp(`aria-checked="true"[^>]*aria-label="Use ${color} mascot color"`));
     }
   });
 
   it("offers every skin with a live preview, by rarity, Classic chosen by default", () => {
-    const markup = renderEditor(makeBot());
+    const markup = renderEditor(makeBot(), "skin");
     expect(markup).toContain(">Skin<");
     for (const skin of ["none", "snowy", "barn", "carbon"]) expect(markup).toContain(`data-mascot-skin-option="${skin}"`);
     expect(markup).toContain('aria-checked="true" aria-label="Classic, Common"');
     expect(markup).toContain('aria-checked="false" aria-label="Snowy, Common"');
-    const epic = renderEditor(makeBot({ mascotSkin: "lightning" }));
+    const epic = renderEditor(makeBot({ mascotSkin: "lightning" }), "skin");
     expect(epic).toContain('aria-checked="true" aria-label="Lightning, Epic"');
     expect(epic).toMatch(/data-owl-skin="lightning" data-owl-fx="live"/);
     // SAFETY: a skin this build does not know can arrive from a newer client.
-    expect(renderEditor(makeBot({ mascotSkin: "plasma" as Bot["mascotSkin"] }))).toContain('aria-checked="true" aria-label="Classic, Common"');
-  });
-
-  it("offers every wing move as a chip with a readable label", () => {
-    const markup = renderEditor(makeBot());
-    expect(markup).toContain(">Moves<");
-    for (const [move, label] of [["spread-wings", "Spread wings"], ["flap", "Flap"], ["take-off", "Take off"], ["shake", "Ruffle"], ["hoot", "Hoot"]]) {
-      expect(markup).toContain(`data-character-move="${move}"`);
-      expect(markup).toContain(`aria-label="Play the ${label} move"`);
-    }
+    expect(renderEditor(makeBot({ mascotSkin: "plasma" as Bot["mascotSkin"] }), "skin")).toContain('aria-checked="true" aria-label="Classic, Common"');
   });
 
   it("offers black among the colors, outlined so it reads on a dark card", () => {
-    const markup = renderEditor(makeBot({ color: "black" }));
+    const markup = renderEditor(makeBot({ color: "black" }), "color");
     expect(markup).toMatch(/aria-label="Use black mascot color"/);
     expect(markup).toContain("inset 0 0 0 1.5px");
   });
@@ -122,11 +115,60 @@ describe("the Mascot gallery", () => {
     expect(html).toContain(">In use<");
   });
 
-  it("names the shown character's family and moves under its stage", () => {
+  it("names the shown character, what it wears and its moves in the preview band", () => {
     const html = renderEditor(makeBot({ mascotLook: botMascotLook({ character: "frog" }) }));
     expect(html).toContain('data-mascot-detail="frog"');
     expect(html).toContain('aria-label="Frog preview"');
-    expect(html).toMatch(/Animals · \d+ moves/);
+    expect(html).toMatch(/data-mascot-summary="">Animals · Vivid · [^<]+</);
+    expect(html).toMatch(/data-mascot-moves=""[^>]*>\d+ moves/);
+    expect(html).toContain("Play a move<");
+    expect(html).toContain("Randomize<");
+  });
+
+  it("shows the Mascot, Shape, Color and Skin tabs with their values, one grid at a time", () => {
+    const html = renderEditor(makeBot({ mascotLook: botMascotLook({ character: "shape", shape: "pumpkin" }) }));
+    expect([...html.matchAll(/data-appearance-tab="(\w+)"/g)].map((match) => match[1])).toEqual(["mascot", "shape", "color", "skin"]);
+    expect(html).toMatch(/aria-selected="true"[^>]*data-appearance-tab="mascot"/);
+    expect(html.match(/data-appearance-tab-value=""/g)).toHaveLength(4);
+    expect(html).toContain(">Pumpkin<");
+    // only the open tab's grid is drawn
+    expect(html).toContain("data-character-option=");
+    expect(html).not.toContain("data-character-shape");
+    expect(html).not.toContain("data-mascot-color=");
+    const shapes = renderEditor(makeBot({ mascotLook: botMascotLook({ character: "shape" }) }), "shape");
+    expect(shapes.match(/data-character-shape=/g)).toHaveLength(32);
+    expect(shapes).not.toContain("data-character-option=");
+  });
+
+  it("offers Shape only for Shapes and Color only for a character that takes it", () => {
+    const tabsOf = (id: string) => editorTabsFor(MASCOTS.find((option) => option.id === id)!);
+    expect(tabsOf("shape")).toEqual(["mascot", "shape", "color", "skin"]);
+    expect(tabsOf("owl")).toEqual(["mascot", "color", "skin"]);
+    expect(tabsOf("trombi")).toEqual(["mascot", "skin"]);
+    // a tab the character does not offer opens Mascot
+    expect(renderEditor(makeBot(), "shape")).toMatch(/aria-selected="true"[^>]*data-appearance-tab="mascot"/);
+  });
+
+  it("randomizes to an owned character, skin and color only", () => {
+    const look = completeMascotLook(null);
+    let seed = 0;
+    const random = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+    for (let index = 0; index < 60; index += 1) {
+      const patch = randomLook({
+        listed: MASCOTS,
+        look,
+        color: "green",
+        owlSkin: "none",
+        characterLocked: (id) => id !== "owl" && id !== "frog",
+        skinLocked: (_id, skin) => skin !== "none" && skin !== "plain" && skin !== "leaf",
+        random,
+      });
+      const character = patch.mascotLook!.character;
+      expect(["owl", "frog"]).toContain(character);
+      if (character === "owl") expect(patch.mascotSkin).toBe("none");
+      else expect(["plain", "leaf"]).toContain(patch.mascotLook!.skins!.frog);
+      expect(MAUS_COLOR_NAMES).toContain(patch.color);
+    }
   });
 });
 
@@ -178,8 +220,10 @@ describe("picking in the gallery", () => {
     expect(patches).toEqual([]);
   });
 
+  const openTab = (id: EditorTab) => act(async () => host.querySelector<HTMLButtonElement>(`[data-appearance-tab="${id}"]`)!.click());
   /** Every skin card of the character shown, tab after tab. */
   const allSkinCards = async (attribute: string) => {
+    await openTab("skin");
     const cards = new Map<string, HTMLButtonElement>();
     const tabs = [...host.querySelectorAll<HTMLButtonElement>('[data-skin-tabs] [role="tab"]')];
     for (const tab of tabs) {
@@ -190,6 +234,7 @@ describe("picking in the gallery", () => {
   };
   /** Opens the tab holding a skin's card, then clicks it. */
   const clickSkin = async (attribute: string, skin: string) => {
+    await openTab("skin");
     for (const tab of host.querySelectorAll<HTMLButtonElement>('[data-skin-tabs] [role="tab"]')) {
       await act(async () => tab.click());
       const card = host.querySelector<HTMLButtonElement>(`[${attribute}="${skin}"]`);
@@ -269,8 +314,37 @@ describe("picking in the gallery", () => {
 
   it("plays a wing move on the stage and across the app", async () => {
     const onOwlMove = await mount(makeBot());
+    expect(host.querySelector<HTMLElement>("[data-mascot-move-list]")!.hidden).toBe(true);
+    await act(async () => host.querySelector<HTMLButtonElement>("[data-mascot-moves]")!.click());
+    expect(host.querySelector("[data-mascot-moves]")?.getAttribute("aria-expanded")).toBe("true");
+    expect(host.querySelector<HTMLElement>("[data-mascot-move-list]")!.hidden).toBe(false);
+    expect(host.querySelector("[data-mascot-move-list]")?.textContent).toContain("Moves");
+    for (const [move, label] of [["spread-wings", "Spread wings"], ["flap", "Flap"], ["take-off", "Take off"], ["shake", "Ruffle"], ["hoot", "Hoot"]]) {
+      expect(host.querySelector(`[data-character-move="${move}"]`)?.getAttribute("aria-label")).toBe(`Play the ${label} move`);
+    }
     await act(async () => host.querySelector<HTMLButtonElement>('[data-character-move="flap"]')!.click());
     expect(onOwlMove).toHaveBeenCalledWith("flap");
+    // Play a move plays the next one, saving nothing
+    await act(async () => host.querySelector<HTMLButtonElement>("[data-mascot-play]")!.click());
+    expect(onOwlMove).toHaveBeenCalledTimes(2);
     expect(patches).toEqual([]);
+  });
+
+  it("randomizes in one saved patch and shows what it drew", async () => {
+    await mount(makeBot());
+    await act(async () => host.querySelector<HTMLButtonElement>("[data-mascot-randomize]")!.click());
+    expect(patches).toHaveLength(1);
+    const character = patches[0]!.mascotLook!.character!;
+    expect(host.querySelector("[data-mascot-detail]")?.getAttribute("data-mascot-detail")).toBe(character);
+  });
+
+  it("switches tabs with the arrow keys and underlines the open one in the bot's color", async () => {
+    await mount(makeBot({ color: "green" }));
+    const tab = (id: string) => host.querySelector<HTMLButtonElement>(`[data-appearance-tab="${id}"]`)!;
+    await act(async () => tab("mascot").dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }) as unknown as Event));
+    expect(tab("color").getAttribute("aria-selected")).toBe("true");
+    expect(host.querySelector("[data-appearance-tab-panel]")?.getAttribute("data-appearance-tab-panel")).toBe("color");
+    expect(tab("color").style.borderBottomColor).not.toBe("transparent");
+    expect(tab("mascot").style.borderBottomColor).toBe("transparent");
   });
 });

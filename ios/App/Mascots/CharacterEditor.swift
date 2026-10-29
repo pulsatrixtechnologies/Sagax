@@ -23,6 +23,10 @@
 //
 // Every choice is written to the binding at once; the owner decides whether
 // that is a draft (create) or a save (profile).
+//
+// `section` draws one part only (the bot's Appearance sheet, track A,
+// 2026-10-28: a preview on top, then Mascot | Shape | Color | Skin as a
+// segmented control, one grid at a time). Nil draws every part, as above.
 import PhotosUI
 import SwiftUI
 import CompanionCore
@@ -96,8 +100,21 @@ struct CharacterEditor: View {
         )
     }
 
+    /// One part of the editor, for a sheet that shows one grid at a time.
+    enum Section: String, CaseIterable, Identifiable {
+        case character, shape, colour, skin
+        var id: String { rawValue }
+
+        /// The parts a character offers: Shape only for Shapes, Color for every character but Trombi.
+        static func offered(for character: MascotCharacter) -> [Section] {
+            allCases.filter { ($0 != .shape || character == .shape) && ($0 != .colour || character != .trombi) }
+        }
+    }
+
     @Binding var draft: CharacterDraft
     var metrics: Metrics = .createSheet
+    /// The one part to draw; nil draws them all.
+    var section: Section? = nil
     /// The picture row (Upload, Remove): the profile shows it, create does not.
     var showsPhotoRow = false
     /// "Reset to default": the profile shows it, create does not.
@@ -127,18 +144,22 @@ struct CharacterEditor: View {
     private static let ringGap: CGFloat = 2.7
     private static let ringWidth: CGFloat = 2
 
+    private func draws(_ part: Section) -> Bool { section == nil || section == part }
+
     var body: some View {
         VStack(spacing: 0) {
             let characters = unlocks.listedCharacters(current: wornDraft.character)
             let shown = shownCharacter
             let characterLines = Self.lines(characters, perRow: 5)
-            ForEach(characterLines.indices, id: \.self) { line in
-                row(count: characterLines[line].count, pitch: metrics.pitch, height: metrics.pitch) { index in
-                    characterCell(characterLines[line][index], shown: shown)
+            if draws(.character) {
+                ForEach(characterLines.indices, id: \.self) { line in
+                    row(count: characterLines[line].count, pitch: metrics.pitch, height: metrics.pitch) { index in
+                        characterCell(characterLines[line][index], shown: shown)
+                    }
                 }
             }
 
-            if draft.character == .shape {
+            if draft.character == .shape && draws(.shape) {
                 // every shape, four to a row
                 let shapeLines = Self.lines(MascotShape.allCases, perRow: 4)
                 ForEach(shapeLines.indices, id: \.self) { line in
@@ -154,15 +175,15 @@ struct CharacterEditor: View {
                 }
             }
 
-            skinRow
+            if draws(.skin) { skinRow }
 
             if previewing {
                 previewCard.padding(.top, 10)
             }
 
-            if draft.character != .trombi {
+            if draft.character != .trombi && draws(.colour) {
                 colourRows
-                    .padding(.top, metrics.skinToColours - (metrics.skinRowHeight ?? metrics.pitch) / 2 - metrics.swatch / 2)
+                    .padding(.top, section == nil ? metrics.skinToColours - (metrics.skinRowHeight ?? metrics.pitch) / 2 - metrics.swatch / 2 : 8)
             }
 
             if showsPhotoRow { photoRow.padding(.top, metrics.photoTopPadding) }
@@ -226,7 +247,7 @@ struct CharacterEditor: View {
             skin: character == .owl ? draft.skin : .none,
             size: metrics.cell,
             selected: shown == character,
-            label: Text(characterName(character)),
+            label: Text(Self.characterName(character)),
             locked: locked,
             hint: locked ? lockHint(character) : nil
         ) {
@@ -300,7 +321,7 @@ struct CharacterEditor: View {
                     .grayscale(greyed ? 1 : 0)
                     .opacity(greyed ? 0.6 : 1)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(characterName(character))
+                    Text(Self.characterName(character))
                         .font(Theme.Font.rowTitle)
                         .foregroundStyle(Theme.textPrimary)
                     Text("Preview: locked, nothing is saved")
@@ -511,7 +532,7 @@ struct CharacterEditor: View {
         return look
     }
 
-    private func characterName(_ character: MascotCharacter) -> LocalizedStringResource {
+    static func characterName(_ character: MascotCharacter) -> LocalizedStringResource {
         switch character {
         case .owl: "Owl"
         case .shape: "Shape"

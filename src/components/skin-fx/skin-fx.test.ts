@@ -246,26 +246,26 @@ describe("skin ids persist and migrate", () => {
 
 describe("the Appearance gallery's layout", () => {
   beforeEach(() => resetAchievementsForTests({ unlocks: NOTHING_LOCKED }));
-  const render = (mascotLook: unknown) =>
-    renderToStaticMarkup(createElement(MascotLookEditor, { bot: { color: "blue", mascotSkin: "none", mascotLook: botMascotLook(mascotLook) }, onPatch: () => undefined }));
+  const render = (mascotLook: unknown, initialTab: "mascot" | "skin" = "mascot") =>
+    renderToStaticMarkup(createElement(MascotLookEditor, { bot: { color: "blue", mascotSkin: "none", mascotLook: botMascotLook(mascotLook) }, onPatch: () => undefined, initialTab }));
 
-  it("sets the gallery beside a compact detail with its own preview stage, stacked in a narrow pane", () => {
+  it("sets the preview band full width above the tabs, one grid under them, stacked in a narrow pane", () => {
     const html = render({ character: "shape" });
     expect(html).toContain('data-character-row=""');
     expect(html).toContain('data-mascot-stage=""');
-    // the mascot large and centred on a full-width stage, its name and action under it
-    expect(html).toContain("h-[176px] w-full place-items-center");
-    expect(html).toMatch(/data-mascot-stage=""[\s\S]*data-mascot-action=/);
-    // side by side from a 34rem pane (a size container query), one column under it
-    expect(html).toContain("@[34rem]:grid-cols-[minmax(0,1fr)_20rem]");
-    expect(html).toMatch(/data-mascot-browser=""[\s\S]*data-mascot-detail="shape"/);
+    // the mascot large on its stage, its name, what it wears and its action beside it
+    expect(html).toContain("size-[170px] shrink-0 place-items-center");
+    expect(html).toMatch(/data-mascot-stage=""[\s\S]*data-mascot-name=""[\s\S]*data-mascot-action=/);
+    // a 210px row from a 34rem pane (a size container query), stacked under it
+    expect(html).toContain("@[34rem]:h-[210px] @[34rem]:flex-row");
+    expect(html).toMatch(/data-mascot-detail="shape"[\s\S]*data-appearance-tabs=""[\s\S]*data-mascot-browser=""/);
   });
 
   it("keeps every gallery tile the same height, locked or not, with no stray shadow on the stage", () => {
     const html = render({ character: "crab" });
     const tiles = html.match(/<button[^>]*data-character-option="[^"]+"[^>]*>/g) ?? [];
     expect(tiles.length).toBeGreaterThan(1);
-    for (const tile of tiles) expect(tile).toContain("h-[88px]");
+    for (const tile of tiles) expect(tile).toContain("h-[112px]");
     expect(html).not.toContain("blur-[3px]");
   });
 
@@ -279,16 +279,16 @@ describe("the Appearance gallery's layout", () => {
 
   it("shows each skin as a card with its rarity, previewing it animated, one rarity at a time", () => {
     for (const skin of SHAPE_SKINS) {
-      const html = render({ character: "shape", skins: { shape: skin } });
+      const html = render({ character: "shape", skins: { shape: skin } }, "skin");
       expect(html).toMatch(new RegExp(`data-tier="${SHAPE_SKIN_TIER[skin]}"[^>]*data-shape-skin-option="${skin}"`));
       const cards = html.match(/data-shape-skin-option="/g) ?? [];
       expect(cards.length).toBe(SHAPE_SKINS.filter((other) => SHAPE_SKIN_TIER[other] === SHAPE_SKIN_TIER[skin]).length);
       // the open tab's cards play their skins (the Shape row's thumbnails never do)
-      const panel = html.slice(html.indexOf("data-skin-panel"), html.indexOf("data-character-move"));
+      const panel = html.slice(html.indexOf("data-skin-panel"));
       expect((panel.match(/skin-fx-live/g) ?? []).length).toBe(cards.length);
     }
-    expect(render({ character: "shape", skins: { shape: "galaxy" } })).toContain(">Legendary<");
-    for (const skin of TROMBI_SKINS) expect(render({ character: "trombi", skins: { trombi: skin } })).toContain(`data-trombi-skin-option="${skin}"`);
+    expect(render({ character: "shape", skins: { shape: "galaxy" } }, "skin")).toContain(">Legendary<");
+    for (const skin of TROMBI_SKINS) expect(render({ character: "trombi", skins: { trombi: skin } }, "skin")).toContain(`data-trombi-skin-option="${skin}"`);
     for (const key of Object.values(SKIN_TIER_LABEL)) {
       expect(en).toHaveProperty([key]);
       expect(fr).toHaveProperty([key]);
