@@ -564,10 +564,13 @@ extension CompanionClient {
     /// A turn said on a live call: an ordinary send to the bot, marked as a
     /// call turn exactly like the desktop's (`voiceCall`).
     @discardableResult
-    public func send(text: String, toBot botId: String, threadId: String?, voiceCall: VoiceCallMeta) async throws -> SendReceipt {
+    public func send(text: String, toBot botId: String, threadId: String?, voiceCall: VoiceCallMeta, singleStream: Bool? = nil) async throws -> SendReceipt {
         guard Self.validRouteID(botId) else { throw APIError.badURL }
         var body: [String: Any] = ["text": text, "voiceCall": voiceCall.json]
         if let threadId { body["threadId"] = threadId }
+        // one conversation per bot on this phone (SingleStream): the server
+        // keeps the thread a segment of that stream, as the desktop's sends do
+        if let singleStream { body["singleStream"] = singleStream }
         // the utterance id is the send's id: delivered once, whatever retries
         if let utteranceId = voiceCall.utteranceId { body["sendId"] = utteranceId }
         let (data, response) = try await perform(try makeRequest("POST", "/api/bots/\(botId)/messages", body: body))

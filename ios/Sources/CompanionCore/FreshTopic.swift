@@ -82,7 +82,7 @@ public enum FreshTopic {
     /// a routine run or its results thread, a hidden, confidential, bot-opened or parallel thread
     /// (shared/single-stream.ts `isStreamSegment`).
     public static func isSegment(_ task: BotTask) -> Bool {
-        task.routineRunId == nil && task.routineResults != true && task.hidden != true && task.confidential != true && task.openedBy == nil && task.parallelOf == nil
+        SingleStream.isSegment(task)
     }
 
     /// Threads hidden (one conversation per bot): whether a thread of the
@@ -92,7 +92,7 @@ public enum FreshTopic {
     /// conversation stays underneath, where it was (store.tsx
     /// `opensBesideStream`).
     public static func opensBeside(_ task: BotTask, shown: BotTask?, showThreads: Bool) -> Bool {
-        guard !showThreads, task.threadId != shown?.threadId, !isSegment(task) else { return false }
-        return shown.map(isSegment) ?? true
+        guard !showThreads, task.threadId != shown?.threadId, !SingleStream.isSegment(task) else { return false }
+        return shown.map(SingleStream.isSegment) ?? true
     }
 }

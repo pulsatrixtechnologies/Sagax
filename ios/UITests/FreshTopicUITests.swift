@@ -1,9 +1,8 @@
 import XCTest
 
-/// Fresh topic on return (Session+FreshTopic.swift), in the demo: the chat
-/// lands on a new, empty topic with one "Earlier topics" line, and that line
-/// shows the topic under it again. `-fresh-topic` draws the return the rule
-/// would make after the threshold. Set SAGAX_SHOTS_DIR
+/// Fresh topic on return (Session+FreshTopic.swift), in the demo: since
+/// 2026-10-28 nothing moves on screen for it (one conversation); `-fresh-topic`
+/// draws the return the rule would make after the threshold. Set SAGAX_SHOTS_DIR
 /// (TEST_RUNNER_SAGAX_SHOTS_DIR) to also write PNGs, prefixed by
 /// SAGAX_SHOTS_PREFIX.
 final class FreshTopicUITests: XCTestCase {
@@ -46,15 +45,15 @@ final class FreshTopicUITests: XCTestCase {
         save("1-live-topic")
     }
 
+    // 2026-10-28 (one conversation, the reference design): a fresh topic on
+    // return is invisible. The next message starts a fresh engine context;
+    // the conversation stays one timeline on screen, nothing folds.
     @MainActor
-    func testAReturnLandsOnAFreshTopicAndShowsTheEarlierOneOnDemand() {
+    func testAReturnKeepsTheConversationOnScreen() {
         let app = open(fresh: true)
-        let earlier = app.buttons["chat.freshTopic.earlier"].firstMatch
-        XCTAssertTrue(earlier.waitForExistence(timeout: 10), "Earlier topics line")
-        XCTAssertTrue(app.descendants(matching: .any)["chat.freshTopic"].firstMatch.exists)
+        XCTAssertFalse(app.buttons["chat.freshTopic.earlier"].waitForExistence(timeout: 2), "no Earlier topics line")
+        XCTAssertFalse(app.descendants(matching: .any)["chat.freshTopic"].firstMatch.exists, "no empty chat")
+        XCTAssertTrue(app.buttons["chat-name"].exists)
         save("2-fresh-topic")
-        earlier.tap()
-        XCTAssertFalse(app.buttons["chat.freshTopic.earlier"].waitForExistence(timeout: 2), "the topic under it is shown")
-        save("3-earlier-topic")
     }
 }

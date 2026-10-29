@@ -646,7 +646,9 @@ final class ShareViewModel: ObservableObject {
             .filter { $0.hidden != true }
             .map { bot in
                 return ShareDestination(
-                    id: "bot:\(bot.id)", routeID: bot.id, threadID: bot.threadId,
+                    // the bot's one conversation (SingleStream, the rule every
+                    // device reads), never a job or a run the bot was left on
+                    id: "bot:\(bot.id)", routeID: bot.id, threadID: SingleStream.home(of: bot) ?? bot.threadId,
                     name: bot.name,
                     // never a confidential thread's title (taken from its first message)
                     subtitle: ConfidentialRedaction.shareSubtitle(for: bot),

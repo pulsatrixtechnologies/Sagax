@@ -120,6 +120,15 @@ final class Session: ObservableObject {
     /// The panel only opens over that chat today; a door to it from
     /// anywhere else needs its own way to open the chat.
     @Published var threadSwitches: [String: ThreadSwitch] = [:]
+    /// One conversation (SingleStream): per bot, a thread outside its stream
+    /// a notification, a link, a search hit or a row named, to open beside
+    /// the conversation (a sheet) once that conversation is on screen.
+    /// Consumed by ChatView.
+    @Published var pendingBeside: [String: BesideThread] = [:]
+    /// One conversation (SingleStream): per bot, an earlier topic a
+    /// notification, a link or a search hit named, to bring on screen in
+    /// the conversation's timeline. Consumed by ChatView.
+    @Published var revealSegments: [String: String] = [:]
     @Published private(set) var notificationAuthorization: UNAuthorizationStatus = .notDetermined
     /// Distinguishes a real `.notDetermined` result from the in-memory value
     /// used while notification settings are still loading at launch.
@@ -880,7 +889,48 @@ final class Session: ObservableObject {
     /// silently: it is not the person's mistake, so it is not worth a banner.
     func openChat(threadId: String) {
         guard let chat = state.chat(forThread: threadId) else { return }
+        // One conversation (SingleStream.landing): a bot's thread opens as
+        // the conversation, brought to that topic or with it beside
+        if case let .bot(bot) = chat, !SidebarPrefsModel.shared.showThreads, let stored = state.bot(bot.id) {
+            let landing = SingleStream.landing(of: stored, threadId: threadId)
+            switch landing {
+            case let .earlier(home): revealSegments[bot.id] = threadId; pendingChat = stored.projected(forThread: home).map(Chat.bot) ?? chat
+            case let .beside(home): pendingBeside[bot.id] = BesideThread(botId: bot.id, threadId: threadId); pendingChat = stored.projected(forThread: home).map(Chat.bot) ?? chat
+            case let .conversation(thread): pendingChat = stored.projected(forThread: thread).map(Chat.bot) ?? chat
+            }
+            return
+        }
         pendingChat = chat
+    }
+
+    /// One conversation (SingleStream.landing), for a way into `threadId`
+    /// of `bot` with threads hidden: the thread the screen shows, with the
+    /// topic to reveal or the thread to open beside it noted for ChatView.
+    /// The server's selection follows the conversation (every device opens
+    /// it), never the thread beside. Nil when the bot has no conversation
+    /// and the thread is not its own (the caller's older route applies).
+    func land(bot: Bot, threadId: String, using client: CompanionClient) async -> Bot? {
+        let stored = state.bot(bot.id) ?? bot
+        let landing = SingleStream.landing(of: stored, threadId: threadId)
+        switch landing {
+        case let .earlier(home): revealSegments[bot.id] = threadId; return await shown(stored, home, client)
+        case let .beside(home): pendingBeside[bot.id] = BesideThread(botId: bot.id, threadId: threadId); return await shown(stored, home, client)
+        case let .conversation(thread): return thread == threadId && SingleStream.home(of: stored) == nil ? nil : await shown(stored, thread, client)
+        }
+    }
+
+    private func shown(_ bot: Bot, _ threadId: String, _ client: CompanionClient) async -> Bot? {
+        if bot.threadId != threadId {
+            do {
+                let selected = try await client.switchTask(botId: bot.id, threadId: threadId)
+                state.apply(.bot(selected))
+                return selected.projected(forThread: threadId) ?? selected
+            } catch {
+                // the server could not switch (an older server, a thread of
+                // someone else's): this phone still shows the conversation
+            }
+        }
+        return (state.bot(bot.id) ?? bot).projected(forThread: threadId) ?? bot
     }
 
     /// `sagax://bot/<id>`: that bot's (or room's) current conversation. An
@@ -888,7 +938,8 @@ final class Session: ObservableObject {
     /// stale chat link.
     func openBot(id: String) {
         if let bot = state.bot(id) {
-            pendingChat = .bot(bot)
+            // where its row would open it: its one conversation (threads hidden)
+            pendingChat = conversationOrRestored(.bot(bot))
         } else if let room = state.rooms.first(where: { $0.id == id }) {
             pendingChat = .room(room)
         }
@@ -1800,7 +1851,9 @@ final class Session: ObservableObject {
                 urls: [],
                 attachments: uploaded
             )
-            let receipt = try await client.send(text: message, to: destination, sendId: sendID, options: options)
+            var streamOptions = options
+            if case .bot = destination { streamOptions.singleStream = !SidebarPrefsModel.shared.showThreads }
+            let receipt = try await client.send(text: message, to: destination, sendId: sendID, options: streamOptions)
             // The fresh topic's first message went through: the chat moves there.
             if let startedTopic {
                 createdFreshTopics[startedTopic.botId] = nil
@@ -2527,7 +2580,7 @@ final class Session: ObservableObject {
         var receipt: SendReceipt?
         var sent = false
         await perform {
-            receipt = try await $0.send(text: text, toBot: bot.id, threadId: threadId, voiceCall: voiceCall)
+            receipt = try await $0.send(text: text, toBot: bot.id, threadId: threadId, voiceCall: voiceCall, singleStream: !SidebarPrefsModel.shared.showThreads)
             sent = true
         }
         if sent, client?.connection.id == connectionID { rememberQueuedSend(from: receipt, text: text) }
@@ -2651,6 +2704,19 @@ final class Session: ObservableObject {
         guard let client else { return nil }
         do {
             if let botId = hit.botId, var bot = state.bot(botId) {
+                // One conversation (SingleStream.landing): the conversation
+                // stays; an earlier topic is brought on screen, a thread
+                // outside the stream opens beside it, the hit revealed there
+                if !SidebarPrefsModel.shared.showThreads, let landed = await land(bot: bot, threadId: hit.threadId, using: client) {
+                    if !hit.onActivePath {
+                        let leaf = try await client.setActiveBranch(botId: bot.id, messageId: hit.messageId, threadId: hit.threadId)
+                        state.apply(.thread(threadId: hit.threadId, activeLeafId: leaf))
+                    }
+                    let page = try await client.messages(threadId: hit.threadId, around: hit.messageId)
+                    state.merge(page, intoThread: hit.threadId)
+                    focusedMessageId = hit.messageId
+                    return .bot(landed)
+                }
                 if bot.threadId != hit.threadId {
                     bot = try await client.switchTask(botId: bot.id, threadId: hit.threadId)
                     state.apply(.bot(bot))
@@ -3408,6 +3474,15 @@ final class Session: ObservableObject {
                 return
             }
             guard var selected = bot else { throw APIError.status(code: 404, message: "That agent no longer exists.") }
+            // One conversation (SingleStream.landing, THE gate every way
+            // into a thread passes, as the desktop's openBotThread): an
+            // earlier topic brings the conversation to it, a thread outside
+            // the stream opens beside it; the conversation never gives way.
+            if !SidebarPrefsModel.shared.showThreads,
+               let landed = await land(bot: selected, threadId: target.threadId, using: client) {
+                notificationChat = .bot(landed)
+                return
+            }
             if target.requiresTaskSwitch(activeThreadId: selected.threadId) {
                 do {
                     selected = try await client.switchTask(botId: selected.id, threadId: target.threadId)
@@ -3458,6 +3533,14 @@ final class Session: ObservableObject {
                 bot = state.bot(ref.botId)
             }
             guard var selected = bot else { throw APIError.status(code: 404, message: "That agent no longer exists.") }
+            // One conversation (SingleStream.landing): the conversation,
+            // brought to an earlier topic or with the thread beside it
+            if !SidebarPrefsModel.shared.showThreads, let landed = await land(bot: selected, threadId: ref.threadId, using: client) {
+                guard requestIsCurrent() else { return nil }
+                if landed.id == shownBotId { return landed.threadId }
+                notificationChat = .bot(landed)
+                return nil
+            }
             if selected.threadId != ref.threadId {
                 do {
                     selected = try await client.switchTask(botId: selected.id, threadId: ref.threadId)

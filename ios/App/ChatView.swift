@@ -57,6 +57,12 @@ struct ChatView: View {
     @State var showingTasks = false
     /// Threads hidden: a thread shown over the conversation (ChatLinks).
     @State var besideThread: BesideThread?
+    /// One conversation (SingleStream): how many earlier topics are drawn
+    /// above the live one, newest first; the next one loads on request.
+    @State var earlierTopicsShown = 0
+    /// An earlier topic to bring on screen once drawn (a notification, a
+    /// link, a search hit; Session.revealSegments).
+    @State var pendingTopicReveal: String?
     /// A bot-to-bot conversation opened read only (BB1).
     @State var openBotConversation: BotConversation?
     @State var earlierConversationsOpen = false
@@ -473,6 +479,10 @@ struct ChatView: View {
             session.consumeStartedTopic(bot.id)
             selectedThreadId = started
         }
+        .onValueChange(of: streamReadBackKey) { _ in drawFirstEarlierTopic() }
+        .onValueChange(of: gateSignalsKey) { _ in
+            if case let .bot(bot) = current, !threadPrefs.showThreads { takeGateSignals(bot.id) }
+        }
         .onValueChange(of: threadSwitch) { request in
             // Go to message on a link of another conversation of this bot:
             // this screen switches there, as a thread chip does
@@ -487,11 +497,22 @@ struct ChatView: View {
         .task(id: "\(threadId)#\(openAttempt)") {
             guard await resolveOpenThread() else { return }
             let openedChat = current
-            session.threadSelection.rememberThread(openedChat, connectionID: session.connection?.id)
+            // with one conversation the bot always opens at it (SingleStream.home):
+            // nothing to remember, and a job or a run opened beside never becomes home
+            if threadPrefs.showThreads { session.threadSelection.rememberThread(openedChat, connectionID: session.connection?.id) }
             AttentionCenter.shared.viewingThreadId = openedChat.threadId
+            if case let .bot(bot) = openedChat, !threadPrefs.showThreads {
+                takeGateSignals(bot.id)
+                // the earlier topics are read with the conversation, as on the
+                // desktop (streamUnreadReadWith): no row of their own could
+                for topic in earlierTopics where topic.unread == true {
+                    if let projected = session.state.bot(bot.id)?.projected(forThread: topic.threadId) { await session.markRead(.bot(projected)) }
+                }
+            }
             // #219: selecting a closed conversation with a person reopens it
             if case let .room(room) = openedChat { SidebarPrefsModel.shared.reopenIfClosed(session, room: room) }
             await session.loadThreadIfNeeded(openedChat.threadId)
+            drawFirstEarlierTopic()
             // what was unread on opening keeps its "New" line until the chat
             // is left; opening a chat is what marks it read, exactly as on
             // the desktop
@@ -550,6 +571,8 @@ struct ChatView: View {
             if unread { Task { await session.markRead(readChat) } }
         }
         .onValueChangePair(of: threadId) { previous, next in
+            earlierTopicsShown = 0
+            pendingTopicReveal = nil
             dictation.stop()
             threadDrafts[previous] = ComposerSnapshot(text: draft, attachments: attachments, error: attachmentError, replyTo: replyTo)
             let restored = threadDrafts.removeValue(forKey: next) ?? ComposerSnapshot()
@@ -582,10 +605,15 @@ struct ChatView: View {
         // Read the transcript once for this render. Pagination changes the
         // array as a unit; repeatedly reaching through ObservableObject for
         // every row only recomputes the same value.
-        // A fresh topic (Session+FreshTopic.swift): empty, the topic under it
-        // one tap away behind "Earlier topics".
-        let fresh = session.isFreshTopic(current)
-        let transcript = fresh ? [] : rows
+        // A fresh topic (Session+FreshTopic.swift) is invisible since
+        // 2026-10-28: the next message starts a fresh engine context, and the
+        // conversation stays one timeline on screen (the reference design).
+        let fresh = false
+        let transcript = rows
+        let streamOn = !threadPrefs.showThreads && current.isBot && currentTopicIsSegment
+        let readBack = session.state.hasMore[threadId] == false
+        let topicsAbove = streamOn && readBack ? Array(earlierTopics.prefix(earlierTopicsShown).reversed()) : []
+        let nextTopic = streamOn && readBack && earlierTopicsShown < earlierTopics.count ? earlierTopics[earlierTopicsShown] : nil
         let storedBot: Bot? = { if case let .bot(bot) = current { return session.state.bot(bot.id) }; return nil }()
         let visibleConversations = BotConversations.visible(
             storedBot?.botConversations ?? [],
@@ -616,12 +644,42 @@ struct ChatView: View {
                     // A thread holds 50 messages until you ask for more, so
                     // there is nothing here worth being lazy about.
                     VStack(alignment: .leading, spacing: 0) {
-                        if fresh, case let .bot(bot) = current {
-                            FreshTopicHeader(botName: bot.name, description: bot.description) {
-                                session.showTopicUnderFresh(bot.id)
+                        // One conversation: the topic before the oldest one
+                        // drawn loads on request, the way older messages do.
+                        if let nextTopic {
+                            Button("Load earlier messages") {
+                                let anchor = topicsAbove.first.map { Self.topicAnchor($0.threadId) } ?? transcript.first?.id
+                                earlierTopicsShown += 1
+                                Task {
+                                    await session.loadThreadIfNeeded(nextTopic.threadId)
+                                    if let anchor { proxy.scrollTo(anchor, anchor: .top) }
+                                }
+                            }
+                            .font(.footnote)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .accessibilityIdentifier("chat.earlierTopic.load")
+                        }
+                        // The earlier topics, oldest first, each under a quiet
+                        // time line (the reference design draws one transcript;
+                        // a topic is a fresh engine context underneath).
+                        if case let .bot(bot) = current {
+                            ForEach(topicsAbove, id: \.threadId) { topic in
+                                if let projected = session.state.bot(bot.id)?.projected(forThread: topic.threadId) {
+                                    EarlierTopicSection(
+                                        chat: .bot(projected),
+                                        rows: transcriptRows(session.state.visibleTranscript(forThread: topic.threadId), detail: toolCalls.detail, showThreads: false, threadBotId: bot.id),
+                                        openLink: openLink, openThread: openThread, revealedMessageId: revealedMessageId,
+                                        scrollToMessage: { proxy.scrollTo($0, anchor: .center) }
+                                    )
+                                    .id(Self.topicAnchor(topic.threadId))
+                                }
+                            }
+                            if !topicsAbove.isEmpty, let live = bot.tasks?.first(where: { $0.threadId == threadId }) {
+                                TopicDividerLine(date: Date(timeIntervalSince1970: live.createdAt / 1000), title: live.title)
                             }
                         }
-                        if !fresh, session.state.hasMore[threadId] == true {
+                        if session.state.hasMore[threadId] == true {
                             Button("Load earlier messages") {
                                 // keep the reader where they were: after older
                                 // messages are prepended, sit back on the one
@@ -758,6 +816,15 @@ struct ChatView: View {
                     .environment(\.conversationGallery, conversationGallery)
                     .environment(\.openPagePanel, openPagePanelAction)
                     .background(BottomFollowProbe(model: follow))
+                    // an earlier topic asked for (a notification, a link, a
+                    // search hit): its start comes on screen once it is drawn
+                    .task(id: topicRevealKey) {
+                        guard let topic = pendingTopicReveal, session.state.hasLoadedPage(forThread: topic) else { return }
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        guard !Task.isCancelled else { return }
+                        withAnimation { proxy.scrollTo(Self.topicAnchor(topic), anchor: .top) }
+                        pendingTopicReveal = nil
+                    }
                 }
                 // The transcript starts under the top bar and scrolls
                 // beneath it: a clear inset the height of the bar, then the
@@ -1153,5 +1220,126 @@ struct BesideThreadSheet: View {
             }
         }
         .accessibilityIdentifier("beside-thread.\(beside.threadId)")
+    }
+}
+
+
+// MARK: - One conversation (SingleStream): the earlier topics above the live one
+
+extension ChatView {
+    /// The id the timeline scrolls to for a topic's start.
+    static func topicAnchor(_ threadId: String) -> String { "topic:\(threadId)" }
+
+    /// Whether the thread on screen is a segment of its bot's stream.
+    var currentTopicIsSegment: Bool {
+        guard case let .bot(bot) = current, let task = bot.tasks?.first(where: { $0.threadId == threadId }) else { return false }
+        return SingleStream.isSegment(task)
+    }
+
+    /// The topics before the one on screen, newest first (the order
+    /// scrolling back reaches them).
+    var earlierTopics: [BotTask] {
+        guard case let .bot(bot) = current, !threadPrefs.showThreads else { return [] }
+        return SingleStream.earlierSegments(session.state.bot(bot.id)?.tasks, before: threadId).reversed()
+    }
+
+    var topicRevealKey: String {
+        guard let topic = pendingTopicReveal else { return "" }
+        return "\(topic):\(session.state.hasLoadedPage(forThread: topic))"
+    }
+
+    var streamReadBackKey: Bool {
+        !threadPrefs.showThreads && currentTopicIsSegment && session.state.hasMore[threadId] == false
+    }
+
+    /// What the gate noted for this bot (Session.land): a thread to open
+    /// beside the conversation, a topic to bring on screen.
+    var gateSignalsKey: String {
+        guard case let .bot(bot) = chat else { return "" }
+        return "\(session.pendingBeside[bot.id]?.threadId ?? "")|\(session.revealSegments[bot.id] ?? "")"
+    }
+
+    /// The live topic read back to its start: the topic before it is drawn
+    /// at once (the desktop's StreamEarlierTopics), the next on request.
+    func drawFirstEarlierTopic() {
+        guard streamReadBackKey, earlierTopicsShown == 0, let first = earlierTopics.first else { return }
+        earlierTopicsShown = 1
+        let threadId = first.threadId
+        Task { await session.loadThreadIfNeeded(threadId) }
+    }
+
+    func takeGateSignals(_ botId: String) {
+        if let beside = session.pendingBeside[botId] {
+            session.pendingBeside[botId] = nil
+            cancelThreadOpen()
+            besideThread = beside
+        }
+        if let topic = session.revealSegments[botId] {
+            session.revealSegments[botId] = nil
+            // draw every topic back to that one, then scroll to its start
+            let needed = earlierTopics.firstIndex { $0.threadId == topic }.map { $0 + 1 } ?? 0
+            if needed > 0 {
+                earlierTopicsShown = max(earlierTopicsShown, needed)
+                pendingTopicReveal = topic
+                Task {
+                    for topicId in earlierTopics.prefix(needed).map(\.threadId) { await session.loadThreadIfNeeded(topicId) }
+                }
+            }
+        }
+    }
+}
+
+/// One earlier topic of the conversation: its rows, drawn like the live
+/// topic's (the same row views), read only.
+struct EarlierTopicSection: View {
+    @EnvironmentObject private var session: Session
+    let chat: Chat
+    let rows: [TranscriptRow]
+    let openLink: (URL, Message) -> OpenURLAction.Result
+    let openThread: (ThreadRef) -> Void
+    let revealedMessageId: String?
+    let scrollToMessage: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                VStack(alignment: .leading, spacing: 0) {
+                    if index > 0 { Color.clear.frame(height: ChatView.rowGap) }
+                    switch row {
+                    case let .message(message):
+                        MessageRow(chat: chat, message: message, endsRun: true, openLink: openLink, openThread: openThread)
+                            .equatable()
+                    case let .activityRun(run):
+                        StepRunRow(run: run, chat: chat, openLink: openLink, openThread: openThread, revealedMessageId: revealedMessageId, scrollToMessage: scrollToMessage)
+                    case let .voiceCall(card):
+                        VoiceCallCard(chat: chat, card: card, forceOpen: card.messages.contains { $0.id == revealedMessageId }, live: session.streamingStore)
+                    }
+                }
+                .id(row.id)
+            }
+        }
+        .accessibilityIdentifier("chat.earlierTopic")
+    }
+}
+
+/// Between two topics of the one conversation: a quiet time line, like a
+/// day separator. The topic's title stays as the accessibility label.
+struct TopicDividerLine: View {
+    let date: Date
+    let title: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Rectangle().fill(Theme.chatTimestamp.opacity(0.35)).frame(height: 0.5)
+            Text(RelativeStamp.separator(date))
+                .font(Theme.Font.timestamp)
+                .foregroundStyle(Theme.chatTimestamp)
+                .fixedSize()
+            Rectangle().fill(Theme.chatTimestamp.opacity(0.35)).frame(height: 0.5)
+        }
+        .padding(.vertical, 14)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: "\(String(localized: "New topic")) · \(title)"))
+        .accessibilityIdentifier("chat.topicDivider")
     }
 }
