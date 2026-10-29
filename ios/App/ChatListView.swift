@@ -873,6 +873,13 @@ struct ChatListView: View {
     }
 
     private func openAttention(_ entry: AttentionThread) {
+        // one conversation (threads hidden): the gate every way into a
+        // thread passes (Session.openChat): the conversation, brought to
+        // that topic or with the thread beside it, never a switch
+        if !sidebarPrefs.showThreads {
+            session.openChat(threadId: entry.task.threadId)
+            return
+        }
         guard let bot = entry.destinationBot(in: session.state) else { return }
         path.append(Chat.bot(bot))
     }
@@ -1007,12 +1014,14 @@ struct AttentionRow: View {
             .frame(width: markWidth)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: entry.task.displayTitle)
+                // one conversation per bot (threads hidden): the bot's name is
+                // the row, never a thread's title (there are no threads to the person)
+                Text(verbatim: SidebarPrefsModel.shared.showThreads ? entry.task.displayTitle : entry.botName)
                     .font(.system(size: titleSize, weight: .medium))
                     .foregroundStyle(Theme.textPrimary)
                     .lineLimit(titleWraps ? 3 : 1)
                     .fixedSize(horizontal: false, vertical: titleWraps)
-                Text("\(entry.botName) · \(statusText)")
+                Text(SidebarPrefsModel.shared.showThreads ? "\(entry.botName) · \(statusText)" : statusText)
                     .font(.system(size: detailSize))
                     .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
                     .lineLimit(1)

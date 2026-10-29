@@ -14,12 +14,18 @@ public struct SendOptions: Hashable, Sendable {
     /// shared/data-context.ts withPageContext). The server keeps it only for
     /// the sender's own page of that bot.
     public var page: PageContextRef?
+    /// Bots only: whether this phone shows one conversation per bot
+    /// (threads hidden). The server then treats the thread as a segment of
+    /// that stream (`singleStream`, server/single-stream.ts), as the
+    /// desktop's sends do. Nil says nothing (an older caller).
+    public var singleStream: Bool?
 
-    public init(replyToId: String? = nil, busyMode: BusySendMode? = nil, goal: Bool = false, page: PageContextRef? = nil) {
+    public init(replyToId: String? = nil, busyMode: BusySendMode? = nil, goal: Bool = false, page: PageContextRef? = nil, singleStream: Bool? = nil) {
         self.replyToId = replyToId
         self.busyMode = busyMode
         self.goal = goal
         self.page = page
+        self.singleStream = singleStream
     }
 
     /// Adds the fields the destination's route reads, and nothing else:
@@ -33,6 +39,7 @@ public struct SendOptions: Hashable, Sendable {
             if busyMode == .auto { body["routeWhileBusy"] = true }
             else if let busyMode { body["busyMode"] = busyMode.rawValue }
             if let page, page.isDrawable { body["dataContext"] = ["page": page.body] }
+            if let singleStream { body["singleStream"] = singleStream }
         case .room:
             if goal { body["mode"] = "goal" }
         }

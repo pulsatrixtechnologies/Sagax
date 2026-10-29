@@ -52,7 +52,14 @@ struct UpdatesSheet: View {
 
     @ViewBuilder
     private func section(_ title: LocalizedStringKey, tint: Color?, kind: ChatUpdate.Kind) -> some View {
-        let items = updates.filter { $0.kind == kind }
+        // one conversation per bot (threads hidden): one row per bot, the
+        // newest thing of its conversation, never a row per thread
+        let hidden = !SidebarPrefsModel.shared.showThreads
+        var seenChats = Set<String>()
+        let items = updates.filter { $0.kind == kind }.filter { update in
+            guard hidden, case .bot = update.chat else { return true }
+            return seenChats.insert(update.chat.id).inserted
+        }
         if !items.isEmpty {
             let color = kind == .needsYou ? MausPalette.color(items[0].chat.color) : Theme.parity(Color.secondary, Theme.textSecondary)
             Text(title)
@@ -87,10 +94,13 @@ private struct UpdateRow: View {
                     Text(update.chat.name)
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
-                    Text(update.chat.threadTitle)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
-                        .lineLimit(1)
+                    // the thread's title only when threads are a thing on this phone
+                    if SidebarPrefsModel.shared.showThreads {
+                        Text(update.chat.threadTitle)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))
+                            .lineLimit(1)
+                    }
                     Text(update.line.isEmpty ? " " : update.line)
                         .font(.system(size: 14))
                         .foregroundStyle(Theme.parity(Color.secondary, Theme.textSecondary))

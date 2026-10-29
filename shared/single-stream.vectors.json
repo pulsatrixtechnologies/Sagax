@@ -22,7 +22,7 @@
         { "threadId": "hidden", "createdAt": 4, "hidden": true },
         { "threadId": "conf", "createdAt": 5, "confidential": true },
         { "threadId": "job", "createdAt": 6, "openedBy": { "botId": "b", "name": "B", "at": 6 } },
-        { "threadId": "par", "createdAt": 7, "parallelOf": { "threadId": "chat" } }
+        { "threadId": "par", "createdAt": 7, "parallelOf": { "threadId": "chat", "messageId": "m-ask", "at": 7 } }
       ],
       "segments": ["chat"],
       "conversation": "chat",

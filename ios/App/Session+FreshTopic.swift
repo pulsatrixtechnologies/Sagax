@@ -13,9 +13,22 @@ extension Session {
     /// A bot opened from its row (home, sidebar, compose, ⌘1 to 9): the
     /// thread it restores, with a fresh topic drawn over it when due.
     func returning(to chat: Chat) -> Chat {
-        let restored = threadSelection.restoringThread(chat, connectionID: connection?.id)
+        let restored = conversationOrRestored(chat)
         landOnBot(restored)
         return restored
+    }
+
+    /// Where a bot opens: with threads hidden its one conversation
+    /// (SingleStream.home: the server's `mainThreadId`, else the newest
+    /// segment), never a job, a run or an older topic this phone was left
+    /// on; with threads shown the thread last opened here.
+    func conversationOrRestored(_ chat: Chat) -> Chat {
+        guard case let .bot(bot) = chat else { return chat }
+        if !SidebarPrefsModel.shared.showThreads {
+            let stored = state.bot(bot.id) ?? bot
+            if let home = SingleStream.home(of: stored), let projected = stored.projected(forThread: home) { return .bot(projected) }
+        }
+        return threadSelection.restoringThread(chat, connectionID: connection?.id)
     }
 
     /// The threshold, in hours (0 = never).
