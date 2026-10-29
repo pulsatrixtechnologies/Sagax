@@ -1872,7 +1872,7 @@
   "composer.mention.aria": "Mentionner un bot",
   "composer.mention.person": "Personne",
   "composer.mention.personDetail": "Recevra une notification",
-  "composer.placeholder.approval": "Répondez à l'autorisation ci-dessus pour continuer",
+  "composer.placeholder.approval": "Répondez à l'approbation ci-dessus, ou écrivez autre chose : elle reste en attente",
   "composer.placeholder.attaching": "Ajout des fichiers…",
   "composer.placeholder.bot": "Écrire un message à {name}",
   "composer.placeholder.goal": "Décrivez ce que {name} doit terminer ensemble",

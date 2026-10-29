@@ -385,7 +385,6 @@
   "composer.goal.aria": "Gemeinsam fertigstellen",
   "composer.goal.title": "Gemeinsam fertigstellen — das Team arbeitet, bis das Ziel erreicht ist",
   "composer.goal.chip": "Ziel",
-  "composer.placeholder.approval": "Beantworte die Freigabe oben, um fortzufahren",
   "composer.placeholder.attaching": "Dateien werden angehängt…",
   "composer.placeholder.listening": "Höre zu…",
   "composer.placeholder.goal": "Beschreib, was {name} gemeinsam fertigstellen soll",
