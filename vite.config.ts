@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import react, { reactCompilerPreset } from "@vitejs/plugin-react";
@@ -16,6 +16,10 @@ const pkg = JSON.parse(
 ) as { version: string; baseVersion?: string; forkVersion?: string };
 const baseVersion = pkg.baseVersion ?? pkg.version;
 const forkVersion = pkg.forkVersion ?? pkg.version;
+
+function nodeModulesRealpath(): string[] {
+  try { return [realpathSync(fileURLToPath(new URL("./node_modules", import.meta.url)))]; } catch { return []; }
+}
 
 export default defineConfig({
   // React Compiler, opt-in per file or function with the "use memo"
@@ -74,6 +78,11 @@ export default defineConfig({
     },
   },
   server: {
+    // A worktree links node_modules to the main checkout's. Vite serves a
+    // file only from under the root, so the real folder behind the link is
+    // allowed too: otherwise every `?inline` font import (and the component
+    // tests that load one) fails with "Denied ID" in a worktree.
+    fs: { allow: [fileURLToPath(new URL(".", import.meta.url)), ...nodeModulesRealpath()] },
     // IPv4 explicitly — a bare ::1 bind makes localhost a coin-flip for
     // clients that resolve IPv4 first
     host: "127.0.0.1",
