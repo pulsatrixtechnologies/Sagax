@@ -38,6 +38,10 @@ Bot panel > Details > Routines:
 The iPhone and iPad app show the same sections and the same Move to folder
 choices.
 
+A row no longer shows "Runs as" (it stays in the routine's detail). It shows a
+quiet "Paused" for a paused routine and, live, a quiet "Running" (a small dot, no
+button look) that opens Automations on that run. iPhone and iPad do the same.
+
 ## Who may do it
 
 Whoever may change a bot's routines arranges its folders: the bot's owner,

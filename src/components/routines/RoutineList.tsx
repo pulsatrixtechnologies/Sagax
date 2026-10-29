@@ -10,7 +10,6 @@ import { BotAvatar } from "@/components/Avatar";
 import { PILL_INFO } from "@/lib/status-tones";
 import { Switch } from "../SettingsPrimitives";
 import { RoutineOwnerBadge } from "./RoutineScopeBar";
-import { personLabel } from "@/lib/human-label";
 import { GROUPED_CARD, GROUPED_ROW } from "@/lib/grouped-card";
 import { cn } from "@/lib/cn";
 
@@ -33,7 +32,7 @@ const UPCOMING_TONES = {
 } as const;
 
 
-export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, error, onOpen, onToggle, grouped = false, toggle = true, variant = "list", emptyText, onRowMenu, onRowDragStart, onRowStep, label }: {
+export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, error, onOpen, onToggle, grouped = false, toggle = true, variant = "list", emptyText, onRowMenu, onRowDragStart, onRowStep, onOpenRunning, label }: {
   routines: Routine[];
   /** Slice 6: the signed-in person on an organization server. */
   viewerPrincipalId?: string | null;
@@ -62,6 +61,9 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
    * and the panel's drag strip made unreliable). Never from the switch or the
    * row's own menu button. */
   onRowDragStart?: (routine: Routine, event: ReactPointerEvent<HTMLElement>) => void;
+  /** The quiet "Running" word on a row whose routine runs right now opens that
+   * run in Automations (2026-10-28). Without it the word is not shown. */
+  onOpenRunning?: (routine: Routine, run: RoutineRun) => void;
   /** Alt+Up / Alt+Down on a row: to the previous or next folder. */
   onRowStep?: (routine: Routine, direction: -1 | 1) => void;
   /** The list's accessible name (a folder's name). */
@@ -90,12 +92,13 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
           // Someone else's routine (a wider scope): its owner, read-only
           // unless the server says this person may edit it.
           const otherOwner = routine.owner?.id && routine.owner.id.toLowerCase() !== viewerPrincipalId?.toLowerCase() ? routine.owner : null;
-          // Owner and Runs as are the same person on most cards. Keep Runs as
-          // only when the job acts as someone other than the owner.
-          const runAsOther = routine.runAs && routine.runAs.principalId.toLowerCase() !== routine.owner?.id?.toLowerCase() ? routine.runAs : null;
           const readOnly = routine.canEdit === false;
           // 2026-10-26: paused by itself after failures in a row, until turned back on.
           const autoPaused = !routine.enabled ? routine.autoPaused : undefined;
+          // 2026-10-28: the row says only "Paused" or "Running" (live), in quiet
+          // text; "Runs as" lives in the routine's detail.
+          const runningRun = onOpenRunning && !upcoming ? runs.find((run) => run.routineId === routine.id && run.status === "running") : undefined;
+          const showPaused = !upcoming && !routine.enabled && !autoPaused && !runningRun && routineScheduleState(routine) === t("routines.pausedSchedule");
           // The line under the name is always when the routine runs, even
           // paused: with a switch, the switch says it is off (the state stays
           // in the tooltip). A finished one-shot keeps its word.
@@ -106,7 +109,7 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
             <div key={routine.id} data-routine-row data-routine-id={routine.id}
               onPointerDown={onRowDragStart && !readOnly ? (event) => {
                 if (event.pointerType === "touch" || event.button !== 0) return;
-                if ((event.target as HTMLElement).closest?.("[role=switch],[data-routine-row-menu]")) return;
+                if ((event.target as HTMLElement).closest?.("[role=switch],[data-routine-row-menu],[data-routine-running]")) return;
                 onRowDragStart(routine, event);
               } : undefined}
               onContextMenu={onRowMenu && !readOnly ? (event) => { event.preventDefault(); openMenu(routine, event.currentTarget, { x: event.clientX, y: event.clientY }); } : undefined}
@@ -132,10 +135,10 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
                     <span className="max-w-full shrink-0 truncate">{when}</span>
                   </span>
                 ) : <span data-routine-when={whenLine} title={whenTitle} className="block truncate text-[12px] leading-4 text-ink-secondary">{whenLine}</span>}
-                {(runAsOther || routine.suspended || otherOwner || autoPaused) && (
+                {(showPaused || routine.suspended || otherOwner || autoPaused) && (
                   <span className="mt-0.5 flex flex-wrap gap-1.5">
                     {otherOwner && <RoutineOwnerBadge owner={otherOwner} size={14} className="max-w-full rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary" />}
-                    {runAsOther && <span data-routine-run-as className="truncate rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary">{t("routines.runAs", { name: personLabel(runAsOther.name, runAsOther.principalId) })}</span>}
+                    {showPaused && <span data-routine-paused className="truncate text-[11.5px] leading-[18px] text-ink-tertiary">{t("routines.pausedSchedule")}</span>}
                     {autoPaused && <span data-routine-auto-paused={autoPaused.failures} className="truncate rounded-md bg-warning/15 px-1.5 text-[11.5px] leading-[18px] text-warning">{routineAutoPausedText(autoPaused.failures)}</span>}
                     {routine.suspended && <span data-routine-suspended={routine.suspended.reason} className={`truncate rounded-md ${PILL_INFO} px-1.5 text-[11.5px] leading-[18px]`}>{routineSuspendedText(routine.suspended.reason)}</span>}
                   </span>
@@ -143,6 +146,10 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
                 {/* 2026-10-26: runs only when something changes (shared/routine-watch.ts). */}
                 {routine.precheck?.kind === "watch" && <span className="mt-0.5 flex"><span data-routine-watch className="truncate rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary">{t("routineWatch.badge")}</span></span>}
               </button>
+              {runningRun && <button type="button" data-routine-running aria-label={`${t("routines.status.running")}: ${routine.name}`} onClick={() => onOpenRunning!(routine, runningRun)}
+                className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-sm bg-transparent p-0 text-[12px] leading-4 text-ink-secondary hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent/60">
+                <span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-success motion-reduce:animate-none" />{t("routines.status.running")}
+              </button>}
               {onRowMenu && !readOnly && <button type="button" data-routine-row-menu aria-label={t("routineFolders.rowMenu", { name: routine.name })} title={t("routineFolders.rowMenu", { name: routine.name })}
                 onClick={(event) => openMenu(routine, event.currentTarget)}
                 className="hidden size-7 shrink-0 items-center justify-center rounded-md text-ink-tertiary hover:bg-raised hover:text-ink focus-visible:flex focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60 group-hover/routine:flex touch:flex"><MoreHorizontal size={15} /></button>}

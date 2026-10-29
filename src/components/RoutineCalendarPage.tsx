@@ -1936,6 +1936,12 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
     setSelected({ kind: "routine", id: run.id, at: run.scheduledFor, durationMinutes: run.durationMinutes ?? 30, routine: scopedRoutines.find((routine) => routine.id === run.routineId) ?? null, run });
     if (["failed", "missed"].includes(run.status) && !run.seenAt && !run.redacted) dispatch({ type: "markRoutineRunSeen", runId: run.id });
   };
+  // 2026-10-28: "Running" on a bot panel row lands on that run, open.
+  useEffect(() => {
+    const runId = state.routinesFocus?.runId;
+    const run = runId ? scopedRuns.find((candidate) => candidate.id === runId) : undefined;
+    if (run) openRun(run);
+  }, [state.routinesFocus, scopedRuns.length > 0]); // eslint-disable-line react-hooks/exhaustive-deps
   const macInset = capabilities.windowChrome === "mac-inset";
   const windowDragStyle = macInset
     ? ({ WebkitAppRegion: "drag" } as CSSProperties)

@@ -272,6 +272,8 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
     return () => clearTimeout(timer);
   }, [dragging, dropTarget, collapsed]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // "Running" on a row: Automations, on that run, with its live process and logs.
+  const openRunning = (routine: Routine, run: RoutineRun) => dispatch({ type: "showRoutines", section: "logs", botId: routine.botId, routineId: routine.id, runStatus: "running", runId: run.id });
   const canDrag = editable && supported && folders.length > 0;
   const list = (items: Routine[], label?: string) => <RoutineList
     routines={items}
@@ -284,6 +286,7 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
     onRowMenu={editable ? (routine, at, trigger) => setMenu({ kind: "row", routine, x: at.x, y: at.y, trigger }) : undefined}
     onRowDragStart={canDrag ? startDrag : undefined}
     onRowStep={canDrag ? step : undefined}
+    onOpenRunning={openRunning}
   />;
 
   const loose = groups[0]!;
@@ -325,6 +328,7 @@ export function RoutineFolderList({ bot, routines, runs, grouped, loading, error
           onRowMenu={editable ? (routine, at, trigger) => setMenu({ kind: "row", routine, x: at.x, y: at.y, trigger }) : undefined}
           onRowDragStart={canDrag ? startDrag : undefined}
           onRowStep={canDrag ? step : undefined}
+          onOpenRunning={openRunning}
         />
       </div>
     ) : dragging && (

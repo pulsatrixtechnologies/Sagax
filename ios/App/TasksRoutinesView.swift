@@ -423,7 +423,13 @@ struct TasksRoutinesView: View {
         let canToggle = routine.mayEdit && routine.canToggle()
         return RoutineRow(
             routine: routine, bot: session.state.bot(routine.botId),
-            unseenFailure: seenAllowed && runs.contains { $0.routineId == routine.id && $0.isUnseenProblem }
+            unseenFailure: seenAllowed && runs.contains { $0.routineId == routine.id && $0.isUnseenProblem },
+            running: runs.contains { $0.routineId == routine.id && $0.status == "running" },
+            onOpenRunning: {
+                routineFilter = routine.id
+                statusFilter = .status("running")
+                section = .logs
+            }
         )
         .contentShape(Rectangle())
         .onTapGesture { if routine.mayEdit { editor = .edit(routine) } else { showLogs(of: routine) } }
@@ -780,6 +786,9 @@ private struct RoutineRow: View {
     let routine: Routine
     let bot: Bot?
     var unseenFailure = false
+    /// 2026-10-28: a run of this routine is in flight; the quiet "Running" word opens it in the run logs.
+    var running = false
+    var onOpenRunning: () -> Void = {}
 
     var body: some View {
         let canToggle = routine.canToggle()
@@ -800,13 +809,7 @@ private struct RoutineRow: View {
                         .foregroundStyle(Theme.textSecondary)
                         .accessibilityIdentifier("routines-row-owner.\(routine.name)")
                 }
-                // #149: an organization routine acts in its owner's name
-                if let runAs = routine.runAs {
-                    Text(String(localized: "Runs as \(HumanID.readable(runAs.name, runAs.principalId, or: String(localized: "Unknown person")))"))
-                        .font(.caption2)
-                        .foregroundStyle(Theme.textSecondary)
-                        .accessibilityIdentifier("routines-row-run-as.\(routine.name)")
-                }
+                // 2026-10-28: the row no longer says "Runs as"; it stays in the editor
                 // #1202: runs only when something changes (shared/routine-watch.ts)
                 if routine.runsOnChange {
                     Text("Runs on change")
@@ -832,7 +835,22 @@ private struct RoutineRow: View {
                     .accessibilityLabel(Text("Unseen failure"))
                     .accessibilityIdentifier("routines-row-unseen.\(routine.name)")
             }
-            if !routine.enabled {
+            if running {
+                // quiet text, not a bordered button: opens the run in the logs
+                Button(action: onOpenRunning) {
+                    HStack(spacing: 5) {
+                        Circle().fill(Theme.success).frame(width: 6, height: 6)
+                        Text("Running").font(.caption).foregroundStyle(Theme.textSecondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Running"))
+                .accessibilityIdentifier("routines-row-running.\(routine.name)")
+            } else if !routine.enabled {
+                if !RoutineAutoPause.isAutoPaused(routine) {
+                    Text("Paused").font(.caption).foregroundStyle(Theme.textSecondary)
+                        .accessibilityIdentifier("routines-row-paused.\(routine.name)")
+                }
                 Image(systemName: canToggle ? "pause.circle.fill" : "checkmark.circle.fill")
                     .foregroundStyle(canToggle ? Theme.accentText : Theme.textSecondary)
                     .accessibilityLabel(canToggle ? "Paused" : "Completed")

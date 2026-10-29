@@ -60,7 +60,7 @@ try {
       page.on("pageerror", (error) => { errors.push(String(error)); console.error(String(error)); });
       page.on("console", (message) => { if (message.type() === "error") console.error(message.text()); });
       const old = state.startsWith("old-");
-      await page.goto(`${base}?skin=${skin}&lang=${lang}&state=${old ? "prefixed" : state === "menu" || state === "drag" ? "filed" : state}${old ? "&server=0.8.7" : ""}`, { waitUntil: "networkidle" });
+      await page.goto(`${base}?skin=${skin}&lang=${lang}&state=${old ? "prefixed" : state === "menu" || state === "drag" || state === "running" ? "filed" : state}${old ? "&server=0.8.7" : ""}${state === "running" ? "&live=1" : ""}`, { waitUntil: "networkidle" });
       const target = page.locator("[data-gallery-card]");
       await target.waitFor();
       await page.waitForTimeout(300);

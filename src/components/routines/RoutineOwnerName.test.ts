@@ -63,9 +63,9 @@ describe("the routine list", () => {
     runAs: { principalId: BOB, name: "Bob" },
   } as unknown as Routine;
 
-  it("says who a routine runs as, with no delegation banner for the person it runs as", () => {
+  it("no longer says who it runs as in the row (the detail does), no delegation banner", () => {
     const markup = renderToStaticMarkup(createElement(RoutineList, { routines: [routine], runs: [], onOpen: () => {}, viewerPrincipalId: BOB }));
-    expect(markup).toContain("Runs as Bob");
+    expect(markup).not.toContain("Runs as");
     expect(markup).toContain("Every hour at :00 · UTC");
     expect(markup).not.toContain("data-routine-delegation-banner");
     expect(markup).not.toMatch(/allow them to act in your name|Allow my routines/);

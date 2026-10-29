@@ -170,10 +170,10 @@ describe("someone else's routine in the list", () => {
     expect(markup).not.toContain("Runs as");
   });
 
-  it("someone else's routine that runs as a third person: owner chip and Runs as", () => {
+  it("someone else's routine that runs as a third person: owner chip, no Runs as in the row (2026-10-28)", () => {
     const markup = list({ ...base, owner: { id: "pr_bob", name: "Bob" }, runAs: { principalId: "pr_ada", name: "Ada" } });
     expect(markup).toContain('data-routine-owner="pr_bob"');
-    expect(markup).toContain("data-routine-run-as");
-    expect(markup).toContain("Runs as Ada");
+    expect(markup).not.toContain("data-routine-run-as");
+    expect(markup).not.toContain("Runs as");
   });
 });
