@@ -505,6 +505,22 @@ export function engineNameForViewer(name: string, driverName: string, admin: boo
   return `${driverName} (other account)`;
 }
 
+/** #1533 (2026-10-28): the name a member reads for an engine that runs
+ * only on the organization's API key (Claude, Grok, OpenAI...): the
+ * provider and who pays, "Claude (organization key)", in their language.
+ * An admin reads the name as it was saved. Pure. */
+export function orgKeyEngineName(provider: string, language: string): string {
+  return language.trim().toLowerCase().startsWith("fr") ? `${provider} (clé de l'organisation)` : `${provider} (organization key)`;
+}
+
+/** #1533: the provider an API-key engine is named after: Claude, Grok, else
+ * its own saved name without "(API key)" (OpenAI, OpenRouter). Pure. */
+export function keyEngineProvider(driver: string, savedName: string): string {
+  if (driver === "claudeAgent") return "Claude";
+  if (driver === "grok") return "Grok";
+  return savedName.replace(/\s*\((?:api key|clé api)\)\s*$/i, "").trim() || savedName;
+}
+
 /** #1533: words a subscription engine uses when its own sign-in was refused
  * and could not be refreshed (Claude Code: "Failed to authenticate: OAuth
  * session expired and could not be refreshed", `authentication_failed`). */

@@ -118,7 +118,7 @@ describe("EngineConnect", () => {
   });
 
   it("organization key and engines a key cannot serve", () => {
-    expect(render(engine({ orgKey: true, myTurns: "org-key" }))).toContain("Pays with: the organization key");
+    expect(render(engine({ orgKey: true, myTurns: "org-key" }))).toContain("Pays with: the organization<");
     const custom = render(engine({ instanceId: "ollama", driver: "openaiCompatible", displayName: "Ollama", subscription: { supported: false, signedIn: false } }));
     expect(custom).toContain("Not connected");
     expect(custom).not.toContain("data-engine-keys-link");

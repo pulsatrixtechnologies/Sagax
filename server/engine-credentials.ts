@@ -175,7 +175,9 @@ export interface EngineCredentialInput {
   speaker: TurnSpeaker;
   peerOwnerPrincipalId?: string;
   owner: { principalId: string; sub?: string; disabled?: boolean };
-  instance: { instanceId: string; driver: string; installed: boolean };
+  /** `keyOnly`: an API-key engine (`access: "api"`), which runs on a key
+   * only, never on a person's subscription (#1533). */
+  instance: { instanceId: string; driver: string; installed: boolean; keyOnly?: boolean };
   /** A person other than the owner, by principal id (undefined: unknown). */
   person?: (principalId: string) => PersonFacts | undefined;
   /** The person signed in to this driver with their own subscription (D10). */
@@ -241,7 +243,7 @@ export function resolveEngineAccess(input: EngineCredentialInput, skip: { key?: 
   // routines included) does not fall back on the organization either (S4-14).
   if (facts?.disabled) return { ok: false, reason: "no_access", cause: "payer_disabled", ...who };
   const driver = input.instance.driver;
-  if (payer.principalId && subscriptionDriver(driver) && input.subscriptionSignedIn(payer.principalId, driver)) {
+  if (payer.principalId && !input.instance.keyOnly && subscriptionDriver(driver) && input.subscriptionSignedIn(payer.principalId, driver)) {
     return { ok: true, via: "subscription", ...who };
   }
   const provider = facts?.sub ? providersOfDriver(driver).find((candidate) => input.hasKey(facts.sub!, candidate)) : undefined;

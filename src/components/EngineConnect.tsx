@@ -43,7 +43,7 @@ export function paysWithText(
     if (engine.subscription?.signedIn && engine.subscription.expired) return t("engineConnect.signInExpired");
     if (engine.myTurns === "subscription") return t("engineConnect.paysWith.subscription");
     if (engine.myTurns === "key") return t("engineConnect.paysWith.key");
-    if (engine.myTurns === "org-key") return t("engineConnect.paysWith.orgKey");
+    if (engine.myTurns === "org-key") return t("engineConnect.paysWith.organization");
   }
   return t("engineConnect.notConnected");
 }

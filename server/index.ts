@@ -1342,7 +1342,7 @@ import { attachedFilesInText, attachmentChunks, attachmentIsTheirs, stageTurnAtt
 import { OFFICE_IMAGE_MAX_COUNT, OFFICE_IMAGES_MAX_TOTAL_BYTES, officeKind, officeMediaFolder, officeNote, readOfficeMedia } from "./office-media.ts";
 import { archiveInlineTexts, archiveNote, archiveSummary, extractedFolderName, localExtractedPath, prepareArchiveUpload, sandboxArchiveArgv, storedArchiveManifest } from "./attachment-archives.ts";
 import { BOT_WORKPLACE_PREFERENCE, DESKTOP_BRIDGE_MCP_NAME, parseBotWorkplace, type BotWorkplace } from "../shared/bot-workplace.ts";
-import { accessCardAudience, accessCardForViewer, engineNameForViewer, signInExpiredCard, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type MemberHostToolPlace, type TurnSpeaker } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, engineNameForViewer, keyEngineProvider, orgKeyEngineName, signInExpiredCard, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, resolveTurnSpeaker, routineAccessNotifications, routineLineage, speakerPrincipal, type EngineAccessRefusal, type MemberHostToolPlace, type TurnSpeaker } from "./engine-access.ts";
 import {
   assignBotHost,
   channelTurnGate,
@@ -6492,7 +6492,7 @@ function personRunsEngine(principalId: string | null | undefined, instance: Sele
     identity: IDENTITY.kind,
     speaker: { origin: "person", principalId: id },
     owner: { principalId: id, ...orgPersonFacts(principals.byId(id)) },
-    instance: { instanceId: instance.instanceId, driver: instance.driverKind, installed: engineInstalled(instance.instanceId) },
+    instance: { instanceId: instance.instanceId, driver: instance.driverKind, installed: engineInstalled(instance.instanceId), keyOnly: keyOnlyInstance(instance.instanceId) },
     subscriptionSignedIn: (pid, driver) => engineLogins?.signedIn(pid, driver) ?? false,
     hasKey: (sub, provider) => perspicaxDirectory?.providerKeys(sub).includes(provider) ?? false,
     keyBacked: driverKeyBacked(cfg, instance.driverKind, instance.instanceId),
@@ -29086,6 +29086,21 @@ function orgJoinsRunningTurn(bot: { ownerUserId?: unknown }, threadId: string, s
   if (routineLineage(speaker) !== turnRoutineLineage.has(threadId)) return false;
   return Boolean(running) && running === joining;
 }
+/** #1533: an API-key engine (`access: "api"`: Claude (API key), xAI,
+ * OpenAI, OpenRouter): it runs on a key only, never on a subscription. */
+function keyOnlyInstance(instanceId: string): boolean {
+  return providerConfigs()[instanceId]?.access === "api";
+}
+/** #1533 (2026-10-28): the name a member reads for an engine the
+ * organization's key runs: "Claude (organization key)" in their language.
+ * Any other engine, or an admin, keeps the name engineNameForViewer gives. */
+function engineNameForPerson(instanceId: string, name: string, driver: string, person: string | null | undefined): string {
+  const admin = person ? personIsOrgAdmin(person) : false;
+  if (IDENTITY.kind === "perspicax" && !admin && keyOnlyInstance(instanceId) && driverKeyBacked(cfg, driver, instanceId)) {
+    return orgKeyEngineName(keyEngineProvider(driver, providerConfigs()[instanceId]?.displayName ?? name), languageOfPerson(person));
+  }
+  return engineNameForViewer(name, driverDisplayName(driver), admin);
+}
 /** Slice 4 (D8, revised 2026-10-01): the facts engine-credentials.ts
  * decides a turn's access from. The payer is the person who speaks, or the
  * bot's owner for its routines. */
@@ -29097,7 +29112,7 @@ function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKi
     speaker,
     peerOwnerPrincipalId: peerOwnerPrincipal(speaker),
     owner: { principalId: ownerId, ...orgPersonFacts(owner) },
-    instance: { instanceId: instance.instanceId, driver: instance.driverKind, installed: engineInstalled(instance.instanceId) },
+    instance: { instanceId: instance.instanceId, driver: instance.driverKind, installed: engineInstalled(instance.instanceId), keyOnly: keyOnlyInstance(instance.instanceId) },
     person: (principalId) => {
       const person = principals.byId(principalId);
       return person ? orgPersonFacts(person) : undefined;
@@ -29994,11 +30009,12 @@ function personalEngine(instanceId: string, person: string): boolean {
  * client-scope session): what Model providers and the model picker draw,
  * never the server's own account, sign-in, CLI paths or install details.
  * A member's own access to it is GET /api/me/engines. */
-function memberInstanceView(instance: Awaited<ReturnType<typeof describeInstances>>[number]) {
+function memberInstanceView(instance: Awaited<ReturnType<typeof describeInstances>>[number], person?: string | null) {
   const { cli: _cli, cliDefault: _cliDefault, cliCandidates: _cliCandidates, install: _install, authentication: _authentication, claudeAccount: _claudeAccount, freeUpSpace: _freeUpSpace, managed: _managed, ...rest } = instance as typeof instance & Record<string, unknown>;
   const { account: _account, authenticated: _authenticated, chatgptPlan: _chatgptPlan, authenticationUnavailableReason: _reason, update: _update, ...snapshot } = (instance.snapshot ?? {}) as Record<string, unknown>;
   // #1533: never an address as an engine's name for a member
-  const displayName = typeof rest.displayName === "string" ? engineNameForViewer(rest.displayName, driverDisplayName(instance.driverKind), false) : rest.displayName;
+  // #1533 (2026-10-28): an engine the organization's key runs says so
+  const displayName = typeof rest.displayName === "string" ? engineNameForPerson(instance.instanceId, rest.displayName, instance.driverKind, person) : rest.displayName;
   return { ...rest, displayName, snapshot };
 }
 
@@ -36524,7 +36540,8 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         // account or key runs it, never the organization's key
         const orgNotAllowed = !consoleEngineAllowed(entry.instanceId);
         const installed = engineInstalled(entry.instanceId);
-        const supported = isLoginDriver(driver);
+        // #1533: an API-key engine has no sign-in of its own; the person's subscription never runs it
+        const supported = isLoginDriver(driver) && !keyOnlyInstance(entry.instanceId);
         const signedIn = supported && logins.signedIn(principalId, driver);
         // #1533: the provider refused that sign-in since (the card says Reconnect)
         const expired = signedIn && logins.expired(principalId, driver);
@@ -36543,7 +36560,7 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         return {
           instanceId: entry.instanceId,
           driver,
-          displayName: engineNameForViewer(live ? engineDisplayName(live) : entry.instanceId, driverDisplayName(driver), personIsOrgAdmin(principalId)),
+          displayName: engineNameForPerson(entry.instanceId, live ? engineDisplayName(live) : entry.instanceId, driver, principalId),
           installed,
           // "Not available on this server" rather than "Not installed": the
           // image deliberately does not carry it (engines.lock.json).
@@ -38367,7 +38384,8 @@ function personEngineAccess(principalId: string): Array<{ id: string; via: Engin
   const held = sub ? perspicaxDirectory?.providerKeys(sub) ?? [] : [];
   return registry.entries().map((entry) => {
     const driver = entry.shadow?.driverKind ?? entry.live?.driverKind ?? "";
-    const signedIn = Boolean(engineLogins && isLoginDriver(driver) && engineLogins.signedIn(principalId, driver));
+    // #1533: an API-key engine never runs on a subscription
+    const signedIn = Boolean(engineLogins && isLoginDriver(driver) && !keyOnlyInstance(entry.instanceId) && engineLogins.signedIn(principalId, driver));
     const key = providersOfDriver(driver).some((provider) => held.includes(provider));
     const orgKey = driverKeyBacked(cfg, driver, entry.instanceId);
     const off = !engineInstalled(entry.instanceId) || person?.disabledAt !== undefined || Boolean(person?.consoleDisabled);
@@ -51527,7 +51545,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // Windows never pushes PATH changes into a live process, so without
       // this the answer is frozen at boot and "check again" is a no-op.
       resetPathCache();
-      const instances = await instancesForViewer(auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null : null);
+      const viewer = auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null : null;
+      const instances = await instancesForViewer(viewer);
       if (auth.scopes.includes("admin")) return json(res, 200, { instances });
       // 2026-10-09: a person whose profile manages the engines reads them
       // as an admin does (they install, sign in and update them).
@@ -51536,7 +51555,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // session (a paired phone or tablet) reads the catalogue its model
       // picker needs, not how the host is set up (clientInstanceView).
       const view = IDENTITY.kind === "perspicax" ? memberInstanceView : clientInstanceView;
-      return json(res, 200, { instances: instances.map(view) });
+      return json(res, 200, { instances: instances.map((instance) => view === memberInstanceView ? memberInstanceView(instance, viewer) : view(instance)) });
     }
     const companyMutation = /^\/api\/instances\/(company\.[\w.-]+)(?:\/|$)/.exec(path);
     if (hostedModels && path.startsWith("/api/instances/") && method !== "GET") return json(res, 403, { error: HOSTED_PROVIDER_SETTINGS_ERROR });

@@ -2891,7 +2891,7 @@
   "engineConnect.notConnectedHint": "{name} is not connected. Connect it to use it.",
   "engineConnect.notConnected": "Not connected",
   "engineConnect.paysWith.key": "Pays with: your key in Perspicax",
-  "engineConnect.paysWith.orgKey": "Pays with: the organization key",
+  "engineConnect.paysWith.organization": "Pays with: the organization",
   "engineConnect.paysWith.subscription": "Pays with: your subscription",
   "engineSetup.antigravitySlow": "Starting Antigravity can take up to 90 seconds. Your browser will open when it’s ready.",
   "engineSetup.apiKey.change": "Change key",

@@ -287,7 +287,8 @@ struct MyEnginesSection: View {
         switch engine.myTurns {
         case "subscription": return String(localized: "Your turns use your subscription.")
         case "key": return String(localized: "Your turns use your own key.")
-        case "org-key": return String(localized: "Your turns use your organization's key.")
+        // #1533: an engine the organization's key runs says who pays, as on the desktop
+        case "org-key": return String(localized: "Pays with: the organization")
         default:
             if engine.orgNotAllowed == true { return String(localized: "Outside your organization's list: only your own subscription or key runs it.") }
             if engine.orgKeyNotGiven == true { return String(localized: "Not given to you: connect your own account or add your key.") }

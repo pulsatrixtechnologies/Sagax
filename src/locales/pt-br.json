@@ -1187,7 +1187,6 @@
   "engineConnect.disconnect": "Desconectar",
   "engineConnect.notConnected": "Não conectado",
   "engineConnect.paysWith.key": "Paga com: sua chave no Perspicax",
-  "engineConnect.paysWith.orgKey": "Paga com: a chave da organização",
   "engineConnect.paysWith.subscription": "Paga com: sua assinatura",
   "engineSetup.antigravitySlow": "Iniciar o Antigravity pode levar até 90 segundos. Seu navegador abre quando estiver pronto.",
   "engineSetup.claude.codeLabel": "Cole o código daquela página",
