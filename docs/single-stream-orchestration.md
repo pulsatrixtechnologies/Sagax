@@ -276,10 +276,11 @@ Release note text:
   task's own thread (`useParallelCards`), so the person never leaves the
   conversation. Its answer is posted in the conversation, as before. With
   threads shown, every thread stays listed and reachable.
-- Work sent over the agent API (`send_prompt`, `sagax_send`) lands in the
-  bot's single chat with that person, folded into one exchange chip
-  (`aiClient`, `peerAsk`; `src/lib/bot-exchange.ts`). There is no hidden
-  AI-client conversation any more; old ones are shown again on start.
+- Work a bot sends over the agent API (`send_prompt`) lands in the bot's
+  single chat with that person, folded into one exchange chip (`peerAsk`;
+  `src/lib/bot-exchange.ts`). A person's AI client is another agent
+  (2026-10-29): its sends stay out of the stream, in its own conversation
+  with the bot, like a peer's (`shared/agent-conversation.ts`).
 
 ## Tests
 

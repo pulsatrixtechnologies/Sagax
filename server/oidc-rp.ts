@@ -521,6 +521,11 @@ export interface ConsoleAssertion {
    * of 2026-10-21, and Perspicax Voice too; the route compares it). Absent
    * otherwise. */
   bodySha256?: string;
+  /** `client_name` (2026-10-29): the name of the AI client or connection
+   * that made this call (`perspicax-mcp` only), signed by Perspicax. Sagax
+   * names the outside agent's conversation with a bot after it
+   * (shared/agent-conversation.ts). Absent from an older Perspicax. */
+  clientName?: string;
   /** `grant`: a narrow capability bound to one request, for a person below
    * a route's role who reaches something of their own. `own-computer`
    * (2026-10-26): the person's own server environment, on the routes that
@@ -622,9 +627,11 @@ export async function verifyConsoleAssertion(input: VerifyConsoleAssertionInput)
     throw new OidcError(`${kind}_body`, "The assertion's body digest is not a SHA-256.");
   }
   const bodySha256 = typeof claims.body_sha256 === "string" ? claims.body_sha256 : undefined;
+  // a display name only: a wrong shape is dropped, never a refusal
+  const clientName = stringClaim(claims.client_name, 200);
   const grant = claims.grant === undefined ? undefined : parseGrantClaim(claims.grant);
   if (grant === null) throw new OidcError(`${kind}_grant`, "The assertion's grant is not one this server knows.");
-  return { iss: input.issuer, sub, jti, iat, exp, serverId, role: role as ConsoleAssertion["role"], teams, ...(locale ? { locale } : {}), actor: actor as ConsoleAssertionActor, ...(bodySha256 ? { bodySha256 } : {}), ...(grant ? { grant } : {}) };
+  return { iss: input.issuer, sub, jti, iat, exp, serverId, role: role as ConsoleAssertion["role"], teams, ...(locale ? { locale } : {}), actor: actor as ConsoleAssertionActor, ...(bodySha256 ? { bodySha256 } : {}), ...(clientName ? { clientName } : {}), ...(grant ? { grant } : {}) };
 }
 
 /** An issuer URL the server may talk to: https, or http on this machine

@@ -9,7 +9,9 @@
 // gate file appears for a `[gate:NAME]` prompt). Atlas is Alice's bot, with a
 // routine.
 //
-//   M1  a member lists their bots and sends with a wait: the reply comes back
+//   M1  a member lists their bots and sends with a wait: the reply comes back;
+//       2026-10-29: in the AI client's own conversation with the bot (named
+//       after the signed client_name), never the person's chat, and silent
 //   M2  a long job answers pending with the thread id, then reads back
 //   M3  permission refusals name the key; a bot out of reach stays out
 //   M4  an admin runs a routine, reads its run, nudges a person
@@ -89,11 +91,13 @@ async function openStream(auth: Auth): Promise<{ text: () => string; close: () =
     req.end();
   });
 }
-/** The threads a stream's notifications named. */
-const notifiedThreads = (text: string): string[] => text.split("\n")
+/** The notifications a stream received. */
+const notifications = (text: string): Array<{ kind?: string; threadId?: string }> => text.split("\n")
   .filter((line) => line.startsWith("data: "))
-  .flatMap((line) => { try { return [JSON.parse(line.slice(6)) as { kind?: string; notification?: { threadId?: string } }]; } catch { return []; } })
-  .flatMap((frame) => (frame.kind === "notify" && frame.notification?.threadId ? [frame.notification.threadId] : []));
+  .flatMap((line) => { try { return [JSON.parse(line.slice(6)) as { kind?: string; notification?: { kind?: string; threadId?: string } }]; } catch { return []; } })
+  .flatMap((frame) => (frame.kind === "notify" && frame.notification ? [frame.notification] : []));
+/** The threads a stream's notifications named. */
+const notifiedThreads = (text: string): string[] => notifications(text).flatMap((note) => (note.threadId ? [note.threadId] : []));
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function signIn(user: FakeOidcUser): Promise<Auth> {
@@ -118,11 +122,11 @@ async function waitFor<T>(read: () => Promise<T | null | undefined | false>, ms 
 }
 
 /** One AI client call for this person, as Perspicax signs it. */
-const member = (method: string, sub: string, user: FakeOidcUser, body?: unknown, actor = "perspicax-mcp") =>
+const member = (method: string, sub: string, user: FakeOidcUser, body?: unknown, actor = "perspicax-mcp", client?: string) =>
   api(method, `/api/org/member/${sub}`, {
     bearer: idp.consoleAssertion({
       sub: user.sub, aud: BASE, role: user.role === "admin" ? "admin" : "employee", teams: user.teams ?? [],
-      claims: (c) => ({ ...c, act: { sub: actor } }),
+      claims: (c) => ({ ...c, act: { sub: actor }, ...(client ? { client_name: client } : {}) }),
     }),
   }, body);
 
@@ -239,28 +243,34 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
     expect((listed.body.bots as Array<any>).some((bot) => bot.id === bots.atlas!.id)).toBe(false);
 
     const events = await openStream(bob);
-    const sent = await member("POST", `bots/${bots.orion!.id}/messages`, BOB, { text: "count the open tickets", wait: 30 });
+    const sent = await member("POST", `bots/${bots.orion!.id}/messages`, BOB, { text: "count the open tickets", wait: 30 }, "perspicax-mcp", "Voice assistant (phone)");
     expect(sent.status, sent.text).toBe(200);
     expect(sent.body).toMatchObject({ botId: bots.orion!.id, status: "done", pending: false, reply: expect.stringContaining("count the open tickets") });
     expect(sent.body.threadId).toMatch(/\w/);
-    // the message is Bob's, in Bob's own conversation
+    // the message is Bob's (the turn runs as him), stamped as the AI client's
     const thread = await api("GET", `/api/threads/${sent.body.threadId}/messages?limit=50`, bob);
     const mine = (thread.body.messages as Array<any>).find((m) => m.id === sent.body.messageId);
     expect(mine).toMatchObject({ role: "user", text: "count the open tickets" });
-    // 2026-10-26 (#1170, #1207): an AI client no longer works in a hidden
-    // conversation: the message lands in the person's single chat with the bot
-    // (the one the bot list shows), stamped as the AI client's, and the
-    // client's next send continues it.
     expect(mine.aiClient).toBe(true);
+    // 2026-10-29: an AI client is another agent: the exchange is its own
+    // conversation with the bot ("Voice assistant (phone) ⇆ Orion"), never Bob's chat,
+    // and the client's next send continues it.
     const after = await api("GET", "/api/bots?messages=0", bob);
     const orion2 = (after.body.bots as Array<any>).find((bot) => bot.id === bots.orion!.id);
-    expect(orion2.threadId).toBe(sent.body.threadId);
-    expect((orion2.tasks as Array<any>).some((task) => task.threadId === sent.body.threadId)).toBe(true);
-    const again = await member("POST", `bots/${bots.orion!.id}/messages`, BOB, { text: "and the closed ones", wait: 30 });
+    expect(orion2.threadId).not.toBe(sent.body.threadId);
+    expect(orion2.botConversations, JSON.stringify(orion2.botConversations)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ threadId: sent.body.threadId, otherName: "Voice assistant (phone)", otherBotId: "agent:voice-assistant-phone", kind: "agent", direction: "in" }),
+    ]));
+    const again = await member("POST", `bots/${bots.orion!.id}/messages`, BOB, { text: "and the closed ones", wait: 30 }, "perspicax-mcp", "Voice assistant (phone)");
     expect(again.status, again.text).toBe(200);
     expect(again.body.threadId).toBe(sent.body.threadId);
-    // the chat is Bob's own, so a reply there reaches him
-    await waitFor(async () => notifiedThreads(events.text()).includes(sent.body.threadId), 30_000);
+    // Bob typing (the console) stays in his own chat, and its reply reaches him;
+    // the AI client's turns never notified him
+    const own = await member("POST", `bots/${bots.orion!.id}/messages`, BOB, { text: "my own question", wait: 30 }, "console");
+    expect(own.status, own.text).toBe(200);
+    expect(own.body.threadId).not.toBe(sent.body.threadId);
+    await waitFor(async () => notifiedThreads(events.text()).includes(own.body.threadId), 30_000);
+    expect(notifiedThreads(events.text())).not.toContain(sent.body.threadId);
     events.close();
   }, 60_000);
 
@@ -337,6 +347,7 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
 
   it("M6: a streamed send stops at a card; the AI client answers it as the person; the watch ends with the summary", async () => {
     const events = (text: string) => text.trim().split("\n").map((line) => JSON.parse(line) as any);
+    const live = await openStream(alice);
     const assertion = () => idp.consoleAssertion({ sub: ALICE.sub, aud: BASE, role: "admin", teams: [], claims: (c) => ({ ...c, act: { sub: "perspicax-mcp" } }) });
     const streamed = fetch(`${BASE}/api/org/member/bots/${bots.vega!.id}/messages`, {
       method: "POST",
@@ -365,6 +376,10 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
     expect(final).toMatchObject({ event: "final", status: "waiting", pending: true });
     const threadId = final.threadId as string;
     const messageId = final.messageId as string;
+    // 2026-10-29: the card waits in the AI client's own conversation with the
+    // bot, and still reaches Alice (Reach me): only she can answer it
+    await waitFor(async () => notifications(live.text()).some((note) => note.kind === "approval" && note.threadId === threadId), 20_000);
+    live.close();
 
     // Who may answer it: Alice owns Vega; Bob does not even reach the thread.
     const check = await member("GET", `approvals/${cardId}?threadId=${threadId}`, ALICE);
@@ -434,10 +449,12 @@ posixOnly("Perspicax AI clients: the Sagax member API", () => {
     expect(readFileSync(join(home, ".sagax", "workspaces", bots.orion!.id, "inbox", "bob", "invoices.txt"), "utf8")).toBe("42\n");
     const cold = await member("POST", "agents/read_transcript_cold", BOB, { agent_id: bots.orion!.id });
     expect(cold.status, cold.text).toBe(200);
-    // the AI client's turn runs in the person's single chat with the bot (#1170)
+    // 2026-10-29: the AI client's turns run in its own conversation with the
+    // bot (here unnamed: "AI client"), never in Bob's chat
     const after = await api("GET", "/api/bots?messages=0", bob);
     const orion = (after.body.bots as Array<any>).find((bot) => bot.id === bots.orion!.id);
-    expect(orion.threadId).toBe(threadId);
+    expect(orion.threadId).not.toBe(threadId);
+    expect(orion.botConversations).toEqual(expect.arrayContaining([expect.objectContaining({ threadId, otherName: "AI client", kind: "agent" })]));
 
     // 2026-10-26: creating her own agents is a member's own thing (clients.agentsCreate
     // is always held): Bob creates a temporary agent and archives it; Zoe lists none

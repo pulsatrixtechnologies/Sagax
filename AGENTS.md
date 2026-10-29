@@ -274,6 +274,22 @@ null clears the bound. Tests: `server/finish-until.test.ts`,
 `server/finish-until.e2e.test.ts`, iOS `FinishUntilTests`. Captures:
 `node scripts/capture-finish-until.mjs`.
 
+## An AI client talks to a bot as another agent (2026-10-29)
+
+A person's AI client over MCP (`send_prompt`, `sagax_send` through
+Perspicax) is not the person typing: its turns go to its own conversation
+with the bot, drawn like a bot-to-bot one ("<client> ⇆ <bot>", neutral
+icon), never into the person's chat, and nothing in it notifies them
+(push, watch, banner, sound, red dot) except an approval or a question,
+which follows Reach me. One rule, one place: `shared/agent-conversation.ts`
+(opener `{ kind: "agent", botId: "agent:<slug>", name }`, the notification
+rule); `agentConversationFor` in server/index.ts opens or reuses it per bot,
+person and client; the name is the `client_name` Perspicax signs into the
+member assertion. The turn still runs as the person. Tests:
+`shared/agent-conversation.test.ts`, `server/org-member-api.e2e.test.ts`
+(M1, M6, M7), `src/components/BotConversations.sheet.test.ts`, iOS
+`BotConversationsTests`.
+
 ## Leave a group chat (#1480, 2026-10-28)
 
 On an organization server a person listed in a group in their own name

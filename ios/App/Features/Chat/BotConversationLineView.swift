@@ -23,7 +23,7 @@ struct BotConversationLineView: View {
                 Button(action: open) {
                     HStack(spacing: 6) {
                         Text("Go to conversation")
-                        BotConversationAvatar(bot: other, name: row.otherName, size: 16)
+                        BotConversationAvatar(bot: other, name: row.otherName, size: 16, agent: row.isAgent)
                         Text(row.otherName).fontWeight(.medium)
                         if row.running == true {
                             ProgressView().controlSize(.mini)
@@ -86,14 +86,23 @@ struct BotConversationLineView: View {
     }
 }
 
-/// A small avatar for one end of an exchange: the bot's own, else its initial.
+/// A small avatar for one end of an exchange: the bot's own, a neutral icon
+/// for an outside agent (an AI client over MCP), else its initial.
 struct BotConversationAvatar: View {
     let bot: Bot?
     let name: String
     let size: CGFloat
+    var agent: Bool = false
 
     var body: some View {
-        if let bot {
+        if agent {
+            Image(systemName: "cpu")
+                .font(.system(size: size * 0.55, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+                .frame(width: size, height: size)
+                .background(Circle().fill(Color.secondary.opacity(0.2)))
+                .accessibilityHidden(true)
+        } else if let bot {
             BotMascotView(bot: bot, size: size, state: .idle, animated: false)
                 .frame(width: size, height: size)
         } else {
@@ -149,7 +158,7 @@ struct EarlierConversationsFold: View {
                     Button { select(row) } label: {
                         HStack(spacing: 6) {
                             Text("Go to conversation")
-                            BotConversationAvatar(bot: other(row.otherBotId), name: row.otherName, size: 16)
+                            BotConversationAvatar(bot: other(row.otherBotId), name: row.otherName, size: 16, agent: row.isAgent)
                             Text(row.otherName).fontWeight(.medium)
                         }
                         .font(.footnote)

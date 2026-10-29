@@ -93,8 +93,10 @@ export interface TaskOpenedBy {
   delegationId?: string;
   /** What kind of conversation the opener made this: "pair" is the one
    * durable conversation between two bots; "work" closes itself once its
-   * result has been reported. */
-  kind?: "pair" | "work";
+   * result has been reported; "agent" is an outside agent's conversation
+   * with this bot (a person's AI client over MCP, shared/agent-conversation.ts):
+   * its botId is `agent:<slug>`, never a bot id. */
+  kind?: "pair" | "work" | "agent";
   /** The opener's own conversation this "work" thread was opened from.
    * Everything that conversation later sends this bot continues here. */
   threadId?: string;
@@ -329,7 +331,10 @@ export interface WireBotConversation {
   otherName: string;
   /** "in": the other bot opened it here; "out": this bot opened it there. */
   direction: "in" | "out";
-  kind?: "pair" | "work";
+  /** "agent": the other end is an outside agent (a person's AI client over
+   * MCP, shared/agent-conversation.ts), not a bot: otherBotId is its
+   * `agent:<slug>` id and the apps draw a neutral icon. */
+  kind?: "pair" | "work" | "agent";
   updatedAt?: number;
   /** When the conversation was opened: where its line sits in the chat. */
   startedAt?: number;

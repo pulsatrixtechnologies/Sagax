@@ -30,6 +30,7 @@
 // everywhere in server/authz.ts. A solo server never calls this.
 //
 // Pure: no store, no request. server/index.ts supplies the records.
+import { isAgentConversation } from "../shared/agent-conversation.ts";
 import { conversationThreadId, type StreamTaskFacts } from "../shared/single-stream.ts";
 import { canOnBot, type BotFacts, type Viewer } from "./authz.ts";
 
@@ -116,7 +117,9 @@ export function viewerThread(input: {
 }): string | undefined {
   const owned = ownThreads(input.tasks, input.viewerId, input.botOwnerPrincipalId);
   if (owned.some((task) => task.threadId === input.selected)) return input.selected;
-  const mine = owned.filter((task) => task.hidden !== true);
+  // nor an outside agent's conversation with the bot (2026-10-29): the
+  // person reads it from the bot-to-bot line, it is never where they land
+  const mine = owned.filter((task) => task.hidden !== true && !isAgentConversation(task as { openedBy?: { botId?: unknown; kind?: unknown } }));
   if (!mine.length) return undefined;
   const has = (threadId: string | undefined) => threadId !== undefined && mine.some((task) => task.threadId === threadId);
   if (has(input.current)) return input.current;

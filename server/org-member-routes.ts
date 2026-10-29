@@ -101,6 +101,10 @@ export interface MemberPerson {
   admin: boolean;
   /** The assertion's actor, for the audit row. */
   actor: ConsoleAssertion["actor"];
+  /** The AI client or connection that made the call (the signed
+   * `client_name`), when Perspicax sent one: it names the outside agent's
+   * conversation with a bot (shared/agent-conversation.ts). */
+  client?: string;
 }
 
 /** One Sagax route performed as the person. */
@@ -154,9 +158,16 @@ export interface OrgMemberRouteDeps {
    * never reads, streams, writes or answers a card in one; it reads as
    * missing. */
   confidential?(threadId: string): boolean;
-  /** The person's single chat with this bot (#1170), the one an AI client
-   * continues when it names no thread; null when they have none yet. */
+  /** The person's single chat with this bot (#1170); null when they have
+   * none yet. */
   hiddenThreadOf?(botId: string, principalId: string): string | null;
+  /** 2026-10-29: the outside agent's conversation with this bot
+   * (shared/agent-conversation.ts), where an AI client's message lands when
+   * it names no thread: reused, or opened for this person and client
+   * (`fresh`: a new one). Null when it cannot be opened. */
+  agentConversation?(botId: string, person: MemberPerson, fresh: boolean): string | null;
+  /** The outside agents' conversations of this person with this bot. */
+  agentConversationsOf?(botId: string, principalId: string): string[];
   /** #291: stamp a line an AI client sent, so the chat folds it with the
    * bot's answer instead of showing it as the person typing. */
   markAiClientLine?(threadId: string, messageId: string): void;
@@ -973,6 +984,7 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
       if (!bot || typeof bot.id !== "string") continue;
       const about = { botId: bot.id, botName: str(bot.name) ?? "" };
       const ids = [str(bot.threadId), deps.hiddenThreadOf?.(bot.id, person.principalId) ?? null,
+        ...(deps.agentConversationsOf?.(bot.id, person.principalId) ?? []),
         ...((bot.tasks as unknown[] | undefined) ?? []).map((task) => str(objectOf(task)?.threadId))];
       for (const id of ids) if (id && THREAD_ID.test(id) && !threads.has(id)) threads.set(id, about);
     }
@@ -1116,15 +1128,18 @@ function memberRoutes(deps: OrgMemberRouteDeps): MemberRoute[] {
         const botId = params.id!;
         let threadId = input.threadId as string | undefined;
         if (threadId && deps.confidential?.(threadId)) return fail(404, "not_found", "No such conversation.");
-        // An AI client works in the person's single chat with the bot
-        // (#1170, like the reference design): never a hidden thread they cannot see,
-        // close or set a level on. Its lines are stamped (#291) so the chat
-        // folds them with the bot's answer into one chip; the exchange
-        // sheet keeps every word. A named threadId is honored as given. The
-        // Perspicax console is the person typing, so nothing is stamped.
+        // 2026-10-29: an AI client is another agent talking to the bot, not
+        // the person typing: it works in its own conversation with the bot
+        // (shared/agent-conversation.ts), drawn like a bot-to-bot one and
+        // silent for the person. A named threadId is honored as given. The
+        // Perspicax console is the person typing, so it keeps their chat.
         const hidden = person.actor !== "console";
+        if (!threadId && hidden && deps.agentConversation) {
+          threadId = deps.agentConversation(botId, person, input.newThread === true) ?? undefined;
+          if (!threadId) return fail(502, "not_started", "A conversation with this bot could not be opened.");
+        }
         if (!threadId && hidden && input.newThread !== true) threadId = deps.hiddenThreadOf?.(botId, person.principalId) ?? undefined;
-        if (input.newThread === true || (hidden && !threadId)) {
+        if ((input.newThread === true && !(hidden && deps.agentConversation)) || (hidden && !threadId)) {
           const created = await deps.perform(person, { method: "POST", path: `/api/bots/${encodeURIComponent(botId)}/tasks`, body: { confidential: false } });
           if (!okStatus(created)) return passThrough(created, "A new conversation could not be started.");
           threadId = str(objectOf(objectOf(created.body)?.task)?.threadId) ?? undefined;
@@ -1519,6 +1534,7 @@ export function createOrgMemberRoutes(deps: OrgMemberRouteDeps): (req: IncomingM
       // Both must say admin: the assertion is fresh, the principal is ours.
       admin: found.admin && assertion.role === "admin",
       actor: assertion.actor,
+      ...(assertion.actor === "perspicax-mcp" && assertion.clientName ? { client: assertion.clientName } : {}),
     };
     const sub = path.startsWith(ORG_MEMBER_PREFIX) ? path.slice(ORG_MEMBER_PREFIX.length) : "";
     const hits = matchRoutes(compiled, sub);

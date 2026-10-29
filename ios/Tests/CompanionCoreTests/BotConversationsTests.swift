@@ -90,5 +90,25 @@ final class BotConversationsTests: XCTestCase {
         XCTAssertEqual(bot.mainThreadId, "main")
         XCTAssertEqual(bot.botConversations?.first?.destinationBotId, "b")
         XCTAssertEqual(bot.botConversations?.first?.running, true)
+        XCTAssertEqual(bot.botConversations?.first?.isAgent, false)
+    }
+
+    /// 2026-10-29: an outside agent (a person's AI client over MCP) talking
+    /// to the bot is listed like a peer, with a neutral icon: never a bot.
+    func testAnOutsideAgentConversationIsAnAgentWithItsLinesCredited() throws {
+        let row = try JSONDecoder().decode(BotConversation.self, from: Data("""
+        {"threadId":"g","otherBotId":"agent:voice-assistant-phone","otherName":"Voice assistant (phone)","direction":"in","kind":"agent"}
+        """.utf8))
+        XCTAssertTrue(row.isAgent)
+        XCTAssertNil(row.destinationBotId)
+        XCTAssertTrue(BotConversations.isAgentId("agent:voice-assistant-phone"))
+        XCTAssertFalse(BotConversations.isAgentId("bot_1"))
+        let messages = try JSONDecoder().decode([Message].self, from: Data("""
+        [{"id":"m1","role":"user","kind":"text","text":"What is on my calendar?","at":1},
+         {"id":"m2","role":"bot","kind":"text","text":"Two meetings.","at":2}]
+        """.utf8))
+        let lines = BotConversations.lines(messages, selfId: "a", selfName: "Alpha", row: row)
+        XCTAssertEqual(lines.map(\.speakerId), ["agent:voice-assistant-phone", "a"])
+        XCTAssertEqual(lines.first?.speakerName, "Voice assistant (phone)")
     }
 }

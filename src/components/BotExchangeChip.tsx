@@ -5,8 +5,8 @@ import { createContext, useCallback, useContext, useEffect, useState, type CSSPr
 import { createPortal } from "react-dom";
 import { ArrowLeftRight } from "lucide-react";
 import { formatTime, type Bot } from "@/state/store";
-import { BotAvatar } from "./Avatar";
 import { ConversationLink } from "./ConversationLink";
+import { PartyAvatar, isAgentParty } from "./PartyAvatar";
 import { activeLocale, t } from "@/lib/i18n";
 import { MAUS_COLORS, mausInk, type MausColor } from "@/lib/mascot";
 import { botBubbleVars } from "@/lib/bubble-colors";
@@ -109,7 +109,7 @@ export function ExchangeSheet({ run, bots, showToolCalls, onClose, loadError = f
             return (
               <span key={`${party.id ?? party.name}:${index}`} className="flex items-center gap-1.5">
                 {index > 0 && <ArrowLeftRight size={14} className="text-ink-tertiary" />}
-                <BotAvatar bot={bot} state="happy" size={18} animated={false} />
+                <PartyAvatar id={party.id} bot={bot} size={18} />
                 <span className="text-[13px] font-medium" style={{ color: mausInk(bot.color) }}>{party.name}</span>
               </span>
             );
@@ -169,7 +169,7 @@ export function ExchangeSheet({ run, bots, showToolCalls, onClose, loadError = f
           return (
             <div key={message.id} className="contents">
               {stamp}
-              {!joinsAbove && <ClusterLabel bot={bot as Bot} name={speaker.name} color={bot.color} end={end} />}
+              {!joinsAbove && <ClusterLabel bot={bot as Bot} name={speaker.name} color={bot.color} end={end} agent={isAgentParty(speaker.id)} />}
               <div
                 data-mid={message.id}
                 data-side={end ? "end" : "start"}
@@ -243,6 +243,7 @@ export function BotExchangeChip({
   return (
     <ConversationLink
       bot={party}
+      agentId={run.party.id}
       name={run.party.name}
       color={party.color}
       testId="bot-exchange-chip"

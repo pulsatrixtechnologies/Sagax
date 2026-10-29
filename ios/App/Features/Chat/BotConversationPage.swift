@@ -43,7 +43,8 @@ struct BotConversationPage: View {
                         VStack(alignment: end ? .trailing : .leading, spacing: 4) {
                             if !joinsAbove {
                                 HStack(spacing: 6) {
-                                    BotConversationAvatar(bot: speaker, name: line.speakerName, size: 16)
+                                    BotConversationAvatar(bot: speaker, name: line.speakerName, size: 16,
+                                                          agent: BotConversations.isAgentId(line.speakerId))
                                     Text(line.speakerName)
                                         .font(.system(size: 12))
                                         .foregroundStyle(Theme.readable(MausPalette.color(speaker?.color ?? "")))
@@ -76,7 +77,7 @@ struct BotConversationPage: View {
             BotConversationAvatar(bot: selfBot, name: selfBot.name, size: 20)
             Text(selfBot.name).font(.system(size: 14, weight: .medium))
             Image(systemName: "arrow.left.arrow.right").font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
-            BotConversationAvatar(bot: bot(row.otherBotId), name: row.otherName, size: 20)
+            BotConversationAvatar(bot: bot(row.otherBotId), name: row.otherName, size: 20, agent: row.isAgent)
             Text(row.otherName).font(.system(size: 14, weight: .medium))
         }
         .padding(.horizontal, 12).padding(.vertical, 6)

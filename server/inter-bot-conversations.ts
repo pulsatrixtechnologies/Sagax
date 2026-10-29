@@ -9,6 +9,10 @@
 //   - the destination's chat names it as "in" (the other bot opened it);
 //   - the origin's chat names it as "out" (this bot opened it on the other).
 //
+// An outside agent's conversation (a person's AI client over MCP, kind
+// "agent", shared/agent-conversation.ts) has one end only: the bot's chat
+// names it "in", with the agent's name and its `agent:<slug>` id.
+//
 // Only names and ids travel here; the messages are read through
 // GET /api/threads/:id/messages, so a viewer sees the transcript by the same
 // rule as any thread. `mayRead` is that rule applied to the conversation: on
@@ -56,7 +60,7 @@ export function interBotConversations(
       otherBotId: otherId,
       otherName: name.trim().slice(0, 120),
       direction,
-      ...(kind === "work" || kind === "pair" ? { kind } : {}),
+      ...(kind === "work" || kind === "pair" || kind === "agent" ? { kind } : {}),
       updatedAt: task.updatedAt ?? task.createdAt ?? 0,
       ...(typeof task.createdAt === "number" ? { startedAt: task.createdAt } : {}),
       ...(isRunning(owner.id, task.threadId) ? { running: true } : {}),
