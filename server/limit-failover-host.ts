@@ -210,7 +210,7 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
     if (auto && (backup || auto.modelOnly) && store.takeResend(own.messageId, AUTO_MAX_RESENDS)) {
       const from = deps.engineName(dispatch.engine.instanceId);
       deps.replaceFailure(threadId, turnId, { kind: "switched", from, to: "Auto", resetsAt }, dispatch.at);
-      await deps.resend(dispatch.botId, threadId, own.messageId, dispatch.speaker, dispatch.trigger, { ...(turnId ? { turnId } : {}) });
+      await deps.resend(dispatch.botId, threadId, own.messageId, dispatch.speaker, dispatch.trigger, turnId ? { turnId } : {});
       return;
     }
     if (!auto && backup && store.takeResend(own.messageId)) {
@@ -221,7 +221,7 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
           kind: "switched", from: deps.engineName(kept.from.instanceId), to: deps.engineName(backup.instanceId), resetsAt: kept.resetsAt,
           ...(dispatch.owner ? { owner: true as const } : {}),
         }, dispatch.at);
-        await deps.resend(dispatch.botId, threadId, own.messageId, dispatch.speaker, dispatch.trigger, { ...(turnId ? { turnId } : {}) });
+        await deps.resend(dispatch.botId, threadId, own.messageId, dispatch.speaker, dispatch.trigger, turnId ? { turnId } : {});
         return;
       }
       console.warn(`[limit-failover] ${threadId}: could not move to ${backup.instanceId}: ${refused}`);
