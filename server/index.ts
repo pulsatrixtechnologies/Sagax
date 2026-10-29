@@ -11646,7 +11646,11 @@ store.onChange((change) => {
       broadcast({ kind: "message.patch", threadId: change.threadId, message: slimMessage(change.message) });
       // an answered card: its banner leaves the desktop, the phone and the watch
       const settledRequest = settledCardRequest(change.message);
-      if (settledRequest) withdrawApprovalNotice(change.threadId, settledRequest);
+      if (settledRequest) {
+        withdrawApprovalNotice(change.threadId, settledRequest);
+        // the card is closed now: its conversation stops waiting on the person
+        settleWaitingActivity(change.threadId);
+      }
       break;
     }
     case "thread":
@@ -14511,6 +14515,20 @@ function withdrawApprovalNotice(threadId: string, requestId: string): void {
   broadcast({ kind: "notify-withdraw", threadId, requestId });
   pushHub.noteSettled(threadId, requestId);
   reachMeService?.cardSettled(threadId, requestId);
+  settleWaitingActivity(threadId);
+}
+
+/** An ask was answered (or expired) by whichever path: a conversation no
+ * longer waits on its person once it holds no open card, so every device's
+ * "needs you" (iOS Updates, widgets, badge, the desktop's own list) drops it,
+ * not only when the engine's request.resolved happens to say so (a safety
+ * hold, a bot's ask, the console never did). Still running: working. */
+function settleWaitingActivity(threadId: string): void {
+  if (openPersonCard(threadId)) return;
+  const next = runningTurnEngines.has(threadId) ? "working" : "idle";
+  const bot = store.botByThread(threadId);
+  if (bot && store.taskByThread(bot.id, threadId)?.activity === "waiting-on-you") store.setTaskActivity(bot.id, threadId, next);
+  if (bot && bot.threadId === threadId && bot.activity === "waiting-on-you") store.setActivity(bot.id, next);
 }
 
 /** A card with a request that is no longer open: answered, dismissed or

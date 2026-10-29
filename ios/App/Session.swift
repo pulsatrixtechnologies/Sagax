@@ -3441,6 +3441,22 @@ final class Session: ObservableObject {
         Task { await NotificationCoordinator.shared.withdrawSettled(bots: bots, openRequestIds: open) }
     }
 
+    /// A stream is open (or kept lingering) right now.
+    var hasLiveStream: Bool { streamTask != nil }
+
+    private var lastForegroundResync: Date?
+
+    /// Back in front with a stream that stayed open: read the server's state
+    /// again (what needs the person, what is read), at most every few
+    /// seconds; the badge and the banners follow it.
+    func resyncOnForeground() async {
+        guard !isDemo, client != nil else { return }
+        if let last = lastForegroundResync, Date().timeIntervalSince(last) < 5 { return }
+        lastForegroundResync = Date()
+        // the hydration sets the badge and withdraws settled banners itself
+        _ = await refreshAfterPush()
+    }
+
     func refreshAfterPush() async -> Bool {
         guard !isDemo, let client else { return false }
         do {
