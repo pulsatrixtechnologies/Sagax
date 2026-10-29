@@ -706,6 +706,7 @@ import {
 } from "./system-prompt.ts";
 import { shellTimeoutHookResult } from "./shell-timeout-hint.ts";
 import { readCuaConnection, readCuaUnavailableReason, gatedLocalComputer } from "./local-computer.ts";
+import { launchedByDesktopApp, listenForDesktopComputer } from "./desktop-computer.ts";
 import {
   discoverExistingPerBotLocalVms,
   discoverExistingPoolLocalVms,
@@ -3874,6 +3875,8 @@ const phoneSecrets = new PhoneSecretBridge(postDesktopPrivateMessage);
 // by the signed-in desktop app (server/owner-identity.ts). An organization
 // server has its own people and takes none.
 const ownerIdentity = IDENTITY.kind === "perspicax" ? null : new OwnerIdentityStore(join(DATA_DIR, "owner-identity.json"));
+// This computer's driver connection: only from the app that launched us.
+listenForDesktopComputer(utilityParentPort);
 utilityParentPort?.on("message", (event) => {
   const message = event?.data;
   try {
@@ -15421,6 +15424,9 @@ async function mountHostComputer(owner: TurnOwner, botId: string, providerSuppor
       : "this model cannot control this computer — choose Claude or an ACP model provider, or select another destination");
   }
   const cua = readCuaConnection();
+  if (!cua && !launchedByDesktopApp()) {
+    throw new Error("Only the Sagax app on this computer can let a bot use it. Open the app here, or let the bot work in its own browser or on a cloud desktop instead.");
+  }
   if (!cua) {
     const reason = readCuaUnavailableReason();
     throw new Error(reason

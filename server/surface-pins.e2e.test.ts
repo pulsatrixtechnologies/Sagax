@@ -15,6 +15,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { freePortBlock } from "./testing/ports.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { readCuaConnection } from "./local-computer.ts";
+import { DESKTOP_PARENT_IMPORT, DESKTOP_PARENT_STDIO, handDesktopComputer } from "./testing/desktop-computer.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 
@@ -25,7 +26,6 @@ describe("surface pin provenance against the real server", () => {
   let stateFile = "";
   let dumpFile = "";
   let finishFile = "";
-  let cuaDescriptor = "";
   let output = "";
   let child: ChildProcess | null = null;
   let base = "";
@@ -84,7 +84,7 @@ describe("surface pin provenance against the real server", () => {
     const port = await freePortBlock([0, 1]);
     base = `http://127.0.0.1:${port}`;
     output = "";
-    const proc = spawn(process.execPath, ["--import", pathToFileURL(join(ROOT, "server/testing/group-local-vm-hooks.mjs")).href, join(ROOT, "server/index.ts")], {
+    const proc = spawn(process.execPath, ["--import", pathToFileURL(join(ROOT, "server/testing/group-local-vm-hooks.mjs")).href, ...DESKTOP_PARENT_IMPORT, join(ROOT, "server/index.ts")], {
       cwd: ROOT, env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
         PATH: dirname(process.execPath), ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_DATA_DIR: data,
@@ -92,7 +92,7 @@ describe("surface pin provenance against the real server", () => {
         TEMP: home, TMP: home, TMPDIR: home,
         SAGAX_PORT: String(port), SAGAX_WEBHOOK_PORT: String(port + 1), SAGAX_STATIC_DIR: ui, SAGAX_TEST_VM_STATE: stateFile,
         SAGAX_BOX_API: boatApi, SAGAX_USER_DATA: join(home, "user-data"),
-      }, stdio: ["ignore", "pipe", "pipe"],
+      }, stdio: [...DESKTOP_PARENT_STDIO],
     });
     child = proc;
     proc.stdout!.on("data", chunk => { output += chunk; });
@@ -117,7 +117,6 @@ describe("surface pin provenance against the real server", () => {
     stateFile = join(home, "vm.json");
     dumpFile = join(home, "dump.json");
     finishFile = join(home, "finish");
-    cuaDescriptor = join(home, "user-data", "cua-connection.json");
     vmState();
     mkdirSync(data);
     mkdirSync(join(ui, "assets"), { recursive: true });
@@ -311,18 +310,17 @@ describe("surface pin provenance against the real server", () => {
     expect(savedTask(bot.id, task.threadId)).toMatchObject({ surface: "local", surfaceSource: "user" });
     const place = await apiOk("GET", `/api/bots/${bot.id}/computer?threadId=${task.threadId}`);
     expect(place.surface).toBe("local");
-    mkdirSync(dirname(cuaDescriptor), { recursive: true });
-    writeFileSync(cuaDescriptor, JSON.stringify({
+    const record = {
       mode: "embedded", status: "ready", socketPath: join(home, "cua.sock"),
       mcpCommand: "/fixture/cua-driver", mcpArgs: ["mcp"], mcpEnv: {},
-    }), { mode: 0o600 });
+    };
+    await handDesktopComputer(child!, record);
     try {
       // Validate the fixture on every host before waiting for a provider.
       // The obsolete "bundled" shape is refused, so no dump can ever arrive.
-      // Windows cannot emulate the POSIX ownership check used on macOS.
-      const platforms: NodeJS.Platform[] = process.platform === "win32" ? ["win32"] : ["darwin", "win32"];
+      const platforms: NodeJS.Platform[] = ["darwin", "win32"];
       for (const platform of platforms) {
-        expect(readCuaConnection({ platform, userData: dirname(cuaDescriptor), home }))
+        expect(readCuaConnection({ platform, record }))
           .toMatchObject({ command: "/fixture/cua-driver", platform, scope: "local-computer" });
       }
       // The incident's other half: the person's pin still wins the mount.
@@ -338,7 +336,7 @@ describe("surface pin provenance against the real server", () => {
         await idle(bot.id, task.threadId);
       }
     } finally {
-      rmSync(cuaDescriptor, { force: true });
+      await handDesktopComputer(child!, null);
     }
     await apiOk("DELETE", `/api/bots/${bot.id}`);
     await stop();

@@ -1,7 +1,7 @@
-import { lstatSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { lstatSync, realpathSync, statSync } from "node:fs";
 import type { Stats } from "node:fs";
-import { homedir } from "node:os";
-import { dirname, isAbsolute, join } from "node:path";
+import { dirname, isAbsolute } from "node:path";
+import { desktopComputerRecord } from "./desktop-computer.ts";
 import { SPAWNED_PROXIES } from "./proxy-paths.ts";
 
 export const REQUIRED_LINUX_TOOLS = ["click", "get_window_state", "list_apps", "type_text"];
@@ -125,8 +125,8 @@ function decodeLegacyDescriptor(
   if (!Object.values(env).every((entry) => typeof entry === "string")) return null;
   return {
     command: value.mcpCommand,
-    args,
-    env: env as Record<string, string>,
+    args: [...args],
+    env: { ...(env as Record<string, string>) },
     platform: supportedPlatform,
     scope: "local-computer",
   };
@@ -281,8 +281,10 @@ function ownedPrivate(stat: Stats, uid: number): boolean {
   return (stat.uid === uid || stat.uid === 0) && (stat.mode & 0o077) === 0;
 }
 
+/** The connection record is no file any more, so what remains to check at
+ * runtime is what it names: the exact driver binary it was published for,
+ * a private socket, and live owner and daemon processes. */
 export function validateLinuxDescriptorRuntime(
-  descriptorFile: string,
   raw: LinuxConnectionDescriptor,
   {
     uid = process.getuid?.() ?? -1,
@@ -290,19 +292,6 @@ export function validateLinuxDescriptorRuntime(
   }: { uid?: number; isProcessAlive?: (pid: number) => boolean } = {},
 ): boolean {
   try {
-    const descriptorStat = lstatSync(descriptorFile);
-    const descriptorDirectoryStat = lstatSync(dirname(descriptorFile));
-    if (
-      !descriptorStat.isFile() ||
-      descriptorStat.isSymbolicLink() ||
-      !ownedPrivate(descriptorStat, uid) ||
-      !descriptorDirectoryStat.isDirectory() ||
-      descriptorDirectoryStat.isSymbolicLink() ||
-      !ownedPrivate(descriptorDirectoryStat, uid)
-    ) {
-      return false;
-    }
-
     const driver = raw.driver as Record<string, unknown>;
     const daemon = raw.daemon as Record<string, unknown>;
     const binaryPath = driver.path as string;
@@ -335,111 +324,48 @@ export function validateLinuxDescriptorRuntime(
   }
 }
 
-/** Legacy darwin/win32 descriptors still name any command, so at runtime at
- * least the file itself must be one only this user could have written: a
- * regular file, not a symlink, owned by this user, and closed against
- * group/other writes. libuv reports every writable Windows file as uid 0
- * mode 0o666, so the ownership and permission bits cannot carry meaning
- * there — only the symlink refusal applies on win32. */
-function validateLegacyDescriptorRuntime(
-  descriptorFile: string,
-  platform: NodeJS.Platform,
-  { uid = process.getuid?.() ?? -1 }: { uid?: number } = {},
-): boolean {
-  try {
-    const stat = lstatSync(descriptorFile);
-    if (!stat.isFile() || stat.isSymbolicLink()) return false;
-    if (platform !== "win32" && (stat.uid !== uid || (stat.mode & 0o022) !== 0)) return false;
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** An older fallback cannot override a present but unavailable, malformed, or
- * unreadable descriptor at a more specific location. */
-function firstPresentCuaDescriptor(candidates: string[]): string | null {
-  for (const file of new Set(candidates)) {
-    try {
-      lstatSync(file);
-      return file;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") return file;
-    }
-  }
-  return null;
-}
-
+/** This computer's driver connection, as the desktop app handed it to the
+ * server it launched (server/desktop-computer.ts). A server the app did not
+ * launch has no such record and cannot use this computer: no file, folder
+ * or environment variable stands in for it. */
 export function readCuaConnection({
   platform = process.platform,
-  userData = process.env.SAGAX_USER_DATA,
-  home = homedir(),
+  record = desktopComputerRecord(),
   validateLinuxRuntime = validateLinuxDescriptorRuntime,
-  validateLegacyRuntime = validateLegacyDescriptorRuntime,
 }: {
   platform?: NodeJS.Platform;
-  userData?: string;
-  home?: string;
-  validateLinuxRuntime?: (file: string, raw: LinuxConnectionDescriptor) => boolean;
-  validateLegacyRuntime?: (file: string, platform: NodeJS.Platform) => boolean;
+  record?: unknown;
+  validateLinuxRuntime?: (raw: LinuxConnectionDescriptor) => boolean;
 } = {}): LocalComputerConnection | null {
-  const candidates = userData ? [join(userData, "cua-connection.json")] : [];
-  if (platform === "darwin" && !userData) {
-    // Legacy/dev fallback only when Electron did not provide its exact path.
-    for (const directory of ["Pulsa Bot", "openmausbot", "OpenGrokBot", "opengrokbot"]) {
-      candidates.push(join(home, "Library", "Application Support", directory, "cua-connection.json"));
-    }
-  }
-
-  const file = firstPresentCuaDescriptor(candidates);
-  if (!file) return null;
+  if (!record || typeof record !== "object" || Array.isArray(record)) return null;
   try {
-    const raw = JSON.parse(readFileSync(file, "utf8"));
     if (platform === "linux") {
+      const raw = record as LinuxConnectionDescriptor;
       const decoded = decodeLinuxDescriptor(raw);
-      if (decoded && validateLinuxRuntime(file, raw)) return decoded;
+      if (decoded && validateLinuxRuntime(raw)) return decoded;
     } else {
-      const decoded = decodeLegacyDescriptor(raw, platform);
-      if (decoded && validateLegacyRuntime(file, platform)) return decoded;
+      return decodeLegacyDescriptor(record as LegacyConnectionDescriptor, platform);
     }
   } catch {
-    // Missing, invalid, tampered, or stale descriptors are unavailable.
+    // A malformed or stale record is unavailable.
   }
   return null;
 }
 
-/** An unavailable descriptor is diagnostic only. It never becomes a connection
- * and only a private, well-formed macOS/Windows descriptor may supply text. */
+/** Why this computer is not ready, when the desktop app said so in the same
+ * record. It is diagnostic only and never becomes a connection. */
 export function readCuaUnavailableReason({
   platform = process.platform,
-  userData = process.env.SAGAX_USER_DATA,
-  home = homedir(),
+  record = desktopComputerRecord(),
 }: {
   platform?: NodeJS.Platform;
-  userData?: string;
-  home?: string;
+  record?: unknown;
 } = {}): string | null {
   if (!legacyPlatform(platform)) return null;
-  const candidates = userData ? [join(userData, "cua-connection.json")] : [];
-  if (platform === "darwin" && !userData) {
-    for (const directory of ["Pulsa Bot", "openmausbot", "OpenGrokBot", "opengrokbot"]) {
-      candidates.push(join(home, "Library", "Application Support", directory, "cua-connection.json"));
-    }
-  }
-  const file = firstPresentCuaDescriptor(candidates);
-  if (!file) return null;
-  try {
-    if (validateLegacyDescriptorRuntime(file, platform)) {
-      const raw: unknown = JSON.parse(readFileSync(file, "utf8"));
-      if (raw && typeof raw === "object" && !Array.isArray(raw) &&
-          Object.keys(raw).length === 2 &&
-          (raw as Record<string, unknown>).mode === "unavailable") {
-        const reason = (raw as Record<string, unknown>).reason;
-        if (typeof reason === "string" && reason.trim() && reason.length <= 2_000) return reason.trim();
-      }
-    }
-  } catch {
-    // No usable diagnostic; the caller still refuses computer control.
-  }
+  if (!record || typeof record !== "object" || Array.isArray(record)) return null;
+  const raw = record as Record<string, unknown>;
+  if (Object.keys(raw).length !== 2 || raw.mode !== "unavailable") return null;
+  const reason = raw.reason;
+  if (typeof reason === "string" && reason.trim() && reason.length <= 2_000) return reason.trim();
   return null;
 }

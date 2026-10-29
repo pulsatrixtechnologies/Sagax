@@ -11,6 +11,7 @@ import { cloudHomePrompt } from "./system-prompt.ts";
 import { CONTROL_BUSY, CONTROL_REFUSAL_PLAIN, controlRefusal, createControlClient } from "./control-client.ts";
 import { freePortBlock } from "./testing/ports.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
+import { DESKTOP_PARENT_IMPORT, DESKTOP_PARENT_STDIO, handDesktopComputer } from "./testing/desktop-computer.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 /** One computer call's wait on a busy desktop, shortened — but past the 2 s
@@ -24,7 +25,6 @@ let base = "";
 let stateFile = "";
 let dumpFile = "";
 let finishFile = "";
-let cuaDescriptor = "";
 let stderr = "";
 let boatServer: Server;
 let boatRow: { id: string; name: string; state: string } | null = null;
@@ -73,7 +73,6 @@ beforeAll(async () => {
   stateFile = join(fixtureHome, "vm.json");
   dumpFile = join(fixtureHome, "dump.json");
   finishFile = join(fixtureHome, "finish");
-  cuaDescriptor = join(fixtureHome, "user-data", "cua-connection.json");
   vmState();
   const data = join(fixtureHome, "data");
   const ui = join(fixtureHome, "static");
@@ -118,7 +117,7 @@ beforeAll(async () => {
   const port = await freePortBlock([0, 1]);
   base = `http://127.0.0.1:${port}`;
   startServer = async (computerWaitMaxMs) => {
-    child = spawn(process.execPath, ["--import", pathToFileURL(join(ROOT, "server/testing/group-local-vm-hooks.mjs")).href, join(ROOT, "server/index.ts")], {
+    child = spawn(process.execPath, ["--import", pathToFileURL(join(ROOT, "server/testing/group-local-vm-hooks.mjs")).href, ...DESKTOP_PARENT_IMPORT, join(ROOT, "server/index.ts")], {
       cwd: ROOT, env: { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1",
         PATH: dirname(process.execPath), ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}),
         HOME: fixtureHome, USERPROFILE: fixtureHome, SAGAX_DATA_DIR: data,
@@ -129,7 +128,7 @@ beforeAll(async () => {
         ...(computerWaitMaxMs ? { SAGAX_COMPUTER_WAIT_MAX_MS: String(computerWaitMaxMs) } : {}),
         SAGAX_COMPUTER_CALL_WAIT_MS: String(CALL_WAIT_MS),
         SAGAX_USER_DATA: join(fixtureHome, "user-data"),
-      }, stdio: ["ignore", "pipe", "pipe"],
+      }, stdio: [...DESKTOP_PARENT_STDIO],
     });
     child.stdout!.on("data", () => {});
     child.stderr!.on("data", c => { stderr += c; });
@@ -763,11 +762,10 @@ describe("Group Local VM ownership on the real isolated server", () => {
   }, 30_000);
 
   // Linux accepts only its own validated runtime descriptor, which a fixture
-  // cannot forge; the macOS and Windows descriptor is a plain file.
+  // cannot forge; the macOS and Windows descriptor is a plain record.
   it.skipIf(process.platform === "linux")("mounts a channel speaker's own This computer destination behind the control gate", async () => {
     const { bots, group } = await room();
-    mkdirSync(dirname(cuaDescriptor), { recursive: true });
-    writeFileSync(cuaDescriptor, JSON.stringify({ mode: "embedded", socketPath: "/fixture/cua.sock", mcpCommand: "/fixture/cua-driver", mcpArgs: ["mcp"], mcpEnv: {} }));
+    await handDesktopComputer(child, { mode: "embedded", socketPath: "/fixture/cua.sock", mcpCommand: "/fixture/cua-driver", mcpArgs: ["mcp"], mcpEnv: {} });
     try {
       await api("PATCH", `/api/bots/${bots[0].id}`, { computer: "local", approvalMode: "ask" });
       await send(group.id);
@@ -784,7 +782,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
       expect((await gate(c)).status).toBe(401);
       expect(JSON.stringify(await api("GET", "/api/bots?messages=30"))).not.toContain("not available in channels yet");
     } finally {
-      rmSync(cuaDescriptor, { force: true });
+      await handDesktopComputer(child, null);
     }
   });
 
@@ -800,8 +798,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
   it.skipIf(process.platform === "linux")("carries the recorded macOS permission failure into the failed turn", async () => {
     const { bots, group } = await room();
     const reason = "embedded host failed: Screen Recording required; grant access in System Settings and restart Sagax";
-    mkdirSync(dirname(cuaDescriptor), { recursive: true });
-    writeFileSync(cuaDescriptor, JSON.stringify({ mode: "unavailable", reason }), { mode: 0o600 });
+    await handDesktopComputer(child, { mode: "unavailable", reason });
     try {
       await api("PATCH", `/api/bots/${bots[0].id}`, { computer: "local", approvalMode: "ask" });
       await send(group.id);
@@ -811,7 +808,7 @@ describe("Group Local VM ownership on the real isolated server", () => {
       await idle(bots[0].id);
       expect(existsSync(dumpFile)).toBe(false);
     } finally {
-      rmSync(cuaDescriptor, { force: true });
+      await handDesktopComputer(child, null);
     }
   });
 

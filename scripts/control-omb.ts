@@ -450,6 +450,10 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   if (parentEnv.SAGAX_TEST_STALL_CLOCK === "1") childEnv.SAGAX_TEST_STALL_CLOCK = "1";
   // Desktop mode: the server runs as the desktop app runs it, and the owner
   // capability the app would hand it is this one (see desktop-parent.mjs).
+  // A test that hands the server this computer's connection the way the
+  // desktop app does: over a parent port fed by the test's IPC channel
+  // (desktop-parent.mjs, server/testing/desktop-computer.ts).
+  if (parentEnv.SAGAX_TEST_DESKTOP_IPC === "1") childEnv.SAGAX_TEST_DESKTOP_IPC = "1";
   if (parentEnv.SAGAX_TEST_DESKTOP_OWNER_TOKEN) {
     childEnv.SAGAX_TEST_DESKTOP_OWNER_TOKEN = parentEnv.SAGAX_TEST_DESKTOP_OWNER_TOKEN;
     childEnv.SAGAX_DESKTOP_PARENT = "1";
@@ -470,7 +474,7 @@ export function verificationServerArgs(childEnv: NodeJS.ProcessEnv): string[] {
     "--experimental-strip-types",
     ...(childEnv.SAGAX_TEST_FAIL_AUDIO_APPEND_ONCE === "1" ? hook("fail-audio-append-once.mjs") : []),
     ...(childEnv.SAGAX_TEST_NETWORK_AUDIT ? hook("network-audit.mjs") : []),
-    ...(childEnv.SAGAX_TEST_DESKTOP_OWNER_TOKEN ? hook("desktop-parent.mjs") : []),
+    ...(childEnv.SAGAX_TEST_DESKTOP_OWNER_TOKEN || childEnv.SAGAX_TEST_DESKTOP_IPC === "1" ? hook("desktop-parent.mjs") : []),
     ...(childEnv.SAGAX_TEST_APPROVAL_CLOCK === "1" ? hook("approval-clock-hooks.mjs") : []),
     ...(childEnv.SAGAX_TEST_STALL_CLOCK === "1" ? hook("stall-clock-hooks.mjs") : []),
     join(ROOT, "server", "index.ts"),
@@ -560,7 +564,7 @@ export async function launchVerificationServer(
   const child = spawn(process.execPath, verificationServerArgs(childEnv), {
     cwd: ROOT,
     env: childEnv,
-    stdio: ["ignore", log, log],
+    stdio: childEnv.SAGAX_TEST_DESKTOP_IPC === "1" ? ["ignore", log, log, "ipc"] : ["ignore", log, log],
   });
   closeSync(log);
 

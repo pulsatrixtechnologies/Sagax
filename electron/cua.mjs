@@ -12,7 +12,9 @@
 // executes nothing; the host-owned daemon does.
 //
 // The resulting connection descriptor is written to
-// <userData>/cua-connection.json for the harness server to hand to drivers.
+// <userData>/cua-connection.json as Electron's own state, and handed to the
+// server this app launched over its private parent port
+// (local-computer-grant.mjs). The file itself grants nothing.
 
 import { app, ipcMain } from "electron";
 import { execFile } from "node:child_process";
@@ -115,6 +117,11 @@ function ensureLinuxRuntime() {
     }
   }
   return linuxRuntime;
+}
+
+/** The connection Electron holds now, for the server it launches. */
+export function currentCuaConnection() {
+  return connectionStore.get();
 }
 
 export function setCuaStateListener(listener) {

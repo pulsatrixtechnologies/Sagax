@@ -129,81 +129,74 @@ afterEach(() => {
 });
 
 describe("local computer descriptor", () => {
-  it.skipIf(process.platform === "win32")("reports a private unavailable reason without making that descriptor mountable", () => {
-    const userData = privateUserData("mac-unavailable");
-    const file = join(userData, "cua-connection.json");
+  it("reports the app's unavailable reason without making that record mountable", () => {
     const reason = "embedded host failed: Screen Recording required; grant access in System Settings and restart Sagax";
-    writeFileSync(file, JSON.stringify({ mode: "unavailable", reason }), { mode: 0o600 });
-    expect(readCuaConnection({ platform: "darwin", userData })).toBeNull();
-    expect(readCuaUnavailableReason({ platform: "darwin", userData })).toBe(reason);
-    writeFileSync(file, JSON.stringify({ mode: "unavailable", reason: { message: reason } }));
-    expect(readCuaUnavailableReason({ platform: "darwin", userData })).toBeNull();
-    writeFileSync(file, JSON.stringify({ mode: "unavailable", reason, mcpCommand: "/fixture/driver" }));
-    expect(readCuaUnavailableReason({ platform: "darwin", userData })).toBeNull();
+    const record = { mode: "unavailable", reason };
+    expect(readCuaConnection({ platform: "darwin", record })).toBeNull();
+    expect(readCuaUnavailableReason({ platform: "darwin", record })).toBe(reason);
+    expect(readCuaUnavailableReason({ platform: "darwin", record: { mode: "unavailable", reason: { message: reason } } })).toBeNull();
+    expect(readCuaUnavailableReason({ platform: "darwin", record: { mode: "unavailable", reason, mcpCommand: "/fixture/driver" } })).toBeNull();
+    expect(readCuaUnavailableReason({ platform: "linux", record })).toBeNull();
   });
 
   it("rejects an explicitly unavailable or malformed status on an otherwise complete connection", () => {
-    const userData = privateUserData("contradictory-status");
-    const file = join(userData, "cua-connection.json");
     const connection = {
       mode: "embedded", socketPath: "/fixture/cua.sock", mcpCommand: "/fixture/cua-driver",
       mcpArgs: ["mcp"], mcpEnv: {},
     };
     for (const status of ["unavailable", null, {}]) {
-      writeFileSync(file, JSON.stringify({ ...connection, status }), { mode: 0o600 });
-      expect(readCuaConnection({ platform: "darwin", userData })).toBeNull();
-      expect(readCuaConnection({ platform: "win32", userData })).toBeNull();
+      expect(readCuaConnection({ platform: "darwin", record: { ...connection, status } })).toBeNull();
+      expect(readCuaConnection({ platform: "win32", record: { ...connection, status } })).toBeNull();
     }
   });
 
-  it.skipIf(process.platform === "win32")("never substitutes a stale legacy descriptor for the packaged app's exact status", () => {
-    const userData = privateUserData("exact-mac-user-data");
+  it("uses nothing but the record the desktop app handed over: no file, folder or environment", () => {
+    const userData = privateUserData("app-user-data");
     const home = join(userData, "fixture-home");
-    const legacy = join(home, "Library", "Application Support", "Pulsa Bot");
-    mkdirSync(legacy, { recursive: true, mode: 0o700 });
-    const legacyFile = join(legacy, "cua-connection.json");
-    writeFileSync(legacyFile, JSON.stringify({
-      mode: "embedded", socketPath: "/fixture/stale.sock", mcpCommand: "/fixture/stale-driver",
+    const ready = {
+      mode: "embedded", socketPath: "/fixture/cua.sock", mcpCommand: "/fixture/cua-driver",
       mcpArgs: ["mcp"], mcpEnv: {},
-    }), { mode: 0o600 });
-
-    const exactFile = join(userData, "cua-connection.json");
-    const reason = "Screen Recording required; grant access in System Settings and restart Sagax";
-    writeFileSync(exactFile, JSON.stringify({ mode: "unavailable", reason }), { mode: 0o600 });
-    expect(readCuaConnection({ platform: "darwin", userData, home })).toBeNull();
-    expect(readCuaUnavailableReason({ platform: "darwin", userData, home })).toBe(reason);
-
-    writeFileSync(legacyFile, JSON.stringify({ mode: "unavailable", reason: "stale legacy failure" }));
-    writeFileSync(exactFile, JSON.stringify({ mode: "embedded" }));
-    expect(readCuaConnection({ platform: "darwin", userData, home })).toBeNull();
-    expect(readCuaUnavailableReason({ platform: "darwin", userData, home })).toBeNull();
+    };
+    // The app's own state file and every old Application Support location.
+    writeFileSync(join(userData, "cua-connection.json"), JSON.stringify(ready), { mode: 0o600 });
+    for (const directory of ["Pulsa Bot", "openmausbot", "OpenGrokBot", "opengrokbot", "Sagax"]) {
+      mkdirSync(join(home, "Library", "Application Support", directory), { recursive: true, mode: 0o700 });
+      writeFileSync(join(home, "Library", "Application Support", directory, "cua-connection.json"), JSON.stringify(ready), { mode: 0o600 });
+    }
+    const saved = { userData: process.env.SAGAX_USER_DATA, home: process.env.HOME };
+    process.env.SAGAX_USER_DATA = userData;
+    process.env.HOME = home;
+    try {
+      for (const platform of ["darwin", "win32", "linux"] as const) {
+        expect(readCuaConnection({ platform })).toBeNull();
+        expect(readCuaUnavailableReason({ platform })).toBeNull();
+      }
+    } finally {
+      if (saved.userData === undefined) delete process.env.SAGAX_USER_DATA;
+      else process.env.SAGAX_USER_DATA = saved.userData;
+      if (saved.home === undefined) delete process.env.HOME;
+      else process.env.HOME = saved.home;
+    }
+    expect(readCuaConnection({ platform: "darwin", record: ready })).toMatchObject({ command: "/fixture/cua-driver", platform: "darwin" });
   });
 
-  it.skipIf(process.platform === "win32")("treats the first present legacy descriptor as authoritative", () => {
-    const root = privateUserData("legacy-mac-home");
-    const first = join(root, "Library", "Application Support", "Pulsa Bot");
-    const stale = join(root, "Library", "Application Support", "OpenGrokBot");
-    mkdirSync(first, { recursive: true, mode: 0o700 });
-    mkdirSync(stale, { recursive: true, mode: 0o700 });
-    const reason = "Accessibility required; grant access in System Settings and restart Sagax";
-    writeFileSync(join(first, "cua-connection.json"), JSON.stringify({ mode: "unavailable", reason }), { mode: 0o600 });
-    writeFileSync(join(stale, "cua-connection.json"), JSON.stringify({
-      mode: "embedded", socketPath: "/fixture/stale.sock", mcpCommand: "/fixture/stale-driver",
-      mcpArgs: ["mcp"], mcpEnv: {},
-    }), { mode: 0o600 });
-    expect(readCuaConnection({ platform: "darwin", home: root, userData: "" })).toBeNull();
-    expect(readCuaUnavailableReason({ platform: "darwin", home: root, userData: "" })).toBe(reason);
+  it("does not let a caller change the connection it was handed", () => {
+    const record = { mode: "embedded", socketPath: "/fixture/cua.sock", mcpCommand: "/fixture/cua-driver", mcpArgs: ["mcp"], mcpEnv: { A: "1" } };
+    const connection = readCuaConnection({ platform: "darwin", record })!;
+    connection.args.push("--evil");
+    connection.env.B = "2";
+    expect(record.mcpArgs).toEqual(["mcp"]);
+    expect(record.mcpEnv).toEqual({ A: "1" });
   });
 
   it("accepts only the exact certified Linux X11 descriptor", () => {
     const userData = privateUserData("linux-user-data");
     const descriptor = linuxDescriptor(userData);
-    writeFileSync(join(userData, "cua-connection.json"), JSON.stringify(descriptor), { mode: 0o600 });
 
     expect(
       readCuaConnection({
         platform: "linux",
-        userData,
+        record: descriptor,
         validateLinuxRuntime: () => true,
       }),
     ).toEqual({
@@ -286,9 +279,8 @@ describe("local computer descriptor", () => {
   it("fails closed when runtime ownership or liveness validation fails", () => {
     const userData = privateUserData("linux-stale-user-data");
     const descriptor = linuxDescriptor(userData);
-    writeFileSync(join(userData, "cua-connection.json"), JSON.stringify(descriptor), { mode: 0o600 });
     expect(
-      readCuaConnection({ platform: "linux", userData, validateLinuxRuntime: () => false }),
+      readCuaConnection({ platform: "linux", record: descriptor, validateLinuxRuntime: () => false }),
     ).toBeNull();
   });
 
@@ -296,14 +288,12 @@ describe("local computer descriptor", () => {
   // permission checks. Keep the schema/decoder cases above cross-platform,
   // but run this host-filesystem proof only on the authoritative Linux lane.
   it.skipIf(process.platform !== "linux")(
-    "validates private descriptor, executable, socket, and live owned processes",
+    "validates the executable, socket, and live owned processes the record names",
     async () => {
       const userData = privateUserData("linux-runtime-security");
       const runtimeDirectory = join(userData, "runtime");
       mkdirSync(runtimeDirectory, { mode: 0o700 });
       const descriptor = linuxDescriptor(userData);
-      const file = join(userData, "cua-connection.json");
-      writeFileSync(file, JSON.stringify(descriptor), { mode: 0o600 });
       const server = createServer();
       await new Promise<void>((resolve, reject) => {
         server.once("error", reject);
@@ -311,15 +301,15 @@ describe("local computer descriptor", () => {
       });
       try {
         chmodSync(descriptor.daemon.socketPath, 0o600);
-        expect(validateLinuxDescriptorRuntime(file, descriptor)).toBe(true);
-        expect(readCuaConnection({ platform: "linux", userData })).not.toBeNull();
-        chmodSync(file, 0o644);
-        expect(validateLinuxDescriptorRuntime(file, descriptor)).toBe(false);
-        chmodSync(file, 0o600);
-        expect(validateLinuxDescriptorRuntime(file, descriptor)).toBe(true);
+        expect(validateLinuxDescriptorRuntime(descriptor)).toBe(true);
+        expect(readCuaConnection({ platform: "linux", record: descriptor })).not.toBeNull();
+        chmodSync(runtimeDirectory, 0o755);
+        expect(validateLinuxDescriptorRuntime(descriptor)).toBe(false);
+        chmodSync(runtimeDirectory, 0o700);
+        expect(validateLinuxDescriptorRuntime(descriptor)).toBe(true);
         appendFileSync(descriptor.driver.path, "changed after descriptor publication");
-        expect(validateLinuxDescriptorRuntime(file, descriptor)).toBe(false);
-        expect(readCuaConnection({ platform: "linux", userData })).toBeNull();
+        expect(validateLinuxDescriptorRuntime(descriptor)).toBe(false);
+        expect(readCuaConnection({ platform: "linux", record: descriptor })).toBeNull();
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()));
       }
@@ -327,33 +317,22 @@ describe("local computer descriptor", () => {
   );
 
   it("still rejects an old embedded-looking Linux descriptor", () => {
-    const userData = privateUserData("linux-forged-user-data");
-    writeFileSync(
-      join(userData, "cua-connection.json"),
-      JSON.stringify({
-        mode: "embedded",
-        mcpCommand: "/tmp/cua-driver",
-        mcpArgs: ["mcp", "--embedded"],
-        mcpEnv: { CUA_DRIVER_EMBEDDED: "1" },
-      }),
-      { mode: 0o600 },
-    );
-    expect(readCuaConnection({ platform: "linux", userData })).toBeNull();
+    expect(readCuaConnection({ platform: "linux", record: {
+      mode: "embedded",
+      mcpCommand: "/tmp/cua-driver",
+      mcpArgs: ["mcp", "--embedded"],
+      mcpEnv: { CUA_DRIVER_EMBEDDED: "1" },
+    } })).toBeNull();
   });
 
   it("preserves the selected Windows descriptor contract", () => {
-    const userData = privateUserData("windows-user-data");
-    writeFileSync(
-      join(userData, "cua-connection.json"),
-      JSON.stringify({
-        mode: "embedded",
-        socketPath: "\\\\.\\pipe\\cua-driver",
-        mcpCommand: "C:\\cua-driver.exe",
-        mcpArgs: ["mcp"],
-        mcpEnv: { CUA_DRIVER_EMBEDDED: "1" },
-      }),
-    );
-    expect(readCuaConnection({ platform: "win32", userData })).toEqual({
+    expect(readCuaConnection({ platform: "win32", record: {
+      mode: "embedded",
+      socketPath: "\\\\.\\pipe\\cua-driver",
+      mcpCommand: "C:\\cua-driver.exe",
+      mcpArgs: ["mcp"],
+      mcpEnv: { CUA_DRIVER_EMBEDDED: "1" },
+    } })).toEqual({
       command: "C:\\cua-driver.exe",
       args: ["mcp"],
       env: { CUA_DRIVER_EMBEDDED: "1" },
@@ -363,13 +342,7 @@ describe("local computer descriptor", () => {
   });
 
   it("rejects malformed legacy argv and environment values", () => {
-    const userData = privateUserData("invalid-user-data");
-    writeFileSync(
-      join(userData, "cua-connection.json"),
-      JSON.stringify({ mode: "embedded", mcpCommand: "cua-driver", mcpArgs: "mcp" }),
-    );
-    expect(readCuaConnection({ platform: "win32", userData })).toBeNull();
-    writeFileSync(join(userData, "cua-connection.json"), JSON.stringify({ mode: "unknown", mcpCommand: "cua-driver", mcpArgs: ["mcp"] }));
-    expect(readCuaConnection({ platform: "win32", userData })).toBeNull();
+    expect(readCuaConnection({ platform: "win32", record: { mode: "embedded", mcpCommand: "cua-driver", mcpArgs: "mcp" } })).toBeNull();
+    expect(readCuaConnection({ platform: "win32", record: { mode: "unknown", mcpCommand: "cua-driver", mcpArgs: ["mcp"] } })).toBeNull();
   });
 });
