@@ -21,45 +21,15 @@ import {
   appIconHintKey,
   appIconTargets,
   primaryBotChoice,
-  type AppIconArt,
   type AppIconChoice,
 } from "@/lib/app-icon-choices";
 import { appIconGlyphSvg } from "@/lib/app-icon-glyphs";
 import { elementToArt, fileToArt, loadImage, renderAppIcon, type IconArt } from "@/lib/app-icon-render";
+import { stageBot } from "@/lib/app-icon-apply";
 
 const STAGE = 256;
 const TILE = 128;
 const UPLOAD_TYPES = "image/png,image/jpeg,image/webp,image/gif";
-
-type BotLike = Parameters<typeof BotAvatar>[0]["bot"];
-
-/** The bot the app's own avatar component draws for a choice. */
-function stageBot(art: AppIconArt, bots: readonly (BotLike & { id: string })[]): BotLike | null {
-  switch (art.kind) {
-    case "owl":
-      return { name: "Sagax", color: art.color, mascotSkin: art.skin };
-    case "shape":
-      return { name: "Sagax", color: art.color, mascotLook: { character: "shape", shape: art.shape, skins: { shape: art.skin } } };
-    case "trombi":
-      return { name: "Trombi", color: "blue", mascotLook: { character: "trombi", skins: { trombi: art.skin } } };
-    case "bunbu":
-      return { name: "Bunbu", color: art.color, mascotLook: { character: "bunbu", skins: { bunbu: art.skin } } };
-    case "shiba":
-      return { name: "Shiba", color: art.color, mascotLook: { character: "shiba", skins: { shiba: art.skin } } };
-    case "grump":
-      return { name: "Grump", color: art.color, mascotLook: { character: "grump", skins: { grump: art.skin } } };
-    case "ogre":
-      return { name: "Ogre", color: art.color, mascotLook: { character: "ogre", skins: { ogre: art.skin } } };
-    case "frog":
-      return { name: "Frog", color: art.color, mascotLook: { character: "frog", skins: { frog: art.skin } } };
-    case "crab":
-      return { name: "Crab", color: art.color, mascotLook: { character: "crab", skins: { crab: art.skin } } };
-    case "primary":
-      return bots.find((bot) => bot.id === art.botId) ?? null;
-    default:
-      return null;
-  }
-}
 
 export function appIconAvailable(): boolean {
   return typeof window !== "undefined" && Boolean(window.ogb?.appIcon);

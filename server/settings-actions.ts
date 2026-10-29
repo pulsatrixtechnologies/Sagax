@@ -14,6 +14,7 @@ import { acceptablePath, actorForTurn } from "../shared/bot-act.ts";
 import { checkPersonQuote, messageNamesCard, normalizeWords, personWrote } from "../shared/primary-request.ts";
 import { decideSettingEffect, HOLD_TEXT, type SettingClass } from "../shared/settings-actions-policy.ts";
 import { decodePreference, isAppearancePreference, isSyncedPreference, pickValue, SETTING_FAMILIES, SETTINGS, settingSpec, valueFits, type SettingIds, type SettingSpec } from "../shared/settings-actions.ts";
+import { DEVICE_APPLY_PATH } from "../shared/device-settings.ts";
 import { STEP_UP_CLASSES, botActClasses, type StepUpClass } from "../shared/step-up.ts";
 import { valueDigest, type ActRuleCandidate, type BotActResult, type BotActService } from "./bot-act.ts";
 
@@ -324,7 +325,8 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     }
     // the person's own bot, conversation, routine, model, computers and MCP
     // servers work in their own environment
-    if (["bot", "thread", "routine", "models", "computer", "connections"].includes(spec.family)) return false;
+    // and the person's own device (#1545)
+    if (["bot", "thread", "routine", "models", "computer", "connections", "device"].includes(spec.family)) return false;
     return undefined;
   }
 
@@ -362,6 +364,27 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     return pickValue(item, field);
   }
 
+  /** #1545 (2026-10-28): a setting kept on the person's device, read in
+   * their open app through the device channel (server/device-settings.ts). */
+  async function deviceRead(facts: TurnFacts, input: SettingsActionInput, spec: SettingSpec, key: string, shape?: (value: unknown) => unknown): Promise<BotActResult> {
+    const answer = await deps.acts().handlePlanned({
+      facts,
+      target: { kind: "route", method: "POST", path: DEVICE_APPLY_PATH, body: { op: "get", key, botName: input.botName } },
+      plan: { effect: "run", summary: "Read a setting", stepUpClasses: [] },
+      threadId: input.threadId, botId: input.botId, botName: input.botName, botColor: input.botColor,
+    });
+    if (answer.status >= 400) return answer;
+    let parsed: { value?: unknown; device?: unknown } = {};
+    try {
+      parsed = JSON.parse(String(answer.body.text ?? "{}")) as typeof parsed;
+    } catch {
+      return text(502, "The person's app answered something unreadable.");
+    }
+    const decoded = parsed.value === null || parsed.value === undefined ? undefined : decodePreference(parsed.value);
+    const shaped = shape && decoded !== undefined ? shape(decoded) : decoded;
+    return text(200, JSON.stringify({ key: spec.key, value: shaped === undefined ? null : shaped, ...(typeof parsed.device === "string" ? { device: parsed.device } : {}), ...(decoded === undefined ? { note: "Not set on that device: the app's default applies." } : {}) }).slice(0, 8000));
+  }
+
   async function handle(input: SettingsActionInput): Promise<BotActResult> {
     const args = input.args;
     const action = args.action;
@@ -382,9 +405,8 @@ export function createSettingsActions(deps: SettingsActionDeps) {
       // anything else lives only in the person's open app
       if (read.preference) {
         const organization = deps.organization();
-        if (organization ? !isSyncedPreference(read.preference) : !isAppearancePreference(read.preference)) {
-          return text(200, JSON.stringify({ key: spec.key, value: null, note: `Kept only in the person's open Sagax app on their device; ask them, or set it (set works). They see it at ${spec.where}.` }));
-        }
+        // 2026-10-28: kept only on the device: asked of the person's open app
+        if (organization ? !isSyncedPreference(read.preference) : !isAppearancePreference(read.preference)) return deviceRead(facts, input, spec, read.preference, read.shape);
         let stored: unknown;
         try {
           stored = await readValue(facts, input, organization ? "/api/me/preferences" : "/api/me/appearance", undefined, undefined, undefined, undefined);
@@ -397,6 +419,7 @@ export function createSettingsActions(deps: SettingsActionDeps) {
         const shaped = read.shape ? read.shape(decoded) : decoded;
         return text(200, JSON.stringify({ key: spec.key, value: shaped === undefined ? null : shaped, ...(raw === undefined ? { note: "Not set: the app's default applies." } : {}) }).slice(0, 8000));
       }
+      if (read.device) return deviceRead(facts, input, spec, read.device, read.shape);
       if (!acceptablePath(read.path)) return text(400, `${spec.key}: that target cannot name a record.`);
       let value: unknown;
       try {
@@ -481,23 +504,14 @@ export function createSettingsActions(deps: SettingsActionDeps) {
       return text(200, `A sign-in card for ${name} is in the conversation. The person signs in themselves (never ask for a code or a password in chat). End this turn; continue once they say it is done.`);
     }
 
-    if ("ui" in built) {
-      // a preference on the person's device: at Approve for me or Full for
-      // the person's own bot it is set at once, otherwise their card
-      const decidedUi = decideSettingEffect({ classes, mode: deps.turnMode(input.botId, input.threadId), ownerWork, keyProtected: false, ...reach });
-      if (decidedUi.effect === "hold") {
-        const held = await deps.acts().handlePlanned({
-          facts,
-          target: { kind: "ui", command: built.ui, input: built.input, action: { type: built.ui, ...built.input }, write: true },
-          // 2026-10-20 (security review): Always allow keeps this preference and this value
-          plan: { effect: "hold", summary: `${spec.label} (${spec.key}): ${describe(value)}`, stepUpClasses: [], rule: { tool: "sagax_settings", scope: { setting: spec.key, value: valueDigest(value) }, description: `${spec.label}: ${describe(value)}`.slice(0, 500) }, onDone: (how) => deps.audit({ key: spec.key, value, secret: false, how, botId: input.botId, actor: speaker }) },
-          threadId: input.threadId, botId: input.botId, botName: input.botName, botColor: input.botColor,
-        });
-        return held.status < 400 ? text(200, `${String(held.body.text ?? "")} ${HOLD_TEXT[decidedUi.reason]}`.trim()) : held;
-      }
-      const result = deps.screen(facts, built.ui, built.input);
-      if (result.status < 400) deps.audit({ key: spec.key, value, secret: false, how: "run", botId: input.botId, actor: speaker });
-      return result.status < 400 ? text(200, `${spec.label}: set in the person's open Sagax app.`) : result;
+    // #1545 (2026-10-28): a setting kept on the person's device (a preference,
+    // or one that lives only in their open app) goes through the device
+    // channel: the same route, policy, card, Always allow and journal as any
+    // other change, and the person's open app answers what it now holds
+    if ("ui" in built || "device" in built) {
+      const device = "device" in built ? { key: built.device, value: built.value } : built.ui === "setPreference" ? { key: String(built.input.key), value: String(built.input.value) } : null;
+      if (!device) return text(400, `${spec.key} is not available here.`);
+      built = { method: "POST", path: DEVICE_APPLY_PATH, body: { op: "set", key: device.key, value: device.value, botName: input.botName } };
     }
 
     // the path the server will route, as act requires (no dot segment, no
@@ -565,7 +579,15 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     // a level changed for the speaking bot while it answers: its next turn
     const nextTurn = approvalTo && subjectBot === input.botId ? " It applies from the person's next message." : "";
     const via = asked === true && typeof proof === "object" && proof.primary ? ` (via ${proof.primary.botName}, at the person's request; no card)` : "";
-    return text(200, `Done: ${spec.label} changed${via}.${nextTurn}`);
+    // a device setting: which app took it (or the server, no app open)
+    let on = "";
+    if (route.path === DEVICE_APPLY_PATH) {
+      try {
+        const device = (JSON.parse(String(result.body.text ?? "{}")) as { device?: unknown }).device;
+        on = device === "server" ? " (saved for the person: no app was open; their apps take it when they open)" : typeof device === "string" ? ` (in the person's open ${device === "ios" ? "iPhone" : device} app)` : "";
+      } catch { /* the change is done; where is only a detail */ }
+    }
+    return text(200, `Done: ${spec.label} changed${via}${on}.${nextTurn}`);
   }
 
   return { handle };

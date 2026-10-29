@@ -634,10 +634,28 @@ permission `settings:change`, member scope `own-setup`, deferred on Claude):
   accept the classes the card's key already covered (`actConfirmedCovers`;
   a policy run covers none). `botActStepUpContent` adds the planned
   classes to the card's own.
-- Device preferences (skin, notifications...) go to the person's open app
-  as the `setPreference` screen command (`DEVICE_PREFERENCE_KEYS` only;
-  `applyBotPreference`); an organization server saves them per person as
-  a change by hand.
+- Settings kept on the person's device (#1545, 2026-10-28): the preferences
+  (`DEVICE_PREFERENCE_KEYS`) and what lives only in the app (family
+  `device`: open at login, update channel, install when away, app icon,
+  microphone, keep awake, phone access, pairing, a paired phone's removal,
+  sharing this computer, server mode; on iPhone haptics and nudge
+  vibration) are read and changed in the person's open app, desktop or
+  iPhone, through the device channel (`shared/device-settings.ts`,
+  `server/device-settings.ts`, `server/routes/device-settings.ts`).
+  `sagax_settings` replays `POST /api/me/device-settings/apply` with the
+  person's session (so the route, the policy, the card, Always allow and the
+  journal are the usual ones); the server sends the `device-settings` frame
+  to that person's streams, each open app reads `GET
+  /api/me/device-settings/requests` and answers `POST .../requests/:id`
+  (`src/lib/device-settings.ts`, iOS `CompanionCore/DeviceSettings.swift`);
+  the first app that keeps the setting answers, within
+  `DEVICE_SETTING_WAIT_MS` (5 s). No app open: a plain answer
+  (`DEVICE_NO_APP`), nothing waits for later; a synced preference of an
+  organization server is then saved for the person. Only the person's own
+  app session answers (never a bot's act replay); a bot's own `act` call on
+  these routes is refused. A pairing code never leaves the screen; a new
+  shared folder is chosen by the person and the desktop app still confirms
+  a sharing change on its own screen (native dialog).
 - `act` still refuses approval fields, rules and card answers; its error
   points to `sagax_settings`. Security keys, vault export and import, and
   the desktop-only Full of a personal server stay the person's (listed in

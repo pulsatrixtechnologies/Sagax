@@ -400,6 +400,11 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET"], path: /^\/api\/achievements\/public$/ },
   // own phone tools (server/routes/phone-tools.ts: the session's person and
   // this device only; a bot's session is refused by the handler)
+  // own device settings (#1545, server/routes/device-settings.ts: the session's
+  // person only; answers from that person's own app, never a bot's)
+  { methods: ["GET"], path: /^\/api\/me\/device-settings\/requests$/ },
+  { methods: ["POST"], path: /^\/api\/me\/device-settings\/requests\/[\w-]+$/ },
+  { methods: ["POST"], path: /^\/api\/me\/device-settings\/apply$/ },
   { methods: ["POST"], path: /^\/api\/me\/phone-tools\/device$/ },
   { methods: ["GET"], path: /^\/api\/me\/phone-tools\/requests$/ },
   { methods: ["POST"], path: /^\/api\/me\/phone-tools\/requests\/[\w-]+$/ },

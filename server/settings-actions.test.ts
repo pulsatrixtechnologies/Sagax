@@ -24,7 +24,9 @@ function harness(over: Partial<SettingsActionDeps> & { mode?: "ask" | "auto" | "
       if (input.plan.effect === "hold") return { status: 200, body: { held: true, text: "Approval needed." } };
       const status = routeStatus;
       if (status < 400) input.plan.onDone?.("run");
-      return status < 400 ? { status, body: { text: "{}" } } : { status, body: { error: "forbidden: not yours" } };
+      // a device setting's change answers what the person's app now holds
+      const written = target.path === "/api/me/device-settings/apply" && over.answer !== undefined ? JSON.stringify(typeof over.answer === "function" ? (over.answer as (path: string) => unknown)(target.path) : over.answer) : "{}";
+      return status < 400 ? { status, body: { text: written } } : { status, body: { error: "forbidden: not yours" } };
     },
     async handle() { return { status: 200, body: { held: true, text: "Approval needed." } }; },
   } as unknown as BotActService;
@@ -179,9 +181,14 @@ describe("sagax_settings", () => {
 
   it("sets a device preference in the person's open app at Approve for me, and asks at Ask", async () => {
     const h = harness();
-    await h.call({ action: "set", key: "appearance.skin", value: "night" });
-    expect(h.screens).toEqual([{ command: "setPreference", input: { key: "omb-skin", value: "night" } }]);
-    expect((await harness({ mode: "ask" }).call({ action: "set", key: "appearance.skin", value: "night" })).body.text).toContain("Approval needed.");
+    const done = await h.call({ action: "set", key: "appearance.skin", value: "night" });
+    expect(done.body.text).toMatch(/^Done/);
+    // #1545 (2026-10-28): through the device channel, the person's open app answers
+    expect(h.planned).toMatchObject([{ effect: "run", method: "POST", path: "/api/me/device-settings/apply", body: { op: "set", key: "omb-skin", value: "night" } }]);
+    expect(h.audits).toEqual([expect.objectContaining({ key: "appearance.skin", value: "night", how: "run", actor: "pr_owner" })]);
+    const ask = harness({ mode: "ask" });
+    expect((await ask.call({ action: "set", key: "appearance.skin", value: "night" })).body.text).toContain("Approval needed.");
+    expect(ask.planned).toMatchObject([{ effect: "hold", path: "/api/me/device-settings/apply" }]);
   });
 
   it("classes the change for the key: a write is irreversible, Full carries every class", () => {
@@ -340,11 +347,12 @@ describe("sagax_settings engines and preferences (#1545)", () => {
     expect(set.planned).toMatchObject([{ method: "GET", path: "/api/me/preferences" }]);
     const unset = await harness({ organization: () => true, answer: { preferences: {} } }).call({ action: "get", key: "computer.botWorkplace" });
     expect(JSON.parse(String(unset.body.text))).toMatchObject({ value: { place: "computer", routines: false, network: "all" }, note: expect.stringMatching(/default/) });
-    const solo = harness({ organization: () => false });
+    // a personal computer: asked of the person's open app (#1545, 2026-10-28)
+    const solo = harness({ organization: () => false, answer: (path: string) => path === "/api/me/device-settings/apply" ? { value: "{\"place\":\"server\"}", device: "desktop" } : {} });
     const local = await solo.call({ action: "get", key: "computer.botWorkplace" });
     expect(local.status).toBe(200);
-    expect(JSON.parse(String(local.body.text))).toMatchObject({ value: null, note: expect.stringMatching(/open Sagax app/) });
-    expect(solo.planned).toEqual([]);
+    expect(JSON.parse(String(local.body.text))).toEqual({ key: "computer.botWorkplace", value: { place: "server", routines: false, network: "all" }, device: "desktop" });
+    expect(solo.planned).toMatchObject([{ effect: "run", method: "POST", path: "/api/me/device-settings/apply", body: { op: "get", key: "sagax.botWorkplace.v1" } }]);
     // the look of a personal computer is kept by its server
     const skin = harness({ organization: () => false, answer: { preferences: { "omb-skin": "midnight" } } });
     expect(JSON.parse(String((await skin.call({ action: "get", key: "appearance.skin" })).body.text))).toMatchObject({ value: "midnight" });
@@ -523,12 +531,17 @@ describe("sagax_settings: the rest of Settings (#1545, lot 2)", () => {
     expect(missing).toEqual([]);
   });
 
-  it("reads a device-only preference as a note, never a refusal", async () => {
+  it("reads a device-only preference in the person's open app, and relays when none is open (#1545, 2026-10-28)", async () => {
     for (const organization of [true, false]) {
-      const h = harness({ organization: () => organization });
+      const h = harness({ organization: () => organization, answer: { key: "omb-send-key", value: "mod-enter", device: "desktop" } });
       const read = await h.call({ action: "get", key: "appearance.sendKey" });
       expect(read.status).toBe(200);
-      expect(JSON.parse(String(read.body.text))).toMatchObject({ value: null, note: expect.stringMatching(/open Sagax app/) });
+      expect(JSON.parse(String(read.body.text))).toEqual({ key: "appearance.sendKey", value: "mod-enter", device: "desktop" });
+      expect(h.planned).toMatchObject([{ method: "POST", path: "/api/me/device-settings/apply", body: { op: "get", key: "omb-send-key" } }]);
+      // no app open: the route's plain answer, never a made-up value
+      const none = harness({ organization: () => organization, routeStatus: 409 });
+      const closed = await none.call({ action: "get", key: "appearance.sendKey" });
+      expect(closed.status).toBe(409);
     }
   });
 
@@ -600,5 +613,65 @@ describe("sagax_settings: the actions Settings offers (#1545, lot 3)", () => {
         }
       }
     }
+  });
+});
+
+describe("sagax_settings: the settings kept only in the person's open app (#1545, 2026-10-28)", () => {
+  const changes: Array<{ key: string; value: unknown; sent: string }> = [
+    { key: "device.openAtLogin", value: "on", sent: "on" },
+    { key: "device.updateChannel", value: "nightly", sent: "nightly" },
+    { key: "device.updateWhenAway", value: true, sent: "true" },
+    { key: "device.appIcon", value: "owl:snowy", sent: "owl:snowy" },
+    { key: "device.microphone", value: "default", sent: "default" },
+    { key: "device.keepAwake", value: false, sent: "false" },
+    { key: "device.remoteAccess", value: true, sent: "true" },
+    { key: "device.pairing", value: true, sent: "true" },
+    { key: "device.pairedDeviceRemove", value: "dev1", sent: "dev1" },
+    { key: "device.computerSharing", value: { server: "s1", terminal: false }, sent: "{\"server\":\"s1\",\"terminal\":false}" },
+    { key: "device.serverMode", value: "leave", sent: "leave" },
+    { key: "device.haptics", value: false, sent: "false" },
+  ];
+
+  it("reads each one in the person's open app, never a note or a refusal", async () => {
+    for (const { key } of changes) {
+      const h = harness({ answer: { key, value: "true", device: key === "device.haptics" ? "ios" : "desktop" } });
+      const read = await h.call({ action: "get", key });
+      expect(read.status, key).toBe(200);
+      expect(JSON.parse(String(read.body.text)), key).toMatchObject({ key, value: true });
+      expect(h.planned, key).toMatchObject([{ effect: "run", method: "POST", path: "/api/me/device-settings/apply", body: { op: "get", key } }]);
+    }
+  });
+
+  it("matrix: admin and member, Ask, Approve for me and Full: the bot's level is the only gate", async () => {
+    for (const organization of [false, true]) {
+      for (const role of ["admin", "member"] as const) {
+        for (const mode of ["ask", "auto", "full"] as const) {
+          for (const { key, value, sent } of changes) {
+            // a member's own device: the same rights as an admin's
+            const h = harness({ mode, organization: () => organization, answer: { key, value: sent, device: "desktop" }, ...(role === "member" ? { operatorId: () => "pr_member" } : {}) });
+            const result = await h.call({ action: "set", key, value });
+            const label = `${key} ${role} ${mode} org=${organization}`;
+            expect(result.body.error ?? "", label).not.toMatch(/UI only|stays the person's|not available/);
+            expect(h.planned.at(-1), label).toMatchObject({ effect: mode === "ask" ? "hold" : "run", method: "POST", path: "/api/me/device-settings/apply", body: { op: "set", key, value: sent } });
+            if (mode !== "ask") expect(result.body.text, label).toMatch(/^Done.*open desktop app/);
+            if (mode !== "ask") expect(h.audits, label).toEqual([expect.objectContaining({ key, how: "run" })]);
+          }
+        }
+      }
+    }
+  });
+
+  it("relays the app's own answer: none open, none keeps it, or it said why", async () => {
+    for (const status of [409, 422, 504, 400]) {
+      const h = harness({ routeStatus: (method, path) => method === "POST" && path === "/api/me/device-settings/apply" ? status : 200 });
+      const result = await h.call({ action: "set", key: "device.openAtLogin", value: "off" });
+      expect(result.status, String(status)).toBe(status);
+      expect(h.audits).toEqual([]);
+    }
+  });
+
+  it("says when a synced preference was saved for the person with no app open", async () => {
+    const h = harness({ organization: () => true, answer: { device: "server" } });
+    expect((await h.call({ action: "set", key: "notifications.readReceipts", value: false })).body.text).toMatch(/no app was open/);
   });
 });
