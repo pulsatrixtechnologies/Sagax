@@ -275,4 +275,9 @@ nodeGuard:
     - key: sagax.io/dedicated
       operator: Exists
       effect: NoSchedule
+    # The sandbox pool taint (sagax.io/sandboxes=true:NoSchedule): without it the
+    # guard never schedules on the pool nodes.
+    - key: sagax.io/sandboxes
+      operator: Exists
+      effect: NoSchedule
 
