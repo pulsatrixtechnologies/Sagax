@@ -39,6 +39,7 @@ import { StagedOrgImport } from "@/components/OrgImportDialog";
 import { RetroAssistantHost } from "@/components/RetroAssistantHost";
 import { AchievementToaster } from "@/components/achievements/AchievementToaster";
 import { MyChromeIndicator } from "@/components/MyChromeIndicator";
+import { HostControlIndicator } from "@/components/HostControlIndicator";
 import { reportAchievement } from "@/lib/achievements";
 import { FloatingBotsHost } from "@/components/FloatingBotsHost";
 import { FloatingWindowsHost } from "@/components/floating/FloatingWindowsHost";
@@ -454,6 +455,8 @@ function Shell() {
       <UpdateBanner />
       {/* A bot driving the person's own Chrome: who, where, and Stop. */}
       <MyChromeIndicator />
+      {/* A bot controlling this computer's own screen: who, and Stop. */}
+      <HostControlIndicator />
       {/* The one bottom-left card at a time (only the star is left in Sagax). */}
       {/* Hibou 98 only: title bar, menus and toolbar (renders nothing otherwise) */}
       <RetroChromeSlot slot="top" onNewBot={() => setComposeOpen((open) => !open)} />

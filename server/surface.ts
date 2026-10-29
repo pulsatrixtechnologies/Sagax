@@ -77,7 +77,10 @@ export function computerSkippedNote(cause: string): string {
 }
 
 /** Decide what a turn mounts. One place per turn: a computer destination
- * mounts only that computer (web work happens in its own browser), a browser
+ * mounts only that computer (web work happens in its own browser), except
+ * this computer, the person's own screen, which keeps the built-in browser
+ * beside it so looking something up never happens in front of them
+ * (2026-10-28, HOST_SCREEN_RULE), a browser
  * destination mounts only the built-in browser, Off mounts nothing. A
  * conversation pin (the person's, from the composer: honouredPin) wins over
  * the bot's default, so a thread never changes place under someone; only Off
@@ -112,14 +115,16 @@ export function resolveSurface(input: {
     return { computer: "off", browser: false, pinned: pin,
       note: " This conversation is pinned to the built-in browser, but its tools are unavailable this turn. No computer is mounted instead. Do not claim to have used it; a different place must be selected before acting there." };
   }
-  if (pin) return { computer: pin, browser: false, pinned: pin, note: "" };
+  // This computer is the person's own screen: the built-in browser stays
+  // mounted beside it, so web work happens out of sight (HOST_SCREEN_RULE).
+  if (pin) return { computer: pin, browser: pin === "local" && browserOn, pinned: pin, note: "" };
   if (destination === "browser") {
     return browserOn
       ? { computer: "off", browser: true, pinned: null, note: "" }
       : { computer: "off", browser: false, pinned: null, note: NO_BROWSER_NOTE };
   }
   if (destination !== undefined) {
-    return { computer: destination, browser: false, pinned: null, note: "" };
+    return { computer: destination, browser: destination === "local" && browserOn, pinned: null, note: "" };
   }
   return { computer: undefined, browser: browserOn, pinned: null, note: "" };
 }
@@ -202,6 +207,20 @@ export function surfaceLabel(surface: Surface): string {
 const RESTATE_SENTENCE =
   " Before your first action on a screen or page in a task, say in one short sentence where you are working, using that same name.";
 
+/** This computer is the person's own screen (2026-10-28). Asked for "the
+ * latest video of" someone, a bot on Auto opened Chrome on that screen and
+ * clicked through it in front of the person, who thought their computer was
+ * possessed. Web work happens out of sight by default and shows its result in
+ * the chat; the screen is for what the person asks to see done there, or a
+ * signed-in session nothing else reaches, and the bot says so first. Not a
+ * restriction: the person can always ask for it, under their approval level.
+ * Sagax draws the banner with Stop itself (HostControlIndicator). */
+export const HOST_SCREEN_RULE =
+  " This computer is the person's own screen: every window you open, click and keystroke there happens in front of them. Looking something up, searching, reading a page or finding a video is never a reason to use it: use web search, fetch or the built-in browser when you have it, which work out of sight, and give the result in the chat (a YouTube or other video link in your reply shows as a player the person can watch right in the chat)."
+  + " Use this computer's screen, or open their own browser on it, only when the person asks for it (\"open it in my Chrome\", \"do it in my browser\", \"on my screen\") or when the task needs their signed-in session there and no out-of-sight way works; their request is enough, under their approval level."
+  + " Before your first action on their screen, say so in one line in the chat, for example \"I'm taking control of your computer to open this in Chrome.\"; Sagax then shows that you are controlling it, with a Stop button."
+  + " Replaying a recorded procedure follows the same rule: out of sight in the built-in browser when it can be, otherwise announced first.";
+
 /** Where a person moves a conversation: the Computer panel is the one place
  * control both interface modes show (Simple has no composer chip). */
 const PLACE_CONTROL = "the Computer panel";
@@ -231,8 +250,12 @@ export function surfacePrompt(
   opts: { pinned?: Surface | null; note?: string; canSelect?: boolean; cloudHome?: boolean } = {},
 ): string {
   const computer = mounted.computer ? surfaceLabel(mounted.computer) : null;
+  const hostScreen = mounted.computer === "local";
   let text = "";
-  if (computer && mounted.browser) {
+  if (hostScreen && mounted.browser) {
+    text =
+      ` Two surfaces are mounted this turn: the built-in browser (agent_browser_open, agent_browser_snapshot, agent_browser_click and friends), which runs out of sight inside Sagax, and ${computer}, the person's own screen (the computer server's tools). Web tasks → the built-in browser. Desktop apps, files and shell → ${computer} tools. Pick one surface for a task and stay on it; if you need the user to sign in, say which surface — the Browser tab or ${computer}.`;
+  } else if (computer && mounted.browser) {
     text =
       ` Two surfaces are mounted this turn: the built-in browser (the browser server's browser_navigate, browser_snapshot, browser_click, browser_fill and friends) and ${computer} (the computer server's tools). Web tasks → the built-in browser. Desktop apps, files and shell → ${computer} tools. Pick one surface for a task and stay on it; if you need the user to sign in, say which surface — the Browser tab or ${computer}.`;
   } else if (computer) {
@@ -242,6 +265,7 @@ export function surfacePrompt(
     text =
       " Everything you do on screen happens in the built-in browser tab; there is no desktop, file or shell computer this turn. If you need the user to sign in, tell them it is in the Browser tab of the Computer panel.";
   }
+  if (hostScreen) text += HOST_SCREEN_RULE;
   if (text) text += RESTATE_SENTENCE + (opts.canSelect
     ? SURFACE_AUTHORITY.replace(ASK_TO_SWITCH, "inspect connected choices with select_computer and select the requested available place; on a pending result end this turn so Sagax can reconnect the correct tools and continue the original request")
     : SURFACE_AUTHORITY);

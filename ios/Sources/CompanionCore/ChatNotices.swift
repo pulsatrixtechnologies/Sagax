@@ -14,10 +14,12 @@ public enum ChatNotices {
     /// Every activity row whose name starts with one of these is technical.
     public static let hiddenPrefixes = ["notice:", "recovery: Automatic recovery:"]
     /// Except these, which ask something of the person: approve in
-    /// 1Password, send the message again.
+    /// 1Password, send the message again, see that a bot now controls the
+    /// computer (and can be stopped).
     public static let shown = [
         "notice: Waiting for 1Password: approve the request in 1Password on your computer.",
         "notice: The server environment did not start in time. Send the message again in a few minutes.",
+        "notice: The bot is now controlling this computer: its screen, mouse and keyboard. Stop it at any time with Stop.",
     ]
 
     /// True for an activity row name the chat leaves out.

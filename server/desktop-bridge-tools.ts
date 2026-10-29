@@ -74,7 +74,7 @@ export const DESKTOP_BRIDGE_TOOLS = [
   },
   {
     name: "browse",
-    description: `Open a web page in a browser on the person's computer (their network) and return its rendered HTML, or a PNG screenshot.`,
+    description: `Open a web page in a browser on the person's computer (their network) and return its rendered HTML, or a PNG screenshot. It runs out of sight: no window opens on their screen. Use it, fetch_url or web search for any lookup, then show the result in the chat.`,
     inputSchema: { type: "object", properties: { url: { type: "string" }, screenshot: { type: "boolean" } }, required: ["url"], additionalProperties: false },
   },
   {
@@ -84,7 +84,7 @@ export const DESKTOP_BRIDGE_TOOLS = [
   },
   {
     name: "computer_use",
-    description: "Call one computer-use tool on the person's screen (from computer_list_tools).",
+    description: "Call one computer-use tool on the person's own screen (from computer_list_tools): it acts in front of them. Only when they asked for work on their screen or in their own browser, or no out-of-sight way (browse, fetch_url, web search) works; say so in one line in the chat before the first call.",
     inputSchema: {
       type: "object",
       properties: { tool_name: { type: "string" }, arguments: { type: "object" } },

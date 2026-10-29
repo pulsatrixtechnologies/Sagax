@@ -24,6 +24,36 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Web work stays out of sight; this computer's screen is announced (2026-10-28)
+
+A bot on Auto, asked for "the latest video of" someone, opened Chrome on the
+person's own screen and clicked through it in front of them. Cause: on Auto
+the dispatch mounted this computer (cua-driver on the real screen) and, by
+the "one place per turn" rule, NOT the built-in headless browser, so the
+prompt said web pages go through this computer's own browser; Claude Code
+could also load its own Claude in Chrome extension. Now:
+- This computer keeps the built-in browser beside it (Auto, Works on, a
+  pin: `resolveSurface` and the dispatch in server/index.ts). Other
+  computers keep one place per turn.
+- `HOST_SCREEN_RULE` (server/surface.ts) on every turn with this computer:
+  lookups go to web search, fetch or the built-in browser, the result in
+  the chat (a YouTube link draws as a player); the screen only when the
+  person asks ("open it in my Chrome") or a signed-in session needs it,
+  announced in one line first. Not a restriction: their request is enough,
+  under their approval level. Same in the computer paragraph, the Auto
+  rules and the desktop bridge's `browse` / `computer_use` descriptions.
+- Claude turns pass `--no-chrome` (floor 2.1.0): the person's Chrome is
+  reached through My Chrome or this computer, both visible and stoppable.
+- The first screen action of a turn on this computer appends
+  `HOST_CONTROL_NOTICE` (shared/host-control.ts, kept by chat-notices on
+  desktop and iOS), and `GET /api/computer/host-control` lists the bot
+  holding `computer:host`: `HostControlIndicator` draws the banner with Stop
+  (the ordinary task stop). An organization server answers 404.
+Tests: `server/host-screen-web.e2e.test.ts`, `server/surface.test.ts`,
+`src/components/HostControlIndicator.dom.test.ts`,
+`src/lib/activity-runs.test.ts`, `shared/chat-notices.test.ts`, iOS
+`ChatNoticesTests`. Captures: `scripts/capture-host-control.mjs`,
+docs/screenshots/host-control.
 ## Headless tasks run for real: sagax task give / task wait (2026-10-29)
 
 `sagax team apply FILE`, `sagax task give --bot NAME --text TEXT` and

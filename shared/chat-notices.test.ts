@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CHAT_NOTICE_RULES, isTechnicalNoticeName } from "./chat-notices.ts";
 import { ONE_PASSWORD_WAITING } from "./credential-vault.ts";
+import { HOST_CONTROL_NOTICE } from "./host-control.ts";
 import { SANDBOX_WAKE_NOTICE, SANDBOX_WAKE_TIMEOUT_NOTICE } from "./sandbox-wake.ts";
 import { workspaceLineName } from "./workspace-line.ts";
 import { limitFailoverText } from "./limit-failover.ts";
@@ -33,6 +34,7 @@ describe("technical notices", () => {
     for (const name of [
       ONE_PASSWORD_WAITING,
       SANDBOX_WAKE_TIMEOUT_NOTICE,
+      HOST_CONTROL_NOTICE,
       `recovery: ${limitFailoverText({ kind: "waiting", from: "Claude", resetsAt: 0 }, () => "2:05 PM")}`,
       STOPPED_TURN_NAME,
       "error: Claude Code is signed out",
