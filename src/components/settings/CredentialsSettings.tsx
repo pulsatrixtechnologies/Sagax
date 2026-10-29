@@ -208,7 +208,7 @@ function SingleUseWallets({ data, onChanged, onError }: {
           <div key={wallet} className="px-3.5 py-2.5" data-single-use-wallet={wallet}>
             <SwitchRow
               label={label}
-              description={row?.chosen ? t("vault.singleUse.notLive", { missing: row.missing }) : t("vault.singleUse.connect")}
+              description={row?.chosen ? (row.ready ? t("vault.singleUse.live", { wallet: label }) : t("vault.singleUse.notLive", { missing: row.missing })) : t("vault.singleUse.connect")}
               checked={row?.chosen === true}
               disabled={busy || Boolean(data.unavailable)}
               onChange={(next) => { void set(wallet, next); }}
@@ -232,6 +232,9 @@ export function ItemRow({ item, botName, bots, onEdit, onChanged, onError }: {
   const [confirming, setConfirming] = useState(false);
   const [notes, setNotes] = useState<string | null>(null);
   const [pan, setPan] = useState<string | null>(null);
+  // 2026-10-29: the owner's own look at a password or key (one a bot made
+  // with {$secret: generate} above all: nobody typed it)
+  const [secretValue, setSecretValue] = useState<string | null>(null);
   const [allow, setAllow] = useState("");
   const allowed = new Set(item.grants.map((grant) => grant.botId));
   const run = async (work: () => Promise<unknown>) => {
@@ -285,6 +288,13 @@ export function ItemRow({ item, botName, bots, onEdit, onChanged, onError }: {
               {pan === null ? t("vault.settings.showNumber") : t("vault.settings.hideNumber")}
             </button>
           )}
+          {item.source === "local" && (item.hasPassword || item.hasApiKey) && (
+            <button type="button" className={PILL} disabled={busy} data-credential-reveal="" onClick={() => void (secretValue === null
+              ? revealCredential(item.id, item.hasPassword ? "password" : "apiKey").then((answer) => setSecretValue(answer.value)).catch((failure) => onError(message(failure)))
+              : Promise.resolve(setSecretValue(null)))}>
+              {secretValue === null ? t(item.hasPassword ? "vault.settings.showPassword" : "vault.settings.showKey") : t("vault.settings.hideSecret")}
+            </button>
+          )}
           {item.hasNotes && (
             <button type="button" className={PILL} disabled={busy} onClick={() => void (notes === null ? revealCredentialNotes(item.id).then((answer) => setNotes(answer.notes)).catch((failure) => onError(message(failure))) : Promise.resolve(setNotes(null)))}>
               {notes === null ? t("vault.settings.showNote") : t("vault.settings.hideNote")}
@@ -298,6 +308,7 @@ export function ItemRow({ item, botName, bots, onEdit, onChanged, onError }: {
       </div>
       {notes !== null && <pre className="whitespace-pre-wrap rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink">{notes}</pre>}
       {pan !== null && <p className="font-mono text-[12.5px] text-ink" dir="ltr">{pan}</p>}
+      {secretValue !== null && <p className="select-all break-all font-mono text-[12.5px] text-ink" dir="ltr" data-credential-secret="">{secretValue}</p>}
       {(item.kind === "login" || item.kind === "apiKey") && (
         <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
           <span className="text-ink-secondary">{t("vault.settings.allowedBots")}</span>

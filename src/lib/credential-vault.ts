@@ -110,8 +110,8 @@ export const loadCardOnePassword = (botId: string, messageId: string, threadId: 
   api<{ available: boolean; onePassword: OnePasswordStatus; items: CardOnePasswordItem[] }>(`${CARD(botId, messageId)}/onepassword`, { method: "POST", body: JSON.stringify({ threadId }) });
 /** The key a card uses for a 1Password choice (never shown). */
 export const onePasswordChoiceKey = (item: Pick<CardOnePasswordItem, "vaultId" | "itemId">) => `op:${item.vaultId}:${item.itemId}`;
-export const grantFromCard = (botId: string, messageId: string, threadId: string, mode: VaultGrantMode, choice: { itemId: string } | { item: VaultItemDraft } | { onePassword: { vaultId: string; itemId: string } }, addSite = false) =>
-  api<{ item: VaultItemListing }>(`${CARD(botId, messageId)}/grant`, { method: "POST", body: JSON.stringify({ threadId, mode, ...choice, ...(addSite ? { addSite: true } : {}) }) });
+export const grantFromCard = (botId: string, messageId: string, threadId: string, mode: VaultGrantMode, choice: { itemId: string } | { item: VaultItemDraft } | { onePassword: { vaultId: string; itemId: string } }, addSite = false, turnOnly = false) =>
+  api<{ item: VaultItemListing }>(`${CARD(botId, messageId)}/grant`, { method: "POST", body: JSON.stringify({ threadId, mode, ...choice, ...(addSite ? { addSite: true } : {}), ...(turnOnly ? { turnOnly: true } : {}) }) });
 /** The person signed in themselves in the bot's browser instead. */
 /** Arm the bot's browser before the person signs in there themselves. */
 export const selfStartFromCard = (botId: string, messageId: string, threadId: string) =>

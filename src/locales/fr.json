@@ -1404,7 +1404,7 @@
   "vault.settings.showNote": "Afficher la note",
   "vault.settings.unavailable": "Votre coffre n'a pas pu être ouvert à ce lancement. Vos éléments sont en sécurité; redémarrez Sagax pour réessayer.",
   "vault.singleUse.connect": "Pas branché. Activez pour utiliser le compte que vous avez déjà. Rien n'est facturé.",
-  "vault.singleUse.intro": "Shop Pay et Link sont des portefeuilles que vous avez déjà. Sagax demande une carte à usage unique seulement après votre accord. Le site ne reçoit pas le numéro enregistré, et le bot ne le voit pas. Cette installation ne peut pas encore demander cette carte.",
+  "vault.singleUse.intro": "Shop Pay et Link sont des portefeuilles que vous avez déjà. Sagax demande une carte à usage unique seulement après votre accord, par l'outil en ligne de commande du portefeuille connecté sur cet ordinateur. Le site ne reçoit pas le numéro enregistré, et le bot ne le voit pas.",
   "vault.singleUse.link": "Link",
   "vault.singleUse.notLive": "Branché. Pas encore en service: {missing}. Rien n'est facturé.",
   "vault.singleUse.shopPay": "Shop Pay",
@@ -11846,5 +11846,12 @@
   "outbound.tracking.step.outForDelivery": "En cours de livraison",
   "outbound.tracking.step.delivered": "Livré",
   "outbound.tracking.step.exception": "Problème de livraison",
-  "botWizard.role.subscriptions": "Abonnements"
+  "botWizard.role.subscriptions": "Abonnements",
+  "vault.singleUse.live": "En service : {wallet} est connecté sur cet ordinateur. Sagax lui demande une carte à usage unique après votre accord.",
+  "vault.card.turnOnly": "Ce tour seulement",
+  "vault.card.turnOnlyHint": "Prêter cet identifiant pour ce tour seulement : il n'est jamais enregistré, et Sagax l'oublie à la fin du tour.",
+  "vault.card.allowedTurnOnly": "pour ce tour seulement, non enregistré",
+  "vault.settings.showPassword": "Afficher le mot de passe",
+  "vault.settings.showKey": "Afficher la clé",
+  "vault.settings.hideSecret": "Masquer"
 }

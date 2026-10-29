@@ -44,14 +44,14 @@ describe("one-time card contract", () => {
     expect(shop).toMatchObject({ charged: false, sent: false, code: "provider_unconfigured" });
     expect(shop.prompt).toContain("shop CLI");
     expect(shop.prompt).toContain("shop spend-request create");
-    expect(shop.prompt).toContain("LINK_API_BASE_URL");
+    expect(shop.prompt).toContain("not installed or not signed in");
     expect(shop.prompt).not.toMatch(/https?:/);
     const link = requestSingleUseToken({
       wallet: "link", chosen: true, approval: "once", merchant: "Example Shop", amount: "9.00", currency: "CAD",
     });
     expect(link.code).toBe("provider_unconfigured");
     expect(link.prompt).toContain("link-cli spend-request create");
-    expect(link.prompt).toContain("no server key");
+    expect(link.prompt).toContain("link-cli auth login");
     const claimed = requestSingleUseToken({
       wallet: "link", chosen: true, approval: "once", merchant: "Example Shop", amount: "9.00", currency: "CAD", token: "spt_opaque_value",
     });
@@ -86,5 +86,16 @@ describe("one-time card contract", () => {
     expect(view.shop_pay.missing).toContain("shop spend-request create");
     expect(blob(view)).not.toMatch(/\d{13,19}/);
     expect(blob(walletLinkView(undefined))).not.toContain("true\", \"ready\": true");
+  });
+
+  it("gives the one-time card handle once approved where the wallet can be asked (2026-10-29)", () => {
+    const live = requestSingleUseToken({ wallet: "link", chosen: true, approval: "once", merchant: "Shop", amount: "1.00", currency: "CAD", fillHandle: "cred_w1234567890123456" });
+    expect(live).toMatchObject({ code: "issue_at_fill", sent: false, charged: false });
+    // the handle survives the card-number redaction
+    expect(live.prompt).toContain("cred_w1234567890123456");
+    expect(live.journal).not.toContain("cred_w");
+    const pending = requestSingleUseToken({ wallet: "link", chosen: true, approval: "pending", merchant: "Shop", fillHandle: "cred_wabc" });
+    expect(pending.code).toBe("approval_required");
+    expect(walletLinkView({ link: { chosen: true } }, { link: true }).link).toEqual({ chosen: true, ready: true, missing: "" });
   });
 });

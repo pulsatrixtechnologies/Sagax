@@ -99,7 +99,7 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
     );
   }
   if (secret.provided) {
-    const how = request.mode === "always" ? t("vault.card.allowedAlways", { bot: botName }) : t("vault.card.allowedOnce");
+    const how = request.turnOnly ? t("vault.card.allowedTurnOnly") : request.mode === "always" ? t("vault.card.allowedAlways", { bot: botName }) : t("vault.card.allowedOnce");
     return (
       <AskSettledLine
         ariaLabel={t("vault.card.title", { site })}
@@ -113,7 +113,7 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
     );
   }
 
-  const grant = async (mode: VaultGrantMode, event?: FormEvent) => {
+  const grant = async (mode: VaultGrantMode, event?: FormEvent, turnOnly = false) => {
     event?.preventDefault();
     if (busy) return;
     setBusy(true);
@@ -125,7 +125,7 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
         : choice === NEW
           ? { item: createCredentialDraft({ ...draft, domains: parseDomains(draft.domains) }) }
           : { itemId: choice };
-      await grantFromCard(botId, message.id, threadId, mode, target, !fromOnePassword && mode === "always" && choice !== NEW && addSite && canAddSite);
+      await grantFromCard(botId, message.id, threadId, mode, target, !fromOnePassword && mode === "always" && choice !== NEW && addSite && canAddSite, turnOnly && choice === NEW && mode === "once");
       setDraft((current) => ({ ...current, password: "", totpSeed: "" }));
       returnFocusToComposer();
     } catch (failure) {
@@ -273,6 +273,12 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
               {busy ? <Loader2 size={14} className="animate-spin" /> : <LockKeyhole size={14} />}
               {t("vault.card.allowOnce")}
             </button>
+            {/* 2026-10-29: a login typed here, lent for this turn only, never saved */}
+            {choice === NEW && (
+              <button type="button" disabled={busy} onClick={() => void grant("once", undefined, true)} className={cn(ASK_CHIP, ASK_CHIP_IDLE)} data-vault-turn-only title={t("vault.card.turnOnlyHint")}>
+                {t("vault.card.turnOnly")}
+              </button>
+            )}
             {/* a 1Password item: this request only (review of #954) */}
             {!onePasswordChosen && chosen?.source !== "1password" && (
               <button type="button" disabled={busy || !choice} onClick={() => void grant("always")} className={cn(ASK_CHIP, ASK_CHIP_IDLE)} data-vault-always>

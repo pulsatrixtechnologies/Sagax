@@ -1138,16 +1138,44 @@ Settings > Security (`MyApprovalRules`, also `rules.owner` and
   kept or logged; the security code is typed. Desktop has no on-device
   text reader yet.
 - **One-time card** (Shop Pay or Link, a wallet the person already has):
-  Settings > Credentials stores the choice only
-  (`POST /api/me/credentials/wallets`, the person's own vault, client
-  scope, not an admin gate). `request_purchase` may pass `wallet`
+  Settings > Credentials stores the choice (`POST /api/me/credentials/wallets`,
+  the person's own vault, client scope, not an admin gate) and shows
+  whether the wallet is live here (`walletLinksLive`: its CLI installed and
+  signed in as the person). `request_purchase` may pass `wallet`
   `shop_pay` or `link` instead of a saved card. The existing purchase
-  approval stays in front of any send. This build does not ship the shop
-  CLI or `@stripe/link-cli` and holds no session, so the ask returns
-  `provider_unconfigured`, nothing is charged, and the saved number is
-  not typed into the page. A card number never enters the prompt or the
-  journal (`shared/single-use-card.ts`). Tests:
-  `shared/single-use-card.test.ts`, `server/credential-vault.payment.test.ts`.
+  approval (or the Primary Bot at the person's request) stays the only
+  barrier. 2026-10-29: once approved, the bot gets the purchase's card
+  handle `cred_w<16 hex>` (`walletCardHandle`) and calls `fill_credential`
+  with cardNumber, cardExpiry, cardCvc, cardholder; at the first field
+  `server/wallet-issuer.ts` runs the wallet's own CLI (`link-cli` for Link,
+  `shop` for Shop Pay, same spend-request commands): `spend-request create
+  --request-approval` (the wallet may ask the person on their phone; the
+  fill then says so and the bot calls again, same request), `retrieve
+  --interval`, then `retrieve --include card --output-file <0600 temp>`
+  read and deleted at once. The card lives in memory for that purchase's
+  one form (each field once, PURCHASE_FORM_MS), never on disk, in the
+  prompt, a result or the journal; `record_purchase` closes a wallet
+  purchase whose card was typed. The desktop's person uses the CLI's own
+  session; a person on an organization server their own
+  `<principal>/<wallet>-wallet-auth.json` (`--auth`). Not installed:
+  `provider_unconfigured`, nothing charged. The CLI flags follow
+  `@stripe/link-cli` 0.30 (README); Shop Pay's CLI is assumed to take the
+  same commands. Tests (fake CLI only, nothing charged):
+  `shared/single-use-card.test.ts`, `server/wallet-issuer.test.ts`,
+  `server/credential-vault.coffre.test.ts`, `server/credential-vault.payment.test.ts`.
+- **Show a password or key** (2026-10-29): Settings > Vault shows a local
+  item's password or API key to its owner (desktop "Show password"/"Show
+  key", iOS behind `VaultRevealGate`), so a secret a bot made with
+  `{"$secret": "generate"}` (#1603) can be read by the person.
+- **A login for this turn only** (2026-10-29): on the request card a typed
+  login can be lent with "This turn only" (`turnOnly` on the card's grant,
+  `CredentialVault.lend`): never written to the vault file, held in memory,
+  granted once to that bot in that conversation. `turnPhase` (index.ts,
+  from the bus) forgets it at the end (`turn.completed`, ok or not, or
+  `session.exited`) of the first turn that started after it was lent, or
+  after VAULT_TURN_LEND_MS (15 min) at most. The bot is told "for this turn
+  only". Tests: `server/credential-vault.coffre.test.ts`,
+  `server/routes/credential-vault.test.ts`.
 - Not done: a device tool on the phone (row 81): Sagax has no phone tools.
 - Tests: `shared/computer-app.test.ts`, `server/computer-app.test.ts`,
   `server/harness/bus.test.ts` (publish gate), `server/owner-approval.test.ts`

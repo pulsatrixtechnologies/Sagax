@@ -5129,7 +5129,7 @@
       "vault.settings.showNote": "5208eeafd510819cdb9f302f0498c8fee1367f4eaac82bc877f7f596abeb6150",
       "vault.settings.unavailable": "37d02774bfa42f63b91845d307dadbb2f839abb962d96c7273e0ff17c4562210",
       "vault.singleUse.connect": "92955e7b81bdf1ccab87f6ee9ee6007b217faa5210d11235664cebeebdf7691e",
-      "vault.singleUse.intro": "054de250eaf152def16eb7ceb2e9ef30408cf37fdcef60fd20216c8c7785bba8",
+      "vault.singleUse.intro": "362938db2970dcad025f5e36096fb8b16f93556691f6ea775e08dfea1486b7d1",
       "vault.singleUse.link": "a6a32dbc5618ea39f6df5b0f9808e3588b19e00d5f6f96c69492e40386e5aeab",
       "vault.singleUse.notLive": "03baa7aaf5a39f043c934256f34b734e49d0dbec1cb034fcf6c7ae4b983f6861",
       "vault.singleUse.shopPay": "d1be7b895f51d4872fe4bebdf08a90457603e857fdcd9817098213ea04b1a117",
@@ -15649,7 +15649,14 @@
       "outbound.tracking.step.outForDelivery": "1b8faad0f548636d4a3215c30dd32e9c39c212dbf751c27b9715064b405114aa",
       "outbound.tracking.step.delivered": "906115657390f3675639f46a572eee069155214169a45be4046933527a95c67b",
       "outbound.tracking.step.exception": "c8553a6de32f397008fe7d213fc82b21591a13ff6e5364656340aadc695cfe71",
-      "botWizard.role.subscriptions": "a151f2e912fe8d5b31e07dae6315f861d39160480d78848a0cdadfb51f09d327"
+      "botWizard.role.subscriptions": "a151f2e912fe8d5b31e07dae6315f861d39160480d78848a0cdadfb51f09d327",
+      "vault.singleUse.live": "ef074b1b3f08d3d00ff1dd97987e2bcdc04f511ccec94a12298e2407b820dabd",
+      "vault.card.turnOnly": "97ef5f97a3e46900c109ee6324d367948a5c136aa118faee7a5b25eb0560b186",
+      "vault.card.turnOnlyHint": "54026d4bb840b75af225383f833901d34c149f9c4e0fe99f5e4473b2b05c678e",
+      "vault.card.allowedTurnOnly": "a3f3d413ace0ca6207849dc3206ca2b38470355be2205349c43fd4104e1892ec",
+      "vault.settings.showPassword": "6aeaa6a53d09dcad071fdda6280b1e7c42aa164cd0514304ff162e7da440ffaa",
+      "vault.settings.showKey": "9a663fdd41daac8517c4eb7665e10d8f2a64a78add2969ce8ed60131e5160d8b",
+      "vault.settings.hideSecret": "ac20a57bfde0bbc40bfe70895eb1cfacc944aaff06ca784053623c569b3e1b3d"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

@@ -148,6 +148,26 @@ describe("credential vault routes", () => {
     expect(resumed.at(-1)).toMatchObject({ outcome: "dismissed" });
   });
 
+  it("lends a login typed on the card for this turn only, never saved (2026-10-29)", async () => {
+    const { call, cards, resumed, vault, audits } = await serve();
+    cards.set("t1:l1", vaultRequestCard({ principalId: LOCAL_VAULT_PRINCIPAL, botName: "Ada", domain: "example.test" }));
+    const item = { kind: "login", name: "example.test", username: "ada", password: FAKE_PASSWORD, domains: ["example.test"] };
+    expect((await call("POST", "/api/bots/bot-a/vault-cards/l1/grant", { threadId: "t1", mode: "always", item, turnOnly: true })).status).toBe(400);
+    const lent = await call("POST", "/api/bots/bot-a/vault-cards/l1/grant", { threadId: "t1", mode: "once", item, turnOnly: true });
+    expect(lent.status).toBe(200);
+    expect(lent.text).not.toContain(FAKE_PASSWORD);
+    expect(vault.list(LOCAL_VAULT_PRINCIPAL)).toEqual([]);
+    const id = lent.body.item.id as string;
+    expect(vault.granted(LOCAL_VAULT_PRINCIPAL, id, "bot-a", "t1")).toBe(true);
+    expect(resumed.at(-1)!.prompt).toContain("for this turn only");
+    expect(resumed.at(-1)!.prompt).not.toContain(FAKE_PASSWORD);
+    expect(cards.get("t1:l1")).toMatchObject({ provided: true, vault: { turnOnly: true, mode: "once" } });
+    expect(audits.at(-1)).toMatchObject({ action: "credentials.grant", detail: { mode: "turn" } });
+    vault.turnPhase("t1", "started");
+    vault.turnPhase("t1", "ended");
+    expect(vault.granted(LOCAL_VAULT_PRINCIPAL, id, "bot-a", "t1")).toBe(false);
+  });
+
   it("adds the asked site to a login only when the person ticks it, with Always, for another address of its own site (port of OpenMausBot #2929's card save target)", async () => {
     const { call, cards, vault, audits, resumed } = await serve();
     const id = (await call("POST", "/api/me/credentials", login)).body.item.id as string;

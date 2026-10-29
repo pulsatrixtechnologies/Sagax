@@ -123,6 +123,7 @@ import {
 import { VAULT_LOGIN_TARGET, ONE_PASSWORD_WAITING } from "../shared/credential-vault.ts";
 import { HOST_COMPUTER_RESOURCE, HOST_CONTROL_NOTICE } from "../shared/host-control.ts";
 import { CredentialVault, fillResolverFor, LOCAL_VAULT_PRINCIPAL } from "./credential-vault.ts";
+import { cliWalletIssuer } from "./wallet-issuer.ts";
 import { outboundWiring, primaryOutboundDecision, primaryPurchaseCard } from "./outbound-wiring.ts";
 import { followUpNote, OrderFollowUps } from "./order-follow-ups.ts";
 import { OnePassword } from "./onepassword.ts";
@@ -7589,6 +7590,18 @@ const personConnections = new PersonConnections(DATA_DIR, vaultKeySource);
 // a value. 1Password is an optional read-only source (server/onepassword.ts),
 // off on an organization server.
 const credentialVault = new CredentialVault(DATA_DIR, vaultKeySource);
+// 2026-10-29: Shop Pay and Link one-time cards through the wallet's own CLI,
+// signed in as the person (server/wallet-issuer.ts). The desktop's person
+// uses the CLI's own session; a person on an organization server has their
+// own session file beside their data (the CLI's --auth).
+credentialVault.setWalletIssuer(cliWalletIssuer({
+  authFile: (wallet, principalId) => principalId === LOCAL_VAULT_PRINCIPAL ? null : join(principalDir(DATA_DIR, principalId), `${wallet}-wallet-auth.json`),
+}));
+// a login lent for one turn is forgotten when that turn ends
+bus.subscribe((event: RuntimeEvent) => {
+  if (event.type === "turn.started") credentialVault.turnPhase(event.threadId, "started");
+  else if (event.type === "turn.completed" || event.type === "session.exited") credentialVault.turnPhase(event.threadId, "ended");
+});
 // R13 (parité the reference design V4, 59, 83): phone call and purchase cards
 // (server/outbound-wiring.ts); every outward action keeps its card.
 const outbound = outboundWiring({

@@ -17,8 +17,10 @@ public struct VaultRequestPublic: Codable, Hashable, Sendable {
     public var mode: String?
     public var signedInSelf: Bool?
     public var onePassword: Bool?
+    /// 2026-10-29: the login typed on the card was lent for this turn only.
+    public var turnOnly: Bool?
 
-    public init(name: String? = nil, domain: String? = nil, itemId: String? = nil, itemName: String? = nil, mode: String? = nil, signedInSelf: Bool? = nil, onePassword: Bool? = nil) {
+    public init(name: String? = nil, domain: String? = nil, itemId: String? = nil, itemName: String? = nil, mode: String? = nil, signedInSelf: Bool? = nil, onePassword: Bool? = nil, turnOnly: Bool? = nil) {
         self.name = name
         self.domain = domain
         self.itemId = itemId
@@ -26,6 +28,7 @@ public struct VaultRequestPublic: Codable, Hashable, Sendable {
         self.mode = mode
         self.signedInSelf = signedInSelf
         self.onePassword = onePassword
+        self.turnOnly = turnOnly
     }
 
     /// The site the card names: the address, else the name the bot asked for.
@@ -125,6 +128,14 @@ public extension CompanionClient {
     func grantVaultCardFromOnePassword(botId: String, messageId: String, threadId: String, item: VaultCardOnePasswordItem, always: Bool) async throws {
         let body: [String: Any] = ["threadId": threadId, "mode": always ? "always" : "once", "onePassword": ["vaultId": item.vaultId, "itemId": item.itemId]]
         try await send(makeRequest("POST", "/api/bots/\(botId)/vault-cards/\(messageId)/grant", body: body))
+    }
+
+    /// 2026-10-29 ("This turn only"): a login typed on the card, lent for the
+    /// turn the card resumes. The server keeps it in memory only and forgets
+    /// it when that turn ends; it is never saved in the vault.
+    func lendVaultCardLogin(botId: String, messageId: String, threadId: String, site: String, username: String, password: String) async throws {
+        let item: [String: Any] = ["kind": "login", "name": site, "domains": [site], "username": username, "password": password]
+        try await send(makeRequest("POST", "/api/bots/\(botId)/vault-cards/\(messageId)/grant", body: ["threadId": threadId, "mode": "once", "turnOnly": true, "item": item]))
     }
 
     /// Refuse: the bot goes on without signing in.

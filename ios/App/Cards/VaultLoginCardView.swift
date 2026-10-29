@@ -18,6 +18,9 @@ struct VaultLoginCardView: View {
     @State private var choice: String?
     @State private var busy = false
     @State private var error: String?
+    // 2026-10-29: a login typed here, lent for this turn only
+    @State private var lendUser = ""
+    @State private var lendPassword = ""
 
     private var request: VaultRequestPublic { secret.vault ?? VaultRequestPublic() }
     private var tint: Color { MausPalette.color(message.from?.color ?? chat.color) }
@@ -82,7 +85,7 @@ struct VaultLoginCardView: View {
 
     private var settledLine: some View {
         let name = request.itemName ?? request.site
-        let how: LocalizedStringKey = request.mode == "always" ? "always for \(requester)" : "this time"
+        let how: LocalizedStringKey = request.turnOnly == true ? "this turn only, not saved" : request.mode == "always" ? "always for \(requester)" : "this time"
         return HStack(spacing: 4) {
             Image(systemName: "checkmark.shield.fill").foregroundStyle(Theme.success)
             Text("Login \"\(name)\" allowed")
@@ -123,6 +126,7 @@ struct VaultLoginCardView: View {
                 }
             }
             buttons
+            if let domain = request.domain, !domain.isEmpty { turnOnlyForm(domain) }
             if let choice, choice.hasPrefix("op:") {
                 Label("Read from 1Password only when the bot fills it, never added to chat. 1Password may ask you to approve.", systemImage: "lock.fill")
                     .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
@@ -173,6 +177,37 @@ struct VaultLoginCardView: View {
         }
         .font(.system(size: 13.5, weight: .semibold))
         .disabled(busy)
+    }
+
+    /// Type a login for this turn only: never saved, forgotten when the turn ends.
+    private func turnOnlyForm(_ domain: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Or type a login for this turn only")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+            TextField("User name", text: $lendUser)
+                .textContentType(.username)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .accessibilityIdentifier("vault-turn-user-\(message.id)")
+            SecureField("Password", text: $lendPassword)
+                .textContentType(.password)
+                .accessibilityIdentifier("vault-turn-password-\(message.id)")
+            Button("This turn only") {
+                let user = lendUser, password = lendPassword
+                act { client, bot in
+                    try await client.lendVaultCardLogin(botId: bot, messageId: message.id, threadId: chat.threadId, site: domain, username: user, password: password)
+                }
+                lendPassword = ""
+            }
+            .buttonStyle(.bordered)
+            .disabled(busy || lendPassword.isEmpty)
+            .accessibilityIdentifier("vault-turn-only-\(message.id)")
+            Text("Never saved. Sagax forgets it when this turn ends.")
+                .font(.system(size: 12)).foregroundStyle(Theme.textSecondary)
+        }
+        .font(.system(size: 14))
+        .textFieldStyle(.roundedBorder)
     }
 
     private var choiceIsOnePassword: Bool {

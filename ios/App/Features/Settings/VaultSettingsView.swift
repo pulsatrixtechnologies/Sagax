@@ -30,12 +30,14 @@ struct VaultSettingsView: View {
             if !VaultWallet.rows(wallets).isEmpty {
                 SettingsSectionLabel(text: "One-time card")
                 SettingsCard {
-                    SettingsFooter(text: "Shop Pay and Link are wallets you already have. Sagax asks that wallet for a one-time card only after you allow the purchase. The site does not receive a saved card number, and the bot never sees it. This install cannot ask for that card yet.")
+                    SettingsFooter(text: "Shop Pay and Link are wallets you already have. Sagax asks that wallet for a one-time card only after you allow the purchase, through the wallet's own command line tool signed in on your computer. The site does not receive a saved card number, and the bot never sees it.")
                     ForEach(VaultWallet.rows(wallets), id: \.id) { entry in
                         SettingsRow(
                             title: LocalizedStringKey(VaultWallet.label(entry.id)),
                             subtitle: entry.row.chosen
-                                ? "Chosen. Not live yet: \(entry.row.missing). Nothing is charged."
+                                ? (entry.row.ready
+                                    ? "Live: signed in on your computer. Sagax asks it for a one-time card after you allow a purchase."
+                                    : "Chosen. Not live yet: \(entry.row.missing). Nothing is charged.")
                                 : "Not connected. Turn this on to use the account you already have. Nothing is charged.",
                             accessory: .toggle(Binding(
                                 get: { wallets?[entry.id]?.chosen == true },
@@ -111,6 +113,12 @@ struct VaultSettingsView: View {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     if index > 0 { CardHairline(leadingInset: SettingsMetrics.rowInset) }
                     SettingsRow(title: LocalizedStringKey(item.name), subtitle: item.subtitle, accessory: .none, identifier: "vault-item") {}
+                    if let field = item.revealField {
+                        // 2026-10-29: a password or key (one a bot made by reference above all)
+                        SettingsRow(title: field == "password" ? "Show password" : "Show key", accessory: .none, identifier: "vault-reveal-secret") {
+                            Task { await reveal(item, field: field) }
+                        }
+                    }
                     if item.card != nil {
                         SettingsRow(title: "Show number", accessory: .none, identifier: "vault-reveal") {
                             Task { await reveal(item) }
@@ -160,13 +168,13 @@ struct VaultSettingsView: View {
         }
     }
 
-    private func reveal(_ item: VaultItemPublic) async {
+    private func reveal(_ item: VaultItemPublic, field: String = "pan") async {
         guard !busy, let client = session.settingsClient else { return }
-        guard await VaultRevealGate.confirm(reason: "Show the card number saved in Sagax") else { return }
+        guard await VaultRevealGate.confirm(reason: field == "pan" ? "Show the card number saved in Sagax" : "Show the secret saved in Sagax") else { return }
         busy = true
         defer { busy = false }
         do {
-            revealed = try await client.revealVaultItem(id: item.id, field: "pan").value
+            revealed = try await client.revealVaultItem(id: item.id, field: field).value
         } catch {
             self.error = error.localizedDescription
         }
