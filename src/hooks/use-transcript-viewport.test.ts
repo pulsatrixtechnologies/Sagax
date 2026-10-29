@@ -105,6 +105,11 @@ class Scroller {
   get bottom() {
     return Math.max(0, this.scrollHeight - this.clientHeight);
   }
+  /** Where the pane sits on screen: moves when a banner shows above it. */
+  paneTop = 0;
+  getBoundingClientRect() {
+    return { top: this.paneTop };
+  }
   scrollTo(options: ScrollToOptions) {
     this.calls.push(options);
     this.scrollTop = Math.max(0, Math.min(options.top ?? this.scrollTop, this.bottom));
@@ -130,6 +135,8 @@ let scroller: Scroller;
 let frames: FrameRequestCallback[];
 let keyListeners: Set<(event: Partial<KeyboardEvent>) => void>;
 let observers: number;
+/** The ResizeObserver callbacks, and what each one watches. */
+let resizeWatch: { callback: () => void; targets: unknown[] }[];
 let dispatched: unknown[];
 
 function mount(initial: Partial<Props> = {}) {
@@ -175,6 +182,7 @@ beforeEach(() => {
   frames = [];
   keyListeners = new Set();
   observers = 0;
+  resizeWatch = [];
   dispatched = [];
   store.state.focusMessage = null;
   store.state.loadingOlder = {};
@@ -185,11 +193,18 @@ beforeEach(() => {
   });
   vi.stubGlobal("requestAnimationFrame", (frame: FrameRequestCallback) => frames.push(frame));
   vi.stubGlobal("ResizeObserver", class {
-    constructor() {
+    watch: { callback: () => void; targets: unknown[] };
+    constructor(callback: () => void) {
       observers++;
+      this.watch = { callback, targets: [] };
+      resizeWatch.push(this.watch);
     }
-    observe() {}
-    disconnect() {}
+    observe(target: unknown) {
+      this.watch.targets.push(target);
+    }
+    disconnect() {
+      resizeWatch = resizeWatch.filter((watch) => watch !== this.watch);
+    }
   });
   vi.stubGlobal("IntersectionObserver", class {
     constructor() {}
@@ -254,6 +269,31 @@ describe("transcript viewport", () => {
     const reading = scroller.scrollTop;
     view.rerender({ messages: rows(12) });
     expect(scroller.scrollTop).toBe(reading);
+  });
+
+  it("keeps the bottom in view when the pane gets shorter, and a reader's rows still when it moves", () => {
+    const view = mount({ messages: rows(30) });
+    const paneResized = () => {
+      for (const watch of resizeWatch) if (watch.targets.includes(scroller)) watch.callback();
+    };
+    expect(scroller.scrollTop).toBe(scroller.bottom);
+
+    // a banner shows above the transcript: the pane is pushed down and gets
+    // shorter, and a following reader still sees the end of the turn
+    scroller.paneTop = 92;
+    scroller.clientHeight = 308;
+    paneResized();
+    expect(scroller.scrollTop).toBe(scroller.bottom);
+
+    // reading higher up: the banner going away moves the pane up by as much,
+    // and the rows being read stay where they are on screen
+    view.act(() => view.current.scrollHandlers.onWheel({ deltaY: -40, deltaX: 0 } as never));
+    scroller.scrollTop = 500;
+    scroller.paneTop = 0;
+    scroller.clientHeight = 400;
+    paneResized();
+    expect(view.current.following).toBe(false);
+    expect(scroller.scrollTop).toBe(500 - 92);
   });
 
   it("treats scrollbar grabs, scroll keys and a dragging finger as leaving the bottom", () => {
