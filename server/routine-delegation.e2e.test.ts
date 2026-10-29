@@ -64,9 +64,12 @@ describe("routine delegation through the isolated harness", () => {
       'import { existsSync, readFileSync } from "node:fs";',
       'import { join } from "node:path";',
       'const at = process.argv.indexOf("--mcp-config");',
-      'const thread = at < 0 ? "probe" : JSON.parse(readFileSync(process.argv[at + 1], "utf8")).mcpServers?.agents?.env?.SAGAX_THREAD_ID ?? "probe";',
-      // One-hop delegates intentionally have no agents server. Let that
-      // actual peer turn complete; gate only the source/occupied turns.
+      'const agentsEnv = at < 0 ? undefined : JSON.parse(readFileSync(process.argv[at + 1], "utf8")).mcpServers?.agents?.env;',
+      // A delegated peer turn one hop away keeps its agents server since
+      // 2026-10-28 (SAGAX_PEER_HOP, only the peer tools leave): it is the
+      // "probe" turn here, as a turn with no agents server was before. Let
+      // that actual peer turn complete; gate only the source/occupied turns.
+      'const thread = !agentsEnv || agentsEnv.SAGAX_PEER_HOP === "1" ? "probe" : agentsEnv.SAGAX_THREAD_ID ?? "probe";',
       `process.env.FAKE_CLAUDE_MODE = thread === "probe" && !existsSync(${JSON.stringify(join(fixture.info.dataDir, "gate-peer"))}) ? "happy" : "slow";`,
       `process.env.FAKE_CLAUDE_SLOW_FINISH_GATE = join(${JSON.stringify(fixture.info.dataDir)}, thread + ".gate");`,
       `process.env.FAKE_CLAUDE_DUMP = join(${JSON.stringify(fixture.info.dataDir)}, thread + ".json");`,

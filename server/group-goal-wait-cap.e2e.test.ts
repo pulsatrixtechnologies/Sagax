@@ -217,14 +217,16 @@ describe("goal wait cap and transient retry", () => {
       return { cards: cards.length, status: cards[0]?.goalRun?.status };
     }, { timeout: 20_000 }).toEqual({ cards: 1, status: "failed" });
 
-    // exactly one retry happened: the retry note is a progress patch on the
-    // single card, and the run still ended honestly as failed
-    const state = (await api("GET", `/api/groups/${room.id}/goal-runs`)).body;
-    void state; // the card's terminal detail is the receipt; the retry itself is asserted below
-    const { room: current } = await roomState(room.id);
+    // exactly one retry happened: the retry claimed the lead again, so the
+    // single card counts two turns, and the run still ended honestly as
+    // failed. The provider's error shows once: the same failure of the same
+    // bot is not written twice in a row (shared/failure-dedup.ts, #1259).
+    const { room: current, cards } = await roomState(room.id);
+    expect(cards[0].goalRun.turnCount).toBe(2);
     const activity = current?.messages.filter((message: { kind: string }) => message.kind === "activity") ?? [];
     const failures = activity.filter((message: { tool?: { name?: string } }) => /error:/i.test(message.tool?.name ?? ""));
-    expect(failures.length).toBeGreaterThanOrEqual(2);
+    expect(failures).toHaveLength(1);
+    expect(failures[0].tool.name).toMatch(/exited 3 before result/);
   });
 
   it("chat: a responder that stays busy past the cap is skipped with the bounded truth, and the next responder still runs", async () => {

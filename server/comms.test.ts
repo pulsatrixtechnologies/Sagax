@@ -830,7 +830,9 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
         }, 30_000, "Chief did not become available while its teammate worked");
 
         // The worker is deliberately held open. A second message must start
-        // and finish on the Chief before that worker is released.
+        // and finish on the Chief before that worker is released. It goes to
+        // the Chief's one conversation, never the routine run's thread
+        // (#1586), so its answer is read there.
         expect(helperBot.busy).toBe(true);
         expect((await api("POST", `/api/bots/${chief.id}/messages`, {
           text: "CHIEF_FOLLOW_UP: are you still available while that runs?",
@@ -839,7 +841,9 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
           const state = (await api("GET", "/api/bots")).body.bots;
           chiefBot = state.find((bot: any) => bot.id === chief.id);
           helperBot = state.find((bot: any) => bot.id === helper.id);
-          const answeredFollowUp = chiefBot.messages.some(
+          if (!chiefBot.mainThreadId) return false;
+          const conversation = (await api("GET", `/api/threads/${chiefBot.mainThreadId}/messages?limit=40`)).body.messages ?? [];
+          const answeredFollowUp = conversation.some(
             (message: any) => message.kind === "text" && message.text?.includes("hello from fake acp"),
           );
           return Boolean(answeredFollowUp && !chiefBot.busy && helperBot.busy);
@@ -1089,7 +1093,10 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
 
       // Start the ask while B is idle so the normal ask_bot approval card is
       // the first and only human decision for this exact peer message.
-      expect((await startRoutine(asker.id, "ask @ReloadHelper something")).status).toBe(201);
+      // A routine run is never the bot's conversation (one conversation per
+      // bot, #1586): its card is answered on the run's own thread.
+      const reloadRun = await startRoutine(asker.id, "ask @ReloadHelper something");
+      expect(reloadRun.status).toBe(201);
       let approvalCard: any;
       await waitUntil(async () => {
         const current = (await api("GET", "/api/bots")).body.bots.find((b: any) => b.id === asker.id);
@@ -1110,6 +1117,7 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
       // must release a turn that runs there, not one still in setup
       await waitUntil(async () => compatReached("hold until reload"), 20_000, "the held prompt never reached the engine");
       expect((await api("POST", `/api/bots/${asker.id}/respond`, {
+        threadId: reloadRun.body.run.threadId,
         requestId: approvalCard.card.requestId,
         behavior: "allow",
       })).status).toBe(200);
@@ -1538,6 +1546,8 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
       expect(approval.status).toBe(200);
       expect(approval.body.bot.approvePeerComms).toBe(true);
 
+      // A routine run is never the bot's conversation (#1586): its card is
+      // answered on the run's own thread.
       const send = await startRoutine(asker.id, "hey @Helper needs approval");
       expect(send.status).toBe(201);
 
@@ -1581,7 +1591,7 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
       const allow = await api(
         "POST",
         `/api/bots/${asker.id}/respond`,
-        { requestId: card.card.requestId, behavior: "allow" },
+        { threadId: send.body.run.threadId, requestId: card.card.requestId, behavior: "allow" },
       );
       expect(allow.status).toBe(200);
 
@@ -1652,7 +1662,7 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
     const deny = await api(
       "POST",
       `/api/bots/${asker.id}/respond`,
-      { requestId: card.card.requestId, behavior: "deny" },
+      { threadId: send.body.run.threadId, requestId: card.card.requestId, behavior: "deny" },
     );
     expect(deny.status).toBe(200);
 
@@ -1695,14 +1705,14 @@ describe("legacy routine comms e2e (fake ACP fleet)", () => {
 
   // ── depth guard regression ───────────────────────────────────────────
   // A bot invoked via ask_bot or delegate_bot runs at depth=1, which equals
-  // MAX_COMMS_DEPTH. The depth guard in startTurn must refuse to inject
-  // the agents integration, so B's CLI sees no agents mcpServer and falls
-  // through to its plain happy text — NOT a "one hop" error from a depth-1
-  // ask_bot. If the guard were removed, B's fake (also in ask-peer mode)
-  // would call ask_bot, the harness would refuse recursion, and B's reply
-  // would contain "peer error: ... one hop". The absence of that error is
-  // the regression signal.
-  it("does not inject the agents integration into a depth-1 turn", async () => {
+  // MAX_COMMS_DEPTH. Since 2026-10-28 (#1443) startTurn still mounts the
+  // agents integration there, marked SAGAX_PEER_HOP, without the peer tools:
+  // B's CLI is offered no ask_bot and falls through to its plain happy text,
+  // NOT a "one hop" error from a depth-1 ask_bot. If the mark were lost,
+  // B's fake (also in ask-peer mode) would call ask_bot, the harness would
+  // refuse recursion, and B's reply would contain "peer error: ... one hop".
+  // The absence of that error is the regression signal.
+  it("does not offer the peer tools to a depth-1 turn", async () => {
     const seeded = (await api("GET", "/api/bots")).body.bots[0];
     await api("PATCH", `/api/bots/${seeded.id}`, { hidden: true });
     // A runs delegate-peer and hands off to B, which runs ask-peer. If the
