@@ -397,7 +397,7 @@ async function prefillPiFresh(input: {
     });
     started.stdout.setEncoding("utf8");
     started.stdout.on("data", onData);
-    started.on("close", () => { for (const answer of [...waiters.values()]) answer(null); });
+    started.on("close", () => { for (const answer of waiters.values()) answer(null); });
     const send = (obj: Record<string, unknown>) => started.stdin.write(JSON.stringify(obj) + "\n");
     if (!ahead) send(PI_NEGOTIATE_FRAME);
     const state = wait("get_state", 20_000);
