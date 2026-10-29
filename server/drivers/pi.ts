@@ -210,6 +210,8 @@ async function runPiStandby(input: {
       env: { ...input.env, SAGAX_MCP_CONFIG: join(dir, "mcp.json") },
     }, "bot");
     const started = child;
+    // a pi that cannot start (its folder gone) answers nothing: no crash
+    started.on("error", () => { /* the wait below gives up */ });
     watchPiStandbyExit();
     piStandbyChildren.add(started);
     started.once("close", () => piStandbyChildren.delete(started));
@@ -306,6 +308,8 @@ async function startPiFresh(input: { key: string; cli: string; args: string[]; c
     writeFileSync(join(dir, "mcp.json"), JSON.stringify({ mcpServers: {} }), { mode: 0o600 });
     child = spawnCli(input.cli, input.args, { stdio: ["pipe", "pipe", "pipe"], cwd: input.cwd, env: { ...input.env, SAGAX_MCP_CONFIG: join(dir, "mcp.json") } }, "bot");
     const started = child;
+    // a pi that cannot start (its folder gone) answers nothing: no crash
+    started.on("error", () => { /* the wait below gives up */ });
     watchPiStandbyExit();
     piStandbyChildren.add(started);
     started.once("close", () => piStandbyChildren.delete(started));
@@ -338,6 +342,101 @@ async function startPiFresh(input: { key: string; cli: string; args: string[]; c
     if (child) { try { killCliTree(child); } catch { /* already gone */ } }
     if (dir) { try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ } }
   } finally {
+    piFreshStarting.delete(input.key);
+  }
+}
+
+/** #1276: the warm before a new conversation's first message (the person
+ * opened it or is typing). The bot's pi started ahead, or a new one, opens a
+ * throwaway session with this conversation's MCP servers and sends the
+ * prompt; the extension (warmOnly) sends only its stable part, for one token,
+ * so the local server computes it now and the first message reads it cached.
+ * The pi then waits as the bot's pi started ahead, its credentials off disk. */
+async function prefillPiFresh(input: {
+  key: string; cli: string; args: string[]; cwd: string; env: Record<string, string | undefined>;
+  dir: string; config: Record<string, unknown>; message: string; model: { provider: string; modelId: string } | null;
+}): Promise<boolean> {
+  if (piFreshStarting.has(input.key)) return false;
+  piFreshStarting.add(input.key);
+  // the pi already started ahead for this bot reads its own folder's file
+  const ahead = takePiFresh(input.key);
+  const dir = ahead ? ahead.dir : input.dir;
+  if (ahead) { try { rmSync(input.dir, { recursive: true, force: true }); } catch { /* best effort */ } }
+  const config = join(dir, "mcp.json");
+  let child: ReturnType<typeof spawnCli> | null = ahead ? ahead.child : null;
+  let throwaway: string | null = null;
+  let ok = false;
+  try {
+    writeFileSync(config, JSON.stringify({ ...input.config, warmOnly: true }), { mode: 0o600 });
+    if (!child) {
+      child = spawnCli(input.cli, input.args, { stdio: ["pipe", "pipe", "pipe"], cwd: input.cwd, env: { ...input.env, SAGAX_MCP_CONFIG: config } }, "bot");
+      const spawned = child;
+      spawned.on("error", () => { /* the waits below give up */ });
+      watchPiStandbyExit();
+      piStandbyChildren.add(spawned);
+      spawned.once("close", () => piStandbyChildren.delete(spawned));
+      spawned.stderr?.resume();
+      spawned.stdin.on("error", () => { /* closed with the process */ });
+    } else {
+      const reused = child;
+      piStandbyChildren.add(reused);
+      reused.once("close", () => piStandbyChildren.delete(reused));
+    }
+    const started = child;
+    const chunks = new PiRpcChunks();
+    const waiters = new Map<string, (frame: { success?: boolean; data?: { sessionFile?: unknown } } | null) => void>();
+    const wait = (name: string, ms: number) => new Promise<{ success?: boolean; data?: { sessionFile?: unknown } } | null>((resolve) => {
+      const t = setTimeout(() => { waiters.delete(name); resolve(null); }, ms);
+      t.unref?.();
+      waiters.set(name, (frame) => { clearTimeout(t); waiters.delete(name); resolve(frame); });
+    });
+    const onData = piLineReader((line) => {
+      const frame = decodePiFrame(line, chunks) as { type?: string; command?: string; success?: boolean; data?: { sessionFile?: unknown } } | null;
+      if (frame?.type === "response" && frame.command) waiters.get(frame.command)?.(frame);
+      else if (frame?.type === "agent_end") waiters.get("agent_end")?.(frame);
+    });
+    started.stdout.setEncoding("utf8");
+    started.stdout.on("data", onData);
+    started.on("close", () => { for (const answer of [...waiters.values()]) answer(null); });
+    const send = (obj: Record<string, unknown>) => started.stdin.write(JSON.stringify(obj) + "\n");
+    if (!ahead) send(PI_NEGOTIATE_FRAME);
+    const state = wait("get_state", 20_000);
+    send({ type: "get_state" });
+    const bootSession = (await state)?.data?.sessionFile;
+    if (typeof bootSession !== "string") throw new Error("pi did not answer");
+    const sessionsRoot = dirname(dirname(bootSession));
+    throwaway = writePiSession(sessionsRoot, input.cwd);
+    const switched = wait("switch_session", 20_000);
+    send({ type: "switch_session", sessionPath: throwaway });
+    if ((await switched)?.success === false) throw new Error("pi did not open the warm session");
+    if (input.model) {
+      const set = wait("set_model", 20_000);
+      send({ type: "set_model", provider: input.model.provider, modelId: input.model.modelId });
+      if ((await set)?.success === false) throw new Error("pi did not take the model");
+    }
+    const done = wait("agent_end", 180_000);
+    send({ type: "prompt", message: input.message });
+    if (!(await done)) throw new Error("the warm did not finish");
+    // the turn's credentials leave the disk; the real turn writes its own
+    writeFileSync(config, JSON.stringify({ mcpServers: {} }), { mode: 0o600 });
+    const entry: PiFresh = {
+      child: started, dir, sessionsRoot, onData,
+      timer: setTimeout(() => { if (piFresh.get(input.key) === entry) { piFresh.delete(input.key); closePiFresh(entry); } }, PI_STANDBY_MS),
+    };
+    entry.timer.unref?.();
+    started.on("close", () => { if (piFresh.get(input.key) === entry) { piFresh.delete(input.key); closePiFresh(entry); } });
+    if (piFresh.has(input.key) || started.exitCode !== null) { closePiFresh(entry); return true; }
+    piFresh.set(input.key, entry);
+    ok = true;
+    return true;
+  } catch {
+    return false;
+  } finally {
+    if (throwaway) { try { rmSync(throwaway, { force: true }); } catch { /* best effort */ } }
+    if (!ok) {
+      if (child) { try { killCliTree(child); } catch { /* already gone */ } }
+      try { rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
+    }
     piFreshStarting.delete(input.key);
   }
 }
@@ -1222,7 +1321,7 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         bot: turn.botId ?? null, cli: config.cli, args: standbyArgs,
         environment: input.environment ?? null, access: turn.access ?? null, command: turn.commandEnvironment ?? null,
       });
-      const ahead = !standby && turn.compactPrompt && typeof turn.resumeCursor !== "string" && turn.cwd && mounts ? takePiFresh(freshKey) : undefined;
+      const ahead = !standby && turn.warmOnly !== true && turn.compactPrompt && typeof turn.resumeCursor !== "string" && turn.cwd && mounts ? takePiFresh(freshKey) : undefined;
       if (standby) {
         mcpTempDir = standby.dir;
         scopeReadyPath = standby.scopeReadyPath;
@@ -1254,6 +1353,27 @@ export const PiDriver: ProviderDriver<PiConfig> = {
         ...input.environment,
         ...(mcpTempDir ? { SAGAX_MCP_CONFIG: join(mcpTempDir, "mcp.json") } : {}),
       }), turn.access), turn.commandEnvironment);
+
+      // #1276: a warm (the person opened a new conversation or is typing) on
+      // a local model: its prompt's stable part is computed now, no turn shown
+      if (turn.warmOnly === true) {
+        if (turn.compactPrompt && !standby && typeof turn.resumeCursor !== "string" && turn.cwd && mounts && mcpTempDir && !turn.warmSignal?.aborted) {
+          const halves = promptHalves(turn);
+          const composed = halves.stable !== null
+            ? splitSessionPrompt(halves.stable, halves.volatile, null, turn.system, turn.text, false, 0, turn.systemVolatileSections).text
+            : turn.system ? `${turn.system}\n\n${turn.text}` : turn.text;
+          const chosen = typeof turn.model === "string" ? splitPiModel(turn.model) : null;
+          await prefillPiFresh({
+            key: freshKey, cli: config.cli, args: childArgs, cwd: turn.cwd, env: spawnEnv, dir: mcpTempDir,
+            config: { ...mcpConfig, scopeReadyPath }, message: markSharedPrompt(composed, halves, turn.systemVolatileSections),
+            model: chosen ? { provider: chosen.provider, modelId: chosen.modelId } : null,
+          });
+        } else if (mcpTempDir) {
+          try { rmSync(mcpTempDir, { recursive: true, force: true }); } catch { /* best effort */ }
+        }
+        // a warm that could not run only leaves the first message cold
+        return { turnId };
+      }
 
       // spawnCli can throw synchronously (unresolvable CLI); if it does, the
       // 0600 temp file with the boat token / comms token must
@@ -1952,6 +2072,9 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           computerMcp: true,
           phoneMcp: true,
           customMcp: true,
+          // #1276: a warm on a local model computes the shared prompt ahead
+          // (prefillPiFresh); on any other model it does nothing
+          warmSession: true,
           browserMcp: true,
           dataMcp: true,
           // Host control (the user's real Mac) rides the pi-native permission
