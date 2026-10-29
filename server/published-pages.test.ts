@@ -1452,6 +1452,9 @@ describe("a reading link in its person's look", () => {
     expect(wrapper.body).not.toContain("--sb-bg");
     const frame = await hit(options(pages, OWNER), frameSrc(wrapper.body), { "sec-fetch-dest": "iframe" });
     expect(frame.body).not.toContain("#fbf7ee");
+  });
+});
+
 describe("who writes a page's state: the page's declaration within its sharing (2026-10-29)", () => {
   const OWNER_ID = "pr_owner";
   const DECLARED = `<!doctype html><html><body><h1>Vote</h1><script type="application/sagax-state+json">{"vote:*":"anyone","note":{"write":"signed_in"},"decision":"editors","budget":"owner"}</script></body></html>`;
