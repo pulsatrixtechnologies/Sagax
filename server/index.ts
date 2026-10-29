@@ -31613,10 +31613,10 @@ function backgroundBriefConnected(botId: string): readonly string[] {
   if (!bot) return [];
   return Object.keys(customMcpServers(cfg, bot.mcpServers));
 }
-/** Where a brief is posted: the person's own conversation with the bot. */
+/** Where a brief is posted: the bot's one conversation with the person
+ * (#1586, conversationOrStart), started when they have none. */
 function backgroundBriefThread(bot: BotRecord, person: string): string | undefined {
-  if (IDENTITY.kind === "perspicax") return agentUnifiedThread(bot, person) ?? personMainThread(bot, person);
-  return botMainThread(bot.id) ?? bot.threadId;
+  return IDENTITY.kind === "perspicax" ? conversationOrStart(bot, person) : conversationOrStart(bot);
 }
 if (!process.env.VITEST) {
   startBriefTimer({
