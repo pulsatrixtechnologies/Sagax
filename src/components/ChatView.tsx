@@ -89,6 +89,7 @@ import { isCancelledTranscriptRow } from "../../shared/client-cancel";
 import { BotAvatar } from "./Avatar";
 import { BotHeaderPill, botPillActions } from "./BotHeaderPill";
 import { TurnPresence } from "./TurnPresence";
+import { LiveReply } from "./LiveReply";
 import { ultracodeFromSelection } from "@/lib/ultracode-chrome";
 import { showToolCallsEnabled, skillAuthoringEnabled } from "@/lib/feature-flags";
 import { isAppleMobileWebClient, showToolCallRows } from "@/lib/tool-activity-rows";
@@ -2177,6 +2178,8 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
       showWorkingDots(bot.busy, lastMessage),
   );
   const wasWaiting = useRef(false);
+  // the reply was drawn as it was written (LiveReply): it settles in place
+  const liveShown = useRef(false);
   const [popping, setPopping] = useState<string | null>(null);
   const poppingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
@@ -2186,6 +2189,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
     if (poppingTimer.current) clearTimeout(poppingTimer.current);
     poppingTimer.current = null;
     wasWaiting.current = false;
+    liveShown.current = false;
     setPopping(null);
   }, [bot.id]);
   useEffect(() => {
@@ -2194,6 +2198,10 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   useLayoutEffect(() => {
     if (lastMessage?.role !== "bot" || lastMessage.kind !== "text" || !wasWaiting.current) return;
     wasWaiting.current = false;
+    if (liveShown.current) {
+      liveShown.current = false;
+      return;
+    }
     const messageId = lastMessage.id;
     if (poppingTimer.current) clearTimeout(poppingTimer.current);
     setPopping(messageId);
@@ -2472,6 +2480,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
               </div>
             </div>
           )}
+          <LiveReply threadId={bot.threadId} botId={bot.id} mentionPeers={mentionPeers} shownRef={liveShown} />
           <TurnPresence
             ultracode={ultracodeFromSelection(bot.modelSelection)}
             bot={bot}

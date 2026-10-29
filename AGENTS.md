@@ -24,6 +24,31 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## A reply shows as it is written (2026-10-29)
+
+Settings > Appearance > Conversation > "Show replies as they are written"
+(`sagax.streamReplies.v1`, "on" | "off", absent is on; a person's preference
+for all their bots, synced through `shared/user-preferences.ts`; a bot sets
+it with `sagax_settings` `appearance.streamReplies`, no new tool). The
+engines already streamed (Claude Code `--include-partial-messages`, Codex,
+Pi, ACP, OpenAI chat and Responses) and the server already sent every
+`content.delta` (bus merge 50 ms, `runtime` frame); the desktop and web
+stopped at the render: the store buffered the text per frame and nothing
+drew it. Now `LiveReply` (`src/components/LiveReply.tsx`, in `ChatView` and
+`GroupView` above `TurnPresence`) draws the thread's in-flight text in a bot
+bubble: only it re-renders per frame; the Markdown is cut into finished
+blocks and the growing one (`src/lib/live-markdown-blocks.ts`), each block
+its own memoized `ChatMarkdown`, so a token parses only the last block; an
+open fence renders as code. The bottom follow (`useBottomFollowResize`)
+keeps up through the transcript's resize. The settled message replaces it
+in the same commit, without the pop-in (`liveShown`); `TurnPresence` hides
+while the words are on screen. Off: nothing drawn, the reply comes whole.
+iOS already drew it (`ChatLiveTail`); it now follows the same key
+(`SidebarPrefs.streamReplies`, Appearance and desktop settings). Tests:
+`src/components/LiveReply.dom.test.ts`, `src/lib/live-markdown-blocks.test.ts`,
+`server/streaming-reply.e2e.test.ts` (fake CLI deltas end to end),
+`PersonPreferencesTests`. Captures `node scripts/capture-live-reply.mjs`.
+
 ## Edit routine, redone (2026-10-29)
 
 The routine editor (`EventEditor`, `kind === "routine"`) is titled "Edit

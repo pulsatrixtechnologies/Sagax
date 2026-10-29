@@ -1,0 +1,84 @@
+// The reply a bot is writing right now, growing in its bubble (Settings >
+// Appearance > Conversation > "Show replies as they are written",
+// src/lib/stream-replies-preference.ts). It reads the store's per-frame
+// stream (useStreaming: the engine's text deltas, merged on the server per
+// 50 ms and on this page per animation frame), so it is the only part of the
+// conversation that re-renders while the words arrive. The Markdown is cut
+// into finished blocks and the one still growing (splitLiveMarkdown): each
+// finished block keeps its memoized renderer, only the last one is parsed
+// again. When the reply is done the settled message takes its place in the
+// same commit (the store clears the stream with the message frame), and the
+// final text is what stays: notifications and the transcript read that one.
+// Off, or an engine that does not stream: nothing here, the reply appears
+// whole as before.
+import { useLayoutEffect, useMemo, type MutableRefObject } from "react";
+import { cn } from "@/lib/cn";
+import { CHAT_BUBBLE_WIDTH_CLASS } from "@/lib/chat-bubble-width";
+import { splitLiveMarkdown } from "@/lib/live-markdown-blocks";
+import { prefersWideBubble } from "@/lib/rich-blocks";
+import { useStreamReplies } from "@/lib/stream-replies-preference";
+import type { MentionPeer } from "@/lib/mentions";
+import { useStreaming } from "@/state/store";
+import { stripLeakedSystemHarnessMessages } from "../../shared/system-message-guard.ts";
+import { ChatMarkdown } from "./ChatMarkdown";
+
+/** What of a thread's in-flight text a reader sees: never a leaked harness line. */
+export function liveReplyText(raw: string | undefined): string {
+  return raw ? stripLeakedSystemHarnessMessages(raw) : "";
+}
+
+export function LiveReply({
+  threadId,
+  botId,
+  mentionPeers,
+  label,
+  room = false,
+  hidden = false,
+  shownRef,
+}: {
+  /** the conversation whose in-flight text this draws */
+  threadId: string | null | undefined;
+  botId?: string;
+  mentionPeers?: readonly MentionPeer[];
+  /** a room's speaker, named above the bubble as its runs are */
+  label?: string;
+  /** a room's bubble measure (GroupView) */
+  room?: boolean;
+  /** on a call the words are spoken, not typed out */
+  hidden?: boolean;
+  /** set while live text is on screen: the settled reply then replaces it
+   * without the pop-in a finished reply makes */
+  shownRef?: MutableRefObject<boolean>;
+}) {
+  const enabled = useStreamReplies();
+  const { streaming } = useStreaming();
+  const raw = threadId ? streaming[threadId] ?? "" : "";
+  const text = enabled && !hidden ? liveReplyText(raw) : "";
+  const visible = Boolean(text.trim());
+  useLayoutEffect(() => {
+    if (visible && shownRef) shownRef.current = true;
+  }, [visible, shownRef]);
+  const blocks = useMemo(() => (visible ? splitLiveMarkdown(text) : []), [visible, text]);
+  const wide = useMemo(() => visible && prefersWideBubble(text), [visible, text]);
+  if (!visible) return null;
+  return (
+    <div data-live-reply="" className="flex w-full flex-col items-start">
+      {label && <div className="mb-1 ps-1 text-[12px] font-medium text-ink-secondary">{label}</div>}
+      <div
+        data-chat-bubble
+        aria-busy="true"
+        className={cn(
+          "rounded-[18px] bg-bubble-bot px-3 py-[7px] text-[13px] leading-5 text-ink",
+          room && !wide ? "w-fit max-w-[min(94%,780px,calc(100%-82px))]" : CHAT_BUBBLE_WIDTH_CLASS[wide ? "wide" : "fit"],
+        )}
+      >
+        <div className="flex min-w-0 flex-col gap-2">
+          {blocks.map((block, index) => (
+            // a block's index is its identity: finished blocks never change
+            <ChatMarkdown key={index} text={block} botId={botId} mentionPeers={mentionPeers} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -77,6 +77,17 @@ final class PersonPreferencesTests: XCTestCase {
         XCTAssertTrue(HdMascots.enabled("maybe"))
     }
 
+    func testStreamRepliesAreOnUnlessOff() {
+        XCTAssertTrue(SidebarPrefs().streamReplies)
+        var prefs = SidebarPrefs()
+        prefs.setStreamReplies(false)
+        XCTAssertEqual(prefs.values["sagax.streamReplies.v1"], "off")
+        XCTAssertFalse(prefs.streamReplies)
+        prefs.setStreamReplies(true)
+        XCTAssertEqual(prefs.values["sagax.streamReplies.v1"], "on")
+        XCTAssertTrue(SidebarPrefKey.synced.contains("sagax.streamReplies.v1"))
+    }
+
     // MARK: Suggestions (R7)
 
     func testSuggestionsHideWithZero() {

@@ -226,6 +226,11 @@ struct DesktopAppearanceSettings: View {
                     prefs.setBotBubble(session, !prefs.botBubble)
                 }
             }
+            DesktopSettingRow(title: Text("Show replies as they are written"), subtitle: Text("Show a bot reply word by word while it is written, instead of all at once when it is finished")) {
+                DesktopSwitch(isOn: prefs.streamReplies, label: Text("Show replies as they are written"), identifier: "desktop-settings.stream-replies") {
+                    prefs.setStreamReplies(session, !prefs.streamReplies)
+                }
+            }
             DesktopSettingRow(title: Text("Show suggestions"), subtitle: Text("Show the Suggestions card in the bot panel")) {
                 DesktopSwitch(isOn: prefs.showSuggestions, label: Text("Show suggestions"), identifier: "desktop-settings.show-suggestions") {
                     prefs.setShowSuggestions(session, !prefs.showSuggestions)

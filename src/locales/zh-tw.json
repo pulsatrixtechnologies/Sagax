@@ -3756,5 +3756,7 @@
   "routines.menu.open": "開啟",
   "routines.rename.label": "例行工作名稱",
   "routines.rename.empty": "例行工作需要名稱。",
-  "routines.rename.hint": "按兩下即可重新命名"
+  "routines.rename.hint": "按兩下即可重新命名",
+  "settings.streamReplies.title": "在撰寫時顯示回覆",
+  "settings.streamReplies.show": "在機器人撰寫回覆時逐字顯示，而不是完成後一次顯示"
 }

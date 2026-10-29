@@ -2723,5 +2723,7 @@
   "routines.menu.open": "打开",
   "routines.rename.label": "例程名称",
   "routines.rename.empty": "例程需要名称。",
-  "routines.rename.hint": "双击以重命名"
+  "routines.rename.hint": "双击以重命名",
+  "settings.streamReplies.title": "在撰写时显示回复",
+  "settings.streamReplies.show": "在机器人撰写回复时逐字显示，而不是完成后一次显示"
 }

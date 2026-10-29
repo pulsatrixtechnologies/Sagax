@@ -2092,6 +2092,8 @@
   "settings.toolCalls.show": "Mostrar chamadas de ferramenta",
   "settings.toolCalls.title": "Chamadas de ferramenta",
   "settings.unreadyProviders.show": "Mostrar provedores não configurados",
+  "settings.streamReplies.title": "Mostrar as respostas enquanto são escritas",
+  "settings.streamReplies.show": "Mostrar a resposta de um bot palavra por palavra enquanto é escrita, em vez de tudo de uma vez no final",
   "settings.unreadyProviders.title": "Provedores não configurados",
   "settings.updates.check": "Verificar atualizações",
   "settings.updates.checking": "Verificando…",

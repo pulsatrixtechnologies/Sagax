@@ -78092,6 +78092,18 @@
         "fr": { "stringUnit": { "state": "translated", "value": "L'accent prend la couleur du bot ouvert." } }
       }
     },
+    "Show replies as they are written": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show replies as they are written" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Afficher les réponses au fur et à mesure" } }
+      }
+    },
+    "Show a bot reply word by word while it is written, instead of all at once when it is finished": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show a bot reply word by word while it is written, instead of all at once when it is finished" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Afficher la réponse d'un bot au fil de l'écriture, plutôt que d'un coup une fois terminée" } }
+      }
+    },
     "Show suggestions": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Show suggestions" } },

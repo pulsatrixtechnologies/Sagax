@@ -2438,5 +2438,7 @@
   "routines.menu.open": "Відкрити",
   "routines.rename.label": "Назва рутини",
   "routines.rename.empty": "Рутина потребує назви.",
-  "routines.rename.hint": "Двічі клацніть, щоб перейменувати"
+  "routines.rename.hint": "Двічі клацніть, щоб перейменувати",
+  "settings.streamReplies.title": "Показувати відповіді під час написання",
+  "settings.streamReplies.show": "Показувати відповідь бота слово за словом під час написання, а не всю одразу після завершення"
 }

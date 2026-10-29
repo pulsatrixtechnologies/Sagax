@@ -1922,5 +1922,7 @@
   "routines.menu.open": "खोलें",
   "routines.rename.label": "रूटीन का नाम",
   "routines.rename.empty": "रूटीन का नाम होना ज़रूरी है।",
-  "routines.rename.hint": "नाम बदलने के लिए डबल-क्लिक करें"
+  "routines.rename.hint": "नाम बदलने के लिए डबल-क्लिक करें",
+  "settings.streamReplies.title": "जवाब लिखे जाते समय दिखाएँ",
+  "settings.streamReplies.show": "बॉट का जवाब पूरा होने पर एक साथ दिखाने के बजाय, लिखे जाते समय शब्द-दर-शब्द दिखाएँ"
 }
