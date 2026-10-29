@@ -17,6 +17,7 @@ import { serverLog } from "./server-log-capture.ts";
 import { startEventLoopLagMonitor } from "./event-loop-lag.ts";
 import { settledChipLabel } from "./waiting-chip.ts";
 import { groupOwnerId, groupPatchOwnerRefusal, mayDeleteGroup, ownsGroup, type GroupActor } from "./group-ownership.ts";
+import { groupLeftFrameAllowed, groupLeftLine, planGroupLeave } from "./group-leave.ts";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, realpathSync, rmSync, mkdirSync, statSync, writeFileSync } from "node:fs";
@@ -10962,7 +10963,7 @@ function readCursor(threadId: string): { lastReadMessageId?: string } {
 function publicGroupState(record: GroupRecord): WireGroup {
   // The organization library's part hashes and the person-thread migration
   // marker stay server-side.
-  const { installedPackage: _installedPackage, personThreads: _personThreads, ...group } = record;
+  const { installedPackage: _installedPackage, personThreads: _personThreads, archivedAt: _archivedAt, ...group } = record;
   let usage: WireGroup["usage"];
   try { usage = groupUsageReader.forThread(group.threadId); } catch { /* accounting must not block chat */ }
   const openHandoffs = coordinator.active().filter(n => n.groupId === group.id && !["completed", "failed", "cancelled"].includes(n.status));
@@ -13495,6 +13496,8 @@ function sseFrameFor(
   if (payload?.kind === PHONE_TOOLS_FRAME && !phoneToolsFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   // a person's preferences reach that person's own devices only
   if (payload?.kind === "preferences" && !preferencesFrameAllowed(payload, client.viewerId)) return null;
+  // a person left a group: that person's own streams only (server/group-leave.ts)
+  if (payload?.kind === "group.left") return groupLeftFrameAllowed(payload, client.viewerId, localPrincipalId()) ? clientFrame ?? frame : null;
   if ((payload?.kind === "nudge" || payload?.kind === "nudge.sent") && !nudgeFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   if ((payload?.kind === "voice.opener" || payload?.kind === "voice.call.ended") && !voiceOpenerFrameAllowed(payload, client.viewerId, localPrincipalId())) return null;
   if (payload?.kind === "presence.changed" && !presenceFrameAllowed(payload, client)) return null;
@@ -35234,7 +35237,9 @@ function authzViewerFor(auth: RequestAuth): AuthzViewer | undefined {
 }
 /** channel.read on a room: listed people (by id or `team:`), and the members
  * of its shared section. */
-function groupVisible(group: { id?: unknown; humanIds?: string[]; section?: unknown; peopleDm?: boolean }, viewerId: string | undefined): boolean {
+function groupVisible(group: { id?: unknown; humanIds?: string[]; section?: unknown; peopleDm?: boolean; archivedAt?: number }, viewerId: string | undefined): boolean {
+  // The last person left it (server/group-leave.ts): kept, listed to no one.
+  if (group.archivedAt) return false;
   // A conversation between two people is theirs alone (server/people-dms.ts):
   // not an admin's, a section's, nor the operator's at this computer.
   if (group.peopleDm) return isPeopleDmParticipant(group, viewerId);
@@ -46946,6 +46951,47 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if ("unreadFor" in mentionRead) group = store.patchGroup(group.id, mentionRead) ?? group;
       }
       return json(res, 200, { group: peopleDmForViewer(publicGroupState(group), reader) });
+    }
+    // #1480: a person leaves a group they were added to, on their own. Only
+    // their own membership: the session names who leaves, never the body.
+    m = path.match(/^\/api\/groups\/([\w-]+)\/leave$/);
+    if (m && method === "POST") {
+      const group = store.group(m[1]);
+      if (!group || !groupVisible(group, channelViewerId(auth))) return json(res, 404, { error: "no such group" });
+      const actor = groupActor(auth);
+      if (!actor.id || actor.id.startsWith("anon:")) return json(res, 403, { error: "only a signed-in person can leave a group", code: "no_person" });
+      const plan = planGroupLeave(group, actor, {
+        ownerOf: (botId) => {
+          const bot = store.bot(botId);
+          return bot ? effectiveBotOwner(bot) : undefined;
+        },
+        shared: (botId) => {
+          const bot = store.bot(botId);
+          return Boolean(bot && botGrants(bot).length > 0);
+        },
+      });
+      if (!plan.ok) return json(res, plan.status, { error: plan.error, code: plan.code });
+      if (plan.removedBotIds.length && phoneSecretSubmissions.hasGroup(group.id)) {
+        return json(res, 409, { error: "this group is securely saving a credential — try again when it finishes", code: "busy" });
+      }
+      const name = personDisplayName(principals.byId(actor.id)) || actor.email || "";
+      store.appendMessage(group.threadId, groupLeftLine(actor.id, name, Date.now()));
+      const beforeHumanIds = [...(group.humanIds ?? [])];
+      const beforeMemberIds = [...group.memberIds];
+      const turnWasOpen = channelTurnOpen(group);
+      const left = store.patchGroup(group.id, {
+        humanIds: plan.humanIds,
+        memberIds: plan.memberIds,
+        ...(plan.createdBy ? { createdBy: plan.createdBy } : {}),
+        ...(plan.archive ? { archivedAt: Date.now() } : {}),
+      });
+      if (!left) return json(res, 404, { error: "no such group" });
+      // a turn waiting on a bot that left with them ends, as a roster edit does
+      if (turnWasOpen) failTurnIfMemberLeft(left, beforeHumanIds, beforeMemberIds);
+      if (plan.archive) routines!.disableForGroup(group.id);
+      // their own devices drop the group: they no longer see its frames
+      broadcast({ kind: "group.left", roomId: group.id, audience: actor.id });
+      return json(res, 200, { ok: true, archived: plan.archive, ...(plan.createdBy ? { owner: plan.createdBy } : {}), removedBotIds: plan.removedBotIds });
     }
     m = path.match(/^\/api\/groups\/([\w-]+)\/read$/);
     if (m && method === "POST") {

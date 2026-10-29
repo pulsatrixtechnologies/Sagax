@@ -81,6 +81,8 @@ public enum RoomMenuItem: String, Hashable, Sendable, CaseIterable {
     /// The phone's pinned row also holds groups; the desktop's room menu
     /// has no pin, so it comes after the desktop's entries.
     case pin, unpin
+    /// #1480: a person listed in the group leaves it (`RoomInfoAccess.canLeave`).
+    case leave
     case delete
 }
 
@@ -234,7 +236,10 @@ public enum NavigationMenus {
         if context.groupPinsSupported, context.gate.scope != .sidecar, room.dm != true {
             groups.append([room.pinned == true ? .unpin : .pin])
         }
-        if access.canDelete { groups.append([.delete]) }
+        var last: [RoomMenuItem] = []
+        if access.canLeave { last.append(.leave) }
+        if access.canDelete { last.append(.delete) }
+        if !last.isEmpty { groups.append(last) }
         return groups
     }
 

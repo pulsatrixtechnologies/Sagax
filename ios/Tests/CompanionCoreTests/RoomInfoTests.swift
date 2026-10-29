@@ -188,6 +188,23 @@ final class RoomInfoTests: XCTestCase {
         XCTAssertFalse(RoomInfoAccess(room: room(ownerId: "p-me"), gate: gate, viewer: unknown, bots: bots).canAddHuman)
     }
 
+    func testTheOwnerLeavesTooAndTheConfirmationSaysWhatHappens() {
+        // #1480: listed in their own name, owner included, organization only
+        let gate = SurfaceGate(scope: .serverClient, organization: true)
+        let me = RoomViewer(principalId: "p-me", role: "member")
+        let mine = room(ownerId: "p-me", humanIds: ["p-me", "p-bob"])
+        XCTAssertTrue(RoomInfoAccess(room: mine, gate: gate, viewer: me, bots: []).canLeave)
+        XCTAssertEqual(RoomOwnership.leaveOutcome(mine, viewer: me), .owner)
+        // the recorded owner who is not in humanIds still leaves
+        XCTAssertTrue(RoomOwnership.mayLeave(room(ownerId: "p-me", humanIds: ["p-bob"]), viewer: me))
+        XCTAssertEqual(RoomOwnership.leaveOutcome(room(ownerId: "p-me", humanIds: ["p-me", "team:ops"]), viewer: me), .last)
+        XCTAssertEqual(RoomOwnership.leaveOutcome(room(ownerId: "boss", humanIds: ["boss", "p-me"]), viewer: me), .member)
+        // a solo server has nobody to hand the group to
+        XCTAssertFalse(RoomInfoAccess(room: mine, gate: SurfaceGate(scope: .serverAdmin), viewer: me, bots: []).canLeave)
+        // listed through a team only: nothing of their own to leave
+        XCTAssertFalse(RoomInfoAccess(room: room(ownerId: "boss", humanIds: ["boss", "team:ops"]), gate: gate, viewer: me, bots: []).canLeave)
+    }
+
     func testRosterOpensOnAPickerAndOffersOnlyWhatTheViewerMayTick() {
         let gate = SurfaceGate(scope: .serverClient, organization: true)
         let me = RoomViewer(principalId: "p-me", role: "member")

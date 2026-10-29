@@ -132,6 +132,16 @@ final class NavigationMenusTests: XCTestCase {
         ])
     }
 
+    func testAPersonListedInAGroupLeavesFromTheRowMenu() throws {
+        // #1480: Leave group sits in the red last section, before Delete
+        let org = SurfaceGate(scope: .serverClient, organization: true)
+        var group = try room("ops")
+        group.ownerId = "pr_boss"
+        group.humanIds = ["pr_boss", "pr_x"]
+        let items = NavigationMenus.room(group, roomContext(org, room: group, owner: false))
+        XCTAssertEqual(items.last, [.leave])
+    }
+
     func testTheSidecarRoomMenuHasNoOwnerEntriesAndNoPin() throws {
         let group = try room("ops", pinned: true)
         XCTAssertEqual(NavigationMenus.room(group, roomContext(sidecar, room: group)), [[.copyConversationId, .hide]])

@@ -13,6 +13,8 @@ final class RoomActions: ObservableObject {
     @Published var renaming: Room?
     @Published var renameDraft = ""
     @Published var deleting: Room?
+    /// #1480: the group whose Leave is being confirmed.
+    @Published var leaving: Room?
     @Published var newSectionFor: Room?
     @Published var sectionDraft = ""
     @Published var notice: String?
@@ -47,6 +49,14 @@ final class RoomActions: ObservableObject {
         deleting = nil
         Task {
             if await session.deleteRoom(room) { deleted = room.id }
+        }
+    }
+
+    func confirmLeave(_ session: Session) {
+        guard let room = leaving else { return }
+        leaving = nil
+        Task {
+            if await session.leaveRoom(room) { deleted = room.id }
         }
     }
 
@@ -147,6 +157,13 @@ struct RoomRowMenu: View {
                 Label(item == .pin ? String(localized: "Pin") : String(localized: "Unpin"),
                       systemImage: item == .pin ? "pin" : "pin.slash")
             }
+        case .leave:
+            Button(role: .destructive) {
+                actions.leaving = room
+            } label: {
+                Label(String(localized: "Leave group"), systemImage: "rectangle.portrait.and.arrow.right")
+            }
+            .accessibilityIdentifier("room-menu-leave")
         case .delete:
             Button(role: .destructive) {
                 actions.deleting = room
@@ -296,6 +313,22 @@ struct RoomActionsPresenter: ViewModifier {
                     Text(String(localized: "This permanently deletes the \(room.name) group chat, its messages, and every thread in it, and turns off the routines that run there. The bots in it are not deleted. This cannot be undone."))
                 }
             }
+            .confirmationDialog(
+                actions.leaving.map { String(localized: "Leave \($0.name)?") } ?? "",
+                isPresented: Binding(
+                    get: { actions.leaving != nil },
+                    set: { if !$0 { actions.leaving = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button(String(localized: "Leave group"), role: .destructive) { actions.confirmLeave(session) }
+                    .accessibilityIdentifier("room-leave-confirm")
+                Button(String(localized: "Cancel"), role: .cancel) { actions.leaving = nil }
+            } message: {
+                if let room = actions.leaving {
+                    Text(RoomLeaveCopy.message(RoomOwnership.leaveOutcome(room, viewer: session.roomViewer)))
+                }
+            }
             .overlay(alignment: .bottom) {
                 if let notice = actions.notice {
                     Text(verbatim: notice)
@@ -314,5 +347,17 @@ struct RoomActionsPresenter: ViewModifier {
 extension View {
     func roomActionsPresenter(_ actions: RoomActions) -> some View {
         modifier(RoomActionsPresenter(actions: actions))
+    }
+}
+
+/// The confirmation's words (LeaveGroupDialog.tsx, `room.leave.*`).
+enum RoomLeaveCopy {
+    static func message(_ outcome: RoomOwnership.LeaveOutcome) -> String {
+        let body = String(localized: "The group leaves your sidebar and you stop getting its messages and notifications. Your messages stay for the others, and your private bots leave with you. Someone in the group can add you back.")
+        switch outcome {
+        case .member: return body
+        case .owner: return body + " " + String(localized: "You own this group: it passes to the person who has been in it the longest.")
+        case .last: return body + " " + String(localized: "You are the last person in it: the group will be archived.")
+        }
     }
 }

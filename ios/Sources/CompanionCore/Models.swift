@@ -472,6 +472,9 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
         /// A bot-authored card, list or form (`show_widget`); `widget`
         /// carries the tree and `text` its readable fallback.
         case widget
+        /// #1480: a neutral line about the group's people ("Ann left the
+        /// group"); `roster` carries it, `text` is its English fallback.
+        case roster
         /// A kind this build has never heard of.
         ///
         /// Not decorative. `kind` is not optional, so without this a single
@@ -598,6 +601,8 @@ public struct Message: Codable, Hashable, Identifiable, Sendable {
     public var video: WireVideoWidget? = nil
     /// `kind == .widget`: the bot's widget tree (ChatWidget.swift).
     public var widget: ChatWidgetPayload? = nil
+    /// `kind == .roster` (#1480): who left the group.
+    public var roster: RosterNote? = nil
     /// A page the bot proposed (`propose_page`, shared/wire.ts
     /// `pagePublish`): drawn as the card the person publishes it from.
     public var pagePublish: PagePublishRef? = nil
@@ -2570,5 +2575,19 @@ extension Message {
                   seen.insert(path).inserted else { return nil }
             return MessageVoiceNote(path: path, mime: attachment.mime, durationMs: attachment.durationMs, words: attachment.words)
         }
+    }
+}
+
+/// A change to a group's people (#1480, WireMessage.roster): drawn as one
+/// centred line, never a bubble.
+public struct RosterNote: Codable, Hashable, Sendable {
+    public var event: String
+    public var personId: String
+    public var name: String
+
+    public init(event: String, personId: String, name: String) {
+        self.event = event
+        self.personId = personId
+        self.name = name
     }
 }

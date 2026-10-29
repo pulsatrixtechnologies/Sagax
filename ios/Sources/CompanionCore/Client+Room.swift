@@ -63,6 +63,16 @@ public extension CompanionClient {
         try await send(deleteRoomRequest(groupId: groupId))
     }
 
+    func leaveRoomRequest(groupId: String) throws -> URLRequest {
+        guard Self.validRouteID(groupId) else { throw APIError.badURL }
+        return try makeRequest("POST", "/api/groups/\(groupId)/leave")
+    }
+
+    /// #1480: the signed-in person leaves the group (server/group-leave.ts).
+    func leaveRoom(groupId: String) async throws {
+        try await send(leaveRoomRequest(groupId: groupId))
+    }
+
     // MARK: Memory
 
     func groupMemoryRequest(groupId: String) throws -> URLRequest {

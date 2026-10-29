@@ -101,14 +101,16 @@ function openRoom(group: Group) {
   const onClose = vi.fn();
   const onMoveToSection = vi.fn();
   const onDelete = vi.fn();
+  const onLeave = vi.fn();
   const html = renderToStaticMarkup(createElement(RoomContextMenu, {
     menu: { groupId: group.id, x: 20, y: 30 },
     onClose,
     onMoveToSection,
     onDelete,
+    onLeave,
   }));
   const buttons = elements(fixture.portal).filter((element) => element.type === "button");
-  return { html, labels: labelsOf(fixture.portal), buttons, onClose, onMoveToSection, onDelete };
+  return { html, labels: labelsOf(fixture.portal), buttons, onClose, onMoveToSection, onDelete, onLeave };
 }
 
 const click = (buttons: ReactElement<Record<string, unknown>>[], label: string) => {
@@ -312,5 +314,24 @@ describe("person row menu", () => {
     expect(html).not.toContain(`>${t("sidebar.bot.moveTo")}<`);
     expect(labels).toContain(t("sidebar.hidden.hide"));
     expect(html).not.toContain('data-menu-item="delete"');
+  });
+});
+
+describe("Leave group in the room menu (#1480)", () => {
+  const orgRoom = (ownerId: string, humanIds: string[]): Group => ({ ...room(), ownerId, humanIds });
+
+  it("a member listed in the group leaves from the menu, which asks the caller to confirm", () => {
+    const open = openRoom(orgRoom("pr_boss", ["pr_boss", "pr_me"]));
+    expect(open.labels).toContain(t("groupPanel.leave"));
+    click(open.buttons, t("groupPanel.leave"));
+    expect(open.onLeave).toHaveBeenCalledWith("ops");
+    expect(fixture.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("the owner leaves too; someone listed only through a team, a solo server or a person row do not", () => {
+    expect(openRoom(orgRoom("pr_me", ["pr_me", "pr_bob"])).labels).toContain(t("groupPanel.leave"));
+    expect(openRoom(orgRoom("pr_boss", ["pr_boss", "team:ops"])).labels).not.toContain(t("groupPanel.leave"));
+    expect(openRoom(room()).labels).not.toContain(t("groupPanel.leave"));
+    expect(openRoom(personRow(false)).labels).not.toContain(t("groupPanel.leave"));
   });
 });

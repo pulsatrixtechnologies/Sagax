@@ -2666,5 +2666,10 @@
   "chat.exchange.empty": "还没有与 {name} 的消息。",
   "chat.exchange.loadError": "无法加载此对话。",
   "remoteSession.screenExpand": "放大屏幕",
-  "remoteSession.screenShrink": "缩小屏幕"
+  "remoteSession.screenShrink": "缩小屏幕",
+  "room.leave.title": "退出 {name}？",
+  "room.leave.body": "它会从侧边栏移除，你将不再收到它的消息和通知。你的消息会为其他人保留，你的私有机器人会随你一起离开。群组中的人可以重新添加你。",
+  "room.leave.owner": "你是这个群组的所有者：它将转交给加入时间最长的人。",
+  "room.leave.last": "你是最后一个人：群组将被归档。",
+  "room.roster.left": "{name} 已退出群组"
 }

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Bug, Check, ChevronRight, Copy, Database, Download, MoreHorizontal, Package, Upload } from "lucide-react";
+import { Bug, Check, ChevronRight, Copy, Database, Download, LogOut, MoreHorizontal, Package, Upload } from "lucide-react";
 
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { cn } from "@/lib/cn";
@@ -41,6 +41,9 @@ export interface ExportTranscriptMenuProps {
   data?: { label: string; onOpen: () => void };
   /** A confidential thread: the copy and the download carry its mark. */
   confidential?: boolean;
+  /** A group the viewer may leave (#1480): Leave group, the red last
+   * section. The caller asks for confirmation. */
+  onLeave?: () => void;
 }
 
 /**
@@ -61,6 +64,7 @@ export function ExportTranscriptMenu({
   inspectorOpen = false,
   data,
   confidential = false,
+  onLeave,
 }: ExportTranscriptMenuProps) {
   const [open, setOpen] = useState(false);
   const motion = useMenuMotion(open);
@@ -139,7 +143,7 @@ export function ExportTranscriptMenu({
 
   // The reference design's sections, Cursor's rule (2026-10-16): Copy, then the
   // exports (a submenu once there are two), then the tools. Nothing here
-  // deletes, so there is no red last section.
+  // deletes, so the only red last section is Leave group (#1480).
   const exports: Array<{ key: string; label: string; icon: ReactNode; onSelect: () => void; attr?: Record<string, string> }> = [];
   if (hasMessages) exports.push({ key: "download", label: t("chat.export.download"), icon: <Download size={16} className="shrink-0 text-ink" />, onSelect: handleDownload });
   if (onExportBot) exports.push({ key: "bot-zip", label: t("chat.export.botZip"), icon: <Package size={16} className="shrink-0 text-ink" />, onSelect: () => { setOpen(false); onExportBot(); }, attr: { "data-export-bot-zip": "" } });
@@ -294,6 +298,22 @@ export function ExportTranscriptMenu({
               <Database size={16} className="shrink-0 text-ink" />
               <span className="flex-1 truncate">{t("dataWindow.open")}</span>
             </button>
+          )}
+          {onLeave && (
+            <>
+              <div role="separator" className="mx-2 my-1 h-[0.5px] bg-border" />
+              <button
+                type="button"
+                role="menuitem"
+                data-conversation-leave-group=""
+                onClick={() => { setOpen(false); onLeave(); }}
+                onPointerOver={() => hoverSub(false)}
+                className={cn(ROW, "text-danger")}
+              >
+                <LogOut size={16} className="shrink-0" />
+                <span className="flex-1 truncate">{t("groupPanel.leave")}</span>
+              </button>
+            </>
           )}
         </div>
       )}
