@@ -45,10 +45,39 @@ function subscribeFullscreen(listener: () => void): () => void {
 }
 const currentFullscreen = () => fullscreenArtifact;
 
+/** In an artifact's own window the layer also takes the screen (#1495): the
+ * window asks the system for full screen, and leaving it (Escape, the window's
+ * own control) closes the layer. Where the system refuses, the layer still
+ * fills the window. */
+function useWindowFullscreen(enabled: boolean, onClose: () => void): void {
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    if (!enabled || typeof document === "undefined") return;
+    const root = document.documentElement;
+    let entered = false;
+    const onChange = () => {
+      if (document.fullscreenElement) entered = true;
+      else if (entered) close.current();
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    if (!document.fullscreenElement && typeof root.requestFullscreen === "function") {
+      void Promise.resolve(root.requestFullscreen()).catch(() => {});
+    }
+    return () => {
+      document.removeEventListener("fullscreenchange", onChange);
+      if (document.fullscreenElement && typeof document.exitFullscreen === "function") {
+        void Promise.resolve(document.exitFullscreen()).catch(() => {});
+      }
+    };
+  }, [enabled]);
+}
+
 /** The full-screen layer is a modal dialog: Escape and Tab are handled by useModalDialog. */
-function FullscreenLayer({ artifact, onClose }: { artifact: FullscreenArtifact; onClose: () => void }) {
+function FullscreenLayer({ artifact, onClose, windowFullscreen = false }: { artifact: FullscreenArtifact; onClose: () => void; windowFullscreen?: boolean }) {
   const layer = useRef<HTMLDivElement>(null);
   useModalDialog(layer, onClose);
+  useWindowFullscreen(windowFullscreen, onClose);
   return (
     <div ref={layer} tabIndex={-1} data-artifact-fullscreen-layer className="fixed inset-0 z-[70] flex flex-col bg-panel outline-none" role="dialog" aria-modal="true" aria-label={artifact.title}>
       <div className="flex justify-end p-2">
@@ -61,12 +90,15 @@ function FullscreenLayer({ artifact, onClose }: { artifact: FullscreenArtifact; 
   );
 }
 
-/** Mounted once for the app (ArtifactsHost): draws the full-screen artifact in
- * front of everything, independent of the popup that opened it. */
-export function ArtifactFullscreenHost() {
+/** Mounted once per page that draws artifacts: the app (ArtifactsHost) and an
+ * artifact's own window (ArtifactStandaloneWindow, #1495). Draws the
+ * full-screen artifact in front of everything, independent of the popup that
+ * opened it. `windowFullscreen`: the page is the artifact's own window, so the
+ * window itself goes full screen too. */
+export function ArtifactFullscreenHost({ windowFullscreen = false }: { windowFullscreen?: boolean } = {}) {
   const artifact = useSyncExternalStore(subscribeFullscreen, currentFullscreen, currentFullscreen);
   if (!artifact || typeof document === "undefined") return null;
-  return createPortal(<FullscreenLayer artifact={artifact} onClose={() => setFullscreenArtifact(null)} />, document.body);
+  return createPortal(<FullscreenLayer artifact={artifact} windowFullscreen={windowFullscreen} onClose={() => setFullscreenArtifact(null)} />, document.body);
 }
 
 export function ArtifactFrame({ artifact, fill = false, className, bare = false }: {

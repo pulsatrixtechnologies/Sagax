@@ -14,7 +14,7 @@ import { cn } from "@/lib/cn";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
 import { setLocale, t } from "@/lib/i18n";
 import { refreshArtifact, useArtifact, useArtifactWatch } from "@/lib/artifacts";
-import { ArtifactFrame } from "./ArtifactFrame";
+import { ArtifactFrame, ArtifactFullscreenHost } from "./ArtifactFrame";
 import { PageSurface } from "../PageViewer";
 import { pageIdOfWindow } from "@/lib/page-windows";
 import { ArtifactStatusLine } from "./ArtifactsSection";
@@ -69,6 +69,9 @@ export function ArtifactWindowBody({ data }: { data: ArtifactWindowData }) {
           </span>
         )}
       </div>
+      {/* the frame's Full screen button draws here: an own window has no
+          ArtifactsHost, and the window itself goes full screen (#1495) */}
+      <ArtifactFullscreenHost windowFullscreen />
     </div>
   );
 }
