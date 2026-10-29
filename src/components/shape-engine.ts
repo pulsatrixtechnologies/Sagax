@@ -2,22 +2,25 @@
 // as pure functions of time, so tests and the static render share it with
 // the live avatar (ShapeMascot.tsx).
 //
-// - The face: two rounded bars cut through the body, placed on an imaginary
-//   head (a unit sphere) turned HEAD.yaw degrees and tilted HEAD.pitch
-//   degrees, then seen from the front: each eye is foreshortened by the
-//   sphere's own curvature, pushed out to the body's outline at its angle,
-//   kept inside it by the bounds solver, and fades once it turns away.
+// - The face: two rounded bars on the body, always the same two capsules
+//   (2026-10-28: no eye ever fades, shrinks or tilts on its own). Their
+//   middle rests on the body's face anchor (shared/mascot-geometry.json) and
+//   moves from there with the gaze: an imaginary head (a unit sphere) turned
+//   HEAD.yaw degrees and tilted HEAD.pitch degrees says how far a look moves
+//   the pair; the bounds solver keeps both eyes inside the outline.
 // - Idle: the gaze wanders on five slow loops, the body drifts and breathes
 //   on a BREATH_S cycle, the eyes blink on a seeded schedule.
 // - Hover: the gaze turns toward the pointer, easing in over HOVER.turn s.
 // - Changes of shape, expression and color slide over MORPH_S.
 // - Moves: the fourteen one-shot moves of shape-moves.ts, blended over the
-//   resting pose.
+//   resting pose. A move never takes the body apart: it stays one whole
+//   outline with its two eyes; what a move adds (thought dots, a mark, rings,
+//   ribbons, specks) is drawn around it.
 //
 // All lengths are in R (the circle's radius) until frame() turns them into
 // the 0..100 box (shape-art.ts BODY).
 import type { MascotShape } from "../../shared/mascot-look";
-import { blendRadii, BODY, clamp01, easeInOut, easeOutQuint, lerp, RAD, radiusToward, SHAPE_RADII, smoothClosed, stemPath, toBox, type Radii } from "./shape-art";
+import { blendRadii, BODY, clamp01, easeInOut, easeOutQuint, FACE_ANCHOR, GEOMETRY, lerp, RAD, radiusToward, SHAPE_RADII, smoothClosed, stemPath, toBox, type Radii } from "./shape-art";
 import { moveAt, moveLength, moveWeight, ringAt, type MovePose, type RibbonDraw, type RingDraw, type ShapeMove } from "./shape-moves";
 
 export { clamp01, easeOutQuint } from "./shape-art";
@@ -37,21 +40,23 @@ export const BREATH_AMOUNT = 0.005;
 export const BLINK = { first: 1.1, minGap: 1, maxGap: 4.2, length: 0.16, closing: 0.45, doubleChance: 0.24, doubleAfter: 0.22, floor: 0.06 } as const;
 /** How far the gaze turns toward the pointer at the edge of its reach (degrees) and how long the turn eases, s. */
 export const HOVER = { yaw: 16, pitch: 13, turn: 0.85 } as const;
+/** How much of the body's lean (shape-motion.ts, degrees) the gaze follows. */
+export const LEAN_GAZE = 0.35;
 /** The imaginary head's own turn and tilt, degrees: the resting gaze looks back at the viewer through it. */
-export const HEAD = { yaw: 28, pitch: 29 } as const;
+export const HEAD: { readonly yaw: number; readonly pitch: number } = GEOMETRY.eyes.head;
 /** The resting face sits a little below the head's middle (degrees of pitch), so the eyes rest about mid-body. */
-export const FACE_DROP = 2;
+export const FACE_DROP: number = GEOMETRY.eyes.faceDrop;
 /** The eyes' size on the body (2026-10-18: bigger, simpler, readable from the sidebar up). */
-export const EYE_SCALE = { w: 0.92, h: 1.02 } as const;
+export const EYE_SCALE: { readonly w: number; readonly h: number } = GEOMETRY.eyes.scale;
 /** How much of a face's roll the eyes keep: they stand nearly upright on the turned body. */
 export const EYE_ROLL = 0;
 /** How far apart the eyes sit, on top of each face's own split. */
-export const EYE_SPREAD = 1.32;
+export const EYE_SPREAD: number = GEOMETRY.eyes.spread;
 /** How far a turn of the head (a look, the pointer) moves the face's middle across the body. */
-export const EYE_GAZE = 0.55;
+export const EYE_GAZE: number = GEOMETRY.eyes.gaze;
 /** The eyes are a little longer than wide scaling alone gives (tall capsules). */
 export const EYE_LENGTH = 1;
-/** Where the face sits on the body before the pose turns it (R): to the right, a little up, so the turned body looks up and to the right. */
+/** Where a face rests on a body that names no anchor of its own (R): to the right, a little up. */
 export const EYE_SHIFT = { x: 0.1, y: 0.2 } as const;
 
 
@@ -83,24 +88,13 @@ const both = (yaw: number, pitch: number, roll: number, split: number, shape: Ey
 export const SHAPE_EXPRESSIONS = ["neutral", "attentive", "surprised", "excited", "happy", "laughing", "angry", "sad", "scared", "suspicious", "confused", "curious", "proud", "shy", "bored", "sleepy"] as const;
 export type ShapeExpression = (typeof SHAPE_EXPRESSIONS)[number];
 
-export const EXPRESSIONS: Readonly<Record<ShapeExpression, Expression>> = {
-  neutral: both(0, 0, -13, 15.5, eye(0.25, 0.46)),
-  attentive: both(-2, 2, -9, 15, eye(0.26, 0.5)),
-  surprised: both(-3, 2, -6, 18, eye(0.44, 0.44)),
-  excited: both(-1, 4, -10, 16.5, eye(0.28, 0.54)),
-  happy: both(0, 3, -10, 16, eye(0.34, 0.17, -10), eye(0.34, 0.17, 10)),
-  laughing: both(0, 6, -8, 17, eye(0.31, 0.11, -18), eye(0.31, 0.11, 18)),
-  angry: both(-2, -3, -12, 14.5, eye(0.27, 0.19, 24), eye(0.27, 0.19, -24)),
-  sad: both(2, -7, -14, 15, eye(0.2, 0.32, -18), eye(0.2, 0.32, 18)),
-  scared: both(-6, 1, -8, 13, eye(0.24, 0.38)),
-  suspicious: both(7, -1, -11, 15, eye(0.29, 0.13, 6)),
-  confused: both(3, 1, -20, 15.5, eye(0.25, 0.46), eye(0.25, 0.28, 10)),
-  curious: both(5, 6, -17, 15.5, eye(0.26, 0.48)),
-  proud: both(-3, 9, -6, 15, eye(0.28, 0.12, 4)),
-  shy: both(10, -8, -16, 13.5, eye(0.18, 0.32)),
-  bored: both(4, -3, -12, 15, eye(0.27, 0.14)),
-  sleepy: both(1, -4, -13, 15.5, eye(0.26, 0.46, 0, 0.38)),
-};
+/** The faces, from the geometry file (shared/mascot-geometry.json expressions). */
+export const EXPRESSIONS: Readonly<Record<ShapeExpression, Expression>> = Object.fromEntries(
+  SHAPE_EXPRESSIONS.map((id) => {
+    const face = GEOMETRY.expressions[id];
+    return [id, both(face.yaw, face.pitch, face.roll, face.split, eye(face.left.w, face.left.h, face.left.tilt, face.left.open), eye(face.right.w, face.right.h, face.right.tilt, face.right.open))];
+  }),
+) as Record<ShapeExpression, Expression>;
 
 function blendEye(a: EyeShape, b: EyeShape, t: number): EyeShape {
   return { w: lerp(a.w, b.w, t), h: lerp(a.h, b.h, t), tilt: lerp(a.tilt, b.tilt, t), open: lerp(a.open, b.open, t) };
@@ -267,22 +261,20 @@ function toView([x, y, z]: Vec3, roll: number): Vec3 {
 export interface PlacedEye {
   points: Point[];
   center: Point;
-  /** The capsule's width and height (R), after the blink and the fade. */
+  /** The capsule's width and height (R), after the blink. */
   w: number;
   h: number;
   /** The face's own tilt for this eye, degrees (0 at rest: an upright capsule). */
   tilt: number;
-  /** 0 (turned away, hidden) .. 1. */
+  /** 0 (hidden by a move) .. 1; never less than 1 from the gaze alone (2026-10-28: an eye never fades away). */
   alpha: number;
   depth: number;
 }
 
-/** How deep an eye must face the viewer to show, and over how much depth it fades in. */
-export const EYE_FADE = { hidden: 0.02, over: 0.12 } as const;
 /** The eyes keep at least this much body around them, R. */
-export const EYE_MARGIN = 0.07;
+export const EYE_MARGIN: number = GEOMETRY.eyes.margin;
 /** The two eyes keep at least this share of an eye's width between them. */
-export const EYE_GAP = 0.6;
+export const EYE_GAP: number = GEOMETRY.eyes.gap;
 
 /** A rounded bar's outline (w x h, rounded ends), in its own frame, around its middle. */
 export function stadium(w: number, h: number, count = 28): Point[] {
@@ -315,11 +307,10 @@ export function eyeOutline(cx: number, cy: number, w: number, h: number, tilt: n
 
 function placeEye(yaw: number, pitch: number, roll: number, shape: EyeShape, open: number): PlacedEye {
   const c = toView(direction(yaw, pitch), roll);
-  const alpha = clamp01((c[2] - EYE_FADE.hidden) / EYE_FADE.over);
-  // the size: the face's own capsule, the blink closing its height; a turned-away eye shrinks as it fades
-  const w = shape.w * EYE_SCALE.w * alpha;
-  const h = Math.max(shape.h * EYE_SCALE.h * EYE_LENGTH * Math.max(open, BLINK.floor), 0.012) * alpha;
-  return { points: eyeOutline(c[0], c[1], w, h, shape.tilt), center: [c[0], c[1]], w, h, tilt: shape.tilt, alpha, depth: c[2] };
+  // the size: the face's own capsule, the blink closing its height; the turn only moves it
+  const w = shape.w * EYE_SCALE.w;
+  const h = Math.max(shape.h * EYE_SCALE.h * EYE_LENGTH * Math.max(open, BLINK.floor), 0.012);
+  return { points: eyeOutline(c[0], c[1], w, h, shape.tilt), center: [c[0], c[1]], w, h, tilt: shape.tilt, alpha: 1, depth: c[2] };
 }
 
 /** The face's middle at rest (no look, no face of its own), R: where a turn is measured from. */
@@ -344,15 +335,16 @@ function solveRest(roll: number): Point {
  * narrow one gathers them), and finally pulled in until every eye point keeps
  * EYE_MARGIN inside the outline. The two eyes always stand on one level line
  * (2026-10-28): the head's turn moves the face, never one eye above the other.
+ * `anchor` is where the face rests on this body (R, shared/mascot-geometry.json).
  */
-export function solveEyes(radii: Radii, face: Expression, gaze: { yaw: number; pitch: number; roll: number }, open: { left: number; right: number }): [PlacedEye, PlacedEye] {
+export function solveEyes(radii: Radii, face: Expression, gaze: { yaw: number; pitch: number; roll: number }, open: { left: number; right: number }, anchor: Point = [EYE_SHIFT.x, EYE_SHIFT.y]): [PlacedEye, PlacedEye] {
   const yaw = HEAD.yaw + face.yaw + gaze.yaw;
   const pitch = HEAD.pitch + FACE_DROP + face.pitch + gaze.pitch;
   const roll = face.roll * EYE_ROLL + gaze.roll;
   const split = face.split * EYE_SPREAD;
   const left = placeEye(yaw - split, pitch, roll, face.left, face.left.open * open.left);
   const right = placeEye(yaw + split, pitch, roll, face.right, face.right.open * open.right);
-  // the face, seen from the front (2026-10-18): its middle rests at EYE_SHIFT (R, from the
+  // the face, seen from the front (2026-10-18): its middle rests at the anchor (R, from the
   // body's middle) and moves from there as much as the head's turn moves it (a look, a
   // face, the pointer); the eyes keep their own distance from it, the width spread by
   // the body's own width. The fit below pulls the middle in toward the body's middle.
@@ -360,7 +352,7 @@ export function solveEyes(radii: Radii, face: Expression, gaze: { yaw: number; p
   const rest = solveRest(roll);
   const spread = radiusToward(radii, 1, 0) * 0.5 + radiusToward(radii, -1, 0) * 0.5;
   const sx = Math.max(0.35, Math.min(1.25, spread));
-  const target: Point = [EYE_SHIFT.x + (mid[0] - rest[0]) * EYE_GAZE, EYE_SHIFT.y + (mid[1] - rest[1]) * EYE_GAZE];
+  const target: Point = [anchor[0] + (mid[0] - rest[0]) * EYE_GAZE, anchor[1] + (mid[1] - rest[1]) * EYE_GAZE];
   const place = (eyeAt: PlacedEye, s: number, k = 1): PlacedEye => {
     const nx = target[0] * s + (eyeAt.center[0] - mid[0]) * sx;
     const ny = target[1] * s;
@@ -370,7 +362,7 @@ export function solveEyes(radii: Radii, face: Expression, gaze: { yaw: number; p
   };
   // inside the outline with EYE_MARGIN to spare, and never touching each other
   const apart = (eyes: PlacedEye[]) => eyes.length < 2 || Math.abs(eyes[1].center[0] - eyes[0].center[0]) >= (eyes[0].w + eyes[1].w) / 2 + EYE_GAP * Math.max(eyes[0].w, eyes[1].w);
-  const fits = (eyes: PlacedEye[]) => apart(eyes) && eyes.every((e) => e.alpha <= 0 || e.points.every(([x, y]) => Math.hypot(x, y) <= radiusToward(radii, x, y || -1e-6) - EYE_MARGIN));
+  const fits = (eyes: PlacedEye[]) => apart(eyes) && eyes.every((e) => e.points.every(([x, y]) => Math.hypot(x, y) <= radiusToward(radii, x, y || -1e-6) - EYE_MARGIN));
   let lo = 0;
   let hi = 1;
   if (!fits([place(left, 1), place(right, 1)])) {
@@ -429,6 +421,8 @@ export interface ShapeFrame {
   dots: { x: number; y: number; r: number; opacity: number }[];
   specks: { x: number; y: number; r: number; opacity: number }[];
   badge: { x: number; y: number; r: number; notch: number } | null;
+  /** A move's marks in the body's colour beside the body (the exclamation mark), box units, closed paths. */
+  marks: { d: string; opacity: number }[];
   rings: RingDraw[];
   ribbons: RibbonDraw[];
 }
@@ -473,6 +467,7 @@ export function gazeFrame(
 ): ShapeFrame {
   const gaze = hoverGaze(nx, ny);
   return composeFrame({
+    shape: state.shape,
     radii: SHAPE_RADII[state.shape],
     rest: SHAPE_RADII[state.shape],
     face: EXPRESSIONS[state.expression],
@@ -488,6 +483,8 @@ export function gazeFrame(
 }
 
 interface FrameInputs {
+  /** The body the face anchor is read for. */
+  shape: MascotShape;
   radii: Radii;
   rest: Radii;
   face: Expression;
@@ -526,7 +523,7 @@ export function bodyDepth(radii: Radii): number {
 }
 
 function composeFrame(input: FrameInputs): ShapeFrame {
-  const placed = input.eyes > 0.02 ? solveEyes(input.radii, input.face, input.gaze, input.open) : [];
+  const placed = input.eyes > 0.02 ? solveEyes(input.radii, input.face, input.gaze, input.open, FACE_ANCHOR[input.shape]) : [];
   const shown = placed.map((e) => {
     // eyes fading out with a move shrink to nothing about their middle
     const s = clamp01(input.eyes);
@@ -563,6 +560,7 @@ function composeFrame(input: FrameInputs): ShapeFrame {
   }
   const rings = (pose?.pose.rings ?? []).map(({ spec, opacity }) => ringAt(spec, input.t, opacity * w, [x, y]));
   const ribbonsNow = (pose?.pose.ribbons ?? []).map((ribbon) => ({ ...ribbon, opacity: ribbon.opacity * w }));
+  const marks = (pose?.pose.marks ?? []).map((mark) => ({ d: smoothClosed(mark.points.map((p) => toBox(p))), opacity: round3(mark.opacity * w) })).filter((mark) => mark.opacity > 0.001);
   return {
     body: smoothClosed(input.radii.map((r, i) => toBox([r * Math.sin((i / input.radii.length) * Math.PI * 2), -r * Math.cos((i / input.radii.length) * Math.PI * 2)]))),
     eyes: eyesPath(shown),
@@ -577,6 +575,7 @@ function composeFrame(input: FrameInputs): ShapeFrame {
     dots,
     specks,
     badge,
+    marks,
     rings,
     ribbons: ribbonsNow,
   };
@@ -605,6 +604,8 @@ export class ShapeEngine {
   private readonly pitch = new Follower(0);
   /** 1 while the gaze wanders, 0 while it follows the pointer. */
   private readonly wanders = new Follower(1);
+  /** The body's lean (shape-motion.ts), degrees off the rest turn: the gaze follows it, the outline never bends for it. */
+  private leanGaze = { yaw: 0, pitch: 0 };
   private last: number | null = null;
 
   constructor(state: ShapeState, now: number, seed = Math.random() * 1000) {
@@ -651,6 +652,15 @@ export class ShapeEngine {
 
   play(move: ShapeMove, now: number): void {
     this.move = { id: move, at: now };
+  }
+
+  /**
+   * Where the body's own motion leans (yaw right, pitch up, degrees off the
+   * rest turn): the face looks that way (LEAN_GAZE of it), so a sway reads
+   * on the eyes while the outline keeps its one resting turn.
+   */
+  lean(yaw: number, pitch: number): void {
+    this.leanGaze = { yaw: yaw * LEAN_GAZE, pitch: pitch * LEAN_GAZE };
   }
 
   /** Whether a move is still playing at `now`. */
@@ -707,10 +717,10 @@ export class ShapeEngine {
     if (this.move && this.playing(now)) {
       const u = now - this.move.at;
       const weight = moveWeight(this.move.id, u);
-      const p = moveAt(this.move.id, u);
+      const p = moveAt(this.move.id, u, rest);
       if (p.radii) {
         radii = blendRadii(rest, p.radii, weight);
-        // a body turned into a dot or a bar loses its stem until it comes back
+        // a body turned into another whole body (an egg, a hexagon) loses its stem until it comes back
         stem *= 1 - weight;
       }
       if (p.face) face = blendExpression(face, { ...face, ...p.face }, weight);
@@ -722,10 +732,11 @@ export class ShapeEngine {
       pose = { pose: p, weight };
     }
     return composeFrame({
+      shape: this.state.shape,
       radii,
       rest,
       face,
-      gaze: { yaw: w.yaw * wanderWeight + yaw, pitch: w.pitch * wanderWeight + pitch, roll: w.roll * wanderWeight },
+      gaze: { yaw: w.yaw * wanderWeight + yaw + this.leanGaze.yaw, pitch: w.pitch * wanderWeight + pitch + this.leanGaze.pitch, roll: w.roll * wanderWeight },
       open: { left: blink, right: blink },
       color: this.colorNow(now),
       body: { x, y, rot, sx: scale * (2 - body.breath), sy: scale * body.breath },

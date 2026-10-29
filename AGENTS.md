@@ -291,22 +291,42 @@ new page; the self-knowledge builder reads it too. Tests:
 
 ## Shapes set and eyes (2026-10-28)
 
-Decision (JC): the Shapes bodies are the bloub network's tables
-(`src/components/shape-tables.ts`, MIT, NOTICE and `third_party/bloub`) plus
-our pumpkin, 32 in all (`MASCOT_SHAPES`). The first eight keep their stored
-ids; `LEGACY_SHAPES` maps the older ids. Picking the pumpkin sets the bot's
-color to orange where the skin paints the bot's color (`PUMPKIN_COLOR`).
+Decision (JC): the Shapes bodies are the bloub network's tables (MIT, NOTICE
+and `third_party/bloub`) plus our pumpkin, 32 in all (`MASCOT_SHAPES`). The
+first eight keep their stored ids; `LEGACY_SHAPES` maps the older ids. Picking
+the pumpkin sets the bot's color to orange where the skin paints the bot's
+color (`PUMPKIN_COLOR`).
 
-- The eyes are upright capsules placed on the posed body
-  (`shape-volume.ts` `posedEyes`): never drawn through the body's matrices,
-  bend or a clip; one level pair of one size, inside the outline.
-- `writePose` alone writes the outline, the eyes and the stem of a body in
-  volume; after a React draw call `forgetPose` first.
-- The slices' depth follows the body's own thinness (`bodyDepth`,
-  `DEPTH_FULL`), never its resting shape.
-- Tests: `src/components/shape-set.regression.test.ts`,
-  `shape-volume.depth.test.ts`; iOS `ShapeEngineTests`, `ShapeVolumeTests`.
-  Gallery: `src/gallery/shape-set.html`.
+One source, one drawing (the "disassembled shape" fix, 2026-10-28):
+
+- `shared/mascot-geometry.json` is the only place a body (64 radii), its face
+  anchor, a move's body, the stem, the eyes, the sixteen faces and a skin's
+  base finish live. The web reads it (`shape-art.ts`, `shape-engine.ts`,
+  `skin-fx/shape-skins.tsx`); the phone reads `ShapeGeometryData.swift`,
+  generated from it by `ios-mascot-export.test.ts` (`UPDATE_IOS_MASCOT=1`).
+  `shared/mascot-geometry.test.ts` ties it to `MASCOT_SHAPES`, `SHAPE_SKINS`
+  and the faces. Never write a shape, an anchor or a skin finish elsewhere.
+- `shape-volume.ts` `drawShape` is the one drawing of a frame in a pose:
+  the outline bent with the resting turn only (`uprightPose`, always; a sway's
+  lean moves the gaze through `ShapeEngine.lean`, never the outline), the
+  eyes in the face's own group (same matrices as the outline, upright, one
+  level pair of one size, fitted inside the outline in the mood's style), the
+  slices and the face. React (`ShapeFrameSvg`) and the live loop
+  (`writeShape`, which writes every part every time, no memo) draw it alike.
+- A move never takes the body apart: no dot, no bar, eyes always on; what it
+  adds (thought dots, the exclamation mark, specks, rings, ribbons) is drawn
+  beside the body. A morph settles into the shape's own body, never the circle.
+- A near-white or near-black body keeps one hairline on its face and a tinted
+  side (`inkPaint.side`): no hairline on the slices (they drew grey rings).
+- Tests: `src/components/shape-set.regression.test.ts` (every shape, skin,
+  face, blink, gaze and move at five moments, resting and rolled: eyes inside
+  the face, slices touching it, the pair equal and level, back to rest);
+  `scripts/capture-shapes.mjs` (headless gallery of every scene into
+  `docs/screenshots/shapes`, the same checks on the browser's own layout, and
+  a pixel comparison to the references: run it on any PR that touches the
+  mascots, the sidebar or the headers, and `--update` the references when a
+  change is wanted); iOS `ShapeSetRegressionTests`, `ShapeEngineTests`,
+  `ShapeVolumeTests`. Gallery: `src/gallery/shape-set.html`.
 
 ## The reader's bar of a published page (2026-10-28)
 

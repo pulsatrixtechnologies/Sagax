@@ -67,12 +67,12 @@ import {
 } from "../../shared/mascot-look";
 import { LEGACY_OWL_SKINS, MASCOT_SKIN_IDS, botMascotSkin } from "../../shared/mascot-skins";
 import { MASCOT_COLOR_GROUPS, MASCOT_COLOR_HEX, MASCOT_COLOR_PALETTES } from "../../shared/mascot-colors";
-import { expressionForMood, IDLE_FRAME_S, uprightPose, type ShapeMood } from "./ShapeMascot";
-import { BLINK, blinkSchedule, gazeFrame, BREATH_AMOUNT, BREATH_S, CLAY_LIGHT, EXPRESSIONS, DEPTH_FULL, EYE_FADE, EYE_GAP, EYE_GAZE, EYE_LENGTH, EYE_MARGIN, EYE_ROLL, EYE_SCALE, EYE_SHIFT, EYE_SPREAD, FACE_DROP, HEAD, HOVER, MORPH_S, SHAPE_EXPRESSIONS, ShapeEngine, stillFrame, WANDER, type ShapeExpression, type ShapeFrame } from "./shape-engine";
-import { MOVE_TIMING, ORBIT_RINGS, SHAPE_MOVES, SWIRL_RINGS, type RingSpec } from "./shape-moves";
-import { BODY_3D, EYE_DOME, EYE_INK, EYE_INK_ON_DARK, eyesOnPose, eyeStyleFor, groundLift, inkPaint, OUT_OF_PLANE, poseMatrices, REST_POSE, SHAPE_FIT, styledEyes, TURN_SQUASH, VOLUME_SIZES, warpPath, type EyeStyle, type Pose, type VolumeDetail } from "./shape-volume";
+import { expressionForMood, IDLE_FRAME_S, type ShapeMood } from "./ShapeMascot";
+import { BLINK, blinkSchedule, gazeFrame, BREATH_AMOUNT, BREATH_S, CLAY_LIGHT, EXPRESSIONS, DEPTH_FULL, EYE_GAP, EYE_GAZE, EYE_LENGTH, EYE_MARGIN, EYE_ROLL, EYE_SCALE, EYE_SHIFT, EYE_SPREAD, FACE_DROP, HEAD, HOVER, LEAN_GAZE, MORPH_S, SHAPE_EXPRESSIONS, ShapeEngine, stillFrame, WANDER, type ShapeExpression, type ShapeFrame } from "./shape-engine";
+import { EXCLAIM, MOVE_TIMING, ORBIT_RINGS, SHAPE_MOVES, SWIRL_RINGS, THOUGHT_DOTS, type RingSpec } from "./shape-moves";
+import { BODY_3D, drawShape, EYE_INK, EYE_INK_ON_DARK, eyeStyleFor, groundLift, inkPaint, OUT_OF_PLANE, poseMatrices, REST_POSE, SHAPE_FIT, SIDE_TINT, styledEyes, TURN_SQUASH, uprightPose, VOLUME_SIZES, type EyeStyle, type Pose, type VolumeDetail } from "./shape-volume";
 import { BASE_DROP, GLANCE, MOTION_BLEND, MOTION_MOODS, MOTIONS, motionForMood, POKE, ROLL_LIMIT, ShapeMotion, TURN_TOWARD, type MotionSpec } from "./shape-motion";
-import { BODY, MOVE_RADII, RADII_COUNT, SHAPE_RADII, STEM, STEM_INK } from "./shape-art";
+import { BODY, FACE_ANCHOR, GEOMETRY, MOVE_RADII, RADII_COUNT, SHAPE_RADII, STEM, STEM_INK } from "./shape-art";
 import { legOps, SHIBA_ART, SHIBA_BUST, SHIBA_BUST_MAX, SHIBA_EXPRESSIONS, SHIBA_HIPS, SHIBA_LEGS, SHIBA_PIVOTS, SHIBA_ROLES, shibaOutline, shibaParts, STANCE_HEAD, MOUTHS, mouthOps, type ShibaOp, type ShibaStance } from "./shiba-art";
 import { blendPose, restPose, SHIBA_MOVE_TIMING, shibaMoveAt } from "./shiba-moves";
 import { shibaSkinPaint } from "./skin-fx/shiba-skins";
@@ -93,6 +93,7 @@ const SWIFT_ART = join(ROOT, "ios/Sources/CompanionCore/ShapeStillArt.swift");
 const SWIFT_SHAPE_ENGINE = join(ROOT, "ios/Sources/CompanionCore/ShapeEngineData.swift");
 const SHAPE_FRAMES = join(ROOT, "ios/Tests/CompanionCoreTests/Fixtures/shape-frames.json");
 const SWIFT_SHAPE_VOLUME = join(ROOT, "ios/Sources/CompanionCore/ShapeVolumeData.swift");
+const SWIFT_GEOMETRY = join(ROOT, "ios/Sources/CompanionCore/ShapeGeometryData.swift");
 const SHAPE_VOLUME = join(ROOT, "ios/Tests/CompanionCoreTests/Fixtures/shape-volume.json");
 const SWIFT_HD = join(ROOT, "ios/Sources/CompanionCore/HdMascotData.swift");
 const SWIFT_SHIBA = join(ROOT, "ios/Sources/CompanionCore/ShibaStillArt.swift");
@@ -476,9 +477,10 @@ function shapeEngineSwift(): string {
     `    public static let wanderYaw: [ShapeLoop] = [${WANDER.yaw.map((l) => `.init(period: ${lit(l.period)}, reach: ${lit(l.reach)})`).join(", ")}]`,
     `    public static let wanderPitch: [ShapeLoop] = [${WANDER.pitch.map((l) => `.init(period: ${lit(l.period)}, reach: ${lit(l.reach)})`).join(", ")}]`,
     `    public static let wanderRoll: [ShapeLoop] = [${WANDER.roll.map((l) => `.init(period: ${lit(l.period)}, reach: ${lit(l.reach)})`).join(", ")}]`,
-    `    /// When an eye turned away hides (\`EYE_FADE\`) and the body it keeps around it, R (\`EYE_MARGIN\`).`,
-    `    public static let eyeFade: (hidden: Double, over: Double) = (hidden: ${lit(EYE_FADE.hidden)}, over: ${lit(EYE_FADE.over)})`,
+    `    /// The body the eyes keep around them, R (\`EYE_MARGIN\`); no eye ever fades (2026-10-28).`,
     `    public static let eyeMargin: Double = ${lit(EYE_MARGIN)}`,
+    `    /// How much of the body's lean the gaze follows (\`LEAN_GAZE\`).`,
+    `    public static let leanGaze: Double = ${lit(LEAN_GAZE)}`,
     `    /// The share of an eye's width the two eyes keep between them (\`EYE_GAP\`).`,
     `    public static let eyeGap: Double = ${lit(EYE_GAP)}`,
     `    /// How thick a body must be to carry the volume's full depth, R (\`DEPTH_FULL\`).`,
@@ -495,19 +497,18 @@ function shapeEngineSwift(): string {
     `    public static let eyeShift: (x: Double, y: Double) = (x: ${lit(EYE_SHIFT.x)}, y: ${lit(EYE_SHIFT.y)})`,
     `    public static let eyeGaze: Double = ${lit(EYE_GAZE)}`,
     "",
-    "    /// Every body, one radius (R) per angle, 0 up, clockwise (`SHAPE_RADII`).",
-    "    public static let radii: [MascotShape: [Double]] = [",
+    "    /// Every body, one radius (R) per angle, 0 up, clockwise, and where its face rests (`SHAPE_RADII`, `FACE_ANCHOR`): the geometry file's.",
+    "    public static var radii: [MascotShape: [Double]] { ShapeGeometryData.radii }",
+    "    public static var faceAnchor: [MascotShape: (x: Double, y: Double)] { ShapeGeometryData.faceAnchor }",
+    "    /// The whole bodies some moves turn into (`MOVE_RADII`): the geometry file's.",
+    "    public static var moveRadii: [String: [Double]] { ShapeGeometryData.moveBodies }",
+    "    /// The sixteen faces (`EXPRESSIONS`): the geometry file's.",
+    "    public static var expressions: [ShapeExpression: ShapeFace] { ShapeGeometryData.expressions }",
+    `    /// The thought dots of the thinking move and the exclamation mark of alert and exclaim, R (\`THOUGHT_DOTS\`, \`EXCLAIM\`).`,
+    `    public static let thoughtDots: [(x: Double, y: Double, r: Double)] = [${THOUGHT_DOTS.map((d) => `(x: ${lit(d.x)}, y: ${lit(d.y)}, r: ${lit(d.r)})`).join(", ")}]`,
+    `    public static let exclaim: (x: Double, barTop: Double, barBottom: Double, width: Double, dotY: Double, dotR: Double) = (x: ${lit(EXCLAIM.x)}, barTop: ${lit(EXCLAIM.barTop)}, barBottom: ${lit(EXCLAIM.barBottom)}, width: ${lit(EXCLAIM.width)}, dotY: ${lit(EXCLAIM.dotY)}, dotR: ${lit(EXCLAIM.dotR)})`,
   ];
-  for (const [shape, radii] of Object.entries(SHAPE_RADII)) lines.push(`        .${SWIFT_SHAPE[shape]}: [${numbers(radii)}],`);
-  lines.push("    ]", "", "    /// The bodies some moves turn into (`MOVE_RADII`).", "    public static let moveRadii: [String: [Double]] = [");
-  for (const [name, radii] of Object.entries(MOVE_RADII)) lines.push(`        "${name}": [${numbers(radii)}],`);
-  lines.push("    ]", "", "    /// The sixteen faces (`EXPRESSIONS`).", "    public static let expressions: [ShapeExpression: ShapeFace] = [");
-  const eyeSwift = (e: { w: number; h: number; tilt: number; open: number }) => `.init(w: ${lit(e.w)}, h: ${lit(e.h)}, tilt: ${lit(e.tilt)}, open: ${lit(e.open)})`;
-  for (const id of SHAPE_EXPRESSIONS) {
-    const face = EXPRESSIONS[id as ShapeExpression];
-    lines.push(`        .${id}: .init(yaw: ${lit(face.yaw)}, pitch: ${lit(face.pitch)}, roll: ${lit(face.roll)}, split: ${lit(face.split)}, left: ${eyeSwift(face.left)}, right: ${eyeSwift(face.right)}),`);
-  }
-  lines.push("    ]", "", "    /// Each move's length and its slide in and out, s (`MOVE_TIMING`).", "    public static let moveTiming: [ShapeMove: (duration: Double, morph: Double)] = [");
+  lines.push("", "    /// Each move's length and its slide in and out, s (`MOVE_TIMING`).", "    public static let moveTiming: [ShapeMove: (duration: Double, morph: Double)] = [");
   for (const id of SHAPE_MOVES) lines.push(`        .${id}: (duration: ${lit(MOVE_TIMING[id].duration)}, morph: ${lit(MOVE_TIMING[id].morph)}),`);
   lines.push("    ]", "", "    /// The rings of Orbit and Swirl (`ORBIT_RINGS`, `SWIRL_RINGS`).");
   lines.push(`    public static let orbitRings: [ShapeRingSpec] = [`, ...ORBIT_RINGS.map((r) => `        ${swiftRing(r)},`), "    ]");
@@ -577,9 +578,9 @@ function shapeVolumeSwift(): string {
     `    public static let slices: [ShapeVolumeDetail: Int] = [.tiny: ${BODY_3D.slices.tiny}, .small: ${BODY_3D.slices.small}, .full: ${BODY_3D.slices.full}]`,
     "    /// Below `small` pt the hairline is thicker; from `full` pt every slice draws (`VOLUME_SIZES`).",
     `    public static let sizes: (small: Double, full: Double) = (small: ${lit(VOLUME_SIZES.small)}, full: ${lit(VOLUME_SIZES.full)})`,
-    "    /// How far the eyes stand in front of the face, how much a turn narrows the body, the out-of-plane bend (`EYE_DOME`, `TURN_SQUASH`, `OUT_OF_PLANE`).",
-    `    public static let eyeDome: Double = ${lit(EYE_DOME)}`,
+    "    /// How much a turn narrows the body, the out-of-plane bend, and the side's tint on a near-white or near-black body (`TURN_SQUASH`, `OUT_OF_PLANE`, `SIDE_TINT`).",
     `    public static let turnSquash: Double = ${lit(TURN_SQUASH)}`,
+    `    public static let sideTint: Double = ${lit(SIDE_TINT)}`,
     `    public static let outOfPlane: (perspective: Double, narrow: Double) = (perspective: ${lit(OUT_OF_PLANE.perspective)}, narrow: ${lit(OUT_OF_PLANE.narrow)})`,
     "    /// The eyes' two inks (`EYE_INK`, `EYE_INK_ON_DARK`).",
     `    public static let eyeInk = "${EYE_INK}"`,
@@ -636,9 +637,10 @@ function shapeVolume() {
       const open = k === 2 ? 0.4 : 1;
       const frame = gazeFrame({ shape, expression, color: "#000000" }, 0, 0, {}, { left: open, right: open });
       const style = styles[(i + k) % styles.length];
-      // the eyes on the posed body (posedEyes): upright capsules, also on a body a move squashes and turns
+      // the one drawing (drawShape): the outline bent with the resting turn, the eyes in the face's space, the matrices
       const motion = k === 1 ? { x: 2.5, y: -1.5, rot: 14, sx: 1.06, sy: 0.92 } : frame.motion;
       const posed = { ...frame, motion };
+      const drawing = drawShape(posed, p, "full", style, true);
       return {
         shape,
         expression,
@@ -649,10 +651,13 @@ function shapeVolume() {
         sourceBody: frame.body,
         sourceEyes: frame.eyes,
         eyeShapes: frame.eyeShapes,
-        body: warpPath(frame.body, p),
-        eyes: eyesOnPose(posed, p, style, true),
+        body: drawing.outline,
+        eyes: drawing.eyes,
         flatEyes: styledEyes(frame.eyes, style),
-        stem: frame.stem ? warpPath(frame.stem.d, p) : null,
+        stem: drawing.stem?.d ?? null,
+        slices: drawing.slices,
+        face: drawing.face,
+        motionTransform: drawing.motion,
       };
     }),
   );
@@ -674,6 +679,91 @@ function shapeVolume() {
     return { mood, seed, poses };
   });
   return { matrices, warps, ground, inks, upright, motion };
+}
+
+/* ----------------------------------------------------------- Geometry */
+
+const swiftPaintRule = (rule: unknown): string => {
+  if (rule === "bot") return ".bot";
+  const r = rule as { tint?: number; hex?: string; mix?: { toward: string; t: number } };
+  if (r.tint !== undefined) return `.tint(${lit(r.tint)})`;
+  if (r.mix) return `.mix(${str(r.mix.toward)}, ${lit(r.mix.t)})`;
+  return `.hex(${str(r.hex ?? "#000000")})`;
+};
+
+/**
+ * The geometry file (shared/mascot-geometry.json) as Swift: the one source
+ * of every body, face anchor, move body, face and skin finish, which the
+ * phone's engine, volume and paint read instead of a copy of their own.
+ */
+function geometrySwift(): string {
+  const g = GEOMETRY;
+  const lines: string[] = [
+    "// GENERATED by src/components/ios-mascot-export.test.ts from shared/mascot-geometry.json,",
+    "// the one source of the shapes' geometry: every body's 64 radii and face",
+    "// anchor, the whole bodies some moves turn into, the stem, the eyes, the",
+    "// sixteen faces and each skin's base finish. Do not edit; change the JSON and",
+    "// regenerate with `UPDATE_IOS_MASCOT=1 pnpm vitest run src/components/ios-mascot-export.test.ts`.",
+    "",
+    "/// A paint of a skin's finish: the bot's colour, a tint of it toward white, a mix toward another colour, or a fixed hex.",
+    "public enum ShapePaintRule: Equatable, Sendable {",
+    "    case bot",
+    "    case tint(Double)",
+    "    case hex(String)",
+    "    case mix(String, Double)",
+    "}",
+    "",
+    "/// The eyes' ink of a skin: the ink that contrasts with the fill, the pastel's softer ink, or a paint.",
+    "public enum ShapeEyesRule: Equatable, Sendable {",
+    "    case auto",
+    "    case soft",
+    "    case paint(ShapePaintRule)",
+    "}",
+    "",
+    "/// One skin's base finish (`shapeSkinBase`).",
+    "public struct ShapeSkinRule: Equatable, Sendable {",
+    "    public let fill: ShapePaintRule",
+    "    public let stroke: ShapePaintRule?",
+    "    public let strokeWidth: Double",
+    "    public let eyes: ShapeEyesRule",
+    "    public let glow: ShapePaintRule?",
+    "    public let shine: Bool",
+    "    public let fx: String",
+    "}",
+    "",
+    "public enum ShapeGeometryData {",
+    `    /// How many radii make a body, where the body sits in the 0..100 box and how many box units one R is.`,
+    `    public static let radiiCount = ${g.radiiCount}`,
+    `    public static let bodyCenter: (x: Double, y: Double) = (x: ${lit(g.box.center[0])}, y: ${lit(g.box.center[1])})`,
+    `    public static let bodyUnit: Double = ${lit(g.box.unit)}`,
+    "",
+    "    /// Every body, one radius (R) per angle, 0 up, clockwise.",
+    "    public static let radii: [MascotShape: [Double]] = [",
+  ];
+  for (const shape of MASCOT_SHAPES) lines.push(`        .${SWIFT_SHAPE[shape]}: [${numbers(SHAPE_RADII[shape])}],`);
+  lines.push("    ]", "", "    /// Where each body's face rests (R, from the middle; x right, y down).", "    public static let faceAnchor: [MascotShape: (x: Double, y: Double)] = [");
+  for (const shape of MASCOT_SHAPES) lines.push(`        .${SWIFT_SHAPE[shape]}: (x: ${lit(FACE_ANCHOR[shape][0])}, y: ${lit(FACE_ANCHOR[shape][1])}),`);
+  lines.push("    ]", "", "    /// The whole bodies some moves turn into.", "    public static let moveBodies: [String: [Double]] = [");
+  for (const [name, radii] of Object.entries(MOVE_RADII)) lines.push(`        "${name}": [${numbers(radii)}],`);
+  lines.push("    ]", "");
+  lines.push(`    /// The pumpkin's stem: its foot, its tip from the foot, its bow and its half widths, R.`);
+  lines.push(`    public static let stem: (footX: Double, sink: Double, tipX: Double, tipY: Double, bow: Double, footWidth: Double, tipWidth: Double) = (footX: ${lit(STEM.foot.x)}, sink: ${lit(STEM.foot.sink)}, tipX: ${lit(STEM.tip.x)}, tipY: ${lit(STEM.tip.y)}, bow: ${lit(STEM.bow)}, footWidth: ${lit(STEM.width.foot)}, tipWidth: ${lit(STEM.width.tip)})`);
+  lines.push(`    /// The resting eye capsule (R) and its tilt.`);
+  lines.push(`    public static let eyeCapsule: (w: Double, h: Double, tilt: Double) = (w: ${lit(g.eyes.capsule.w)}, h: ${lit(g.eyes.capsule.h)}, tilt: ${lit(g.eyes.capsule.tilt)})`);
+  lines.push("", "    /// The sixteen faces.", "    public static let expressions: [ShapeExpression: ShapeFace] = [");
+  const eyeSwift = (e: { w: number; h: number; tilt: number; open: number }) => `.init(w: ${lit(e.w)}, h: ${lit(e.h)}, tilt: ${lit(e.tilt)}, open: ${lit(e.open)})`;
+  for (const id of SHAPE_EXPRESSIONS) {
+    const face = EXPRESSIONS[id as ShapeExpression];
+    lines.push(`        .${id}: .init(yaw: ${lit(face.yaw)}, pitch: ${lit(face.pitch)}, roll: ${lit(face.roll)}, split: ${lit(face.split)}, left: ${eyeSwift(face.left)}, right: ${eyeSwift(face.right)}),`);
+  }
+  lines.push("    ]", "", "    /// Each skin's base finish.", "    public static let skins: [ShapeSkin: ShapeSkinRule] = [");
+  for (const skin of SHAPE_SKINS) {
+    const rule = (g.skins as Record<string, { fill: unknown; stroke: unknown; strokeWidth: number; eyes: unknown; glow: unknown; shine: boolean; fx: string }>)[skin];
+    const eyes = rule.eyes === "auto" ? ".auto" : rule.eyes === "soft" ? ".soft" : `.paint(${swiftPaintRule(rule.eyes)})`;
+    lines.push(`        .${skin}: ShapeSkinRule(fill: ${swiftPaintRule(rule.fill)}, stroke: ${rule.stroke ? swiftPaintRule(rule.stroke) : "nil"}, strokeWidth: ${lit(rule.strokeWidth)}, eyes: ${eyes}, glow: ${rule.glow ? swiftPaintRule(rule.glow) : "nil"}, shine: ${rule.shine ? "true" : "false"}, fx: ${str(rule.fx)}),`);
+  }
+  lines.push("    ]", "}", "");
+  return lines.join("\n");
 }
 
 /* ------------------------------------------------------------ HD mascots */
@@ -934,6 +1024,10 @@ describe("the phone's copy of the mascot looks", () => {
 
   it("carries the Shapes still frames the desktop draws", () => {
     check(SWIFT_ART, swiftArt());
+  });
+
+  it("carries the geometry file: every body, face anchor, move body, face and skin finish, from the one source", () => {
+    check(SWIFT_GEOMETRY, geometrySwift());
   });
 
   it("carries the Shapes engine's numbers and frames it draws, every face and every move", () => {

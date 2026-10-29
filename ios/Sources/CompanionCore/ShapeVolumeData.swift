@@ -24,9 +24,9 @@ public enum ShapeVolumeData {
     public static let slices: [ShapeVolumeDetail: Int] = [.tiny: 4, .small: 6, .full: 9]
     /// Below `small` pt the hairline is thicker; from `full` pt every slice draws (`VOLUME_SIZES`).
     public static let sizes: (small: Double, full: Double) = (small: 20, full: 28)
-    /// How far the eyes stand in front of the face, how much a turn narrows the body, the out-of-plane bend (`EYE_DOME`, `TURN_SQUASH`, `OUT_OF_PLANE`).
-    public static let eyeDome: Double = 1.25
+    /// How much a turn narrows the body, the out-of-plane bend, and the side's tint on a near-white or near-black body (`TURN_SQUASH`, `OUT_OF_PLANE`, `SIDE_TINT`).
     public static let turnSquash: Double = 0
+    public static let sideTint: Double = 0.09
     public static let outOfPlane: (perspective: Double, narrow: Double) = (perspective: 0.34, narrow: 0.3)
     /// The eyes' two inks (`EYE_INK`, `EYE_INK_ON_DARK`).
     public static let eyeInk = "#16181d"

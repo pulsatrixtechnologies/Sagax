@@ -3,15 +3,20 @@
 // 2026-10-08, #187). Everything that moves a shape is a pure function of
 // time, as on the desktop:
 //
-// - The face: two rounded bars cut through the body, placed on an imaginary
-//   head turned and tilted, foreshortened by the head's curvature, pushed out
-//   to the body's outline and kept inside it (`solveEyes`).
+// - The face: two rounded bars on the body, always the same two capsules
+//   (2026-10-28: no eye ever fades, shrinks or tilts on its own). Their
+//   middle rests on the body's face anchor (shared/mascot-geometry.json) and
+//   moves from there with the gaze; the bounds solver keeps both eyes inside
+//   the outline (`solveEyes`).
 // - Idle: the gaze wanders on five slow loops, the body drifts and breathes,
 //   the eyes blink on a seeded schedule.
 // - A pointer (a large layout with a trackpad or a mouse): the gaze turns
-//   toward it.
+//   toward it; the body's lean (ShapeMotion) moves the gaze too (`lean`).
 // - Changes of shape, face and colour slide over `morphSeconds`.
-// - The fourteen one-shot moves, blended over the resting pose.
+// - The fourteen one-shot moves, blended over the resting pose. A move never
+//   takes the body apart: it stays one whole outline with its two eyes; what
+//   a move adds (thought dots, a mark, rings, ribbons, specks) is drawn
+//   around it.
 //
 // The numbers (radii, faces, timings, rings, loops) are the desktop's own,
 // generated into `ShapeEngineData.swift`; ShapeEngineTests checks the frames
@@ -197,6 +202,20 @@ public struct ShapeRibbonDraw: Equatable, Sendable {
     }
 }
 
+/// A mark in the body's colour beside the body (the exclamation's bar): a closed polygon (`Mark`).
+public struct ShapeMark: Equatable, Sendable {
+    public var points: [CGPoint]
+    public var opacity: Double
+
+    public init(points: [CGPoint], opacity: Double) {
+        self.points = points
+        self.opacity = opacity
+    }
+
+    /// `smoothClosed` of the points, as the desktop writes it.
+    public var d: String { ShapeMath.smoothClosed(points) }
+}
+
 /// One drawn frame in the 0...100 box (`ShapeFrame`).
 public struct ShapeFrame: Sendable {
     /// The body's outline points (smoothed when drawn).
@@ -204,7 +223,7 @@ public struct ShapeFrame: Sendable {
     /// Each shown eye's outline points (cut out with the even-odd rule).
     public var eyes: [[CGPoint]]
     /// The same eyes as upright capsules in the box (`eyeShapes`): the volume
-    /// places each one on the posed body from these (`ShapeVolume.posedEyes`).
+    /// places each one on the face from these (`ShapeVolume.faceEyes`).
     public var eyeShapes: [ShapeEyeBox] = []
     /// The pumpkin's stem: its outline points in the box (before the move) and how much of it shows (`stem`).
     public var stem: (points: [CGPoint], opacity: Double)?
@@ -220,6 +239,8 @@ public struct ShapeFrame: Sendable {
     public var dots: [ShapeDot]
     public var specks: [ShapeDot]
     public var badge: (x: Double, y: Double, r: Double, notch: Double)?
+    /// A move's marks in the body's colour beside the body (the exclamation mark), box units (`marks`).
+    public var marks: [ShapeMark] = []
     public var rings: [ShapeRingDraw]
     public var ribbons: [ShapeRibbonDraw]
 
@@ -261,15 +282,19 @@ public struct ShapeFacePatch: Sendable {
     }
 }
 
-/// What a move does at a moment (`MovePose`), R units.
+/// What a move does at a moment (`MovePose`), R units: the whole body it
+/// takes (another body of the set, never a dot or a bar), the face, the
+/// motion, and what it adds around the body.
 public struct ShapeMovePose: Sendable {
     public var radii: [Double]?
     public var x, y, rot, scale: Double?
-    /// 0 hides the eyes.
+    /// 0 hides the eyes (no move does any more; kept for a skin's own effects).
     public var eyes: Double?
     public var face: ShapeFacePatch?
     public var dots: [ShapeDot]?
     public var specks: [ShapeDot]?
+    /// Marks in the body's colour beside the body (the exclamation's bar), R units.
+    public var marks: [ShapeMark]?
     public var badge: (angle: Double, r: Double, scale: Double)?
     public var rings: [(spec: ShapeRingSpec, opacity: Double)]?
     public var ribbons: [ShapeRibbonDraw]?
@@ -342,33 +367,74 @@ public enum ShapeMoves {
         }
     }
 
-    /// A move's pose `at` seconds in (`moveAt`).
-    public static func at(_ move: ShapeMove, _ at: Double) -> ShapeMovePose {
+    /// A rounded bar standing at x from y0 (top) to y1 (bottom), `w` wide (R), as polygon points (`barPoints`).
+    static func barPoints(_ x: Double, _ y0: Double, _ y1: Double, _ w: Double, count: Int = 20) -> [CGPoint] {
+        let r = w / 2
+        let long = max(0, (y1 - y0) / 2 - r)
+        let cy = (y0 + y1) / 2
+        return (0..<count).map { i in
+            let a = Double(i) / Double(count) * Double.pi * 2
+            let px = cos(a) * r, py = sin(a) * r
+            return CGPoint(x: x + px, y: cy + py + (py >= 0 ? long : -long))
+        }
+    }
+
+    /// The exclamation mark above the body's right shoulder: a bar and a dot, in the body's colour (`exclamation`).
+    private static func exclamation(_ opacity: Double) -> (marks: [ShapeMark], dots: [ShapeDot]) {
+        let e = ShapeEngineData.exclaim
+        return (
+            marks: [ShapeMark(points: barPoints(e.x, e.barTop, e.barBottom, e.width), opacity: opacity)],
+            dots: [ShapeDot(x: e.x, y: e.dotY, r: e.dotR, opacity: opacity)]
+        )
+    }
+
+    /// The eyes shut (the sleep): the neutral capsule closed to a line (`SHUT`), and wide open (`WIDE`).
+    private static let shut = ShapeEye(w: 0.26, h: 0.46, tilt: 0, open: 0.06)
+    private static let wide = ShapeEye(w: 0.3, h: 0.56, tilt: 0, open: 1)
+
+    /// A move's pose `at` seconds in (`moveAt`). `rest` is the body at rest, which a morph comes back to.
+    public static func at(_ move: ShapeMove, _ at: Double, rest: [Double] = ShapeEngineData.radii[.circle]!) -> ShapeMovePose {
         let d = ShapeEngineData.moveTiming[move]!.duration
         let u = min(at, d)
         let pi2 = Double.pi * 2
-        let mark = [ShapeDot(x: 0, y: 0.6, r: 0.15, opacity: 1)]
         switch move {
         case .thinking:
+            // the body stays, looks up and away; three thought dots pulse one after the other
             let pulse = { (k: Double) in 0.5 + 0.5 * sin(((u - k * 0.25) / 1.5) * pi2 - Double.pi / 2) }
-            let dot = { (x: Double, k: Double) in ShapeDot(x: x, y: 0, r: 0.165 * (1 + 0.1 * pulse(k)), opacity: 0.55 + 0.45 * pulse(k)) }
-            return ShapeMovePose(radii: moveRadii("dot"), scale: 1 + 0.1 * pulse(1), eyes: 0, dots: [dot(-0.56, 0), dot(0.56, 2)])
+            let dots = ShapeEngineData.thoughtDots.enumerated().map { k, dot in
+                ShapeDot(x: dot.x, y: dot.y, r: dot.r * (1 + 0.12 * pulse(Double(k))), opacity: 0.5 + 0.5 * pulse(Double(k)))
+            }
+            return ShapeMovePose(scale: 1 + 0.025 * pulse(1), face: ShapeFacePatch(yaw: 7, pitch: 9), dots: dots)
         case .wink:
             return ShapeMovePose(face: ShapeFacePatch(roll: -10, right: ShapeEye(w: 0.34, h: 0.09, tilt: -6, open: 1)))
         case .wide:
             let eye = ShapeEye(w: 0.27, h: 0.62, tilt: 0, open: 1)
             return ShapeMovePose(scale: 1.02, face: ShapeFacePatch(pitch: 2, split: 17, left: eye, right: eye))
         case .alert:
+            // the body rocks and hops, eyes wide; an exclamation mark pops up beside it
             let sway = sin(u * pi2 * 2.5) * 4 * (1 - ShapeMath.clamp01(u / d) * 0.6)
-            return ShapeMovePose(radii: moveRadii("bar"), rot: 17.7 + sway, eyes: 0, dots: mark)
+            let hop = -0.07 * abs(sin(u * Double.pi * 1.25)) * (1 - ShapeMath.clamp01(u / d) * 0.5)
+            let mark = exclamation(1)
+            return ShapeMovePose(y: hop, rot: sway, face: ShapeFacePatch(split: 17, left: wide, right: wide), dots: mark.dots, marks: mark.marks)
         case .notify:
             let pop = u < 0.45 ? 1.14 * ShapeMath.easeOutQuint(u / 0.3) - max(0, (u - 0.3) / 0.15) * 0.14 : 1
             let eye = ShapeEye(w: 0.42, h: 0.42, tilt: 0, open: 1)
             return ShapeMovePose(face: ShapeFacePatch(split: 19, left: eye, right: eye), badge: (angle: 42, r: 0.17, scale: max(0, pop)))
         case .exclaim:
-            return ShapeMovePose(radii: moveRadii("bar"), y: -0.04 * sin(u * pi2), eyes: 0, dots: mark)
+            // a startled jump, eyes round; the exclamation mark beside the body
+            let jump = max(0, sin(u * pi2))
+            let eye = ShapeEye(w: 0.4, h: 0.44, tilt: 0, open: 1)
+            let mark = exclamation(1)
+            return ShapeMovePose(y: -0.06 * jump, scale: 1 + 0.03 * jump, face: ShapeFacePatch(pitch: 3, split: 18, left: eye, right: eye),
+                                 dots: mark.dots, marks: mark.marks)
         case .sleep:
-            return ShapeMovePose(radii: moveRadii("sleepDot"), y: 0.08 * sin((u / 1.2) * pi2), eyes: 0)
+            // eyes shut, a slow bob, two small dots drifting up like a snore
+            let breath = sin((u / 1.2) * pi2)
+            let rise = (u / 1.2).truncatingRemainder(dividingBy: 1)
+            return ShapeMovePose(y: 0.05 * breath, scale: 1 - 0.015 * breath, face: ShapeFacePatch(pitch: -8, left: shut, right: shut), dots: [
+                ShapeDot(x: 1.02, y: -0.85 - rise * 0.25, r: 0.06, opacity: 0.8 * (1 - rise)),
+                ShapeDot(x: 1.26, y: -1.12 - rise * 0.25, r: 0.085, opacity: 0.6 * (1 - rise)),
+            ])
         case .egg:
             return ShapeMovePose(radii: moveRadii("egg"), y: -0.02)
         case .hexagon:
@@ -382,8 +448,9 @@ public enum ShapeMoves {
             let spinFor = d - 1.1
             let rot = u < spinFor ? 360 * 1.25 * u : 360 * 1.25 * spinFor
             let settle = ShapeMath.clamp01((u - spinFor) / 0.6)
-            return ShapeMovePose(radii: settle < 1 ? moveRadii("triangle") : ShapeEngineData.radii[.circle]!,
-                                 rot: rot * (1 - ShapeMath.easeOutQuint(settle)),
+            // the spinning triangle settles back into this body's own outline, never a circle
+            let radii = settle < 1 ? ShapeMath.blendRadii(moveRadii("triangle"), rest, ShapeMath.easeOutQuint(settle)) : nil
+            return ShapeMovePose(radii: radii, rot: rot * (1 - ShapeMath.easeOutQuint(settle)),
                                  rings: ShapeEngineData.orbitRings.map { ($0, 1 - settle) })
         case .swirl:
             let fade = 1 - ShapeMath.clamp01((u - d * 0.55) / (d * 0.45))
@@ -397,13 +464,17 @@ public enum ShapeMoves {
                 return ShapeDot(x: sin(turn) * reach, y: -cos(turn) * reach, r: 0.05,
                                 opacity: u < 1.7 ? ShapeMath.clamp01(u / 0.2) : ShapeMath.clamp01((back - u) / 0.15))
             }
+            // the body squeezes down while the specks fly, then springs back from 1.4 s
+            let squeeze = ShapeMath.easeInOut(ShapeMath.clamp01(u / 0.4))
             let grow = ShapeMath.easeOutQuint((u - 1.4) / 0.35)
+            let scale = ShapeMath.lerp(ShapeMath.lerp(1, 0.86, squeeze), 1, grow)
             guard u < back else { return ShapeMovePose(specks: []) }
-            let dot = moveRadii("burstDot")
-            return ShapeMovePose(radii: grow > 0 ? ShapeMath.blendRadii(dot, ShapeEngineData.radii[.circle]!, grow) : dot, eyes: 0, specks: specks)
+            let eye = ShapeEye(w: 0.3, h: 0.3, tilt: 0, open: 1)
+            return ShapeMovePose(scale: scale, face: ShapeFacePatch(left: eye, right: eye), specks: specks)
         case .comet:
             let back = 2.0
             if u >= back { return ShapeMovePose() }
+            // the body leans and drifts a little; the tail swings across behind it, one diagonal to the other
             let k = ShapeMath.easeInOut(ShapeMath.clamp01(u / 1.9))
             let x = ShapeMath.lerp(-0.08, 0.12, k)
             let y = ShapeMath.lerp(0.05, -0.05, k)
@@ -412,7 +483,7 @@ public enum ShapeMoves {
             let from = CGPoint(x: x + cos(a) * reach, y: y + sin(a) * reach * 0.8 - 0.16)
             let to = CGPoint(x: x - cos(a) * reach * 0.75, y: y - sin(a) * reach * 0.6 - 0.04)
             let fade = ShapeMath.clamp01(u / 0.2) * ShapeMath.clamp01((back - u) / 0.25)
-            return ShapeMovePose(radii: moveRadii("cometDot"), x: x, y: y, eyes: 0,
+            return ShapeMovePose(x: x, y: y, rot: ShapeMath.lerp(-6, 6, k), face: ShapeFacePatch(yaw: ShapeMath.lerp(-8, 8, k), pitch: 4),
                                  ribbons: ribbons(from, to, bow: -0.14, count: 4, spread: 0.06, hue: 300, opacity: fade, dash: 1, offset: 0, width: 0.08))
         }
     }
@@ -530,11 +601,11 @@ public struct ShapeEyeBox: Equatable, Sendable {
 public struct ShapePlacedEye: Sendable {
     public var points: [CGPoint]
     public var center: CGPoint
-    /// The capsule's width and height (R), after the blink and the fade, and the face's tilt (degrees).
+    /// The capsule's width and height (R), after the blink, and the face's tilt (degrees).
     public var w: Double
     public var h: Double
     public var tilt: Double
-    /// 0 (turned away, hidden) ... 1.
+    /// 0 (hidden by a move) ... 1; never less than 1 from the gaze alone (2026-10-28: an eye never fades away).
     public var alpha: Double
     public var depth: Double
 }
@@ -580,10 +651,10 @@ public enum ShapeGaze {
 
     private static func placeEye(_ yaw: Double, _ pitch: Double, _ roll: Double, _ shape: ShapeEye, _ open: Double) -> ShapePlacedEye {
         let c = toView(direction(yaw, pitch), roll)
-        let alpha = ShapeMath.clamp01((c.z - ShapeEngineData.eyeFade.hidden) / ShapeEngineData.eyeFade.over)
-        let w = shape.w * ShapeEngineData.eyeScale.w * alpha
-        let h = max(shape.h * ShapeEngineData.eyeScale.h * ShapeEngineData.eyeLength * max(open, ShapeEngineData.blink.floor), 0.012) * alpha
-        return ShapePlacedEye(points: eyeOutline(c.x, c.y, w, h, shape.tilt), center: CGPoint(x: c.x, y: c.y), w: w, h: h, tilt: shape.tilt, alpha: alpha, depth: c.z)
+        // the size: the face's own capsule, the blink closing its height; the turn only moves it
+        let w = shape.w * ShapeEngineData.eyeScale.w
+        let h = max(shape.h * ShapeEngineData.eyeScale.h * ShapeEngineData.eyeLength * max(open, ShapeEngineData.blink.floor), 0.012)
+        return ShapePlacedEye(points: eyeOutline(c.x, c.y, w, h, shape.tilt), center: CGPoint(x: c.x, y: c.y), w: w, h: h, tilt: shape.tilt, alpha: 1, depth: c.z)
     }
 
     private static func nonZero(_ v: Double) -> Double { v == 0 || v.isNaN ? -1e-6 : v }
@@ -597,20 +668,22 @@ public enum ShapeGaze {
     }
 
     /// Both eyes for a face on a body (`solveEyes`): one level pair, inside the outline, never touching.
-    public static func solveEyes(_ radii: [Double], _ face: ShapeFace, gaze: (yaw: Double, pitch: Double, roll: Double), open: (left: Double, right: Double)) -> [ShapePlacedEye] {
+    /// `anchor` is where the face rests on this body (R, shared/mascot-geometry.json).
+    public static func solveEyes(_ radii: [Double], _ face: ShapeFace, gaze: (yaw: Double, pitch: Double, roll: Double), open: (left: Double, right: Double),
+                                 anchor: (x: Double, y: Double) = ShapeEngineData.eyeShift) -> [ShapePlacedEye] {
         let yaw = ShapeEngineData.head.yaw + face.yaw + gaze.yaw
         let pitch = ShapeEngineData.head.pitch + ShapeEngineData.faceDrop + face.pitch + gaze.pitch
         let roll = face.roll * ShapeEngineData.eyeRoll + gaze.roll
         let split = face.split * ShapeEngineData.eyeSpread
         let left = placeEye(yaw - split, pitch, roll, face.left, face.left.open * open.left)
         let right = placeEye(yaw + split, pitch, roll, face.right, face.right.open * open.right)
-        // the face seen from the front: its middle rests at eyeShift and moves as much as the head's turn moves it
+        // the face seen from the front: its middle rests at the anchor and moves as much as the head's turn moves it
         let mid = CGPoint(x: (left.center.x + right.center.x) / 2, y: (left.center.y + right.center.y) / 2)
         let rest = restMid(roll)
         let spread = ShapeMath.radiusToward(radii, 1, 0) * 0.5 + ShapeMath.radiusToward(radii, -1, 0) * 0.5
         let sx = max(0.35, min(1.25, spread))
-        let target = CGPoint(x: ShapeEngineData.eyeShift.x + (mid.x - rest.x) * ShapeEngineData.eyeGaze,
-                             y: ShapeEngineData.eyeShift.y + (mid.y - rest.y) * ShapeEngineData.eyeGaze)
+        let target = CGPoint(x: anchor.x + (mid.x - rest.x) * ShapeEngineData.eyeGaze,
+                             y: anchor.y + (mid.y - rest.y) * ShapeEngineData.eyeGaze)
         func place(_ eye: ShapePlacedEye, _ s: Double, _ k: Double = 1) -> ShapePlacedEye {
             let nx = target.x * s + (eye.center.x - mid.x) * sx
             let ny = target.y * s
@@ -627,7 +700,7 @@ public enum ShapeGaze {
         }
         func fits(_ eyes: [ShapePlacedEye]) -> Bool {
             apart(eyes) && eyes.allSatisfy { e in
-                e.alpha <= 0 || e.points.allSatisfy { p in hypot(p.x, p.y) <= ShapeMath.radiusToward(radii, p.x, nonZero(p.y)) - ShapeEngineData.eyeMargin }
+                e.points.allSatisfy { p in hypot(p.x, p.y) <= ShapeMath.radiusToward(radii, p.x, nonZero(p.y)) - ShapeEngineData.eyeMargin }
             }
         }
         var lo = 0.0, hi = 1.0
@@ -684,6 +757,8 @@ public enum ShapeStem {
 
 public enum ShapeFrames {
     struct Inputs {
+        /// The body the face anchor is read for.
+        var shape: MascotShape
         var radii: [Double]
         var rest: [Double]
         var face: ShapeFace
@@ -715,7 +790,9 @@ public enum ShapeFrames {
     }
 
     static func compose(_ input: Inputs) -> ShapeFrame {
-        let placed = input.eyes > 0.02 ? ShapeGaze.solveEyes(input.radii, input.face, gaze: input.gaze, open: input.open) : []
+        let anchor = ShapeEngineData.faceAnchor[input.shape] ?? ShapeEngineData.eyeShift
+        let placed = input.eyes > 0.02 ? ShapeGaze.solveEyes(input.radii, input.face, gaze: input.gaze, open: input.open, anchor: anchor) : []
+        // eyes fading out with a move shrink to nothing about their middle (no move does any more)
         let s = ShapeMath.clamp01(input.eyes)
         let shown = placed.map { e -> ShapePlacedEye in
             guard s < 1 else { return e }
@@ -757,6 +834,9 @@ public enum ShapeFrames {
             out.opacity = ribbon.opacity * w
             return out
         }
+        let marks = (pose?.marks ?? []).map { mark in
+            ShapeMark(points: mark.points.map(ShapeMath.toBox), opacity: round3(mark.opacity * w))
+        }.filter { $0.opacity > 0.001 }
         let n = Double(input.radii.count)
         let body = input.radii.enumerated().map { i, r in
             ShapeMath.toBox(CGPoint(x: r * sin(Double(i) / n * Double.pi * 2), y: -r * cos(Double(i) / n * Double.pi * 2)))
@@ -769,7 +849,7 @@ public enum ShapeFrames {
             x: input.body.x, y: input.body.y, rot: input.body.rot, sx: input.body.sx, sy: input.body.sy,
             color: input.color, morphed: morphed, depth: depth,
             light: (c.x + ShapeEngineData.clayLight.x * unit, c.y + ShapeEngineData.clayLight.y * unit, ShapeEngineData.clayLight.r * unit),
-            dots: dots, specks: specks, badge: badge, rings: rings, ribbons: ribbons
+            dots: dots, specks: specks, badge: badge, marks: marks, rings: rings, ribbons: ribbons
         )
     }
 
@@ -787,8 +867,17 @@ public enum ShapeFrames {
     public static func still(_ shape: MascotShape, _ expression: ShapeExpression, color: String, open: Double) -> ShapeFrame {
         if open >= 1 { return still(shape, expression, color: color) }
         let radii = ShapeEngineData.radii[shape] ?? ShapeEngineData.radii[.circle]!
-        return compose(Inputs(radii: radii, rest: radii, face: ShapeEngineData.expressions[expression]!, gaze: (0, 0, 0), open: (open, open),
+        return compose(Inputs(shape: shape, radii: radii, rest: radii, face: ShapeEngineData.expressions[expression]!, gaze: (0, 0, 0), open: (open, open),
                               color: color, body: (0, 0, 0, 1, 1), eyes: 1, pose: nil, t: 0, stem: ShapeEngine.stemOf(shape)))
+    }
+
+    /// The resting frame looking toward a pointer (-1...1 each axis), with a rigid lean on the body (`gazeFrame`).
+    public static func gaze(_ shape: MascotShape, _ expression: ShapeExpression, color: String, nx: Double, ny: Double,
+                            body: (rot: Double, sx: Double, sy: Double) = (0, 1, 1), open: (left: Double, right: Double) = (1, 1)) -> ShapeFrame {
+        let radii = ShapeEngineData.radii[shape] ?? ShapeEngineData.radii[.circle]!
+        let look = ShapeIdle.hoverGaze(nx, ny)
+        return compose(Inputs(shape: shape, radii: radii, rest: radii, face: ShapeEngineData.expressions[expression]!, gaze: (look.yaw, look.pitch, 0), open: open,
+                              color: color, body: (0, 0, body.rot, body.sx, body.sy), eyes: 1, pose: nil, t: 0, stem: ShapeEngine.stemOf(shape)))
     }
 
     /// The resting frame of a shape: no wander, no blink, no move (`stillFrame`).
@@ -803,7 +892,7 @@ public enum ShapeFrames {
             frame = cached
         } else {
             let radii = ShapeEngineData.radii[shape] ?? ShapeEngineData.radii[.circle]!
-            frame = compose(Inputs(radii: radii, rest: radii, face: ShapeEngineData.expressions[expression]!, gaze: (0, 0, 0), open: (1, 1),
+            frame = compose(Inputs(shape: shape, radii: radii, rest: radii, face: ShapeEngineData.expressions[expression]!, gaze: (0, 0, 0), open: (1, 1),
                                    color: color, body: (0, 0, 0, 1, 1), eyes: 1, pose: nil, t: 0, stem: ShapeEngine.stemOf(shape)))
             stills.lock.lock()
             stills.frames[key] = frame
@@ -850,6 +939,8 @@ public final class ShapeEngine {
     private let pitch = ShapeFollower(0)
     /// 1 while the gaze wanders, 0 while it follows the pointer.
     private let wanders = ShapeFollower(1)
+    /// The body's lean (ShapeMotion), degrees off the rest turn: the gaze follows it, the outline never bends for it.
+    private var leanGaze = (yaw: 0.0, pitch: 0.0)
     private var last: Double?
 
     public init(_ state: ShapeEngineState, now: Double, seed: Double = Double.random(in: 0..<1000)) {
@@ -901,6 +992,13 @@ public final class ShapeEngine {
 
     public func play(_ move: ShapeMove, now: Double) {
         self.move = (move, now)
+    }
+
+    /// Where the body's own motion leans (yaw right, pitch up, degrees off the
+    /// rest turn): the face looks that way (`leanGaze` of it), so a sway reads
+    /// on the eyes while the outline keeps its one resting turn (`lean`).
+    public func lean(yaw: Double, pitch: Double) {
+        leanGaze = (yaw * ShapeEngineData.leanGaze, pitch * ShapeEngineData.leanGaze)
     }
 
     /// Whether a move still plays at `now`.
@@ -955,10 +1053,10 @@ public final class ShapeEngine {
         if let move, playing(now) {
             let u = now - move.at
             let weight = ShapeMoves.weight(move.id, u)
-            let p = ShapeMoves.at(move.id, u)
+            let p = ShapeMoves.at(move.id, u, rest: rest)
             if let r = p.radii {
                 radii = ShapeMath.blendRadii(rest, r, weight)
-                // a body turned into a dot or a bar loses its stem until it comes back
+                // a body turned into another whole body (an egg, a hexagon) loses its stem until it comes back
                 stem *= 1 - weight
             }
             if let patch = p.face { face = ShapeFrames.blend(face, patch.applied(to: face), weight) }
@@ -970,8 +1068,8 @@ public final class ShapeEngine {
             pose = (p, weight)
         }
         return ShapeFrames.compose(ShapeFrames.Inputs(
-            radii: radii, rest: rest, face: face,
-            gaze: (w.yaw * wanderWeight + yawNow, w.pitch * wanderWeight + pitchNow, w.roll * wanderWeight),
+            shape: state.shape, radii: radii, rest: rest, face: face,
+            gaze: (w.yaw * wanderWeight + yawNow + leanGaze.yaw, w.pitch * wanderWeight + pitchNow + leanGaze.pitch, w.roll * wanderWeight),
             open: (blink, blink), color: colorNow(now),
             body: (x, y, rot, scale * (2 - body.breath), scale * body.breath),
             eyes: eyes, pose: pose, t: t, stem: stem

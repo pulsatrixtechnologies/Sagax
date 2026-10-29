@@ -9,7 +9,7 @@ import { ShapeFrameSvg, ShapeMascot, shapeSkinPaint } from "./ShapeMascot";
 import { SHAPE_ART } from "./shape-art";
 import { stillFrame } from "./shape-engine";
 import { shapeSkinLayers } from "./skin-fx/shape-skins";
-import { eyeStyleFor, groundLift, inkPaint, poseMatrices, REST_POSE, styledEyes, volumeDetail, warpPath, EYE_INK, EYE_INK_ON_DARK } from "./shape-volume";
+import { eyeStyleFor, groundLift, inkPaint, poseMatrices, REST_POSE, styledEyes, uprightPose, volumeDetail, warpPath, EYE_INK, EYE_INK_ON_DARK } from "./shape-volume";
 
 const draw = (props: Record<string, unknown>) => renderToStaticMarkup(h(ShapeMascot, { color: "blue", animated: false, ...props } as never));
 const nums = (m: string) => m.match(/-?\d*\.?\d+/g)!.map(Number);
@@ -22,7 +22,7 @@ describe("the pose", () => {
   it("turns and narrows a shape but never shears it", () => {
     for (const pose of [REST_POSE, { ...REST_POSE, yaw: 50, pitch: -20, roll: 10 }, { ...REST_POSE, yaw: -40, pitch: 25, roll: -30 }]) {
       const m = poseMatrices("full", pose);
-      for (const t of [...m.slices, m.face, m.eyes]) {
+      for (const t of [...m.slices, m.face]) {
         const [a, b, c, d] = nums(t);
         // the matrix's columns stay perpendicular: a rotation times a scale, no skew
         expect(Math.abs(a * c + b * d)).toBeLessThan(1e-3);
@@ -30,15 +30,13 @@ describe("the pose", () => {
     }
   });
 
-  it("keeps a heart's lobes on top when it turns out of the picture plane", () => {
-    const heart = stillFrame({ shape: "bean", expression: "neutral", color: "#00a592" }).body;
-    for (const yaw of [-50, 0, 50]) {
-      const turned = ys(warpPath(heart, { ...REST_POSE, yaw, roll: 0 }));
-      const top = Math.min(...turned);
-      const bottom = Math.max(...turned);
-      // the lobes (top) stay above the point (bottom), whatever the turn
-      expect(bottom - top).toBeGreaterThan(55);
-    }
+  it("bends every outline with the resting turn only: a sway's yaw or pitch never keystones it", () => {
+    const pebble = stillFrame({ shape: "bean", expression: "neutral", color: "#00a592" }).body;
+    const rest = warpPath(pebble, REST_POSE);
+    for (const yaw of [-50, 0, 50]) expect(warpPath(pebble, { ...REST_POSE, yaw, pitch: -yaw / 2 })).toBe(rest);
+    const turned = ys(rest);
+    expect(Math.max(...turned) - Math.min(...turned)).toBeGreaterThan(55);
+    expect(uprightPose({ ...REST_POSE, yaw: 40, pitch: -20, roll: 9 })).toEqual({ ...REST_POSE, roll: 9 });
   });
 
   it("stands every shape on the same ground as the heart", () => {
@@ -55,9 +53,11 @@ describe("the pose", () => {
 
 describe("paints and eyes", () => {
   it("one flat colour, opaque eyes: dark on light and coloured bodies, light on dark ones", () => {
-    expect(inkPaint("#2a8fe8")).toMatchObject({ fill: "#2a8fe8", eyes: EYE_INK, edge: null });
+    expect(inkPaint("#2a8fe8")).toMatchObject({ fill: "#2a8fe8", side: "#2a8fe8", eyes: EYE_INK, edge: null });
     expect(inkPaint("#f4f4f4").eyes).toBe(EYE_INK);
     expect(inkPaint("#f4f4f4").edge).not.toBeNull();
+    // a white body's side is a little grey, not a hairline on every slice
+    expect(inkPaint("#f4f4f4").side).not.toBe("#f4f4f4");
     expect(inkPaint("#0b0b0e").eyes).toBe(EYE_INK_ON_DARK);
   });
 
@@ -90,11 +90,19 @@ describe("the drawing", () => {
     const html = draw({ size: 56, shape: "cloud" });
     expect(html).toContain('data-volume="full"');
     // one outline in the defs (shared by the slices) and the face's own fill
-    expect((html.match(/data-shape-outline=""/g) ?? []).length).toBe(2);
+    expect((html.match(/data-shape-outline=""/g) ?? []).length).toBe(1);
+    expect((html.match(/data-shape-face=""/g) ?? []).length).toBe(1);
     expect((html.match(/<use href="#[^"]+-outline"/g) ?? []).length).toBeGreaterThan(3);
     expect((html.match(/data-pose-slice=/g) ?? []).length).toBeGreaterThan(3);
     expect(html).toContain("data-pose-face");
     expect(html).toMatch(/data-shape-eyes=""/);
+    // the eyes sit in the face's group, after the face, under the same matrices
+    const face = html.indexOf("data-shape-face");
+    const eyes = html.indexOf("data-shape-eyes");
+    const viewEnd = html.indexOf("</g>", eyes);
+    expect(face).toBeGreaterThan(0);
+    expect(eyes).toBeGreaterThan(face);
+    expect(html.slice(face, viewEnd)).not.toContain("</g></g>");
     expect(html).not.toContain("Gradient id");
   });
 

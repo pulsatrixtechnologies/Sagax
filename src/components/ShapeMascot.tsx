@@ -1,9 +1,11 @@
 // The mascot shapes: one soft body in every shape of the set
-// (shared/mascot-look.ts, shape-art.ts) with two rounded eyes cut through it,
-// shaded like clay by default, in thirteen skins (Plain is the clay finish) (skin-fx/shape-skins.tsx).
-// The live loop writes an idle frame (outline, transform, light) straight onto
-// the drawing at the display's rate; React draws only when a move adds or
-// drops its extras, or the colour changes.
+// (shared/mascot-geometry.json through shape-art.ts) with two rounded eyes on
+// it, in thirteen skins (Plain is the flat clay finish) (skin-fx/shape-skins.tsx).
+// One drawing (shape-volume.ts drawShape) serves React and the live loop: the
+// loop writes it straight onto the SVG at the display's rate (writeShape);
+// React draws only when a move adds or drops its extras, or the colour
+// changes. The eyes live in the face's own group, so whatever moves the
+// outline moves them with it.
 // shape-engine.ts moves it: the gaze wanders, the body drifts and breathes,
 // the eyes blink, the face turns toward the pointer, changes of shape, face
 // and color slide, and the fourteen moves (SHAPE_MOVES) play on request.
@@ -20,12 +22,13 @@ import { SHAPE_ART, STEM_INK } from "./shape-art";
 import { gazeFrame, isShapeMove, mixHex, rainbowStops, ShapeEngine, stillFrame, type ShapeExpression, type ShapeFrame } from "./shape-engine";
 import { blinkIdleShape, idleSeed, registerIdleShape } from "./shape-idle";
 import { motionForMood, ShapeMotion } from "./shape-motion";
-import { eyesOnPose, eyeStyleFor, forgetPose, groundLift, inkPaint, SHAPE_FIT, poseMatrices, REST_POSE, volumeDetail, warpPath, writePose, type EyeStyle, type Pose } from "./shape-volume";
+import { drawShape, eyeStyleFor, grounded, inkPaint, REST_POSE, uprightPose, volumeDetail, writeShape, type EyeStyle, type Pose } from "./shape-volume";
 import { shapeSkinBase, shapeSkinLayers, tint, type ShapeSkinBase, type ShapeSkinLayers } from "./skin-fx/shape-skins";
 import { EquipFx, MoveFx } from "./skin-fx/SkinFx";
 import { fxDetail, fxPalette, useEquipBurst, useFxVisibility, useMoveBurst, useReducedMotion, useReplayMove, type FxDetail, type FxMoveRequest } from "./skin-fx/skin-fx";
 
 export { SHAPE_ART, EYES } from "./shape-art";
+export { uprightPose, writeShape } from "./shape-volume";
 
 export type ShapeMood = "idle" | "thinking" | "working" | "streaming" | "happy" | "blocked" | "sleeping";
 
@@ -125,19 +128,6 @@ function blinkFrame(state: { shape: MascotShape; expression: ShapeExpression; co
   return frame;
 }
 
-/** A pose standing on the shared ground (shape-volume.ts groundLift). */
-const grounded = (pose: Pose, shape: MascotShape): Pose => ({ ...pose, scale: pose.scale * SHAPE_FIT[shape], lift: pose.lift + groundLift(shape) });
-
-/**
- * The idle pose of a live shape keeps the rest turn out of the picture plane
- * (the still sidebar drawing's), so its outline never bends: the sway's yaw
- * and pitch keystone the contour, which shows from about 96 px. Breath, bob
- * and the in-plane roll still move it; a move plays its full turn.
- */
-export function uprightPose(pose: Pose): Pose {
-  return { ...pose, yaw: REST_POSE.yaw, pitch: REST_POSE.pitch };
-}
-
 const seconds = () => (typeof performance !== "undefined" ? performance.now() : Date.now()) / 1000;
 
 /** The stem's ink on a body: a dark wood brown, a little of the body's own color in it. */
@@ -151,61 +141,60 @@ const FLAT_SKINS: ReadonlySet<ShapeSkin> = new Set(["outline"]);
 /**
  * One frame of a shape, as SVG: the body in its pose (shape-volume.ts, turned
  * with the top leaning left), one flat colour, whole (no hole), with two
- * opaque capsule eyes on it; then its skin and what a move adds (dots, a
- * badge, rings, ribbons, specks). No gradient, no highlight, no filter, no
- * raster: crisp at any size.
+ * opaque capsule eyes on it in the face's own group; then its skin and what a
+ * move adds (dots, a mark, a badge, rings, ribbons, specks). No gradient, no
+ * highlight, no filter, no raster: crisp at any size. The markup carries the
+ * attributes writeShape writes, and nothing else moves a part.
  */
 export function ShapeFrameSvg({ frame, uid, skin, paint, layers, bodyRef, bodyClass, size = 56, pose = REST_POSE, eyeStyle = "capsule" }: { frame: ShapeFrame; uid: string; skin: ShapeSkin; paint: ShapeSkinBase; layers: ShapeSkinLayers; bodyRef?: React.Ref<SVGSVGElement>; bodyClass?: string; size?: number; pose?: Pose; eyeStyle?: EyeStyle }) {
   const solid = skin === "plain";
   const ink = inkPaint(solid ? frame.color : paint.fill);
   const fill = solid ? ink.fill : layers.fill;
-  const cut = frame.body + frame.eyes;
-  // the turn out of the picture plane bends the outline and the eyes themselves (shape-volume.ts)
-  // (only a plain body bends: a skin's own art is drawn on the outline at rest)
-  const turnedBody = solid ? warpPath(frame.body, pose) : frame.body;
-  // the eyes: upright capsules placed on the posed body, drawn in the drawing's own space (never through its matrices)
-  const turnedEyes = eyesOnPose(frame, pose, eyeStyle, solid);
-  const stem = frame.stem ? (solid ? warpPath(frame.stem.d, pose) : frame.stem.d) : null;
-  const settled = frame.morphed < 0.5;
-  const dotFill = solid ? ink.fill : layers.fill.startsWith("url(") ? paint.fill : layers.fill;
   const volume = !FLAT_SKINS.has(skin);
   const detail = volumeDetail(size);
+  // the one drawing: a plain body bends with the resting turn; a skin's own art is drawn on the outline at rest
+  const drawing = drawShape(frame, pose, detail, eyeStyle, solid);
+  const settled = frame.morphed < 0.5;
+  const dotFill = solid ? ink.fill : layers.fill.startsWith("url(") ? paint.fill : layers.fill;
+  const sideFill = solid ? ink.side : paint.fill;
   const rings = (side: "back" | "front"): ReactNode =>
     frame.rings.map((ring, i) =>
       ring[side] ? <path key={`${side}${i}`} d={ring[side]} fill="none" stroke={`url(#${uid}-ring${i})`} strokeWidth={ring.width} strokeLinecap="round" strokeLinejoin="round" opacity={ring.opacity} /> : null,
     );
   const badge = frame.badge ? <circle cx={frame.badge.x} cy={frame.badge.y} r={frame.badge.r} fill="#2a8fe8" /> : null;
   const motion = (
-    <g transform={volume ? undefined : frame.transform} mask={frame.badge ? `url(#${uid}-notch)` : undefined} {...(volume ? {} : { "data-shape-motion": "" })}>
+    <g transform={volume ? undefined : drawing.motion} mask={frame.badge ? `url(#${uid}-notch)` : undefined} {...(volume ? {} : { "data-shape-motion": "" })}>
       <path
         className="shape-fill"
-        d={volume ? turnedBody : cut}
+        d={volume ? drawing.outline : drawing.cut}
         fillRule="evenodd"
-        {...(volume ? { "data-shape-outline": "" } : { "data-shape-cut": "" })}
+        {...(volume ? { "data-shape-face": "" } : { "data-shape-cut": "" })}
         fill={fill}
         stroke={!layers.ownEdge && paint.stroke ? paint.stroke : undefined}
         strokeWidth={!layers.ownEdge && paint.stroke ? paint.strokeWidth : undefined}
         strokeLinejoin="round"
       />
-      {paint.shine && (volume ? <use href={`#${uid}-outline`} fill={`url(#${uid}-shine)`} /> : <path d={cut} fillRule="evenodd" fill={`url(#${uid}-shine)`} data-shape-cut="" />)}
+      {/* a near-white or near-black face keeps its silhouette: one hairline, on the face only */}
+      {volume && ink.edge && <use href={`#${uid}-outline`} fill="none" stroke={ink.edge} strokeOpacity={0.2} strokeWidth={detail === "tiny" ? 2.4 : 1.6} strokeLinejoin="round" />}
+      {paint.shine && (volume ? <use href={`#${uid}-outline`} fill={`url(#${uid}-shine)`} /> : <path d={drawing.cut} fillRule="evenodd" fill={`url(#${uid}-shine)`} data-shape-cut="" />)}
       {layers.inner && <g clipPath={`url(#${uid}-body)`}>{layers.inner}</g>}
-      {/* the eyes in their ink (dark, or light on a dark body), so they read on any ground and any theme */}
-
       {settled && layers.edge}
       {frame.dots.map((dot, i) => (
         <circle key={i} cx={dot.x} cy={dot.y} r={dot.r} fill={dotFill} opacity={dot.opacity} />
       ))}
+      {frame.marks.map((mark, i) => (
+        <path key={i} d={mark.d} fill={dotFill} opacity={mark.opacity} data-shape-mark="" />
+      ))}
     </g>
   );
-  const m = poseMatrices(detail, pose, frame.depth);
-  const view = (children: ReactNode, extra: Record<string, string> = {}) => (volume ? <g transform={m.face} data-pose-face="" {...extra}>{children}</g> : <>{children}</>);
+  const view = (children: ReactNode, extra: Record<string, string> = {}) => (volume ? <g transform={drawing.face} data-pose-face="" {...extra}>{children}</g> : <>{children}</>);
   return (
     <svg viewBox="0 0 100 100" width="100%" height="100%" ref={bodyRef} className={bodyClass} style={{ overflow: "visible", display: "block" }} data-eyes={frame.eyes ? "cut" : "none"} data-volume={volume ? detail : "flat"}>
       <defs>
-        {volume && <path id={`${uid}-outline`} d={turnedBody} data-shape-outline="" />}
+        {volume && <path id={`${uid}-outline`} d={drawing.outline} data-shape-outline="" />}
         <clipPath id={`${uid}-body`}>
           {/* a body in volume is whole (its eyes sit on top); a flat skin's eyes are cut through it */}
-          {volume ? <use href={`#${uid}-outline`} /> : <path d={cut} clipRule="evenodd" data-shape-cut="" />}
+          {volume ? <use href={`#${uid}-outline`} /> : <path d={drawing.cut} clipRule="evenodd" data-shape-cut="" />}
         </clipPath>
         {paint.shine && (
           <radialGradient id={`${uid}-shine`} cx="0.32" cy="0.26" r="0.75">
@@ -233,33 +222,27 @@ export function ShapeFrameSvg({ frame, uid, skin, paint, layers, bodyRef, bodyCl
       {settled && layers.under && view(layers.under)}
       <g className="shape-body">
         {/* a move's motion (breath, drift, a move's turn) carries the whole body in volume: one write per frame */}
-        <g transform={volume ? frame.transform : undefined} {...(volume ? { "data-shape-motion": "" } : {})}>
+        <g transform={volume ? drawing.motion : undefined} {...(volume ? { "data-shape-motion": "" } : {})}>
         {/* the body behind its face: slices of the same outline, turned with it (shape-volume.ts) */}
-        {volume && ink.edge &&
-          [...m.slices, m.face].map((t, i) => (
-            <g key={`edge${i}`} transform={t} data-pose-slice={i < m.slices.length ? i : -1}>
-              <use href={`#${uid}-outline`} fill="none" stroke={ink.edge ?? undefined} strokeOpacity={0.2} strokeWidth={detail === "tiny" ? 2.4 : 1.6} strokeLinejoin="round" />
-            </g>
-          ))}
         {volume &&
-          m.slices.map((t, i) => (
+          drawing.slices.map((t, i) => (
             <g key={`slice${i}`} transform={t} data-pose-slice={i}>
-              <use href={`#${uid}-outline`} fill={solid ? ink.fill : paint.fill} data-shape-slice="" />
+              <use href={`#${uid}-outline`} fill={sideFill} data-shape-slice="" />
             </g>
           ))}
-        {/* the badge and its notch share the body's turn, so the notch stays under the badge */}
+        {/* the face: the stem behind it, the body, the badge and its notch, and the eyes, all under one matrix */}
         {view(
           <>
             {/* the pumpkin's stem: behind the face, its foot under the body's top */}
-            {stem && <path d={stem} fill={stemInk(solid ? ink.fill : paint.fill)} opacity={frame.stem?.opacity} data-shape-stem="" />}
+            {drawing.stem && <path d={drawing.stem.d} fill={stemInk(solid ? ink.fill : paint.fill)} opacity={drawing.stem.opacity} data-shape-stem="" />}
             {motion}
             {badge}
+            {/* the eyes in their ink (dark, or light on a dark body), on the face, in its own group */}
+            {volume && frame.eyes && <path d={drawing.eyes} fill={ink.eyes} data-shape-eyes="" />}
           </>,
           { "data-shape-view": "" },
         )}
         </g>
-        {/* the eyes in their ink (dark, or light on a dark body), placed upright on the posed body */}
-        {volume && frame.eyes && <path d={turnedEyes} fill={ink.eyes} data-shape-eyes="" />}
       </g>
       {frame.specks.map((speck, i) => (
         <circle key={i} cx={speck.x} cy={speck.y} r={speck.r} fill={mixHex(frame.color, "#0b0b0e", 0.62)} opacity={speck.opacity} />
@@ -279,7 +262,7 @@ export function ShapeFrameSvg({ frame, uid, skin, paint, layers, bodyRef, bodyCl
           opacity={ribbon.opacity}
         />
       ))}
-      {settled && layers.around && <g className="skin-fx-around" transform={volume ? m.face : undefined} data-pose-face={volume ? "" : undefined}>{layers.around}</g>}
+      {settled && layers.around && <g className="skin-fx-around" transform={volume ? drawing.face : undefined} data-pose-face={volume ? "" : undefined}>{layers.around}</g>}
     </svg>
   );
 }
@@ -289,28 +272,9 @@ export function ShapeFrameSvg({ frame, uid, skin, paint, layers, bodyRef, bodyCl
  * the colour and the eyes are the same and the skin's edge is in the same
  * place. Then only the outline, the transform and the light change. */
 export function shapeFrameWritable(drawn: ShapeFrame, next: ShapeFrame): boolean {
-  const plain = (frame: ShapeFrame) => !frame.badge && !frame.dots.length && !frame.specks.length && !frame.rings.length && !frame.ribbons.length;
+  const plain = (frame: ShapeFrame) => !frame.badge && !frame.dots.length && !frame.marks.length && !frame.specks.length && !frame.rings.length && !frame.ribbons.length;
   const eyeCount = (frame: ShapeFrame) => frame.eyes.split("M").length;
   return plain(drawn) && plain(next) && drawn.color === next.color && eyeCount(drawn) === eyeCount(next) && (drawn.morphed < 0.5) === (next.morphed < 0.5) && !drawn.stem === !next.stem;
-}
-
-/**
- * Write a frame's flat cut, transform and light onto a drawing of
- * ShapeFrameSvg. The outline and the eyes of a body in volume are writePose's
- * alone (2026-10-28): writing the raw outline here and letting writePose's
- * memo skip the bent one left the outline and the eyes of two different
- * frames on screen, the body unbent and the eyes stuck mid-blink or in the
- * wrong style.
- */
-export function writeShapeFrame(svg: Pick<SVGSVGElement, "querySelectorAll">, frame: ShapeFrame): void {
-  const cut = frame.body + frame.eyes;
-  svg.querySelectorAll("[data-shape-cut]").forEach((path) => path.setAttribute("d", cut));
-  svg.querySelectorAll("[data-shape-motion]").forEach((group) => group.setAttribute("transform", frame.transform));
-  svg.querySelectorAll("[data-shape-light]").forEach((light) => {
-    light.setAttribute("cx", String(frame.light.x));
-    light.setAttribute("cy", String(frame.light.y));
-    light.setAttribute("r", String(frame.light.r));
-  });
 }
 
 /** The pointer around a box, -1..1 on each axis at about three box widths away. */
@@ -369,8 +333,7 @@ export function ShapeMascot({
     const g = gazeNow.current;
     const o = openNow.current;
     const f = g.x === 0 && g.y === 0 ? (o === 1 ? still : blinkFrame(sidebarState.current, o)) : gazeFrame(sidebarState.current, g.x, g.y, {}, { left: o, right: o });
-    writeShapeFrame(body.current, f);
-    writePose(body.current, volumeDetail(size), grounded(REST_POSE, shapeRef.current), f, eyeStyleFor(moodRef.current), bendRef.current);
+    writeShape(body.current, drawShape(f, grounded(REST_POSE, shapeRef.current), volumeDetail(size), eyeStyleFor(moodRef.current), bendRef.current));
   };
   const drawIdleRef = useRef(drawIdle);
   drawIdleRef.current = drawIdle;
@@ -407,10 +370,7 @@ export function ShapeMascot({
     return () => {
       sidebarGazeRef.current = null;
       gazeNow.current = { x: 0, y: 0 };
-      if (body.current) {
-        writeShapeFrame(body.current, still);
-        writePose(body.current, volumeDetail(size), grounded(REST_POSE, shapeRef.current), still, eyeStyleFor(moodRef.current), bendRef.current);
-      }
+      if (body.current) writeShape(body.current, drawShape(still, grounded(REST_POSE, shapeRef.current), volumeDetail(size), eyeStyleFor(moodRef.current), bendRef.current));
     };
   }, [sidebarGaze, live, sidebarGazeRef, still]);
   const engine = useRef<ShapeEngine | null>(null);
@@ -452,14 +412,15 @@ export function ShapeMascot({
       if (at - lastDraw < IDLE_FRAME_S && !run.playing(at)) return;
       lastDraw = at;
       sway.setMood(motionForMood(moodRef.current), at);
-      const next = run.frame(at);
       const swayed = sway.pose(at);
-      const pose = grounded(run.playing(at) ? swayed : uprightPose(swayed), shapeRef.current);
+      // the sway's lean moves the gaze; the outline keeps its resting turn (shape-volume.ts uprightPose)
+      run.lean(swayed.yaw - REST_POSE.yaw, swayed.pitch - REST_POSE.pitch);
+      const next = run.frame(at);
+      const pose = grounded(uprightPose(swayed), shapeRef.current);
       poseRef.current = pose;
       lastFrame.current = next;
       if (drawn && body.current && shapeFrameWritable(drawn, next)) {
-        writeShapeFrame(body.current, next);
-        writePose(body.current, volumeDetail(size), pose, next, eyeStyleFor(moodRef.current), bendRef.current);
+        writeShape(body.current, drawShape(next, pose, volumeDetail(size), eyeStyleFor(moodRef.current), bendRef.current));
         return;
       }
       drawn = next;
@@ -507,10 +468,8 @@ export function ShapeMascot({
   useLayoutEffect(() => {
     const f = lastFrame.current ?? frame;
     if (live && f && body.current) {
-      // React may have drawn its own outline and eyes: write the live ones again in full
-      forgetPose(body.current);
-      writeShapeFrame(body.current, f);
-      writePose(body.current, volumeDetail(size), poseRef.current, f, eyeStyleFor(moodRef.current), bendRef.current);
+      // React may have drawn an older frame of its own: the live drawing goes on again in full
+      writeShape(body.current, drawShape(f, poseRef.current, volumeDetail(size), eyeStyleFor(moodRef.current), bendRef.current));
     }
   });
 

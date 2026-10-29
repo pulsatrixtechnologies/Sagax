@@ -1,16 +1,15 @@
-// The Shapes geometry. Every body is one closed outline drawn from 64 radii
-// around its middle, smoothed into cubic curves, so any two bodies morph by
-// blending their radii. The radius unit R is the circle's radius; the drawing
-// box is 0..100 with the middle at BODY.center and one R worth BODY.unit box
-// units.
+// The Shapes geometry, read from the one source every drawing shares:
+// shared/mascot-geometry.json (the web here, the phone through the Swift
+// file generated from it). Every body is one closed outline drawn from 64
+// radii around its middle, smoothed into cubic curves, so any two bodies
+// morph by blending their radii. The radius unit R is the circle's radius;
+// the drawing box is 0..100 with the middle at BODY.center and one R worth
+// BODY.unit box units.
 //
-// The bodies (2026-10-28) are the bloub network's tables (shape-tables.ts,
-// MIT, see NOTICE), plus our pumpkin, built here from its own figure. The
-// bodies some moves turn into (MOVE_RADII) are still our own geometry: a
-// figure described as "is this point inside?" and a ray cast from the middle
-// at each of the 64 angles.
+// Nothing here describes a shape: to add or change a body, its eye anchor
+// or a move's body, edit the JSON. This file only turns radii into paths.
 import type { MascotShape } from "../../shared/mascot-look";
-import { SHAPE_TABLES } from "./shape-tables";
+import geometry from "../../shared/mascot-geometry.json";
 
 type Point = [number, number];
 
@@ -32,11 +31,14 @@ export function smoothClosed(points: Point[], tension = 1): string {
   return `${d}Z`;
 }
 
+/** The geometry file itself, for the tests and the phone's generator. */
+export const GEOMETRY = geometry;
+
 /** How many radii make a body. */
-export const RADII_COUNT = 64;
+export const RADII_COUNT: number = geometry.radiiCount;
 
 /** Where the body sits in the 0..100 box, and how many box units one R is. */
-export const BODY = { center: [50, 50] as Point, unit: 40 } as const;
+export const BODY = { center: [geometry.box.center[0], geometry.box.center[1]] as Point, unit: geometry.box.unit } as const;
 
 /** A body: one radius (in R) per angle, angle 0 straight up, clockwise. */
 export type Radii = readonly number[];
@@ -91,17 +93,16 @@ export function outlinePath(radii: Radii, scale = 1): string {
   }));
 }
 
-/* ------------------------------------------------------------ figures */
-
-type Inside = (x: number, y: number) => boolean;
-
-/** Casts a ray from the middle at each angle and keeps the farthest point still inside the figure. */
-export function radiiOf(inside: Inside, reach = 2.4): number[] {
+/**
+ * Authoring help, not used by the app: casts a ray from the middle at each of
+ * the 64 angles and keeps the farthest point still inside a figure described
+ * as "is this point inside?", to write a new body's radii into the JSON.
+ */
+export function radiiOf(inside: (x: number, y: number) => boolean, reach = 2.4): number[] {
   return Array.from({ length: RADII_COUNT }, (_, i) => {
     const a = angleOf(i);
     const dx = Math.sin(a);
     const dy = -Math.cos(a);
-    // walk in from outside so a figure with dents keeps its outermost edge
     let r = reach;
     const step = 0.01;
     while (r > 0 && !inside(dx * r, dy * r)) r -= step;
@@ -116,86 +117,26 @@ export function radiiOf(inside: Inside, reach = 2.4): number[] {
   });
 }
 
-/** Distance from a point to a segment. */
-function toSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
-  const vx = bx - ax;
-  const vy = by - ay;
-  const t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy || 1)));
-  return Math.hypot(px - (ax + vx * t), py - (ay + vy * t));
-}
+/** Every body, in R units. */
+export const SHAPE_RADII: Readonly<Record<MascotShape, Radii>> = Object.fromEntries(
+  Object.entries(geometry.shapes).map(([shape, entry]) => [shape, entry.radii]),
+) as unknown as Record<MascotShape, Radii>;
 
-/** Whether a point lies inside a convex polygon (any winding). */
-function inConvex(points: Point[], x: number, y: number): boolean {
-  let sign = 0;
-  for (let i = 0; i < points.length; i += 1) {
-    const [ax, ay] = points[i];
-    const [bx, by] = points[(i + 1) % points.length];
-    const cross = (bx - ax) * (y - ay) - (by - ay) * (x - ax);
-    if (cross === 0) continue;
-    const s = Math.sign(cross);
-    if (sign === 0) sign = s;
-    else if (s !== sign) return false;
-  }
-  return true;
-}
+/** Where each body's face rests (R, from the body's middle; x right, y down): the middle between the two eyes before any turn. */
+export const FACE_ANCHOR: Readonly<Record<MascotShape, Point>> = Object.fromEntries(
+  Object.entries(geometry.shapes).map(([shape, entry]) => [shape, [entry.face[0], entry.face[1]] as Point]),
+) as unknown as Record<MascotShape, Point>;
 
-/** A convex polygon grown outward by `grow`: its corners come out round. */
-function grownPolygon(points: Point[], grow: number): Inside {
-  return (x, y) => {
-    if (inConvex(points, x, y)) return true;
-    for (let i = 0; i < points.length; i += 1) {
-      const [ax, ay] = points[i];
-      const [bx, by] = points[(i + 1) % points.length];
-      if (toSegment(x, y, ax, ay, bx, by) <= grow) return true;
-    }
-    return false;
-  };
-}
-
-/** A regular polygon's corners around (cx, cy), the first `turn` degrees clockwise from straight up. */
-function regular(sides: number, radius: number, turn = 0, cx = 0, cy = 0): Point[] {
-  return Array.from({ length: sides }, (_, i) => {
-    const a = ((i / sides) * 360 + turn) * (Math.PI / 180);
-    return [cx + radius * Math.sin(a), cy - radius * Math.cos(a)] as Point;
-  });
-}
-
-const circle = (r: number): number[] => Array.from({ length: RADII_COUNT }, () => r);
-
-/** A hexagon with its flat sides up and down, corners rounded. */
-const hexagon = (turn = 30) => radiiOf(grownPolygon(regular(6, 0.85, turn), 0.23));
-
-/** A triangle standing on its base, its three corners rounded. */
-const triangle = () => radiiOf(grownPolygon(regular(3, 0.9, 0, 0, 0.12), 0.27));
-
-/**
- * The pumpkin (2026-10-28): a round body a little wider than tall, made of
- * three overlapping lobes (a middle one and one on each side), so its outline
- * dips softly where two lobes meet, like a pumpkin's ribs seen from the front.
- */
-export const PUMPKIN_LOBES = [
-  { x: 0, y: 0.02, rx: 0.6, ry: 0.84 },
-  { x: -0.42, y: 0.06, rx: 0.6, ry: 0.76 },
-  { x: 0.42, y: 0.06, rx: 0.6, ry: 0.76 },
-] as const;
-
-const pumpkin = () => radiiOf((x, y) => PUMPKIN_LOBES.some((lobe) => ((x - lobe.x) / lobe.rx) ** 2 + ((y - lobe.y) / lobe.ry) ** 2 <= 1));
+/** The whole bodies some moves turn into (never a dot or a bar: the body stays a body). */
+export const MOVE_RADII: Readonly<Record<"egg" | "hexagon" | "triangle", Radii>> = geometry.moveBodies as Record<"egg" | "hexagon" | "triangle", Radii>;
 
 /**
  * The pumpkin's stem: a short dark stalk standing in the dip on top, leaning
- * a little to the left (box units). Its foot sinks into the body (the body is
- * drawn over it), and it rides on the body's top radius, so it follows the
- * outline while it breathes, morphs or squashes.
+ * a little to the left (R units, from the JSON). Its foot sinks into the body
+ * (the body is drawn over it), and it rides on the body's top radius, so it
+ * follows the outline while it breathes, morphs or squashes.
  */
-export const STEM = {
-  /** Where the foot sits (R, from the top of the body) and where the tip ends, relative to the foot. */
-  foot: { x: -0.1, sink: 0.16 },
-  tip: { x: -0.15, y: -0.38 },
-  /** How far the stalk bows to the right, R. */
-  bow: 0.06,
-  /** Half its width at the foot and at the tip, R. */
-  width: { foot: 0.1, tip: 0.07 },
-} as const;
+export const STEM = geometry.stem;
 
 export function stemPath(radii: Radii): string {
   const top = radiusAt(radii, 0);
@@ -228,34 +169,8 @@ export function stemPath(radii: Radii): string {
   return smoothClosed([...left, cap, ...right].map(toBox));
 }
 
-/** The default color of a pumpkin where the skin takes the bot's color. */
-export const PUMPKIN_HEX = "#e78531";
 /** The stem's ink: a dark wood brown. */
 export const STEM_INK = "#3b2a1c";
-
-/** An egg: an ellipse, narrower at the top. */
-const egg = () => radiiOf((x, y) => (x / (0.8 * (1 + 0.13 * y))) ** 2 + ((y - 0.02) / 1.04) ** 2 <= 1);
-
-/** An exclamation mark's stroke: a tall capsule standing on the middle. */
-const bar = () => radiiOf((x, y) => toSegment(x, y, 0, -0.82, 0, 0.18) <= 0.15);
-
-/** Every body, in R units: the bloub tables and the pumpkin. */
-export const SHAPE_RADII: Readonly<Record<MascotShape, Radii>> = {
-  ...SHAPE_TABLES,
-  pumpkin: pumpkin(),
-};
-
-/** The bodies some moves turn into. */
-export const MOVE_RADII = {
-  dot: circle(0.165),
-  sleepDot: circle(0.16),
-  burstDot: circle(0.166),
-  cometDot: circle(0.13),
-  egg: egg(),
-  hexagon: hexagon(0),
-  triangle: triangle(),
-  bar: bar(),
-} as const satisfies Record<string, Radii>;
 
 /** One shape: its outline (box units) and where its face sits at rest. */
 export interface ShapeArt {
@@ -265,7 +180,7 @@ export interface ShapeArt {
 }
 
 export const SHAPE_ART: Record<MascotShape, ShapeArt> = Object.fromEntries(
-  (Object.keys(SHAPE_RADII) as MascotShape[]).map((shape) => [shape, { d: outlinePath(SHAPE_RADII[shape]), face: [52, 50] as Point }]),
+  (Object.keys(SHAPE_RADII) as MascotShape[]).map((shape) => [shape, { d: outlinePath(SHAPE_RADII[shape]), face: toBox(FACE_ANCHOR[shape]) }]),
 ) as Record<MascotShape, ShapeArt>;
 
 /**
@@ -273,7 +188,7 @@ export const SHAPE_ART: Record<MascotShape, ShapeArt> = Object.fromEntries(
  * capsules from these): a rounded bar about 0.19 R wide and 0.41 R tall.
  */
 export const EYES = {
-  rx: (0.19 * BODY.unit) / 2,
-  ry: (0.41 * BODY.unit) / 2,
-  tilt: -13,
+  rx: (geometry.eyes.capsule.w * BODY.unit) / 2,
+  ry: (geometry.eyes.capsule.h * BODY.unit) / 2,
+  tilt: geometry.eyes.capsule.tilt,
 } as const;

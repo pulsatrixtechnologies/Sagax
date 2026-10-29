@@ -39,7 +39,7 @@ export type MascotCharacter = (typeof MASCOT_CHARACTERS)[number];
 
 /**
  * The shapes, in the picker's order (2026-10-28): the bloub network's bodies
- * (src/components/shape-tables.ts, MIT, see NOTICE) and our pumpkin. The
+ * (shared/mascot-geometry.json, MIT, see NOTICE) and our pumpkin. The
  * first eight keep the ids older builds and the server already know (bean is
  * the pebble, pill the capsule, pick the triangle, drop the teardrop), so a
  * stored look keeps its place; the others are new ids.

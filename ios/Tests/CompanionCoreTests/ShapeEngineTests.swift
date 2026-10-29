@@ -18,6 +18,7 @@ final class ShapeEngineTests: XCTestCase {
         struct Ribbon: Decodable { let d: String; let hue, hueSpan, width, opacity, dash, offset, x1, x2: Double }
         struct EyeBox: Decodable { let x, y, w, h, tilt: Double }
         struct Stem: Decodable { let d: String; let opacity: Double }
+        struct Mark: Decodable { let d: String; let opacity: Double }
         struct Frame: Decodable {
             let body, eyes, transform, color: String
             let eyeShapes: [EyeBox]
@@ -25,6 +26,7 @@ final class ShapeEngineTests: XCTestCase {
             let morphed, depth: Double
             let dots, specks: [Dot]
             let badge: Badge?
+            let marks: [Mark]
             let rings: [Ring]
             let ribbons: [Ribbon]
         }
@@ -152,6 +154,11 @@ final class ShapeEngineTests: XCTestCase {
                 XCTAssertEqual(a.r, b.r, accuracy: 1e-6, name)
                 XCTAssertEqual(a.notch, b.notch, accuracy: 1e-6, name)
             }
+            XCTAssertEqual(frame.marks.count, want.marks.count, "\(name) marks")
+            for (a, b) in zip(frame.marks, want.marks) {
+                assertPath(a.d, b.d, "\(name) mark")
+                XCTAssertEqual(a.opacity, b.opacity, accuracy: 1e-9, "\(name) mark opacity")
+            }
             XCTAssertEqual(frame.rings.count, want.rings.count, "\(name) rings")
             for (a, b) in zip(frame.rings, want.rings) {
                 assertPath(ShapeRingDraw.d(a.back), b.back, "\(name) ring back")
@@ -192,24 +199,36 @@ final class ShapeEngineTests: XCTestCase {
 
     /// JC 2026-10-28: on the teardrop the eyes came out flattened, tilted, of
     /// two sizes and at two heights. Every shape, at rest, turned and after
-    /// every move: two equal, level, upright capsules, taller than wide,
-    /// inside the body the drawing shows.
+    /// every move: two equal, level capsules, taller than wide, upright on
+    /// screen (the pose's roll undone), on the face the drawing shows.
     func testEveryShapeKeepsTwoEqualLevelUprightEyesInsideItsBody() {
         let turned = ShapePose(yaw: 28, pitch: 18, roll: 12, scale: ShapeVolumeData.rest.scale, lift: ShapeVolumeData.rest.lift)
-        func check(_ eyes: [ShapeEyeBox], _ name: String) {
+        func check(_ frame: ShapeFrame, _ pose: ShapePose, _ name: String) {
+            let eyes = ShapeVolume.drawShape(frame, pose, detail: .full)?.eyes ?? []
             XCTAssertEqual(eyes.count, 2, name)
-            guard eyes.count == 2 else { return }
-            XCTAssertEqual(eyes[0].w, eyes[1].w, accuracy: 1e-9, "\(name) same width")
-            XCTAssertEqual(eyes[0].h, eyes[1].h, accuracy: 1e-9, "\(name) same height")
-            XCTAssertEqual(eyes[0].y, eyes[1].y, accuracy: 1e-9, "\(name) level")
-            XCTAssertEqual(eyes[0].tilt, 0, "\(name) upright")
-            XCTAssertGreaterThan(eyes[0].h, eyes[0].w * 1.4, "\(name) taller than wide")
-            XCTAssertGreaterThan(eyes[1].x - eyes[0].x, eyes[0].w, "\(name) apart")
+            guard eyes.count == 2, case let .capsule(lx, ly, lw, lh, ltilt) = eyes[0], case let .capsule(rx, ry, rw, rh, rtilt) = eyes[1] else {
+                XCTFail("\(name): two capsules")
+                return
+            }
+            XCTAssertEqual(lw, rw, accuracy: 1e-9, "\(name) same width")
+            XCTAssertEqual(lh, rh, accuracy: 1e-9, "\(name) same height")
+            XCTAssertEqual(ly, ry, accuracy: 1e-9, "\(name) level")
+            XCTAssertEqual(ltilt, -pose.roll, accuracy: 1e-9, "\(name) upright on screen")
+            XCTAssertEqual(rtilt, -pose.roll, accuracy: 1e-9, "\(name) upright on screen")
+            XCTAssertGreaterThan(lh, lw * 1.4, "\(name) taller than wide")
+            XCTAssertGreaterThan(rx - lx, lw, "\(name) apart")
+            XCTAssertTrue(frame.eyeShapes.allSatisfy { $0.tilt == 0 }, "\(name) upright capsules")
         }
         for shape in MascotShape.allCases {
             let still = ShapeFrames.still(shape, .neutral)
-            check(ShapeVolume.posedEyes(still, ShapeVolume.grounded(ShapeVolumeData.rest, shape)), "\(shape) rest")
-            check(ShapeVolume.posedEyes(still, ShapeVolume.grounded(turned, shape), motion: (3, -2, 18, 1.08, 0.9)), "\(shape) turned")
+            check(still, ShapeVolume.grounded(ShapeVolumeData.rest, shape), "\(shape) rest")
+            var squashed = still
+            squashed.x = 3 / ShapeEngineData.bodyUnit
+            squashed.y = -2 / ShapeEngineData.bodyUnit
+            squashed.rot = 18
+            squashed.sx = 1.08
+            squashed.sy = 0.9
+            check(squashed, ShapeVolume.grounded(turned, shape), "\(shape) turned")
             for move in ShapeMove.allCases {
                 let run = ShapeEngine(ShapeEngineState(shape: shape, expression: .neutral, color: "#3b93f0"), now: 0, seed: 7)
                 let calm = ShapeEngine(ShapeEngineState(shape: shape, expression: .neutral, color: "#3b93f0"), now: 0, seed: 7)
@@ -240,6 +259,39 @@ final class ShapeEngineTests: XCTestCase {
         XCTAssertEqual(turned.eyeShapes[0].y, turned.eyeShapes[1].y, accuracy: 1e-9)
         XCTAssertEqual(ShapeIdle.hoverGaze(2, -2).yaw, ShapeEngineData.hover.yaw)
         XCTAssertEqual(ShapeIdle.hoverGaze(2, -2).pitch, ShapeEngineData.hover.pitch)
+    }
+
+    /// The body's lean (ShapeMotion) moves the gaze by `leanGaze` of it; the frame's outline never bends for it.
+    func testTheLeanMovesTheGazeNotTheBody() {
+        let calm = ShapeEngine(ShapeEngineState(shape: .circle, expression: .neutral, color: "#3b93f0"), now: 0, seed: 3)
+        let leaning = ShapeEngine(ShapeEngineState(shape: .circle, expression: .neutral, color: "#3b93f0"), now: 0, seed: 3)
+        leaning.lean(yaw: 30, pitch: 0)
+        let a = calm.frame(0.4), b = leaning.frame(0.4)
+        XCTAssertEqual(a.bodyD, b.bodyD)
+        XCTAssertGreaterThan(b.eyeShapes[0].x, a.eyeShapes[0].x + 0.5)
+        XCTAssertEqual(b.eyeShapes[0].y, b.eyeShapes[1].y, accuracy: 1e-9)
+        leaning.lean(yaw: 0, pitch: 0)
+        XCTAssertEqual(leaning.frame(0.5).eyeShapes, calm.frame(0.5).eyeShapes)
+    }
+
+    /// No move ever hides the eyes or takes the body apart (2026-10-28): the
+    /// eyes stay, and a move's body is another whole body of the set.
+    func testNoMoveHidesTheEyesOrShrinksTheBody() {
+        for move in ShapeMove.allCases {
+            let timing = ShapeEngineData.moveTiming[move]!
+            for u in stride(from: 0, through: timing.duration, by: 0.05) {
+                let pose = ShapeMoves.at(move, u, rest: ShapeEngineData.radii[.drop]!)
+                XCTAssertNil(pose.eyes, "\(move) \(u) eyes")
+                if let radii = pose.radii { XCTAssertGreaterThan(radii.min()!, 0.5, "\(move) \(u) body") }
+            }
+        }
+        // the orbit settles back into the body's own outline, never the circle
+        let settled = ShapeMoves.at(.orbit, ShapeEngineData.moveTiming[.orbit]!.duration - 0.55, rest: ShapeEngineData.radii[.drop]!)
+        XCTAssertNotNil(settled.radii)
+        XCTAssertNotEqual(settled.radii!, ShapeEngineData.radii[.circle]!)
+        XCTAssertEqual(ShapeMoves.at(.alert, 0.3).marks?.count, 1)
+        XCTAssertEqual(ShapeMoves.at(.exclaim, 0.3).marks?.count, 1)
+        XCTAssertEqual(ShapeMoves.at(.thinking, 0.3).dots?.count, 3)
     }
 }
 
