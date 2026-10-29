@@ -125,19 +125,16 @@ describe("bot-first sidebar", () => {
     }
   });
 
-  it.each(densities)("opens the newest topic of the stream when threads are hidden, %s density", (density) => {
-    // Threads were on once: this window still sits on an older topic and the
-    // person last wrote in it (the main thread, server/main-thread.ts). With
-    // the tree hidden, the stream opens at its newest topic, the older one
-    // drawn above it.
+  it.each(densities)("opens the bot's own conversation when threads are hidden, %s density", (density) => {
+    // Threads were on once: this window sits on the topic the person last
+    // wrote in, which is the bot's conversation (the main thread,
+    // server/main-thread.ts; one conversation per bot since #1586). With the
+    // tree hidden the row opens that conversation as it is, no switch to an
+    // older selection, and no fresh topic over it (#763).
     const used = { ...bot, threadId: "idle-history", mainThreadId: "idle-history" };
     for (const enabled of [false, true]) {
       fixture.showThreads = enabled;
-      // the switch, then no fresh topic over what it opens (#763): the switch
-      // clears it, and so does the landing on a topic that is not idle
-      const opened = enabled
-        ? [[{ type: "select", id: bot.id }], [cleared]]
-        : [[{ type: "switchTask", botId: bot.id, threadId: "last-selected" }], [cleared], [cleared]];
+      const opened = [[{ type: "select", id: bot.id }], [cleared]];
       let tree: ReactNode;
       function Capture() { tree = BotListItem({ ...rowProps(density), bot: used }); return tree; }
       renderToStaticMarkup(createElement(Capture));
