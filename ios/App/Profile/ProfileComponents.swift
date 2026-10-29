@@ -429,6 +429,10 @@ enum RoutineWording {
             return sentence(wording.days, time: times(wording.minutesOfDay))
         }
         guard let expression = schedule.expression else { return String(localized: "Custom schedule") }
+        // Several expressions (one per minute of a day) say their times together.
+        if expression.contains(";") {
+            return CronDescribe.describeList(expression, language: CronDescribe.currentLanguage) ?? String(localized: "Custom schedule")
+        }
         if let minutes = lastDayOfMonth(expression) {
             return String(localized: "On the last day of the month at \(times(minutes))")
         }

@@ -41,6 +41,16 @@ final class RoutineCronWordingTests: XCTestCase {
         XCTAssertNil(RoutineSchedule(type: .daily, time: "07:00", weekdays: [1]).cronWording)
     }
 
+    /// 2026-10-29: one expression per minute of a day, same days.
+    func testSeveralExpressionsSayTheirTimesTogether() {
+        let w = wording("30 12 * * 1-5; 15 8 * * 1-5")
+        XCTAssertEqual(w?.days, .weekdays)
+        XCTAssertEqual(w?.minutesOfDay, [8 * 60 + 15, 12 * 60 + 30])
+        XCTAssertEqual(wording("30 8 * * *; 30 8 * * *")?.minutesOfDay, [8 * 60 + 30])
+        XCTAssertNil(wording("15 8 * * 1-5; 30 12 * * *"), "other days")
+        XCTAssertNil(wording("15 8 * * *; 30 12 1 * *"), "day-of-month limit")
+    }
+
     func testMissingZone() {
         XCTAssertNil(wording("0 9 * * *", zone: nil)?.timeZone)
         XCTAssertNil(wording("0 9 * * *", zone: "")?.timeZone)

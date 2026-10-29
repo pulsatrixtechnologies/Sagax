@@ -1,6 +1,7 @@
 // The routine schedule as a person picks it (2026-10-29): a frequency, the
 // times, the days, the zone. Cron stays under the hood: the editor turns a
-// model into the five-field expression the scheduler already runs, and an
+// model into the five-field expression the scheduler already runs (several
+// joined by "; " when the times do not share their minutes), and an
 // expression back into a model when it fits one. An expression that fits
 // none gives nil: the editor then keeps it as it is behind "Advanced",
 // still described in words. A port of shared/schedule-model.ts (same rules,
@@ -74,8 +75,6 @@ public struct RoutineScheduleModel: Hashable, Sendable {
     public enum Problem: String, Error, Hashable, Sendable {
         /// No time chosen.
         case noTime
-        /// Several times a day that do not share their minutes.
-        case sameMinute
         /// "Certain days" with none ticked.
         case noDays
         /// A value out of range.
@@ -105,9 +104,11 @@ public struct RoutineScheduleModel: Hashable, Sendable {
 
     // MARK: Model to expression
 
-    /// The cron expression of the model, or why it cannot be one. Several
-    /// times a day share their minutes (8:30, 12:30, 16:30): one expression
-    /// cannot say 8:15 and 12:30 without also meaning 8:30 and 12:15.
+    /// The cron expression of the model, or why it cannot be one. Times that
+    /// share their minutes go in one expression ("30 8,12,16 …"); times with
+    /// other minutes get one expression each, joined by "; " (2026-10-29: 8:15
+    /// and 12:30 are "15 8 …; 30 12 …", never 8:30 and 12:15 too). The
+    /// expression of the earliest time leads.
     public func cron() -> Result<String, Problem> {
         switch frequency {
         case .hourly:
@@ -125,25 +126,38 @@ public struct RoutineScheduleModel: Hashable, Sendable {
         }
         if times.contains(where: { Self.parseClock($0) == nil }) { return .failure(.badTime) }
         let parsed = Self.normalizeTimes(times).compactMap(Self.parseClock)
-        guard let first = parsed.first else { return .failure(.noTime) }
-        guard parsed.allSatisfy({ $0.minute == first.minute }) else { return .failure(.sameMinute) }
-        let at = "\(first.minute) \(parsed.map { String($0.hour) }.joined(separator: ","))"
+        guard !parsed.isEmpty else { return .failure(.noTime) }
+        var byMinute: [Int: [Int]] = [:]
+        for time in parsed { byMinute[time.minute, default: []].append(time.hour) }
+        let groups = byMinute.map { (minute: $0.key, hours: $0.value.sorted()) }
+            .sorted { ($0.hours[0] * 60 + $0.minute) < ($1.hours[0] * 60 + $1.minute) }
+        let days: String
+        switch dayFields() {
+        case let .failure(problem): return .failure(problem)
+        case let .success(fields): days = fields
+        }
+        return .success(groups.map { "\($0.minute) \($0.hours.map(String.init).joined(separator: ",")) \(days)" }
+            .joined(separator: CronExpression.separator))
+    }
+
+    /// The day, month and weekday fields of a timed model.
+    private func dayFields() -> Result<String, Problem> {
         switch frequency {
         case .daily:
-            return .success("\(at) * * *")
+            return .success("* * *")
         case .weekdays:
-            return .success("\(at) * * 1-5")
+            return .success("* * 1-5")
         case .days:
             let days = Array(Set(weekdays.map { $0 % 7 }.filter { (0...6).contains($0) })).sorted()
             guard !days.isEmpty else { return .failure(.noDays) }
-            if days.count == 7 { return .success("\(at) * * *") }
-            return .success("\(at) * * \(days.map(String.init).joined(separator: ","))")
+            if days.count == 7 { return .success("* * *") }
+            return .success("* * \(days.map(String.init).joined(separator: ","))")
         case .monthly:
             switch monthDay {
-            case .last: return .success("\(at) L * *")
+            case .last: return .success("L * *")
             case let .day(day):
                 guard (1...31).contains(day) else { return .failure(.badTime) }
-                return .success("\(at) \(day) * *")
+                return .success("\(day) * *")
             }
         case .yearly:
             let day: Int
@@ -152,7 +166,7 @@ public struct RoutineScheduleModel: Hashable, Sendable {
             case let .day(value): day = value
             }
             guard (1...31).contains(day), (1...12).contains(month) else { return .failure(.badTime) }
-            return .success("\(at) \(day) \(month) *")
+            return .success("\(day) \(month) *")
         case .hourly, .every:
             return .failure(.badTime)
         }
@@ -184,8 +198,26 @@ public struct RoutineScheduleModel: Hashable, Sendable {
     }
 
     /// The model an expression is, or nil when it fits no model (the editor
-    /// then keeps it under Advanced).
+    /// then keeps it under Advanced). Several expressions joined by ";" are
+    /// one model when they differ only in their times.
     public static func from(cron expression: String) -> RoutineScheduleModel? {
+        let parts = expression.split(separator: ";", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard parts.count > 1 else { return single(cron: parts.first ?? "") }
+        var models: [RoutineScheduleModel] = []
+        for part in parts {
+            guard let model = single(cron: part), model.frequency != .hourly, model.frequency != .every else { return nil }
+            models.append(model)
+        }
+        let first = models[0]
+        guard models.allSatisfy({ $0.frequency == first.frequency && $0.weekdays == first.weekdays
+            && $0.monthDay == first.monthDay && $0.month == first.month }) else { return nil }
+        var model = first
+        model.times = normalizeTimes(models.flatMap(\.times))
+        return model
+    }
+
+    private static func single(cron expression: String) -> RoutineScheduleModel? {
         let fields = expression.split(whereSeparator: { $0.isWhitespace }).map(String.init)
         guard fields.count == 5 else { return nil }
         let (minuteText, hourText, dayText, monthText, weekdayText) = (fields[0], fields[1], fields[2], fields[3], fields[4])

@@ -171,15 +171,58 @@ public enum CronDescribe {
             when = "\(atWord) " + join(times, language)
         }
 
+        return sentence(leadPhrase(dom: dom, month: month, dow: dow, language), when: when)
+    }
+
+    /// Which days: "weekdays, in June", or "" for every day.
+    private static func leadPhrase(dom: Field, month: Field, dow: Field, _ language: Language) -> String {
         var parts: [String] = []
         let days = dow.star ? "" : daysPhrase(dow, language)
         if !days.isEmpty { parts.append(days) }
         if !dom.star { parts.append(monthDayPhrase(dom, language)) }
         if !month.star {
             let names = month.values.map { monthNames[language]![$0 - 1] }
-            parts.append((fr ? "en " : "in ") + join(names, language))
+            parts.append((language == .fr ? "en " : "in ") + join(names, language))
         }
-        let text = parts.isEmpty ? when : parts.joined(separator: ", ") + ", " + when
+        return parts.joined(separator: ", ")
+    }
+
+    private static func sentence(_ lead: String, when: String) -> String {
+        let text = lead.isEmpty ? when : lead + ", " + when
         return text.prefix(1).uppercased() + text.dropFirst()
+    }
+
+    /// Several expressions joined by ";" that differ only in their times
+    /// (2026-10-29, "15 8 * * 1-5; 30 12 * * 1-5"): "Weekdays, at 8:15 AM and
+    /// 12:30 PM". Nil when they differ in their days or a time is not plain.
+    /// A port of `describeCronList`.
+    public static func describeList(_ expression: String, language: Language) -> String? {
+        let parts = expression.split(separator: ";", omittingEmptySubsequences: false)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard parts.count >= 2 else { return nil }
+        let fields = parts.map { $0.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init) }
+        guard fields.allSatisfy({ $0.count == 5 }) else { return nil }
+        let days = fields[0][2...].joined(separator: " ")
+        guard fields.allSatisfy({ $0[2...].joined(separator: " ") == days }) else { return nil }
+        let allowed = Set("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz*,/- ")
+        guard days.allSatisfy({ allowed.contains($0) }) else { return nil }
+        var times: [Int: String] = [:]
+        for field in fields {
+            guard !field[0].isEmpty, field[0].allSatisfy({ $0.isASCII && $0.isNumber }),
+                  let minute = parseField(field[0], 0, 59), let hour = parseField(field[1], 0, 23),
+                  !hour.star, hour.step == nil
+            else { return nil }
+            let m = minute.values[0]
+            for h in hour.values { times[h * 60 + m] = clock(h, m, language, forceMinutes: true) }
+        }
+        guard times.count <= 12 else { return nil }
+        guard let dom = parseField(fields[0][2], 1, 31),
+              let month = parseField(fields[0][3], 1, 12, aliases: monthAliases, offset: 1),
+              let dow = parseField(fields[0][4], 0, 7, aliases: dayAliases, offset: 0),
+              dom.star || dow.star
+        else { return nil }
+        let ordered = times.keys.sorted().map { times[$0]! }
+        return sentence(leadPhrase(dom: dom, month: month, dow: dow, language),
+                        when: "\(language == .fr ? "à" : "at") " + join(ordered, language))
     }
 }

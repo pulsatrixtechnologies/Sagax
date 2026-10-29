@@ -1949,8 +1949,9 @@ public struct Voice: Codable, Hashable, Identifiable, Sendable {
 public struct RoutineSchedule: Codable, Hashable, Sendable {
     public enum Kind: String, Codable, Sendable {
         case once, daily, interval
-        /// A five-field cron expression in an explicit IANA zone
-        /// (`shared/routine-schedule.ts`). Shown raw; the phone does not edit it.
+        /// A five-field cron expression, or several joined by "; " (one per
+        /// minute of a day, 2026-10-29), in an explicit IANA zone
+        /// (`shared/routine-schedule.ts`).
         case cron
         /// Starts when the routine's own webhook receives a delivery
         /// (`{ type: "webhook" }`, 2026-10-29: chosen in the editor).
