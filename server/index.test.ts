@@ -8754,7 +8754,9 @@ describe("harness HTTP API", () => {
       // soul first, setup block right after it
       const soulEnd = system.indexOf("--- END STANDING INSTRUCTIONS ---") + "--- END STANDING INSTRUCTIONS ---".length;
       expect(soulEnd).toBeGreaterThan(0);
-      expect(system.slice(soulEnd).startsWith("\n\nThe user explicitly asked you to set yourself up")).toBe(true);
+      // the work style (#1617) sits on the soul; the setup block is the next section
+      const afterSoul = system.slice(soulEnd).replace(/^\nHow you work\.[^\n]*/, "");
+      expect(afterSoul.startsWith("\n\nThe user explicitly asked you to set yourself up")).toBe(true);
       // the literal /setup never reaches the model — extract the user text the
       // way promptText() in fake-claude-cli.ts does, joining text parts if the
       // content is an array of blocks rather than a plain string

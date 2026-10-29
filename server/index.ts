@@ -229,7 +229,9 @@ import {
   vpsAliasResourceChangeError,
 } from "./cloud-backend.ts";
 import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
-import { buildRecall, CALL_RECALL_BUDGET, LOCAL_RECALL_BUDGET, sessionMemoryHitFor, type RecallBudget } from "./recall.ts";
+import { buildRecall, CALL_RECALL_BUDGET, LOCAL_RECALL_BUDGET, recallQuery, sessionMemoryHitFor, type RecallBudget } from "./recall.ts";
+import { prepareSemanticRecall, setSemanticIndex } from "./semantic-recall.ts";
+import { LocalSemanticIndex, semanticIndexFile } from "./semantic-index.ts";
 import { withoutWiderAudience, type MemoryDestination } from "./memory-audience.ts";
 import { BriefStore, type BriefAppCall } from "./background-brief.ts";
 import { listBriefApps, readBriefTool } from "./background-brief-apps.ts";
@@ -298,6 +300,8 @@ import {
   claudeUserMcpEnabled,
   skillAuthoringEnabled,
   autoRecallEnabled,
+  semanticEmbeddingEndpoint,
+  semanticRecallEnabled,
   captureQuietMs,
   tidyHour,
   sharedComputersEnabled,
@@ -3379,8 +3383,9 @@ function autoRecallPrompt(bot: BotRecord, threadId: string, message: string, opt
       author: (hit) => (hit.role === "user" ? hit.peer ?? opts.userName : hit.from ?? bot.name),
       ...(opts.budget ? { budget: opts.budget } : {}),
       ...(opts.audience ? { audience: opts.audience } : {}),
-      // Off unless this process was started with it. FTS5 still runs first.
-      ...(process.env.SAGAX_SEMANTIC_RECALL === "1" ? { semantic: true } : {}),
+      // the local semantic index (server/semantic-index.ts): on unless
+      // switched off; FTS5 still fills the block first
+      semantic: semanticRecallEnabled(cfg),
     });
     if (recalled) console.log(`auto-recall: ${bot.name} (${bot.id}) got ${recalled.notes} note and ${recalled.conversations} conversation passage(s) in ${threadId}`);
     // its memory recalled in this conversation (Total Recall, for whoever wrote that memory)
@@ -7175,6 +7180,17 @@ setAtRestThreadFiles((threadId) => {
   return [...paths];
 });
 await unlockContentKeys();
+// Recall by meaning (server/semantic-index.ts): registered at start, on
+// unless memory.semanticRecall is false or SAGAX_SEMANTIC_RECALL=0. It
+// follows message writes and catches up with older conversations in the
+// background; its vectors are sealed like the transcripts.
+const semanticIndex = new LocalSemanticIndex({
+  file: semanticIndexFile(DATA_DIR),
+  enabled: () => semanticRecallEnabled(cfg),
+  endpoint: () => semanticEmbeddingEndpoint(cfg),
+});
+setSemanticIndex(semanticIndex);
+semanticIndex.start();
 {
   const vacuumMs = vacuumAfterSealing();
   if (vacuumMs !== null) console.log(`content encryption: message database compacted after sealing (${Math.round(vacuumMs)} ms)`);
@@ -22760,6 +22776,10 @@ async function startTurn(
       // its provider turn id. Never overlap a replacement with that ambiguous
       // pre-id window: wait for the old handshake to settle or for its bounded
       // quarantine to expire, then revalidate this exact claim before launch.
+      // An embedding endpoint the person runs reads this turn's recall query
+      // first (bounded, server/semantic-recall.ts), before the claim below
+      // is revalidated. Without one nothing is awaited.
+      if (bot.memoryEnabled !== false && autoRecallEnabled(cfg) && semanticEmbeddingEndpoint(cfg)) await prepareSemanticRecall(bot.id, recallQuery(resolvedImages.text));
       await pendingCancelledProviderHandshakes.waitForClear(threadId);
       if (!markDirectTurnDispatching(bot.id, dispatchClaimId, threadId)) {
         throw new DirectTurnSetupCancelled("turn stopped before dispatch");
@@ -26511,6 +26531,9 @@ async function runGroupMemberTurn(
   // The engines read at start is part of setup (it learns what this engine
   // supports): wait for it before the claim below.
   if (enginesRead) await enginesRead;
+  // an embedding endpoint the person runs reads the recall query first
+  // (bounded), before the cancellation check below
+  if (!cardContinuation && bot.memoryEnabled !== false && autoRecallEnabled(cfg) && semanticEmbeddingEndpoint(cfg)) await prepareSemanticRecall(bot.id, recallQuery(resolvedLatestImages.text));
   // run the turn and wait for it to settle, folding the reply text so a
   // chained @mention can be routed afterwards
   // Claim only after setup succeeded. An unavailable, busy, unsupported, or
@@ -28881,6 +28904,8 @@ function configStatus() {
     billing: { currency: cfg.billing?.currency ?? "USD", prices: cfg.billing?.prices ?? {} },
     // how long the approval decision log is kept, after env and default
     decisions: { retentionDays: decisionRetentionDays(cfg.decisions?.retentionDays) },
+    // recall by meaning (server/semantic-index.ts); the endpoint is an address, not a secret
+    memory: { semanticRecall: semanticRecallEnabled(cfg), embeddingsUrl: cfg.memory?.embeddingsUrl ?? "", embeddingsModel: cfg.memory?.embeddingsModel ?? "" },
     // the base URL is a setting, not a secret; the key stays write-only
     openaiCompat: { configured: Boolean(cfg.openaiCompat?.key), url: cfg.openaiCompat?.url ?? "" },
     // configured = cloud computers work here; included = through Cloud Pro,
@@ -31482,6 +31507,11 @@ ROUTES.push(createBotMemoryRoutes({
   },
   taskByThread: (botId, threadId) => store.taskByThread(botId, threadId),
   upkeep: memoryUpkeep,
+  // the bot's Memory settings: recall by meaning, over its memory and its own chats
+  semantic: (botId) => {
+    const bot = store.bot(botId);
+    return semanticIndex.status(botId, bot ? [bot.threadId, ...(bot.tasks ?? []).map((task) => task.threadId)] : []);
+  },
   ...(lendingMemory ? {
     lendingReview: {
       needed: (botId: string) => {
@@ -54262,6 +54292,7 @@ const gracefulShutdown = createGracefulShutdown({
         console.error("Session persistence failed during shutdown; account sign-in will be required again.");
         exitCode = 1;
       }
+      semanticIndex.stop();
       closeMessageDb();
       releaseDataDirLeaseAtExit();
       process.exit(exitCode);

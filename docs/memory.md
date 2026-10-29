@@ -118,6 +118,33 @@ through `session_search`, which discloses it. `features.autoRecall: false` in
 `config.json` switches recall off. The server log names every recall
 (`auto-recall: … got N note and M conversation passage(s)`).
 
+### Recall by meaning (2026-10-29)
+
+Beside the word search, a local semantic index (`server/semantic-index.ts`)
+finds a note or a message that says the same thing in other words: a typo
+("dentst apointment"), another ending ("allergie", "allergique"), and, with
+an embedding model, a synonym. It is on by default; `memory.semanticRecall:
+false` in `config.json` or `SAGAX_SEMANTIC_RECALL=0` switches it off. Word
+search still fills the block first; a passage found by meaning only takes a
+slot it left free, and follows the same rules: the same threads, the same
+audience and expiry filtering, the same block.
+
+It indexes each bot's topic files, one line a passage, and the text
+messages of every conversation, a few hundred characters a passage, in
+`semantic-index.db` in the data folder. A row holds vectors and a
+fingerprint, never text; with content encryption on it is sealed with the
+key of its thread or of its bot's owner, so erasing that key erases the
+vectors too. Message writes update it at once, a memory file is compared at
+every search, and older conversations are caught up in the background.
+
+The built-in vectors hash words and their 3- and 4-letter pieces: nothing
+to download. An embedding model the person already runs can be added in the
+bot's Memory settings (Advanced, Recall by meaning) or in `config.json`:
+`memory.embeddingsUrl` (an OpenAI-compatible `/v1/embeddings` address, such
+as `http://127.0.0.1:11434/v1`) and `memory.embeddingsModel`. Notes and
+messages are sent there to be indexed, and each turn's query too (at most
+1.5 s). When it does not answer, the built-in vectors are used alone.
+
 ## Long conversations
 
 Every engine has a context window, and most of them compact their own

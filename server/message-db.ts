@@ -549,6 +549,23 @@ function writeRow(threadId: string, message: Message): void {
   const { values, key } = rowValues(threadId, message);
   const row = cached(UPSERT_MESSAGE).get(threadId, message.id, message.at, message.role, message.kind, values.text, values.json, values.sealed, values.keyId) as { rowid: number } | undefined;
   afterWrite(row?.rowid, threadId, message, key);
+  tellMessageListeners(threadId, message.id);
+}
+
+/** Told after a message is written or changed (its id), or after a whole
+ * thread is deleted (null). The local semantic index follows the
+ * transcripts this way (server/semantic-index.ts). A listener never fails
+ * the write that already happened. */
+type MessageListener = (threadId: string, messageId: string | null) => void;
+const messageListeners = new Set<MessageListener>();
+export function onMessageChange(listener: MessageListener): () => void {
+  messageListeners.add(listener);
+  return () => messageListeners.delete(listener);
+}
+function tellMessageListeners(threadId: string, messageId: string | null): void {
+  for (const listener of messageListeners) {
+    try { listener(threadId, messageId); } catch { /* never fails a write */ }
+  }
 }
 
 /** Write the queued blind-index tokens. Runs before every search, recall
@@ -1299,6 +1316,7 @@ export function updateMessage(threadId: string, message: Message): void {
   const row = cached("UPDATE messages SET at = ?, role = ?, kind = ?, text = ?, json = ?, sealed = ?, key_id = ? WHERE thread_id = ? AND id = ? RETURNING rowid")
     .get(message.at, message.role, message.kind, values.text, values.json, values.sealed, values.keyId, threadId, message.id) as { rowid: number } | undefined;
   afterWrite(row?.rowid, threadId, message, key);
+  tellMessageListeners(threadId, message.id);
 }
 
 /** Goal cards are new SQLite-backed messages, so crash recovery can locate
@@ -1403,6 +1421,7 @@ export function deleteThread(threadId: string, beforeCommit?: () => void): void 
   bindings.delete(threadId);
   for (const [rowid, entry] of pendingIndex) if (entry.threadId === threadId) pendingIndex.delete(rowid);
   checkpointSoon();
+  tellMessageListeners(threadId, null);
 }
 
 /** Read positions of one thread (server/read-receipts.ts): participant id
@@ -1585,6 +1604,42 @@ export function readMessageText(
     ...(row.webhook_post ? { from: WEBHOOK_AUTHOR, webhook: true as const } : row.from_name ? { from: row.from_name } : {}),
     ...(peer ? { peer } : {}),
   };
+}
+
+/** A text message as the local semantic index reads it (opened when sealed). */
+export interface IndexableMessage {
+  rowid: number;
+  messageId: string;
+  at: number;
+  text: string;
+}
+
+/** The text messages of one thread after a rowid, oldest first, opened.
+ * A row whose key was destroyed is skipped (erased). A row whose key is
+ * locked on this launch stops the read before it (`blocked`), so it is
+ * read again once the key is back. */
+export function textMessagesAfter(threadId: string, afterRowid: number, limit: number): { messages: IndexableMessage[]; last: number; blocked: boolean } {
+  const rows = db()
+    .prepare(`SELECT rowid, id, at, text, json, sealed, key_id FROM messages WHERE thread_id = ? AND rowid > ? AND kind = 'text' AND ${HAS_TEXT} ORDER BY rowid LIMIT ?`)
+    .all(threadId, afterRowid, limit) as unknown as Array<StoredRow & { rowid: number; id: string; at: number; text: string | null }>;
+  const messages: IndexableMessage[] = [];
+  let last = afterRowid;
+  for (const row of rows) {
+    let text: string | null;
+    try {
+      text = rowText({ ...row, thread_id: threadId });
+    } catch {
+      return { messages, last, blocked: true };
+    }
+    last = row.rowid;
+    if (text && text.trim()) messages.push({ rowid: row.rowid, messageId: row.id, at: row.at, text });
+  }
+  return { messages, last, blocked: false };
+}
+
+/** Every thread that has at least one message. */
+export function messageThreadIds(): string[] {
+  return (db().prepare("SELECT DISTINCT thread_id FROM messages").all() as Array<{ thread_id: string }>).map((row) => row.thread_id);
 }
 
 /** Relevance-ranked recall over the text messages of the given threads:

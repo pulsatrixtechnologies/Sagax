@@ -142,8 +142,9 @@ export interface RecallInput {
   /** Where this recall would be shown. A wider place does not receive a
    * captured fact stamped for somewhere narrower. Absent: the person. */
   audience?: MemoryDestination;
-  /** When true, local vector passages may follow the FTS5 passages.
-   * Off unless the caller asks. No model is downloaded. */
+  /** When true, passages of the local semantic index (server/semantic-index.ts)
+   * may take the slots FTS5 left free. The server passes it unless semantic
+   * recall is switched off. No model is downloaded. */
   semantic?: boolean;
 }
 
@@ -268,10 +269,13 @@ export function buildRecall(input: RecallInput): RecallResult | null {
   const named = new Set(topics.map((passage) => passage.label));
   const notes = [...topics, ...memoryPassages(input.botId, query, input.audience).filter((passage) => !named.has(passage.label))].slice(0, input.budget?.notes ?? MEMORY_HITS);
   const lexical = [...notes, ...conversationPassages(input, query)];
-  // FTS5 fills the block first. Vectors, when a local index is ready, only take a free slot.
+  // FTS5 fills the block first. The local semantic index only takes a free slot.
   const cap = (input.budget?.notes ?? MEMORY_HITS) + (input.threadIds.length ? input.budget?.conversations ?? CONVERSATION_HITS : 0);
   const vectors = input.semantic
-    ? semanticPassages(input.botId, query, cap).filter((passage) => input.threadIds.length > 0 || passage.source !== "conversation")
+    ? semanticPassages(input.botId, query, cap, { threadIds: input.threadIds, ...(input.audience ? { audience: input.audience } : {}) }, {
+      label: input.label,
+      author: (hit) => input.author({ threadId: "", messageId: "", at: 0, snippet: "", ...hit }),
+    }).filter((passage) => input.threadIds.length > 0 || passage.source !== "conversation")
     : [];
   const passages = input.semantic ? fusePassages(lexical, vectors, cap) : lexical;
   return renderRecall(passages, input.budget?.chars);
