@@ -15,8 +15,11 @@ export interface ReachOutbound {
   person: string;
   botId: string;
   botName: string;
+  /** The reply code; for a notice, a tag no reply uses. */
   code: string;
-  kind: "approval" | "question";
+  /** A notice (2026-10-29, the background brief) asks nothing: no code to
+   * answer, it only tells. */
+  kind: "approval" | "question" | "notice";
   /** "Run a command?", the question itself */
   title: string;
   /** one line under it: the command, the file, the change */
@@ -69,6 +72,11 @@ export function composeReachText(out: ReachOutbound): string {
   const fr = out.language === "fr";
   const bot = clip(out.botName || (fr ? "Votre bot" : "Your bot"), 60);
   const lines: string[] = [];
+  if (out.kind === "notice") {
+    lines.push(`${bot} : ${clip(out.title, MAX_TITLE)}`);
+    for (const line of out.line.split("\n").filter((entry) => entry.trim()).slice(0, 3)) lines.push(`- ${clip(line, MAX_LINE)}`);
+    return lines.join("\n").slice(0, 1_100);
+  }
   if (out.confidential) {
     lines.push(fr
       ? `${bot} attend votre réponse dans une conversation confidentielle (son contenu reste dans Sagax).`

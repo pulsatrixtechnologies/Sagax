@@ -1,7 +1,10 @@
 // The person's background brief (server/background-brief.ts).
 //
 //   GET  /api/bots/:id/background-brief
-//   PUT  /api/bots/:id/background-brief   { enabled?, everyHours?, subjects? }
+//   PUT  /api/bots/:id/background-brief   { enabled?, everyHours?, subjects?, at?, timeZone? }
+//        `at` (HH:MM) in `timeZone` is when the brief runs on its own each
+//        day (server/background-brief-schedule.ts). On by default for a
+//        Primary Bot; `enabled: false` turns it off.
 //   POST /api/bots/:id/background-brief/pass { costUsd? }
 //        Reads the apps already connected. No app: an empty queue.
 //   POST /api/bots/:id/background-brief/:suggestionId/reject
@@ -56,6 +59,8 @@ export function createBackgroundBriefRoutes(deps: BackgroundBriefRouteDeps): Rou
         ...(typeof body.enabled === "boolean" ? { enabled: body.enabled } : {}),
         ...(typeof body.everyHours === "number" ? { everyHours: body.everyHours } : {}),
         ...(subjects ? { subjects } : {}),
+        ...(typeof body.at === "string" ? { at: body.at } : {}),
+        ...(typeof body.timeZone === "string" ? { timeZone: body.timeZone } : {}),
       });
       return json(res, 200, { settings });
     }

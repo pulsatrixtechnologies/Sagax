@@ -24,7 +24,7 @@
 //   the bot, the channel and the outcome.
 import { randomBytes } from "node:crypto";
 
-import { reachesBy, splitReachReply, readReachDecision, withinReachHours, type ReachChannelId, type ReachMeSettings, REACH_WIRED } from "../../shared/reach-me.ts";
+import { DEFAULT_REACH_ME, reachesBy, splitReachReply, readReachDecision, withinReachHours, type ReachChannelId, type ReachMeSettings, REACH_WIRED } from "../../shared/reach-me.ts";
 import type { PushMessage } from "../push/payload.ts";
 import { defang } from "../webhooks.ts";
 import type { ReachChannel, ReachInbound, ReachOutbound } from "./channel.ts";
@@ -41,6 +41,21 @@ export interface ReachCard {
   line: string;
   confidential: boolean;
   needsKey: boolean;
+}
+
+/** Something the bot tells the person without asking (2026-10-29: the
+ * background brief). No code, no reply: it goes the way they chose for
+ * that bot, within their hours. */
+export interface ReachNotice {
+  /** Stable id: the same notice heard twice goes once. */
+  id: string;
+  person: string;
+  botId: string;
+  botName: string;
+  /** The conversation it was also posted in: a tap on the push opens it. */
+  threadId: string;
+  title: string;
+  lines: string[];
 }
 
 export type ReachRespondBody =
@@ -117,6 +132,10 @@ export class ReachMe {
   private readonly inflight = new Set<Promise<unknown>>();
   /** Cards being sent right now. */
   private readonly sending = new Set<string>();
+  /** Notices that came outside the person's hours: sent when the next range starts. */
+  private readonly deferredNotices = new Map<string, ReachNotice>();
+  /** Notices already sent (one send per id). */
+  private readonly noticed = new Set<string>();
 
   constructor(deps: ReachMeDeps) {
     this.deps = deps;
@@ -166,8 +185,72 @@ export class ReachMe {
     }
   }
 
+  /** The bot tells the person something (no code, no reply), the way they
+   * chose for that bot: no choice saved means a push, at any hour. Outside
+   * their hours it waits for the next range. Never throws. */
+  notice(notice: ReachNotice): void {
+    try {
+      if (this.noticed.has(notice.id)) return;
+      const settings = this.deps.settings.get(notice.person, notice.botId) ?? DEFAULT_REACH_ME;
+      if (!withinReachHours(settings.hours, this.now())) {
+        if (this.deferredNotices.size > 2_000) this.deferredNotices.delete(this.deferredNotices.keys().next().value!);
+        this.deferredNotices.set(notice.id, notice);
+        return;
+      }
+      this.sendNotice(notice, settings);
+    } catch (error) {
+      this.log(`reach-me: a notice could not go out (${error instanceof Error ? error.message : "error"})`);
+    }
+  }
+
+  /** Notices held for later (tests). */
+  deferredNoticeCount(): number {
+    return this.deferredNotices.size;
+  }
+
+  private sendNotice(notice: ReachNotice, settings: ReachMeSettings): void {
+    this.noticed.add(notice.id);
+    if (this.noticed.size > 4_000) this.noticed.delete(this.noticed.values().next().value!);
+    if (reachesBy(settings, "push")) {
+      this.deps.push({
+        kind: "message", personId: notice.person, title: notice.botName || notice.title,
+        body: [notice.title, ...notice.lines].join("\n").slice(0, 600),
+        threadId: notice.threadId, botId: notice.botId, id: notice.id, at: this.now(),
+      });
+    }
+    this.track(this.dispatchNotice(notice, settings));
+  }
+
+  private async dispatchNotice(notice: ReachNotice, settings: ReachMeSettings): Promise<void> {
+    const wanted = settings.channels.filter((channel): channel is ReachChannelId => channel !== "push" && (REACH_WIRED as readonly string[]).includes(channel));
+    // a tag the Teams send carries (its one self-send is matched on it); nobody answers it
+    const tag = `N${randomBytes(4).toString("hex").toUpperCase()}`;
+    for (const channel of wanted) {
+      const status = this.deps.channels[channel]?.status(notice.person, notice.botId);
+      if (!status?.ready) {
+        this.deps.audit({ person: notice.person, botId: notice.botId, threadId: notice.threadId, channel, action: "send_failed", reason: status?.reason ?? "not set up" });
+        continue;
+      }
+      const out: ReachOutbound = {
+        person: notice.person, botId: notice.botId, botName: notice.botName, code: tag, kind: "notice",
+        title: notice.title, line: notice.lines.join("\n"), confidential: false, needsKey: false,
+        language: this.deps.language(notice.person),
+      };
+      const result = await this.deps.channels[channel]!.send(out).catch((error: unknown) => ({ ok: false as const, reason: error instanceof Error ? error.message : "error" }));
+      this.deps.audit(result.ok
+        ? { person: notice.person, botId: notice.botId, threadId: notice.threadId, channel, action: "sent" }
+        : { person: notice.person, botId: notice.botId, threadId: notice.threadId, channel, action: "send_failed", reason: result.reason.slice(0, 200) });
+    }
+  }
+
   /** Every minute: cards held for the person's hours go out once a range opens. */
   tick(): void {
+    for (const [id, notice] of this.deferredNotices) {
+      const settings = this.deps.settings.get(notice.person, notice.botId) ?? DEFAULT_REACH_ME;
+      if (!withinReachHours(settings.hours, this.now())) continue;
+      this.deferredNotices.delete(id);
+      this.sendNotice(notice, settings);
+    }
     for (const [key, message] of this.deferred) {
       const settings = this.deps.settings.get(message.personId, message.botId ?? "");
       if (!settings) {

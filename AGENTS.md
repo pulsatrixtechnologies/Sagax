@@ -1776,6 +1776,19 @@ for themself, for every bot they can see: no admin, no owner check.
   channels, Telegram link, hours and zone; WhatsApp is offered when the
   server's channel answer wires it (#1247), its number connected on the
   computer; the companion allows the four routes. The Primary Bot also changes it from any chat (`sagax_settings`).
+- Notices (2026-10-29): `ReachMe.notice` tells the person something
+  without asking (the background brief). Same channels and hours as the
+  cards (no setting saved: a push), no reply code (`kind: "notice"`,
+  `composeReachText` adds no "reply" line), one send per notice id, held
+  until the next range outside the hours.
+- Background brief on a timer (2026-10-29,
+  `server/background-brief-schedule.ts`): every minute the server runs a
+  bot's read-only pass once a day at the person's time (`at`, `timeZone`
+  in `background-brief.json`, catch-up window 3 h, the day taken before
+  the reads). On by default for a Primary Bot; the person turns it off or
+  moves its time on the bot page (`BackgroundBriefCard`). Anything new is
+  posted as one bot message in their own conversation with the bot and
+  sent as a notice; a pass with nothing new sends nothing.
 - Tests: `shared/reach-me.test.ts`, `server/reach-me/*.test.ts`,
   `server/routes/reach-me.test.ts`, `server/push/fcm.test.ts`,
   `server/routes/push-devices.test.ts`, `server/auto-approve.test.ts`,

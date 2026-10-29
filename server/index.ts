@@ -227,9 +227,10 @@ import {
 import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
 import { buildRecall, CALL_RECALL_BUDGET, LOCAL_RECALL_BUDGET, sessionMemoryHitFor, type RecallBudget } from "./recall.ts";
 import { withoutWiderAudience, type MemoryDestination } from "./memory-audience.ts";
-import { BriefStore } from "./background-brief.ts";
+import { BriefStore, type BriefAppCall } from "./background-brief.ts";
 import { listBriefApps, readBriefTool } from "./background-brief-apps.ts";
 import { createBackgroundBriefRoutes } from "./routes/background-brief.ts";
+import { briefMessageText, briefNoticeLines, startBriefTimer } from "./background-brief-schedule.ts";
 import { createMemoryUpkeep, upkeepEnabled } from "./memory-upkeep.ts";
 import { CompanyMemoryCache, companyTextForBots } from "./memory-company.ts";
 import { COMPANY_TOPIC } from "./memory-dream.ts";
@@ -31633,7 +31634,58 @@ function prewakeComputerWhileTyping(botId: string, principalId: string | null | 
   void userSandbox.prewake(principal, botId);
 }
 // 2026-10-16: a person's custom auto-review rules (server/routes/custom-rules.ts).
-const backgroundBriefs = new BriefStore(join(DATA_DIR, "background-brief.json"));
+// 2026-10-29: on by default for a Primary Bot; the person turns it off or moves its time.
+const backgroundBriefs = new BriefStore(join(DATA_DIR, "background-brief.json"), Date.now, {
+  defaultEnabled: (botId) => store.bot(botId)?.chiefOfStaff === true,
+});
+/** The apps a bot reads for its brief: its own connected servers, a GitHub
+ * one as the bot's owner. */
+async function backgroundBriefReads(botId: string): Promise<BriefAppCall> {
+  const bot = store.bot(botId);
+  // a GitHub server reads as the bot's owner, never as whoever saved it
+  const saved = bot ? customMcpServers(cfg, bot.mcpServers) : {};
+  const servers = bot && IDENTITY.kind === "perspicax" ? githubServersAsPerson(saved, githubAccountToken(effectiveBotOwner(bot).trim().toLowerCase())).servers : saved;
+  const signal = AbortSignal.timeout(12_000);
+  const apps = await listBriefApps(servers, mcpDisabledTools(cfg), signal);
+  return {
+    apps: () => apps,
+    read: (app, tool) => {
+      const server = servers[app];
+      return server ? readBriefTool(server, tool, signal) : Promise.resolve(null);
+    },
+  };
+}
+function backgroundBriefConnected(botId: string): readonly string[] {
+  const bot = store.bot(botId);
+  if (!bot) return [];
+  return Object.keys(customMcpServers(cfg, bot.mcpServers));
+}
+/** Where a brief is posted: the bot's one conversation with the person
+ * (#1586, conversationOrStart), started when they have none. */
+function backgroundBriefThread(bot: BotRecord, person: string): string | undefined {
+  return IDENTITY.kind === "perspicax" ? conversationOrStart(bot, person) : conversationOrStart(bot);
+}
+if (!process.env.VITEST) {
+  startBriefTimer({
+    store: backgroundBriefs,
+    bots: () => store.bots
+      .filter((bot) => !bot.hidden && !bot.temporary)
+      .map((bot) => ({ id: bot.id, name: bot.name, person: reachMePerson(effectiveBotOwner(bot) || localPrincipalId()) || null })),
+    connected: backgroundBriefConnected,
+    fastModel: (botId) => store.bot(botId)?.modelSelection.fast?.model ?? null,
+    reads: backgroundBriefReads,
+    deliver: ({ botId, botName, person, suggestions }) => {
+      const bot = store.bot(botId);
+      if (!bot) return;
+      const language = reachMeLanguage(person);
+      const threadId = backgroundBriefThread(bot, person);
+      if (threadId && !store.isConfidentialThread(threadId)) store.appendMessage(threadId, { role: "bot", kind: "text", text: briefMessageText(suggestions, language) });
+      const { title, lines } = briefNoticeLines(suggestions, language);
+      reachMeService?.notice({ id: `brief-${botId}-${suggestions[0]!.id}`, person, botId, botName, threadId: threadId ?? "", title, lines });
+    },
+    log: (line) => console.log(line),
+  });
+}
 ROUTES.push(createBackgroundBriefRoutes({
   store: backgroundBriefs,
   owns: (auth, botId) => {
@@ -31642,26 +31694,8 @@ ROUTES.push(createBackgroundBriefRoutes({
   },
   fastModel: (botId) => store.bot(botId)?.modelSelection.fast?.model ?? null,
   keep: (botId, line) => { updateMemory(botId, { action: "append", text: line }, { source: "background brief", readers: { kind: "person" } }); },
-  connected: (botId) => {
-    const bot = store.bot(botId);
-    if (!bot) return [];
-    return Object.keys(customMcpServers(cfg, bot.mcpServers));
-  },
-  reads: async (botId) => {
-    const bot = store.bot(botId);
-    // a GitHub server reads as the bot's owner, never as whoever saved it
-    const saved = bot ? customMcpServers(cfg, bot.mcpServers) : {};
-    const servers = bot && IDENTITY.kind === "perspicax" ? githubServersAsPerson(saved, githubAccountToken(effectiveBotOwner(bot).trim().toLowerCase())).servers : saved;
-    const signal = AbortSignal.timeout(12_000);
-    const apps = await listBriefApps(servers, mcpDisabledTools(cfg), signal);
-    return {
-      apps: () => apps,
-      read: (app, tool) => {
-        const server = servers[app];
-        return server ? readBriefTool(server, tool, signal) : Promise.resolve(null);
-      },
-    };
-  },
+  connected: backgroundBriefConnected,
+  reads: backgroundBriefReads,
 }));
 ROUTES.push(createCustomRuleRoutes({
   store: customRules,
