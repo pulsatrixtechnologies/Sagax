@@ -117,6 +117,22 @@ rows are hidden too (`isHiddenStatusActivity`). Test:
 `server/auto-limit-continue.e2e.test.ts` (fake CLI
 `FAKE_CLAUDE_LIMIT_MID_TURN_FILE`).
 
+## OpenAI's API runs on /v1/responses (2026-10-29)
+
+The OpenAI instance (`openai-compat` with `catalog: "openai"`) sends a bot's
+turns to `/v1/responses` (`server/drivers/openai-responses.ts`): function
+tools, `reasoning.effort` for reasoning models only, stateless history
+(`store: false`) with the encrypted reasoning echoed after a tool round.
+`/chat/completions` stays the path for a model `/responses` does not serve,
+and never carries `reasoning_effort`. The picker lists only conversation
+models (`isOpenAIChatModel`, an allow list by family): audio, realtime,
+speech, image, embedding, moderation and completion models never appear and
+Auto never picks them. A model the provider refuses (`refusesModel`) leaves
+the catalog and the same turn goes on at once on another model, with no row
+in the chat (`session.model-fallback`, a `runtime.notice`); only when none is
+left does the turn end in plain words (`noModelLeftMessage`). Test:
+`server/drivers/openai-responses.test.ts`.
+
 ## A reply is never an error (2026-10-29)
 
 A bot's reply always reads as a reply, its Markdown whole. Claude Code can
