@@ -513,7 +513,6 @@
   "task.new": "Нова гілка — свіжа розмова",
   "task.switchWithUsage": "Усі гілки · {label} ({input} вхід · {output} вихід)",
   "task.switch": "Усі гілки",
-  "task.otherActivity": "Інша активність ({count})",
   "task.search": "Пошук гілок",
   "task.renameAria": "Перейменувати гілку",
   "task.renameNamed": "Перейменувати {title}",

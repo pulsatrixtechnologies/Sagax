@@ -1491,7 +1491,6 @@
   "settings.threadCleanup.invalidCap": "请输入 0.25 到 4096 MiB 之间的大小。",
   "settings.threadCleanup.saving": "保存中…",
   "settings.threadCleanup.error": "无法保存事件记录设置，请再试一次。",
-  "task.otherActivity": "其他活动（{count}）",
   "attention.title": "收件箱",
   "attention.empty": "收件箱为空",
   "attention.titleCount": "收件箱，{count}",

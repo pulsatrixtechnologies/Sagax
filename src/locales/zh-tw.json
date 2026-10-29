@@ -487,7 +487,6 @@
   "task.new": "新增對話——從頭開始的全新對話",
   "task.switchWithUsage": "所有對話 · {label}（輸入 {input} · 輸出 {output}）",
   "task.switch": "所有對話",
-  "task.otherActivity": "其他活動（{count}）",
   "task.search": "搜尋對話",
   "task.renameAria": "重新命名對話",
   "task.renameNamed": "重新命名 {title}",

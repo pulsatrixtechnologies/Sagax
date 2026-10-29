@@ -2256,7 +2256,6 @@
   "task.newBusy": "Deixe este turno terminar primeiro",
   "task.newShort": "Nova conversa",
   "task.noMatch": "Nada corresponde a “{query}”",
-  "task.otherActivity": "Outra atividade ({count})",
   "task.queued": "Na fila",
   "task.refreshPermissions": "Atualizar permissões",
   "task.regenerateTitle": "Gerar título novamente",
