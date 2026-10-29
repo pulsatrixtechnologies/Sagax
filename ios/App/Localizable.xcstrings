@@ -1,6 +1,150 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "%lld changed, %lld unchanged, %lld refused": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld changed, %lld unchanged, %lld refused" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%lld modifiés, %lld inchangés, %lld refusés" } }
+      }
+    },
+    "A bot without its own list mounts every enabled server: the change starts from that set.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A bot without its own list mounts every enabled server: the change starts from that set." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Un bot sans liste à lui monte tous les serveurs activés : la modification part de cet ensemble." } }
+      }
+    },
+    "Apply": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Apply" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Appliquer" } }
+      }
+    },
+    "Changing the bots one at a time": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Changing the bots one at a time" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Modification des bots un à la fois" } }
+      }
+    },
+    "Do not change": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Do not change" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ne pas changer" } }
+      }
+    },
+    "Do not change %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Do not change %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ne pas changer : %@" } }
+      }
+    },
+    "Each bot is changed on its own, as in its own settings: a bot that refuses keeps its values and says why.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Each bot is changed on its own, as in its own settings: a bot that refuses keeps its values and says why." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chaque bot est modifié séparément, comme dans ses propres réglages : un bot qui refuse garde ses valeurs et dit pourquoi." } }
+      }
+    },
+    "Edit %lld bots": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Edit %lld bots" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Modifier %lld bots" } }
+      }
+    },
+    "Give these bots Full access?": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Give these bots Full access?" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Donner l'accès complet à ces bots?" } }
+      }
+    },
+    "Mixed values": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Mixed values" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Valeurs mixtes" } }
+      }
+    },
+    "Nobody": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Nobody" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Personne" } }
+      }
+    },
+    "Now: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Now: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Actuellement : %@" } }
+      }
+    },
+    "Off gives the bots no computer and no browser.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Off gives the bots no computer and no browser." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Désactivé ne donne aux bots ni ordinateur ni navigateur." } }
+      }
+    },
+    "Puts back each bot's values from before the last bulk change, the same way.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Puts back each bot's values from before the last bulk change, the same way." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Remet les valeurs de chaque bot d'avant la dernière modification en lot, de la même façon." } }
+      }
+    },
+    "Replace with": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Replace with" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Remplacer par" } }
+      }
+    },
+    "Review and apply": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Review and apply" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vérifier et appliquer" } }
+      }
+    },
+    "Shows each bot's value": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Shows each bot's value" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Affiche la valeur de chaque bot" } }
+      }
+    },
+    "Some bots' sharing could not be read; they are changed from what the server holds.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Some bots' sharing could not be read; they are changed from what the server holds." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le partage de certains bots n'a pas pu être lu ; ils sont modifiés à partir de ce que le serveur détient." } }
+      }
+    },
+    "They run commands and edit files without asking, in every thread. Use only with bots you trust.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "They run commands and edit files without asking, in every thread. Use only with bots you trust." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ils lancent des commandes et modifient des fichiers sans demander, dans chaque fil. À utiliser seulement avec des bots de confiance." } }
+      }
+    },
+    "Unchanged": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Unchanged" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Inchangé" } }
+      }
+    },
+    "Undo the last bulk change": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Undo the last bulk change" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Annuler la dernière modification en lot" } }
+      }
+    },
+    "Undoing the last bulk change": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Undoing the last bulk change" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Annulation de la dernière modification en lot" } }
+      }
+    },
+    "nobody": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "nobody" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "personne" } }
+      }
+    },
+    "none": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "none" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "aucun" } }
+      }
+    },
     "Deleted routine": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Deleted routine" } },

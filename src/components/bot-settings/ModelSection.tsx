@@ -26,7 +26,7 @@ import { BotHostSettings } from "./BotHostSettings";
 export function ModelSection({ bot }: { bot: Bot }) {
   const advanced = useAdvancedMode();
   const { state, dispatch } = useStore();
-  const { draft } = useBotEditor();
+  const { draft, bulk } = useBotEditor();
   const viewerLocal = viewerLocalBotSettings(state.config, bot);
   const override = useViewerBotOverride(bot.id, viewerLocal);
   const viewerShown = viewerLocal ? botWithViewerSettings(bot, override) : bot;
@@ -46,7 +46,7 @@ export function ModelSection({ bot }: { bot: Bot }) {
   const effortHelp = viewerLocal
     ? t("botPanel.model.forYou")
     : modelVariants
-      ? (draft ? t("botPanel.model.reasoningStart") : t("botPanel.model.reasoningGroups"))
+      ? (draft && !bulk ? t("botPanel.model.reasoningStart") : t("botPanel.model.reasoningGroups"))
       : `${t("botPanel.model.effortHelp")}${shown.modelSelection.effort ? "" : t("botPanel.model.effortDefault")}`;
   // 2026-10-16 : drawn like Settings: one group of rows (the model's
   // pill, the effort's pill menu), then recovery and backups as groups.
@@ -63,7 +63,7 @@ export function ModelSection({ bot }: { bot: Bot }) {
               <div>
                 <div className="text-[13px] leading-[18px] text-ink">{t("botPanel.model.default")}</div>
                 <div className="mt-0.5 text-[12px] leading-4 text-ink-secondary">
-                  {viewerLocal ? t("botPanel.model.forYou") : draft ? t("botPanel.model.starting") : t("botPanel.model.groups")}
+                  {viewerLocal ? t("botPanel.model.forYou") : draft && !bulk ? t("botPanel.model.starting") : t("botPanel.model.groups")}
                 </div>
               </div>
             }

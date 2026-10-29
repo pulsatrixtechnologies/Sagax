@@ -734,6 +734,14 @@ public struct GrantCandidate: Hashable, Sendable, Identifiable {
     public var count: Int?
 
     public var id: String { target }
+
+    public init(target: String, kind: WireGrant.Kind, label: String, detail: String, count: Int? = nil) {
+        self.target = target
+        self.kind = kind
+        self.label = label
+        self.detail = detail
+        self.count = count
+    }
 }
 
 public enum GrantRules {

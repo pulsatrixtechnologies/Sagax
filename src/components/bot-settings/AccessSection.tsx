@@ -281,7 +281,7 @@ export function AccessSection({
       )}
 
       {(part === "all" || part === "mcp") && <McpServersCard bot={bot} patch={patch} />}
-      {part === "all" && <BackgroundBriefCard botId={bot.id} />}
+      {part === "all" && !draft && <BackgroundBriefCard botId={bot.id} />}
 
       {(part === "all" || part === "browser") && browserFeature && <PaneSection title={<>{t("botPanel.access.browser")}<ProposalStatus bot={bot} /></>}>
         <div className="flex items-center justify-between gap-4">

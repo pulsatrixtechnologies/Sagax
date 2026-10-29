@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, UserMinus, UserPlus, Users } from "lucide-react";
 
-import { api } from "@/state/store";
+import { useBotEditor } from "./BotEditorContext";
 import { t } from "@/lib/i18n";
 import {
   GRANT_LEVELS,
@@ -45,6 +45,8 @@ export function GrantEditor({ botId, ownerId, initialGrants, initialAdminister, 
   initialAdminister: GrantAdministration | null;
   directory: OrgDirectory | null;
 }) {
+  // the bot's own routes; several bots at once keep the grants in their draft
+  const { request: api, bulk } = useBotEditor();
   const [grants, setGrants] = useState<WireGrant[]>(initialGrants);
   const [administer, setAdminister] = useState<GrantAdministration | null>(initialAdminister);
   const [query, setQuery] = useState("");
@@ -61,7 +63,7 @@ export function GrantEditor({ botId, ownerId, initialGrants, initialAdminister, 
       })
       .catch(() => { if (alive) setAdminister((current) => current?.any ? current : null); });
     return () => { alive = false; };
-  }, [botId]);
+  }, [botId, api]);
 
   const candidates = useMemo(
     () => (query.trim() ? grantCandidates(directory, { ownerId, taken: grants.map((grant) => grant.target), query, administer }).slice(0, 20) : []),
@@ -89,7 +91,7 @@ export function GrantEditor({ botId, ownerId, initialGrants, initialAdminister, 
   return (
     <div className="flex flex-col gap-3" data-grant-editor>
       {grants.length === 0 ? (
-        <p className="text-[13px] text-ink-secondary">{t("botSettings.sharing.empty")}</p>
+        <p className="text-[13px] text-ink-secondary">{t(bulk ? "bulkEdit.sharing.empty" : "botSettings.sharing.empty")}</p>
       ) : (
         <ul className="flex flex-col divide-y divide-hairline/40" aria-label={t("botSettings.sharing.title")}>
           {grants.map((grant) => {

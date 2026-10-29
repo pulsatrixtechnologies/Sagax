@@ -51,6 +51,9 @@ struct ModelMenuSheet: View {
     let bot: Bot
     /// Closes the menu; nil when it is a pushed page (it pops itself).
     var close: (() -> Void)? = nil
+    /// Edit N bots: the pick is handed back instead of saved (the menu
+    /// stays the bot editor's own, so one bot keeps saving at once).
+    var choose: ((ModelSelection) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     private enum Page: Hashable { case root, all, provider(String) }
@@ -123,7 +126,7 @@ struct ModelMenuSheet: View {
                     }
                 }
             }
-            .disabled(saving || current.busy == true)
+            .disabled(saving || (choose == nil && current.busy == true))
             .overlay { if saving { ProgressView() } }
         .task {
             instances = await session.modelInstances()
@@ -276,21 +279,25 @@ struct ModelMenuSheet: View {
     private func pick(_ row: ModelMenuRow) {
         switch row.kind {
         case .auto:
-            guard selection.auto != true else { return finish() }
+            guard selection.auto != true || choose != nil else { return finish() }
             var next = selection
             next.auto = true
             apply(next, updateBotDefault: true)
         case .follow:
-            guard follows == false else { return finish() }
+            guard follows == false, choose == nil else { return finish() }
             apply(profile.modelSelection, updateBotDefault: false)
         case .model:
             guard let instance = instances.first(where: { $0.instanceId == row.instanceId }), let model = row.modelId else { return }
-            if row.current && selection.auto != true { return finish() }
+            if row.current && selection.auto != true && choose == nil { return finish() }
             apply(ModelPickerRules.selectionForPick(selection, instance: instance, model: model), updateBotDefault: true)
         }
     }
 
     private func apply(_ next: ModelSelection, updateBotDefault: Bool) {
+        if let choose {
+            choose(next)
+            return finish()
+        }
         saving = true
         Task {
             _ = await session.updateModel(next, for: current, updateBotDefault: updateBotDefault)

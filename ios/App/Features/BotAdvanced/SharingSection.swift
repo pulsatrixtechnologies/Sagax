@@ -18,6 +18,25 @@ extension GrantLevel {
     }
 }
 
+/// A person or team of the directory, as Shared with lists them to add
+/// (also Edit N bots' Shared with).
+struct GrantCandidateLabel: View {
+    let candidate: GrantCandidate
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if candidate.kind == .team { Image(systemName: "person.2").foregroundStyle(Theme.textSecondary) }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: candidate.label).foregroundStyle(Theme.textPrimary)
+                Text(verbatim: candidate.kind == .team
+                     ? String(localized: "Teams") + " · " + String(localized: "\(candidate.count ?? 0) people")
+                     : candidate.detail)
+                    .font(.footnote).foregroundStyle(Theme.textSecondary)
+            }
+        }
+    }
+}
+
 struct BotSharingSection: View {
     let bot: Bot
     @EnvironmentObject private var session: Session
@@ -86,14 +105,7 @@ private struct BotSharingContent: View {
                     }
                     ForEach(candidates) { candidate in
                         HStack(spacing: 8) {
-                            if candidate.kind == .team { Image(systemName: "person.2").foregroundStyle(Theme.textSecondary) }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(verbatim: candidate.label).foregroundStyle(Theme.textPrimary)
-                                Text(verbatim: candidate.kind == .team
-                                     ? String(localized: "Teams") + " · " + String(localized: "\(candidate.count ?? 0) people")
-                                     : candidate.detail)
-                                    .font(.footnote).foregroundStyle(Theme.textSecondary)
-                            }
+                            GrantCandidateLabel(candidate: candidate)
                             Spacer(minLength: 8)
                             Button {
                                 Task { await put(candidate.target, .use) }

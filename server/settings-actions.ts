@@ -15,6 +15,7 @@ import { checkPersonQuote, messageNamesCard, normalizeWords, personWrote } from 
 import { decideSettingEffect, HOLD_TEXT, type SettingClass } from "../shared/settings-actions-policy.ts";
 import { decodePreference, isAppearancePreference, isSyncedPreference, pickValue, SETTING_FAMILIES, SETTINGS, settingSpec, valueFits, type SettingIds, type SettingSpec } from "../shared/settings-actions.ts";
 import { DEVICE_APPLY_PATH } from "../shared/device-settings.ts";
+import { BULK_TARGETS_MAX, splitBulkTargets } from "../shared/bulk-bot-edit.ts";
 import { STEP_UP_CLASSES, botActClasses, type StepUpClass } from "../shared/step-up.ts";
 import { valueDigest, type ActRuleCandidate, type BotActResult, type BotActService } from "./bot-act.ts";
 
@@ -709,5 +710,25 @@ export function createSettingsActions(deps: SettingsActionDeps) {
     return text(200, `Done: ${spec.label} changed${via}${on}.${nextTurn}${after}`);
   }
 
-  return { handle };
+  /** Several bots in one call (2026-10-29, Edit N bots): target "a,b,c" on a
+   * bot key. Each bot is its own call, in turn: the same rights, policy,
+   * card, quote and journal as one at a time; one answer line per bot. */
+  async function handleMany(input: SettingsActionInput): Promise<BotActResult> {
+    const ids = input.args.action === "set" ? splitBulkTargets(input.args.target) : null;
+    const spec = ids ? settingSpec(input.args.key) : undefined;
+    if (!ids || !spec || spec.target !== "bot") return handle(input);
+    if (ids.length > BULK_TARGETS_MAX) return text(400, `At most ${BULK_TARGETS_MAX} bots in one call.`);
+    const lines: string[] = [];
+    let failed = 0;
+    for (const id of ids) {
+      const result = await handle({ ...input, args: { ...input.args, target: id } });
+      const said = String(result.body.text ?? result.body.error ?? "");
+      if (result.status >= 400) failed += 1;
+      lines.push(`${deps.targetName?.("bot", id) ?? id}: ${result.status >= 400 ? `refused: ${said}` : said}`);
+    }
+    const head = `${ids.length - failed} of ${ids.length} bots changed.`;
+    return failed === ids.length ? text(400, [head, ...lines].join("\n")) : text(200, [head, ...lines].join("\n"));
+  }
+
+  return { handle: handleMany };
 }

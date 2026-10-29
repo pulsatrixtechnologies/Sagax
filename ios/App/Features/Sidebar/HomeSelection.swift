@@ -1,6 +1,7 @@
 // The home list's bulk selection (the desktop's multi-select, #911: mark
-// as read, pin, move to a section, archive) and its "N more unread above or
-// below" pills. Rules live in CompanionCore/HomeSelection.swift.
+// as read, pin, move to a section, archive, edit the selected bots' settings
+// at once) and its "N more unread above or below" pills. Rules live in
+// CompanionCore/HomeSelection.swift and CompanionCore/BulkBotEdit.swift.
 import CompanionCore
 import SwiftUI
 
@@ -9,6 +10,8 @@ final class HomeSelectionModel: ObservableObject {
     @Published private(set) var active = false
     @Published private(set) var ids: [String] = []
     @Published var confirmingArchive = false
+    /// Edit N bots (BulkEditBotsSheet) is open.
+    @Published var editing = false
 
     func begin(_ botId: String) {
         active = true
@@ -28,6 +31,7 @@ final class HomeSelectionModel: ObservableObject {
         active = false
         ids = []
         confirmingArchive = false
+        editing = false
     }
 }
 
@@ -71,6 +75,12 @@ struct HomeSelectionBar: View {
                 .disabled(selected.isEmpty)
                 .accessibilityLabel(Text("Move \(selected.count) bots to a section"))
             }
+            Button { model.editing = true } label: { barIcon("slider.horizontal.3").foregroundStyle(Theme.textPrimary) }
+                .buttonStyle(.plain)
+                .disabled(selected.isEmpty)
+                .opacity(selected.isEmpty ? 0.35 : 1)
+                .accessibilityLabel(Text("Edit \(selected.count) bots"))
+                .accessibilityIdentifier("selection-edit")
             barButton("Archive", "archivebox", enabled: !archivable.isEmpty) { model.confirmingArchive = true }
             barButton("Clear selection", "xmark", enabled: true) { model.clear() }
         }
@@ -82,6 +92,9 @@ struct HomeSelectionBar: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(Text("Actions on the selected bots"))
         .accessibilityIdentifier("selection-bar")
+        .sheet(isPresented: $model.editing) {
+            BulkEditBotsSheet(botIds: selected.map(\.id))
+        }
         .confirmationDialog(
             String(localized: "Archive \(archivable.count) selected bots?"),
             isPresented: $model.confirmingArchive, titleVisibility: .visible

@@ -7,6 +7,22 @@
 import CompanionCore
 import SwiftUI
 
+/// An MCP server's name, and why it cannot be mounted when it is switched
+/// off (also Edit N bots' Access).
+struct McpServerLabel: View {
+    let server: MCPServerListing
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(verbatim: server.name).font(Theme.mono(13)).foregroundStyle(Theme.textPrimary)
+            if server.enabled == false {
+                Text(String(localized: "Switched off under Plugins. Test it and turn it on there first."))
+                    .font(.system(size: 11.5)).foregroundStyle(Theme.textSecondary)
+            }
+        }
+    }
+}
+
 struct BotAccessSection: View {
     @Environment(\.themePalette) var themePalette
     let bot: Bot
@@ -44,13 +60,7 @@ struct BotAccessSection: View {
                 let mounted = Set(AccessRules.mounted(servers, own: current.mcpServers).map(\.name))
                 ForEach(servers) { server in
                     HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(verbatim: server.name).font(Theme.mono(13)).foregroundStyle(Theme.textPrimary)
-                            if server.enabled == false {
-                                Text(String(localized: "Switched off under Plugins. Test it and turn it on there first."))
-                                    .font(.system(size: 11.5)).foregroundStyle(Theme.textSecondary)
-                            }
-                        }
+                        McpServerLabel(server: server)
                         Spacer(minLength: 8)
                         if editsServers {
                             Toggle(isOn: Binding(get: { mounted.contains(server.name) }, set: { _ in

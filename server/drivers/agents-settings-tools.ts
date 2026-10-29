@@ -7,7 +7,7 @@ export const SETTINGS_TOOL_DEFINITIONS = [
   {
     name: "sagax_settings",
     description:
-      "Read or change any Sagax setting for the person you speak with, with their rights: bots, conversations, routines, groups, teams, rules, account, appearance, notifications, models, connections, vault, server, organization, and what lives only in their open app (desktop or iPhone). list (optional family) gives the keys, get reads, set changes. Their own things (bots, routines, vault, keys) change at once at Approve for me or Full; another person or the organization waits for their Allow. You never see a secret: set one by reference, {$secret: generate} or {$secret: copy, from, field}. A Primary Bot the person asks now (levels, rules) passes quote, their words: it runs at once. Try before saying you cannot.",
+      "Read or change any Sagax setting for the person you speak with, with their rights: bots, conversations, routines, groups, teams, rules, account, appearance, notifications, models, connections, vault, server, organization, and what lives only in their open app. list (optional family) gives the keys, get reads, set changes. Their own things (bots, routines, vault, keys) change at once at Approve for me or Full; another person or the organization waits for their Allow. You never see a secret: set one by reference, {$secret: generate} or {$secret: copy, from, field}. A Primary Bot the person asks now (levels, rules) passes quote, their words: it runs at once. Try before saying you cannot.",
     inputSchema: {
       type: "object",
       additionalProperties: false,
@@ -15,7 +15,7 @@ export const SETTINGS_TOOL_DEFINITIONS = [
         action: { type: "string", enum: ["list", "get", "set"] },
         family: { type: "string", description: "list: bot, thread, routine, group, section, rules, account, appearance, notifications, models, connections, credentials, server, organization, computer, device." },
         key: { type: "string", maxLength: 64, description: "From list, e.g. bot.approvalMode." },
-        target: { type: "string", maxLength: 200, description: "Id of the bot, conversation, routine, group, team, rule, engine or vault item; default you or this conversation." },
+        target: { type: "string", maxLength: 900, description: "Id of the bot (several: a,b), conversation, routine, group, team, rule, engine or vault item; default you or this conversation." },
         value: { description: "The new value (set)." },
         quote: { type: "string", maxLength: 600 },
       },

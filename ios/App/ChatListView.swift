@@ -1357,6 +1357,8 @@ extension ChatListView {
             guard let first = ids.first else { return }
             selection.begin(first)
             ids.dropFirst().forEach { selection.toggle($0) }
+            // capture only: Edit N bots open on that selection
+            if ProcessInfo.processInfo.arguments.contains("-parity-bulk-edit") { selection.editing = true }
         }
         .task {
             switch ParityLaunch.current?.screen {

@@ -6,6 +6,9 @@ import { api } from "@/state/store";
 export const BotEditorContext = createContext<{
   request: typeof api;
   draft?: boolean;
+  /** Several existing bots at once (BulkEditBotsDialog): a draft whose
+   * wording speaks of the selected bots, not of a new one. */
+  bulk?: boolean;
   uploadAvatar?: (file: File) => Promise<string>;
 }>({ request: api });
 
