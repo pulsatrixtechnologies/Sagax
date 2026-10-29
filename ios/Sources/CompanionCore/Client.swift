@@ -1480,6 +1480,14 @@ public struct CompanionClient: Sendable {
         ).routine
     }
 
+    /// Rename only (2026-10-29): the PATCH carries the name and nothing else.
+    public func renameRoutine(id: String, name: String) async throws -> Routine {
+        try await send(
+            try makeRequest("PATCH", "/api/routines/\(id)", body: ["name": name]),
+            as: RoutineResponse.self
+        ).routine
+    }
+
     public func setRoutineEnabled(id: String, enabled: Bool) async throws -> Routine {
         try await send(
             try makeRequest("PATCH", "/api/routines/\(id)", body: ["enabled": enabled]),

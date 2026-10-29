@@ -13,7 +13,8 @@ import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useCaptionChrome, useMacInsetChrome } from "../DesktopCapabilities";
 import { RoutineEditor } from "../RoutinesPage";
-import { canSortRoutinesByPrefix, RoutineFolderList, type RoutineFolderControl } from "../routines/RoutineFolders";
+import { canManageRoutineFolders, RoutineFolderList, type RoutineFolderControl } from "../routines/RoutineFolders";
+import { RoutineTitle } from "../routines/RoutineRowMenu";
 import { ACTION_LABEL_MAIN, ActionBar, ActionButton, actionButtonClass } from "../ActionBar";
 import { canRunRoutineNow, routineRunInFlight, RunNowButton } from "../routines/RunNowButton";
 import { RoutineDetail } from "../routines/RoutineDetail";
@@ -24,14 +25,16 @@ import { ConnectedRunActivity, RoutineRunDetail } from "../routines/RoutineRunDe
 // the stylesheet makes no-drag (they were dead under the panel's drag strip
 // before), the shared round CIRCLE_BUTTON back control on the left, the panel
 // close control on the right, and the name centered.
-export function RoutineDetailHeader({ name, onBack, onClose }: { name: string; onBack: () => void; onClose: () => void }) {
+export function RoutineDetailHeader({ name, onBack, onClose, onRename }: { name: string; onBack: () => void; onClose: () => void; /** Double-click the title to rename (2026-10-29). */ onRename?: (name: string) => void }) {
   const { padClass } = useCaptionChrome();
   const { macInset, browser } = useMacInsetChrome();
   return <>
     {(macInset || browser) && <div className="content-topbar-strip" />}
     <div data-routine-detail-header className={cn("content-topbar relative flex h-12 shrink-0 items-center justify-between px-3", padClass)}>
       <button type="button" aria-label={t("botPanel.routines.back")} onClick={onBack} className={CIRCLE_BUTTON}><ChevronLeft size={18} strokeWidth={1.75} /></button>
-      <span className="pointer-events-none absolute inset-x-14 truncate text-center text-[14px] font-semibold text-ink">{name}</span>
+      {onRename
+        ? <span className="absolute inset-x-14 flex justify-center"><RoutineTitle name={name} editable onRename={onRename} className="truncate text-center text-[14px] font-semibold text-ink" /></span>
+        : <span className="pointer-events-none absolute inset-x-14 truncate text-center text-[14px] font-semibold text-ink">{name}</span>}
       <button type="button" aria-label={t("botPanel.routines.close")} title={t("botPanel.routines.close")} onClick={onClose} className={CIRCLE_BUTTON}><PanelRight size={18} strokeWidth={1.75} /></button>
     </div>
   </>;
@@ -125,6 +128,7 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
         name={detail.name}
         onBack={() => setDetailId(null)}
         onClose={() => { dispatch({ type: "toggleSettings", open: false }); dispatch({ type: "toggleComputer", open: false }); }}
+        onRename={detail.canEdit !== false ? (name) => { dispatch({ type: "routinePatched", routine: { ...detail, name } }); dispatch({ type: "updateRoutine", routineId: detail.id, patch: { name } }); } : undefined}
       />
       <RoutineDetail
         routine={detail}
@@ -173,13 +177,14 @@ export function RoutinesSection({ bot, routines, runs, defaultRunOn, grouped = f
     <div className="flex items-center gap-2">
       <CalendarClock size={16} className="text-ink-secondary" />
       <h2 className="min-w-0 flex-1 text-[13px] font-normal leading-[18px] text-ink-secondary">{t("computer.tab.routines")}</h2>
-      {canSortRoutinesByPrefix(routines, foldersServed) && <button type="button" data-routines-section-more="" aria-haspopup="menu" aria-label={sectionMenuLabel} title={sectionMenuLabel}
+      {canManageRoutineFolders(routines, foldersServed) && <button type="button" data-routines-section-more="" aria-haspopup="menu" aria-label={sectionMenuLabel} title={sectionMenuLabel}
         onClick={(event) => { const rect = event.currentTarget.getBoundingClientRect(); folderControl.current?.openSectionMenu({ x: rect.left, y: rect.bottom + 4 }, event.currentTarget); }}
         className="ui-icon-button"><MoreHorizontal size={15} /></button>}
       <button type="button" onClick={() => { setNewFolder(undefined); setEditing("new"); }} aria-label={t("computer.routines.create")} title={t("computer.routines.create")} className="ui-icon-button"><Plus size={15} /></button>
     </div>
     <RoutineFolderList controlRef={folderControl} bot={bot} routines={routines} viewerPrincipalId={state.config?.viewer?.principalId ?? null} runs={runs} loading={state.routinesLoadState === "loading" && routines.length === 0} error={state.routinesLoadState === "error"} onOpen={(routine) => setDetailId(routine.id)} grouped={grouped}
-      onCreateIn={(folder) => { setNewFolder(folder); setEditing("new"); }} />
+      onCreateIn={(folder) => { setNewFolder(folder); setEditing("new"); }}
+      onDuplicate={(routine) => setEditing({ copyOf: routine })} />
     {editing === "new" && <RoutineEditor key={`${bot.id}-new-${newFolder ?? ""}`} bots={[bot]} lockedBotId={bot.id} defaultRunOn={defaultRunOn} folder={newFolder} onClose={() => { setEditing(null); setNewFolder(undefined); }} />}
   </div>;
 }

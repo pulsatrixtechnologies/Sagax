@@ -11638,10 +11638,8 @@
   "routineFolders.sectionMenu": "Plus pour les routines",
   "routineFolders.newIn": "Nouvelle routine dans {name}",
   "routineFolders.rowMenu": "Plus pour {name}",
-  "routineFolders.moveTo": "Déplacer vers un dossier",
   "routineFolders.newFolder": "Nouveau dossier…",
   "routineFolders.newFolderLabel": "Nom du dossier",
-  "routineFolders.removeFrom": "Retirer du dossier",
   "routineFolders.rename": "Renommer",
   "routineFolders.renameLabel": "Nom du dossier",
   "routineFolders.moveUp": "Monter",
@@ -12029,5 +12027,9 @@
   "scheduleEditor.problem.noRuns": "Cet horaire n’a aucune exécution à venir. Choisissez une date qui existe.",
   "scheduleEditor.minutesN": "{count} minutes",
   "scheduleEditor.hour1": "1 heure",
-  "scheduleEditor.hoursN": "{count} heures"
+  "scheduleEditor.hoursN": "{count} heures",
+  "routines.menu.open": "Ouvrir",
+  "routines.rename.label": "Nom de la routine",
+  "routines.rename.empty": "Une routine doit avoir un nom.",
+  "routines.rename.hint": "Double-cliquer pour renommer"
 }

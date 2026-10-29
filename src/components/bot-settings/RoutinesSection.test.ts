@@ -116,9 +116,12 @@ describe("RoutinesSection", () => {
 
   // The "..." next to the + carries Sort by prefix for as long as a title starts
   // with [X], whether or not the banner was closed.
-  it("shows the section's more menu only while a title starts with a [Prefix]", () => {
+  // 2026-10-29: the section's "…" holds New folder (the row menu no longer
+  // moves routines), so it shows whenever the person may change them.
+  it("shows the section's more menu to a person who may change the routines", () => {
     expect(render([{ ...activeRoutine, name: "[Reports] Morning brief" }], [])).toContain("data-routines-section-more");
-    expect(render([activeRoutine], [])).not.toContain("data-routines-section-more");
+    expect(render([activeRoutine], [])).toContain("data-routines-section-more");
+    expect(render([{ ...activeRoutine, canEdit: false }], [])).not.toContain("data-routines-section-more");
   });
 
   // The bot panel lists each routine with its name and when it runs. Pause,

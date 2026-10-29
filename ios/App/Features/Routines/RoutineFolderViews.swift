@@ -3,7 +3,7 @@ import SwiftUI
 
 // Routine folders on the phone (2026-10-28, RoutineFolders.swift): the
 // folder header of a routine list (chevron, name, count, its menu), the
-// row's "Move to folder" menu, and the prompts they open (New folder, Rename,
+// row's folder choice (its swipe, or Folder in its menu), and the prompts they open (New folder, Rename,
 // Delete). Used by Automations / Threads & Routines and the bot panel's
 // Routines page. Whoever may change a bot's routines arranges its folders:
 // no admin right, the server is the judge.
@@ -203,58 +203,6 @@ struct RoutineFolderHeader: View {
         .font(.footnote.weight(.semibold))
         .foregroundStyle(Theme.textSecondary)
         .textCase(nil)
-    }
-}
-
-/// A row's "Move to folder" submenu: the bot's folders, New folder…, and
-/// Remove from folder when it sits in one. An older server without folders
-/// keeps the submenu, its New folder… disabled under "Available after the
-/// server update." (2026-10-28).
-struct RoutineFolderMoveMenu: View {
-    let routine: Routine
-    let folders: [String]
-    @ObservedObject var controller: RoutineFolderController
-    var supported = true
-    let move: (_ folder: String?) -> Void
-
-    var body: some View {
-        if supported { available } else { unavailable }
-    }
-
-    private var unavailable: some View {
-        Menu {
-            Text("Available after the server update.")
-            Button(String(localized: "New folder…"), systemImage: "folder.badge.plus") {}
-                .disabled(true)
-        } label: {
-            Label(String(localized: "Move to folder"), systemImage: "folder")
-        }
-        .accessibilityIdentifier("routine-move-folder.\(routine.name)")
-    }
-
-    private var available: some View {
-        Menu {
-            ForEach(folders, id: \.self) { folder in
-                let here = routine.folder.map { RoutineFolders.key($0) == RoutineFolders.key(folder) } ?? false
-                Button {
-                    move(folder)
-                } label: {
-                    if here { Label { Text(verbatim: folder) } icon: { Image(systemName: "checkmark") } }
-                    else { Text(verbatim: folder) }
-                }
-                .disabled(here)
-            }
-            if !folders.isEmpty { Divider() }
-            Button(String(localized: "New folder…"), systemImage: "folder.badge.plus") {
-                controller.askNewFolder(botId: routine.botId, moving: [routine.id])
-            }
-            if routine.folder?.isEmpty == false {
-                Button(String(localized: "Remove from folder"), systemImage: "folder.badge.minus") { move(nil) }
-            }
-        } label: {
-            Label(String(localized: "Move to folder"), systemImage: "folder")
-        }
-        .accessibilityIdentifier("routine-move-folder.\(routine.name)")
     }
 }
 

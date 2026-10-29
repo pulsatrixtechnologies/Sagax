@@ -3332,6 +3332,12 @@ final class Session: ObservableObject {
         catch { actionError = error.localizedDescription; return nil }
     }
 
+    func renameRoutine(_ routine: Routine, name: String) async -> Routine? {
+        guard let client, let clean = RoutineName.clean(name) else { return nil }
+        do { return try await client.renameRoutine(id: routine.id, name: clean) }
+        catch { actionError = error.localizedDescription; return nil }
+    }
+
     func setRoutineEnabled(_ routine: Routine, enabled: Bool) async -> Routine? {
         guard let client else { return nil }
         do { return try await client.setRoutineEnabled(id: routine.id, enabled: enabled) }

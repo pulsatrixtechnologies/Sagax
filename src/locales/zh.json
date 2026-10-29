@@ -2722,5 +2722,9 @@
   "task.sheet.status.waitingAnswer": "等待你的回答",
   "task.sheet.status.elapsed": "已进行 {duration}",
   "task.sheet.status.took": "用时 {duration}",
-  "task.sheet.details": "详细信息"
+  "task.sheet.details": "详细信息",
+  "routines.menu.open": "打开",
+  "routines.rename.label": "例程名称",
+  "routines.rename.empty": "例程需要名称。",
+  "routines.rename.hint": "双击以重命名"
 }

@@ -11638,10 +11638,8 @@
   "routineFolders.sectionMenu": "More for the routines",
   "routineFolders.newIn": "New routine in {name}",
   "routineFolders.rowMenu": "More for {name}",
-  "routineFolders.moveTo": "Move to folder",
   "routineFolders.newFolder": "New folder…",
   "routineFolders.newFolderLabel": "Folder name",
-  "routineFolders.removeFrom": "Remove from folder",
   "routineFolders.rename": "Rename",
   "routineFolders.renameLabel": "Folder name",
   "routineFolders.moveUp": "Move up",
@@ -12029,5 +12027,9 @@
   "scheduleEditor.problem.noRuns": "This schedule has no upcoming runs. Choose a date that exists.",
   "scheduleEditor.minutesN": "{count} minutes",
   "scheduleEditor.hour1": "1 hour",
-  "scheduleEditor.hoursN": "{count} hours"
+  "scheduleEditor.hoursN": "{count} hours",
+  "routines.menu.open": "Open",
+  "routines.rename.label": "Routine name",
+  "routines.rename.empty": "A routine needs a name.",
+  "routines.rename.hint": "Double-click to rename"
 }

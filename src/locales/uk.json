@@ -2438,5 +2438,9 @@
   "task.sheet.status.waitingAnswer": "Чекає на твою відповідь",
   "task.sheet.status.elapsed": "вже {duration}",
   "task.sheet.status.took": "за {duration}",
-  "task.sheet.details": "Деталі"
+  "task.sheet.details": "Деталі",
+  "routines.menu.open": "Відкрити",
+  "routines.rename.label": "Назва рутини",
+  "routines.rename.empty": "Рутина потребує назви.",
+  "routines.rename.hint": "Двічі клацніть, щоб перейменувати"
 }

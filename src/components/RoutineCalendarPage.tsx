@@ -47,6 +47,7 @@ import { useBotEditor } from "./bot-settings/BotEditorContext";
 import { pathForFile } from "@/components/ComposerAttachments";
 import { CalendarSidebar } from "@/components/routines/CalendarSidebar";
 import { RoutineList } from "@/components/routines/RoutineList";
+import { RoutineMenuPortal, routineRowActions, RoutineRowMenuItems, RoutineTitle } from "@/components/routines/RoutineRowMenu";
 import { PAGE_COLUMN, PAGE_FIELD_LABEL, PAGE_FILTER_RESET, PAGE_HEADER_BUTTON, PAGE_INDICATOR, PAGE_MENU_COUNT, PAGE_POPOVER, PAGE_SCROLL, PAGE_SELECT, PageFilters, PageHeader, PageHeading, PageMenu, PageMenuItem, PageMenuSeparator, PageSegment, PageTopStrip, useDismissMenus } from "@/components/content-page";
 import { RoutineLogs } from "@/components/routines/RoutineLogs";
 import { RoutineOwnerBadge, RoutineScopeBar } from "@/components/routines/RoutineScopeBar";
@@ -1781,7 +1782,9 @@ export function EventDetails({
             ? <button type="button" data-event-back onClick={goBack} aria-label={t("routineRun.back")} title={t("routineRun.back")} className="-ml-1.5 flex size-7 shrink-0 items-center justify-center rounded-full text-ink-secondary hover:bg-raised hover:text-ink"><ChevronLeft size={16} /></button>
             : <span className={cn("size-3.5 shrink-0 rounded", isCall ? "bg-[#6d7cff]" : "bg-accent")} />}
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[17px] font-semibold text-ink">{title}</div>
+            {routine && !showingRun && editable
+              ? <div className="flex min-w-0"><RoutineTitle name={routine.name} editable onRename={(name) => { dispatch({ type: "routinePatched", routine: { ...routine, name } }); dispatch({ type: "updateRoutine", routineId: routine.id, patch: { name } }); }} className="truncate text-[17px] font-semibold text-ink" /></div>
+              : <div className="truncate text-[17px] font-semibold text-ink">{title}</div>}
             {showingRun && <div className="text-[11.5px] text-ink-secondary">{t("routineDetail.runOf", { date: routineDateTime(run!.scheduledFor) })}</div>}
           </div>
           <button onClick={onClose} className="rounded-full p-2 text-ink-secondary hover:bg-raised hover:text-ink" aria-label={t("common.close")}><X size={17} /></button>
@@ -2061,6 +2064,21 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
       })
       .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
   };
+  // 2026-10-29: a routine's row menu in the list (right click, its "…"):
+  // Run now or Stop, Pause or Resume, Rename in place, Open, Duplicate, Delete.
+  const [rowMenu, setRowMenu] = useState<{ routine: Routine; x: number; y: number; trigger: HTMLElement } | null>(null);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const closeRowMenu = (focus = true) => {
+    const trigger = rowMenu?.trigger;
+    setRowMenu(null);
+    if (focus) requestAnimationFrame(() => trigger?.isConnected && trigger.focus());
+  };
+  const duplicateRoutine = (routine: Routine) => setEditor({ kind: "routine", at: routineEditorAt(routine), durationMinutes: routine.durationMinutes, botIds: [routine.botId], copyOf: routine });
+  const renameRoutine = (routine: Routine, name: string) => {
+    setRenamingId(null);
+    dispatch({ type: "routinePatched", routine: { ...routine, name } });
+    dispatch({ type: "updateRoutine", routineId: routine.id, patch: { name } });
+  };
   const openRoutine = (routine: Routine) => setSelected({ kind: "routine", id: routine.id, at: routine.nextRunAt ?? (routine.schedule.type === "once" ? routine.schedule.at : routine.schedule.type === "interval" ? routine.schedule.anchorAt : routine.schedule.type === "webhook" || routine.schedule.type === "event" ? Date.now() : routine.schedule.type === "cron" ? nextHour() : atLocalTime(Date.now(), routine.schedule.time)), durationMinutes: routine.durationMinutes, routine, run: null });
   // An upcoming row: the calendar moves to its next run, and its details open.
   const showUpcoming = (routine: Routine) => {
@@ -2292,7 +2310,17 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
       ) : scheduleView === "list" ? (
         <div className={PAGE_SCROLL}><div className={PAGE_COLUMN}>
           <PageHeading title={t("routines.title")} subtitle={t("routineCalendar.allSchedules")} />
-          <RoutineList routines={filteredRoutines} viewerPrincipalId={state.config?.viewer?.principalId ?? null} runs={scopedRuns} bots={state.bots} loading={(scoped.live ? state.routinesLoadState === "loading" : scoped.loading) && filteredRoutines.length === 0} error={scoped.live ? state.routinesLoadState === "error" : scoped.error} onOpen={openRoutine} onLogs={openLogs} />
+          <RoutineList routines={filteredRoutines} viewerPrincipalId={state.config?.viewer?.principalId ?? null} runs={scopedRuns} bots={state.bots} loading={(scoped.live ? state.routinesLoadState === "loading" : scoped.loading) && filteredRoutines.length === 0} error={scoped.live ? state.routinesLoadState === "error" : scoped.error} onOpen={openRoutine} onLogs={openLogs}
+            onRowMenu={(routine, at, trigger) => setRowMenu({ routine, x: at.x, y: at.y, trigger })}
+            renamingId={renamingId} onRenameStart={(routine) => setRenamingId(routine.id)} onRenameSave={renameRoutine} onRenameCancel={() => setRenamingId(null)} />
+          {rowMenu && <RoutineMenuPortal x={rowMenu.x} y={rowMenu.y} kind="row" label={rowMenu.routine.name} onClose={closeRowMenu}>
+            <RoutineRowMenuItems routine={rowMenu.routine} actions={routineRowActions({
+              routine: rowMenu.routine, bot: state.bots.find((bot) => bot.id === rowMenu.routine.botId), state, dispatch, close: closeRowMenu,
+              onOpen: () => openRoutine(rowMenu.routine),
+              onDuplicate: () => duplicateRoutine(rowMenu.routine),
+              onRename: () => setRenamingId(rowMenu.routine.id),
+            })} />
+          </RoutineMenuPortal>}
           {!routinesOnly && calls.some((call) => botFilter === "all" || call.botIds.includes(botFilter)) && <section className="space-y-2" aria-label={t("routineCalendar.scheduledCalls")}><h2 className="text-[15px] font-semibold text-ink">{t("routineCalendar.scheduledCalls")}</h2>{calls.filter((call) => botFilter === "all" || call.botIds.includes(botFilter)).map((call) => <button key={call.id} type="button" onClick={() => setSelected({ kind: "call", id: call.id, at: call.schedule.type === "once" ? call.schedule.at : atLocalTime(Date.now(), call.schedule.time), durationMinutes: call.durationMinutes, call })} className="flex w-full items-center gap-3 rounded-xl border border-hairline/40 bg-card p-4 text-left hover:bg-raised"><Video size={17} className="text-accent" /><span><span className="block text-[13px] font-medium text-ink">{call.name}</span><span className="mt-1 block text-[11.5px] text-ink-secondary">{scheduleLabel(call.schedule)}</span></span></button>)}</section>}
         </div></div>
       ) : (

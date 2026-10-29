@@ -14,6 +14,7 @@ import { Switch } from "../SettingsPrimitives";
 import { RoutineOwnerBadge } from "./RoutineScopeBar";
 import { GROUPED_CARD, GROUPED_ROW } from "@/lib/grouped-card";
 import { cn } from "@/lib/cn";
+import { RoutineNameInput } from "./RoutineRowMenu";
 
 const SUSPEND_REASON_KEYS = {
   person_out: "routines.suspendReason.person_out",
@@ -34,7 +35,7 @@ const UPCOMING_TONES = {
 } as const;
 
 
-export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, error, onOpen, onToggle, grouped = false, toggle = true, variant = "list", emptyText, onRowMenu, onRowDragStart, onRowStep, onOpenRunning, label }: {
+export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, error, onOpen, onToggle, grouped = false, toggle = true, variant = "list", emptyText, onRowMenu, onRowDragStart, onRowStep, onOpenRunning, label, renamingId, onRenameStart, onRenameSave, onRenameCancel }: {
   routines: Routine[];
   /** Slice 6: the signed-in person on an organization server. */
   viewerPrincipalId?: string | null;
@@ -70,6 +71,12 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
   onRowStep?: (routine: Routine, direction: -1 | 1) => void;
   /** The list's accessible name (a folder's name). */
   label?: string;
+  /** 2026-10-29: the routine whose name is being typed in place (its row
+   * menu's Rename, or F2 on the row). Enter saves, Escape cancels. */
+  renamingId?: string | null;
+  onRenameStart?: (routine: Routine) => void;
+  onRenameSave?: (routine: Routine, name: string) => void;
+  onRenameCancel?: () => void;
 }) {
   const upcoming = variant === "upcoming";
   const sorted = upcoming
@@ -122,9 +129,10 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
               } : undefined}
               onContextMenu={onRowMenu && !readOnly ? (event) => { event.preventDefault(); openMenu(routine, event.currentTarget, { x: event.clientX, y: event.clientY }); } : undefined}
               className={cn("group/routine", onRowDragStart && !readOnly && "cursor-grab select-none", grouped ? cn("flex items-center gap-2.5 hover:bg-hover", GROUPED_ROW, "py-1.5") : "flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-hover")}>
-              <button type="button" onClick={() => onOpen(routine)}
-                onKeyDown={(onRowMenu || onRowStep) && !readOnly ? (event: ReactKeyboardEvent<HTMLButtonElement>) => {
-                  if (onRowMenu && (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))) { event.preventDefault(); openMenu(routine, event.currentTarget); }
+              {renamingId === routine.id && onRenameSave ? <RoutineNameInput initial={routine.name} onSave={(name) => onRenameSave(routine, name)} onCancel={() => onRenameCancel?.()} /> : <button type="button" onClick={() => onOpen(routine)}
+                onKeyDown={(onRowMenu || onRowStep || onRenameStart) && !readOnly ? (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+                  if (onRenameStart && event.key === "F2") { event.preventDefault(); onRenameStart(routine); }
+                  else if (onRowMenu && (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))) { event.preventDefault(); openMenu(routine, event.currentTarget); }
                   else if (onRowStep && event.altKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) { event.preventDefault(); onRowStep(routine, event.key === "ArrowUp" ? -1 : 1); }
                 } : undefined}
                 aria-keyshortcuts={onRowMenu && !readOnly ? (onRowStep ? "Shift+F10 Alt+ArrowUp Alt+ArrowDown" : "Shift+F10") : undefined}
@@ -162,7 +170,7 @@ export function RoutineList({ routines, viewerPrincipalId, runs, bots, loading, 
                 )}
                 {/* 2026-10-26: runs only when something changes (shared/routine-watch.ts). */}
                 {routine.precheck?.kind === "watch" && <span className="mt-0.5 flex"><span data-routine-watch className="truncate rounded-md bg-inset px-1.5 text-[11.5px] leading-[18px] text-ink-secondary">{t("routineWatch.badge")}</span></span>}
-              </button>
+              </button>}
               {runningRun && <button type="button" data-routine-running aria-label={`${t("routines.status.running")}: ${routine.name}`} onClick={() => onOpenRunning!(routine, runningRun)}
                 className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-sm bg-transparent p-0 text-[12px] leading-4 text-ink-secondary hover:text-ink focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-2 focus-visible:outline-accent/60">
                 <span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-success motion-reduce:animate-none" />{t("routines.status.running")}
