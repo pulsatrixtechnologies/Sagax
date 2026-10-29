@@ -7,9 +7,17 @@ describe("offline web shell", () => {
 
   it("registers one shell worker and does not cache private API responses", () => {
     expect(page).toContain('navigator.serviceWorker.register("/sw.js")');
-    expect(worker).toContain('const CACHE = "sagax-shell-v1"');
+    expect(worker).toContain('const CACHE = "sagax-shell-v2"');
     expect(worker).toContain('url.pathname.startsWith("/api/")');
     expect(worker).toContain("event.request.method !== \"GET\"");
     expect(worker).toContain('cache.match("/index.html")');
+  });
+
+  it("never answers a published page or a sign-in with the shell, and never caches them (#1486)", () => {
+    const skip = worker.indexOf('url.pathname.startsWith("/pages/")');
+    expect(skip).toBeGreaterThan(0);
+    expect(worker).toContain('url.pathname.startsWith("/auth/")');
+    // the skip comes before the worker answers anything
+    expect(skip).toBeLessThan(worker.indexOf("event.respondWith"));
   });
 });

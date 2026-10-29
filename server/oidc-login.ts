@@ -3,7 +3,8 @@
 // SAGAX_IDENTITY=perspicax turns it on. The server then:
 //   - answers GET /auth/oidc/start (302 to the Perspicax authorize page) and
 //     GET /auth/oidc/callback (code exchange and id_token check in
-//     server/oidc-rp.ts, then a Sagax session cookie and 302 to /);
+//     server/oidc-rp.ts, then a Sagax session cookie and 302 to /, or back
+//     to a published page's reading link named by `return`, #1486);
 //     `fresh=1` on the start is "Sign in again": `prompt=login` and
 //     `max_age=0` at Perspicax. Any sign-in stamps the session's `authAt`
 //     only from the id_token's verified `auth_time` when it is recent
@@ -103,6 +104,13 @@ export interface IdentityDescriptor {
 
 /** The `return` a phone sign-in names to come back on sagax://pair. */
 export const PHONE_SAGAX_RETURN = "sagax";
+
+/** A web sign-in's return (2026-10-28, #1486): a published page's reading
+ * link on this server, a path only (never another origin), so a person who
+ * signs in from a page's link lands back on the page. Pure. */
+export function webPageReturn(value: string | null): string | null {
+  return value && /^\/pages\/view\/[A-Za-z0-9_.-]{1,200}$/.test(value) ? value : null;
+}
 
 /** The loopback return a desktop sign-in may name: http on 127.0.0.1 or
  * [::1], an explicit port, and one path segment of 32 to 128 URL-safe
@@ -597,11 +605,13 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
       // address that is not exactly a loopback listener, ends on /pair
       // (never on the address it named).
       // A phone names only its app's scheme (`return=sagax`).
+      // A web sign-in names only a published page's reading link (#1486).
       const rawReturn = url.searchParams.get("return");
       const returnTo = rawReturn === null ? undefined
         : client === "phone" ? (rawReturn === PHONE_SAGAX_RETURN ? rawReturn : null)
+        : client === "web" ? webPageReturn(rawReturn)
         : rawReturn === sagaxReturnLink(origin) ? rawReturn : validLoopbackReturn(rawReturn) ?? null;
-      if (returnTo === null || (returnTo && client !== "desktop" && client !== "phone")) {
+      if (returnTo === null) {
         log("oidc sign-in refused: a return address that is not this desktop's loopback listener");
         fail(res, "return");
         return true;
@@ -739,7 +749,8 @@ export function createOidcLoginRoutes(deps: OidcLoginDeps) {
       throw error;
     }
     deps.grants.bindSession(grantRef, issued.session.id);
-    redirect(res, "/", [
+    // back to the page whose link asked for the sign-in, else the app
+    redirect(res, client === "web" ? webPageReturn(returnTo ?? null) ?? "/" : "/", [
       serializeSessionCookie(deps.sessionCookie, issued.token, { secure, maxAgeSeconds: cookieMaxAgeSeconds(issued.session) }),
       clearBinding,
     ]);

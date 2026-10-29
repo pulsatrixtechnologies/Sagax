@@ -1,7 +1,7 @@
 // The installed web shell. Same-origin GET responses are kept so the page can
 // open again with no network. /api and anything that is not GET stay on the
 // network, so a cached shell never replays a private response.
-const CACHE = "sagax-shell-v1";
+const CACHE = "sagax-shell-v2";
 const SHELL = ["/", "/index.html", "/manifest.webmanifest", "/app-icon.svg"];
 
 self.addEventListener("install", (event) => {
@@ -16,6 +16,10 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== "GET" || url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/ws")) return;
+  // Published pages and sign-in are never the shell (#1486): a page's link,
+  // its frame and the sign-in redirects stay on the network, never cached
+  // (they carry tokens), never answered with the app.
+  if (url.pathname === "/pages" || url.pathname.startsWith("/pages/") || url.pathname.startsWith("/auth/")) return;
   event.respondWith((async () => {
     const cache = await caches.open(CACHE);
     try {

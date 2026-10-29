@@ -853,9 +853,11 @@ export class OidcRelyingParty {
     const client = purpose === "routines" ? "web" : options.client ?? "web";
     this.pending.set(state, {
       client,
-      // Only a desktop sign-in comes back to a loopback listener, and only a
-      // phone sign-in to its app's scheme (PHONE_SAGAX_RETURN).
-      ...((client === "desktop" || client === "phone") && options.returnTo ? { returnTo: options.returnTo } : {}),
+      // Only a desktop sign-in comes back to a loopback listener, only a
+      // phone sign-in to its app's scheme (PHONE_SAGAX_RETURN), and a web
+      // sign-in only to a published page's reading link on this server
+      // (2026-10-28, #1486; checked by server/oidc-login.ts webPageReturn).
+      ...(options.returnTo && (client === "desktop" || client === "phone" || purpose === "signin") ? { returnTo: options.returnTo } : {}),
       purpose,
       ...(expect ? { expect } : {}),
       state,

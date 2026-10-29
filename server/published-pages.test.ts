@@ -1230,3 +1230,30 @@ describe("suggested edits on a Markdown page (2026-10-28)", () => {
     expect((await call(handler, session("pr_reader"), "POST", `/api/pages/${md}/threads`, { anchor: ANCHOR, text: "", suggestion: "a augmenté" })).body).toMatchObject({ code: "bad_suggestion" });
   });
 });
+
+describe("a reader who is not signed in (#1486)", () => {
+  const signIn = (pages: PublishedPages, viewer: PageViewer): PublicPageOptions => ({ ...options(pages, viewer), signInPath: (path) => `/auth/oidc/start?client=web&return=${encodeURIComponent(path)}` });
+
+  it("an \"anyone with the link\" page opens without signing in", async () => {
+    const { pages } = store();
+    const { path } = published(pages, "link", "pr_owner");
+    const wrapper = await hit(signIn(pages, null), path);
+    expect(wrapper.status).toBe(200);
+    expect(wrapper.body).toContain("sagax-bar");
+  });
+
+  it("a page they may not read yet: the same 404, with a sign-in that comes back to this link", async () => {
+    const { pages } = store();
+    const { path } = published(pages, "org", "pr_owner");
+    const answer = await hit(signIn(pages, null), path);
+    expect(answer.status).toBe(404);
+    expect(answer.body).toContain(`href="/auth/oidc/start?client=web&amp;return=${encodeURIComponent(path)}"`);
+    // an unknown link reads the same: nothing says which pages exist
+    const unknown = await hit(signIn(pages, null), "/pages/view/nope");
+    expect(unknown.body).toContain("/auth/oidc/start?client=web&amp;return=%2Fpages%2Fview%2Fnope");
+    // a signed-in reader without access gets no sign-in link
+    expect((await hit(signIn(pages, { principalId: "pr_stranger", computerOwner: false }), path)).body).not.toContain("/auth/oidc/start");
+    // a one-person server has no web sign-in to offer
+    expect((await hit(options(pages, null), path)).body).not.toContain("/auth/oidc/start");
+  });
+});
