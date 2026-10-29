@@ -2,7 +2,8 @@
  * (the calendar, the list and the logs, with problem runs, paused routines and
  * the organization scope). Neutral fictional bots and routines; a mocked fetch
  * answers the page's reads so nothing connects. Not shipped in the app.
- * ?view=calendar|list|logs&width=<px>&height=<px>&lang=<code>&skin=<id> (pulsatrix: dark, pulsatrix-light: light) */
+ * ?view=calendar|list|logs&width=<px>&height=<px>&lang=<code>&skin=<id> (pulsatrix: dark, pulsatrix-light: light)
+ * &deleted=1 adds a past run of a routine deleted since (#1506). */
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -40,7 +41,12 @@ const run = (id: string, routineId: string, status: RoutineRun["status"], at: nu
   botId: routines.find((routine) => routine.id === routineId)!.botId!, runOn: "maus", scheduledFor: at, createdAt: at, status, manual: false,
   ...(status === "failed" ? { error: "The engine stopped" } : {}),
 } as RoutineRun);
+const deletedRun = {
+  id: "x5", routineId: "gone", routineName: "Quarterly cleanup", target: "bot", botId: "cirrus", runOn: "maus",
+  scheduledFor: NOW - 3 * H, createdAt: NOW - 3 * H, status: "completed", manual: false,
+} as RoutineRun;
 const runs = [
+  ...(params.get("deleted") === "1" ? [deletedRun] : []),
   run("x1", "r1", "failed", NOW - 20 * H),
   run("x2", "r2", "missed", NOW - 44 * H),
   run("x3", "r1", "completed", NOW - 4 * H),

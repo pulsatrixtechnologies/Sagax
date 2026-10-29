@@ -10634,6 +10634,7 @@
   "routineCalendar.resizeSeries": "Redimensionner toute cette série récurrente ?",
   "routineCalendar.openRoutineForCron": "Ouvrez cette routine pour modifier son horaire récurrent et son fuseau horaire.",
   "routineCalendar.teamGoalIn": "Objectif d'équipe · {name}",
+  "routineCalendar.deletedRoutine": "Routine supprimée",
   "routineCalendar.resizeEvent": "Redimensionner l'événement",
   "routineCalendar.calendarAria": "Calendrier des routines et des appels",
   "routineCalendar.dayCalendar": "Calendrier du {date}",

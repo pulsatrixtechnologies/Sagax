@@ -438,6 +438,14 @@ describe("calendar shows plans, not runs", () => {
     expect(items).toHaveLength(1);
     expect(items[0]?.run).toBeNull();
   });
+  it("keeps the past runs of a deleted routine under their own name (#1506)", () => {
+    const at = new Date(2026, 9, 19, 10, 0).getTime();
+    const run = (id: string, manual: boolean) => ({ id, routineId: "gone", routineName: "Weekly digest", target: "bot", botId: "b1",
+      runOn: "maus", scheduledFor: at, status: "completed", manual, createdAt: at }) as RoutineRun;
+    const items = scheduledRoutineItems([], [run("past", false), run("by-hand", true)], at - 1000, at + 1000);
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({ id: "deleted-past", routine: null, run: { id: "past", routineName: "Weekly digest" } });
+  });
   it("collapses a crowded half hour into one +N marker", () => {
     const at = new Date(2026, 9, 19, 10, 0).getTime();
     const mk = (id: string, off = 0) => ({ id, at: at + off, durationMinutes: 30 });
