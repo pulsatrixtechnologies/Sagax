@@ -185,3 +185,47 @@ describe("Reach me: back", () => {
     expect(await reach.handleReply({ channel: "telegram", person: "pr_a", text: "WXYA oui" })).toEqual({ handled: true, outcome: "rate_limited" });
   });
 });
+
+describe("Reach me: a notice (the background brief)", () => {
+  const NOTICE = { id: "brief-b1-1", person: "pr_a", botId: "b1", botName: "Cryptic", threadId: "t1", title: "Brief du jour : 2 points", lines: ["Trois factures, 3 en tout.", "Un rendez-vous mardi."] };
+
+  it("no choice saved: one push, no code, no other channel", async () => {
+    const { reach, sent, pushed, codes } = setup(null);
+    reach.notice(NOTICE);
+    reach.notice(NOTICE);
+    await reach.drain();
+    expect(sent).toEqual([]);
+    expect(pushed).toHaveLength(1);
+    expect(pushed[0]).toMatchObject({ kind: "message", personId: "pr_a", threadId: "t1", botId: "b1" });
+    expect(pushed[0]!.body).toContain("Trois factures");
+    expect(codes.list()).toEqual([]);
+  });
+
+  it("goes by the channels chosen for that bot, says nothing to answer, and skips one not ready", async () => {
+    const { reach, sent, pushed, audit } = setup({ ...SMS_AND_TELEGRAM, channels: ["sms", "telegram", "teams"] });
+    reach.notice(NOTICE);
+    await reach.drain();
+    expect(pushed).toEqual([]);
+    expect(sent.map((entry) => entry.channel)).toEqual(["sms", "telegram"]);
+    const text = composeReachText(sent[0]!.out);
+    expect(text).toContain("Brief du jour");
+    expect(text).toContain("- Trois factures");
+    expect(text).not.toMatch(/Répondez/);
+    expect(audit.filter((row) => row.action === "send_failed").map((row) => row.channel)).toEqual(["teams"]);
+  });
+
+  it("outside the person's hours it waits for the next range", async () => {
+    const night: ReachMeSettings = { channels: ["push", "sms"], smsNumber: "+15145550123", hours: { always: false, timeZone: "America/Toronto", ranges: [{ days: [0, 1, 2, 3, 4, 5, 6], start: "08:00", end: "18:00" }] } };
+    const { reach, sent, pushed, setNow } = setup(night, { now: Date.parse("2026-10-26T04:00:00Z") });
+    reach.notice(NOTICE);
+    await reach.drain();
+    expect(sent).toEqual([]);
+    expect(reach.deferredNoticeCount()).toBe(1);
+    setNow(Date.parse("2026-10-26T13:00:00Z"));
+    reach.tick();
+    await reach.drain();
+    expect(pushed).toHaveLength(1);
+    expect(sent.map((entry) => entry.channel)).toEqual(["sms"]);
+    expect(reach.deferredNoticeCount()).toBe(0);
+  });
+});
