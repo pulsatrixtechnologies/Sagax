@@ -25,6 +25,7 @@ import {
   installationServerName,
   kilobytes,
   orderedCapabilities,
+  personalPluginKey,
   reasonText,
   receivedGroups,
   receiptWords,
@@ -37,7 +38,7 @@ import {
   type BotCapabilities,
   type Capability,
 } from "@/lib/capabilities";
-import { setPluginEnabled } from "@/lib/my-connections";
+import { PERSONAL_PLUGIN_TARGET, setPluginEnabled } from "@/lib/my-connections";
 import { loadMcpServers } from "@/lib/mcp-servers";
 import { Switch } from "../SettingsPrimitives";
 import { botServersAfter } from "../plugins/BotsForView";
@@ -67,6 +68,8 @@ export function CapabilitiesTab({ bot }: { bot: Bot }) {
   };
 
   const toggle = (item: Capability, next: boolean) => {
+    const personal = personalPluginKey(item);
+    if (personal) return void run(item.key, () => setPluginEnabled(PERSONAL_PLUGIN_TARGET, personal, next));
     const plugin = botPluginKey(item);
     if (plugin) return void run(item.key, () => setPluginEnabled(bot.id, plugin, next));
     const server = installationServerName(item);
@@ -89,6 +92,9 @@ export function CapabilitiesTab({ bot }: { bot: Bot }) {
       });
     }
     const name = skillName(item);
+    if (name && item.scope === "me") return void run(item.key, () => api(`/api/me/skills-library/${encodeURIComponent(name)}`, {
+      method: "PATCH", body: JSON.stringify({ enabled: next }),
+    }));
     const skill = name ? skills.skills.find((entry) => entry.name === name) : undefined;
     // switching a skill on goes through its review (SkillReviewDialog)
     if (skill) return void run(item.key, () => skills.toggle(skill));
@@ -101,8 +107,9 @@ export function CapabilitiesTab({ bot }: { bot: Bot }) {
 
   const switchable = (item: Capability): boolean => {
     if (!item.canToggle) return false;
-    if (botPluginKey(item) || installationServerName(item) || roleProfileId(item)) return true;
+    if (personalPluginKey(item) || botPluginKey(item) || installationServerName(item) || roleProfileId(item)) return true;
     const name = skillName(item);
+    if (name && item.scope === "me") return true;
     return Boolean(name && skills.skills.some((entry) => entry.name === name));
   };
 

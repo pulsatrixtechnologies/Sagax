@@ -114,16 +114,16 @@ describe("Mes connexions and apps.ownIntegrations", () => {
   });
 });
 
-describe("a bot's plugins and apps.ownIntegrations", () => {
+describe("a bot's own plugins do not require an organization permission", () => {
   type Bot = { id: string; owner: string };
   const BOTS: Record<string, Bot> = { scout: { id: "scout", owner: "pr_rita" } };
-  function pluginRoutes(denied: Set<string>, calls: string[]): RouteHandler {
+  function pluginRoutes(_denied: Set<string>, calls: string[]): RouteHandler {
     const plugins = {
       listMarketplaces: () => [],
       listPlugins: () => [{ key: "reviewer@acme-tools", name: "reviewer", marketplace: "acme-tools", enabled: true }],
       addMarketplace: async () => { calls.push("market"); return { name: "acme-tools", source: "acme/tools", plugins: [] }; },
       updateMarketplace: async () => { calls.push("update"); return { name: "acme-tools" }; },
-      removeMarketplace: async () => { calls.push("rmm"); },
+      removeMarketplace: async () => { calls.push("rmm"); return { sharedRemoved: false }; },
       install: async () => { calls.push("install"); return { key: "reviewer@acme-tools", removed: [] }; },
       setEnabled: () => { calls.push("toggle"); return {}; },
       uninstall: async () => { calls.push("uninstall"); },
@@ -135,18 +135,17 @@ describe("a bot's plugins and apps.ownIntegrations", () => {
       // the owner changes them
       mayChange: (auth, bot) => auth.kind === "session" && auth.session.principalId === bot.owner,
       actor: (auth) => (auth.kind === "session" ? auth.session.principalId : undefined),
-      ownIntegrationsRefusal: refusalFor(denied),
       policy: () => undefined,
       engineLoadsPlugins: () => true,
     });
   }
 
-  it("without the permission: read-only on their own bot, every change refused", async () => {
+  it("without an organization permission: the owner manages their own bot", async () => {
     const calls: string[] = [];
     const base = await serve([pluginRoutes(new Set(["pr_rita"]), calls)], member("pr_rita"));
     const listed = await send(base, "GET", "/api/bots/scout/plugins");
     expect(listed.status).toBe(200);
-    expect(listed.body.canChange).toBe(false);
+    expect(listed.body.canChange).toBe(true);
     expect(listed.body.managedByAdmin).toBeUndefined();
     expect((listed.body.plugins as unknown[]).length).toBe(1);
     for (const [method, path, body] of [
@@ -158,10 +157,10 @@ describe("a bot's plugins and apps.ownIntegrations", () => {
       ["DELETE", "/api/bots/scout/plugins/reviewer@acme-tools", undefined],
     ] as const) {
       const refused = await send(base, method, path, body);
-      expect(refused.status, `${method} ${path}`).toBe(403);
-      expect(refused.body.permission).toBe("apps.ownIntegrations");
+      expect(refused.status, `${method} ${path}`).toBeLessThan(400);
+      expect(refused.body.permission).toBeUndefined();
     }
-    expect(calls).toEqual([]);
+    expect(calls).toEqual(["market", "update", "rmm", "install", "toggle", "uninstall"]);
   });
 
   it("with the permission: the owner adds a marketplace and installs without an admin", async () => {

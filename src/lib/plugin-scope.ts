@@ -1,15 +1,10 @@
-// Connect apps installs a marketplace plugin in one of two scopes, from the
-// one marketplace list (server/plugin-marketplaces.ts):
-//   - "workspace": for everyone, its MCP servers and skills
-//     (/api/marketplaces/:name/plugins/:plugin, the workspace's managers);
-//   - "bot": for one bot, the whole plugin with its agents and commands
-//     (/api/bots/:id/plugins, the bot's owner or a person who manages it).
-// The bot scope is offered when a bot is in reach: the one a bot panel sent
-// the person here with, else the conversation open behind the panel.
+// One marketplace catalog, three independent capability scopes:
+// workspace (Organization), me (the person's encrypted references), and
+// bot (one bot). Every scope installs the whole sanitized plugin.
 import type { BotPluginsView, InstalledPlugin, PluginContents } from "./my-connections";
 import type { MarketplaceCredentialView } from "../../shared/github-credentials";
 
-export type PluginScope = "workspace" | "bot";
+export type PluginScope = "workspace" | "me" | "bot";
 
 /** The bot the "For this bot" scope is about, if any. */
 export function pluginScopeBot<B extends { id: string }>(input: { pluginsBotId: string | null; selectedId: string; bots: readonly B[] }): B | null {
@@ -19,7 +14,7 @@ export function pluginScopeBot<B extends { id: string }>(input: { pluginsBotId: 
 
 /** Opened from a bot (its panel): that bot's scope first. */
 export function initialPluginScope(pluginsBotId: string | null, bot: { id: string } | null): PluginScope {
-  return pluginsBotId && bot?.id === pluginsBotId ? "bot" : "workspace";
+  return pluginsBotId && bot?.id === pluginsBotId ? "bot" : "me";
 }
 
 /** The panel's marketplace rows for the bot scope: installed means on this
@@ -84,7 +79,8 @@ export function botPluginState(view: BotPluginsView | null, id: string): BotPlug
  * the workspace's routes for its managers, else the bot's own for a person
  * who may change that bot's plugins (a member's marketplace joins the one
  * list; removing it from a bot takes only that bot's plugins). */
-export function marketplaceRoute(input: { workspaceManager: boolean; scope: PluginScope; botView: BotPluginsView | null }): "workspace" | "bot" | null {
+export function marketplaceRoute(input: { workspaceManager: boolean; scope: PluginScope; botView: BotPluginsView | null; personalView?: BotPluginsView | null }): PluginScope | null {
+  if (input.scope === "me") return input.personalView?.canChange ? "me" : null;
   if (input.scope === "bot" && input.botView?.canChange) return "bot";
   if (input.workspaceManager) return "workspace";
   return input.botView?.canChange ? "bot" : null;
@@ -96,7 +92,7 @@ export function marketplaceRoute(input: { workspaceManager: boolean; scope: Plug
  * installation's (`/api/marketplaces/:name/credential`, the workspace's
  * managers). After a pick the marketplace is fetched again with it. */
 export function marketplaceCredentialControls<L>(deps: {
-  route: "bot" | "workspace";
+  route: PluginScope;
   botId?: string;
   api: (path: string, init: { method: string; body?: string; timeoutMs?: number }) => Promise<{ marketplaces?: L[] }>;
   run: (busy: string, work: () => Promise<unknown>) => Promise<boolean>;
@@ -104,12 +100,12 @@ export function marketplaceCredentialControls<L>(deps: {
   botLoaded?: (view: BotPluginsView) => void | Promise<void>;
   /** the workspace's listing after the pick */
   loaded?: (marketplaces: L[]) => void;
-}): { scope: "bot" | "workspace"; onChoose: (name: string, credential: string | null) => Promise<boolean> } {
+}): { scope: PluginScope; onChoose: (name: string, credential: string | null) => Promise<boolean> } {
   const name = (value: string) => encodeURIComponent(value);
-  if (deps.route === "bot" && deps.botId) {
-    const base = `/api/bots/${encodeURIComponent(deps.botId)}/plugins/marketplaces`;
+  if (deps.route === "me" || (deps.route === "bot" && deps.botId)) {
+    const base = deps.route === "me" ? "/api/me/plugins/marketplaces" : `/api/bots/${encodeURIComponent(deps.botId!)}/plugins/marketplaces`;
     return {
-      scope: "bot",
+      scope: deps.route,
       onChoose: (market, credential) => deps.run(`refresh:${market}`, async () => {
         await deps.api(`${base}/${name(market)}/credential`, { method: "PUT", body: JSON.stringify({ credential }) });
         const view = await deps.api(`${base}/${name(market)}/update`, { method: "POST", timeoutMs: 180_000 }) as unknown as BotPluginsView;

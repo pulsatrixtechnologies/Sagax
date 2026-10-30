@@ -28,8 +28,8 @@ describe("plugin scope", () => {
 
   it("opens on the bot's scope only when a bot panel asked for it", () => {
     expect(initialPluginScope("rex", { id: "rex" })).toBe("bot");
-    expect(initialPluginScope(null, { id: "maya" })).toBe("workspace");
-    expect(initialPluginScope("rex", null)).toBe("workspace");
+    expect(initialPluginScope(null, { id: "maya" })).toBe("me");
+    expect(initialPluginScope("rex", null)).toBe("me");
   });
 
   it("reads the one marketplace list with installed meaning on this bot, linking nothing of the workspace", () => {
@@ -53,6 +53,12 @@ describe("plugin scope", () => {
     // an update is only ever about an install
     expect(market.plugins[1]!.updateAvailable).toBeUndefined();
     expect(botScopeMarketplaces(view)[0]!.hasToken).toBeUndefined();
+  });
+
+
+  it("uses only the person's endpoint for Me, even for a workspace manager", () => {
+    expect(marketplaceRoute({ workspaceManager: true, scope: "me", botView: view, personalView: view })).toBe("me");
+    expect(marketplaceRoute({ workspaceManager: true, scope: "me", botView: view, personalView: null })).toBeNull();
   });
 
   it("finds a plugin row's state on the bot", () => {

@@ -39,6 +39,7 @@ import { z } from "zod";
 import { writeFileAtomic } from "./atomic.ts";
 import { guardedFetch } from "./public-fetch.ts";
 import { personalMcpHostRefusal } from "./person-connections.ts";
+import { readPluginMcpServers } from "./plugin-mcp.ts";
 import {
   BotPluginError,
   insideRoot,
@@ -194,72 +195,9 @@ export interface PluginInstallPlan {
 type Json = Record<string, unknown>;
 const record = (value: unknown): Json | null => (value && typeof value === "object" && !Array.isArray(value) ? value as Json : null);
 
-function readJson(file: string): Json | null {
-  try {
-    if (!existsSync(file) || statSync(file).size > MAX_MANIFEST_BYTES) return null;
-    return record(JSON.parse(readFileSync(file, "utf8")));
-  } catch {
-    return null;
-  }
-}
-
-/** `${CLAUDE_PLUGIN_ROOT}` points at the plugin's own folder on this disk. */
-function withPluginRoot(value: unknown, root: string): unknown {
-  if (typeof value === "string") return value.replaceAll("${CLAUDE_PLUGIN_ROOT}", root);
-  if (Array.isArray(value)) return value.map((item) => withPluginRoot(item, root));
-  const object = record(value);
-  if (object) return Object.fromEntries(Object.entries(object).map(([key, item]) => [key, withPluginRoot(item, root)]));
-  return value;
-}
-
-/** The keys a stored server may carry, from a Claude Code style entry. */
-function storedShape(entry: Json): Json | null {
-  if (typeof entry.url === "string") {
-    const type = entry.type === "sse" ? "sse" : "http";
-    return { type, url: entry.url, ...(record(entry.headers) ? { headers: entry.headers } : {}) };
-  }
-  if (typeof entry.command === "string") {
-    return {
-      command: entry.command,
-      ...(Array.isArray(entry.args) ? { args: entry.args.filter((arg) => typeof arg === "string") } : {}),
-      ...(record(entry.env) ? { env: entry.env } : {}),
-    };
-  }
-  return null;
-}
-
 /** Read one plugin folder into an install plan. */
 export function pluginInstallPlan(root: string): PluginInstallPlan {
-  const plan: PluginInstallPlan = { servers: [], skills: [], skipped: [] };
-  const blocks: Json[] = [];
-  const mcpJson = readJson(join(root, ".mcp.json"));
-  if (mcpJson) blocks.push(record(mcpJson.mcpServers) ?? mcpJson);
-  const manifest = readJson(join(root, ".claude-plugin", "plugin.json"));
-  if (manifest) {
-    if (record(manifest.mcpServers)) blocks.push(record(record(manifest.mcpServers)!.mcpServers) ?? record(manifest.mcpServers)!);
-    else if (typeof manifest.mcpServers === "string") {
-      try {
-        const file = readJson(insideRoot(root, manifest.mcpServers));
-        if (file) blocks.push(record(file.mcpServers) ?? file);
-      } catch {
-        plan.skipped.push(`mcpServers path ${manifest.mcpServers}`);
-      }
-    }
-  }
-  const seen = new Set<string>();
-  for (const block of blocks) {
-    for (const [name, raw] of Object.entries(block)) {
-      if (seen.has(name)) continue;
-      const entry = record(raw);
-      const shape = entry ? storedShape(record(withPluginRoot(entry, root))!) : null;
-      if (!shape) {
-        plan.skipped.push(`MCP server ${name}`);
-        continue;
-      }
-      seen.add(name);
-      plan.servers.push({ name, entry: shape });
-    }
-  }
+  const plan: PluginInstallPlan = { ...readPluginMcpServers(root), skills: [] };
   const skillsDir = join(root, "skills");
   if (existsSync(skillsDir) && statSync(skillsDir).isDirectory()) {
     for (const folder of readdirSync(skillsDir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {

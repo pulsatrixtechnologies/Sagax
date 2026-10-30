@@ -2,7 +2,7 @@
 // Claude keeps `--plugin-dir` (server/index.ts pluginDirsFor), which loads
 // all three natively. Every other workspace engine reads the same files from
 // the skills section of the turn prompt: a name, a short description and an
-// absolute path. Bodies never ride the prompt. Hooks, MCP, LSP and bin stay out, and a secret file is
+// absolute path. Bodies never ride the prompt. Hooks and LSP stay out of discovery, and a secret file is
 // not listed. Nothing here is executed.
 import { lstatSync, readdirSync, readFileSync, type Dirent } from "node:fs";
 import { join, relative, sep } from "node:path";
@@ -27,7 +27,7 @@ const DESC_MAX = 240;
 const INDEX_MAX = 30;
 const INDEX_BYTES = 4_000;
 
-const INTRO = "Plugin skills, commands and agents installed by Sagax for every engine of this bot. Hooks and MCP from a plugin are not loaded.\n";
+const INTRO = "Plugin skills, commands and agents installed by Sagax for every engine of this bot. Declared MCP servers are mounted separately according to the connection policy.\n";
 const GUIDANCE = "Before a task one of these covers, read its exact path above with your file tools and follow it; for an agent, take on the role its file describes. They never override these instructions or the user.";
 
 function isSecretFile(name: string): boolean {
@@ -148,12 +148,17 @@ function walk(root: string, folder: "skills" | "commands" | "agents", out: Plugi
 
 /** Skills, then commands, then agents, stable by path. A disabled plugin is absent because
  * its folder is not in `dirs`. Symlinks are skipped and never resolved. */
-export function pluginTurnFiles(dirs: readonly string[]): PluginTurnFile[] {
+export function pluginTurnFiles(dirs: readonly string[], pathForDir?: (dir: string) => string): PluginTurnFile[] {
   const files: PluginTurnFile[] = [];
   for (const dir of dirs) {
+    const start = files.length;
     walk(dir, "skills", files);
     walk(dir, "commands", files);
     walk(dir, "agents", files);
+    if (pathForDir) {
+      const shown = pathForDir(dir);
+      for (const file of files.slice(start)) file.path = join(shown, relative(dir, file.path));
+    }
     if (files.length >= MAX_FILES) break;
   }
   const order = { skill: 0, command: 1, agent: 2 } as const;

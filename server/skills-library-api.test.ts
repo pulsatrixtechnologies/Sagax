@@ -46,6 +46,7 @@ describe("skills library routes through an isolated HTTP fixture", () => {
   });
 
   it("hides every library route while the flag is off and keeps the per-bot response shape", async () => {
+    expect((await api("PATCH", "/api/config", { features: { skillsLibrary: false } })).status).toBe(200);
     expect((await api("GET", "/api/skills-library")).status).toBe(404);
     expect((await api("PUT", `/api/bots/${botId}/skills-library`, { skills: ["order-audit"] })).status).toBe(404);
     const legacy = await api("GET", `/api/bots/${botId}/skills`);

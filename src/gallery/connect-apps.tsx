@@ -184,6 +184,10 @@ const MANAGE_API: Record<string, unknown> = {
   "/api/team-library/xai": { label: "xAI Bot Marketplace", url: "https://x.ai/bot/marketplace", fetchedAt: 1, bots: [] },
 };
 
+// The same contract, with independent state for the person's Me scope.
+MANAGE_API["/api/me/plugins"] = { ...(MANAGE_API["/api/bots/bot-a/plugins"] as object) };
+MANAGE_API["/api/me/skills-library"] = MANAGE_API["/api/skills-library"];
+
 if (["manage", "org-settings", "settings-subpage"].includes(params.get("view") ?? "manage")) {
   const realFetch = window.fetch.bind(window);
   window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {

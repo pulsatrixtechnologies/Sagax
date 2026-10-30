@@ -42,7 +42,6 @@ export interface BotPluginRouteDeps<B extends { id: string }> {
   mayShareOrgWide?: (auth: RequestAuth) => boolean;
   /** The 403 body when this caller lacks `apps.ownIntegrations` (never an
    * organization admin), else null. Absent: never refused. */
-  ownIntegrationsRefusal?: (auth: RequestAuth) => Record<string, unknown> | null;
   /** May remove a marketplace from the one list (the workspace's managers). */
   mayManageMarketplaces?: (auth: RequestAuth) => boolean;
   policy: () => MarketplacePolicy | undefined;
@@ -73,7 +72,6 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
     const bot = deps.bot(botId!);
     if (!bot || !deps.mayRead(auth, bot)) return json(res, 404, { error: "no such bot" });
     res.setHeader("cache-control", "private, no-store");
-    const integrationsRefusal = deps.ownIntegrationsRefusal?.(auth) ?? null;
     const marketViewer = deps.viewer?.(auth) ?? { seesAll: true };
     /** A private marketplace that is not this viewer's does not exist to them. */
     const marketplaceUnreachable = (marketName: string) =>
@@ -83,13 +81,12 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
       plugins: deps.plugins.listPlugins(bot.id),
       policy: deps.policy() ?? { mode: "any" },
       engine: { loadsPlugins: deps.engineLoadsPlugins(bot) },
-      canChange: !integrationsRefusal && deps.mayChange(auth, bot),
+      canChange: deps.mayChange(auth, bot),
     });
     if (!section && !key) {
       if (method !== "GET") return json(res, 405, { error: "GET only" });
       return json(res, 200, listing());
     }
-    if (integrationsRefusal) return json(res, 403, integrationsRefusal);
     if (!deps.mayChange(auth, bot)) return json(res, 403, { error: "Only the bot's owner, or someone who manages it, can change its plugins.", code: "plugins_owner_only" });
     const body = method === "DELETE" || update === "update" ? null : await (async () => {
       if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) return undefined;
@@ -177,5 +174,26 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
       }
       throw error;
     }
+  };
+}
+
+/** The same complete installer for "Me". Its target comes exclusively
+ * from the signed-in caller; no bot or person id in the URL/body can
+ * select someone else's encrypted store. */
+export function createPersonalPluginRoutes(deps: Omit<BotPluginRouteDeps<{ id: string }>, "bot" | "mayRead" | "mayChange" | "engineLoadsPlugins"> & {
+  person: (auth: RequestAuth) => string | null;
+}): RouteHandler {
+  return async (context) => {
+    if (!/^\/api\/me\/plugins(?:\/|$)/.test(context.path)) return PASS;
+    const person = deps.person(context.auth);
+    if (!person) return context.json(context.res, 403, { error: "Sign in to manage your own capabilities.", code: "person_required" });
+    const handler = createBotPluginRoutes({
+      ...deps,
+      bot: (id) => id === "me" ? { id: person } : undefined,
+      mayRead: () => true,
+      mayChange: () => true,
+      engineLoadsPlugins: () => true,
+    });
+    return handler({ ...context, path: `/api/bots/me/plugins${context.path.slice("/api/me/plugins".length)}` });
   };
 }

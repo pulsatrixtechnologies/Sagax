@@ -160,6 +160,11 @@ export function botPluginKey(item: Pick<Capability, "key" | "form" | "scope">): 
   return item.form === "plugin" && item.scope === "bot" && item.key.startsWith("plugin:bot:") ? item.key.slice("plugin:bot:".length) : null;
 }
 
+/** The person's plugin is shared by all of their bots, never this bot's copy. */
+export function personalPluginKey(item: Pick<Capability, "key" | "form" | "scope">): string | null {
+  return item.form === "plugin" && item.scope === "me" && item.key.startsWith("plugin:me:") ? item.key.slice("plugin:me:".length) : null;
+}
+
 /** The server name of an installation MCP row (`mcp:installation:<name>`). */
 export function installationServerName(item: Pick<Capability, "key" | "form" | "scope">): string | null {
   return item.form === "mcp" && item.scope === "installation" && item.key.startsWith("mcp:installation:") ? item.key.slice("mcp:installation:".length) : null;
