@@ -630,4 +630,26 @@ describe("voice mode with OpenAI and ElevenLabs (2026-10-29)", () => {
     const out = await call({ method: "POST", path: "/api/bots/b-quasar/voice/speak", body: { text: "Hi", tts: "openai", voice: "../etc" } });
     expect(out.status).toBe(400);
   });
+
+  it("hears with OpenAI when the person picks it, and falls back on xAI when it fails", async () => {
+    const transcribe = vi.fn(async (_audio: Uint8Array, _mime: string, _key: string) => ({ text: "Bonjour Cryptic" }));
+    const notices: string[] = [];
+    const { call, xai, usage } = harness({
+      openai: { transcribe, synthesize: async () => ({ bytes: new Uint8Array([1]), mime: "audio/mpeg" }) },
+      providerKeys: (provider) => (provider === "openai" ? [{ key: OPENAI_KEY, via: "speaker-key", source: "voice-key", last4: "8Qq", payerPrincipalId: "p-ada" }] : []),
+      preference: () => ({ voice: "", speed: 1, language: "auto", stt: "openai" }),
+      notice: (_thread, message) => { notices.push(message); },
+    });
+    const status = await call({ method: "GET", path: "/api/bots/b-quasar/voice/status" });
+    expect(status.body).toMatchObject({ providers: { stt: ["xai", "openai"] }, stt: "openai" });
+    const heard = await call({ method: "POST", path: "/api/bots/b-quasar/voice/transcribe?language=fr", raw: WAV, contentType: "audio/wav" });
+    expect(heard.body.text).toBe("Bonjour Cryptic");
+    expect(xai.transcribe).not.toHaveBeenCalled();
+    expect(usage.at(-1)).toMatchObject({ model: "openai-stt", provider: "openai" });
+    expect(notices.at(-1)).toContain("speech to text (whole recording, OpenAI)");
+    transcribe.mockRejectedValueOnce(new Error("Could not reach OpenAI voice. Check your connection."));
+    const fallback = await call({ method: "POST", path: "/api/bots/b-quasar/voice/transcribe?language=fr", raw: WAV, contentType: "audio/wav" });
+    expect(fallback.body.text).toBe("hello bot");
+    expect(notices).toContain("Voice: speech to text went on with xAI after OpenAI (not reachable)");
+  });
 });
