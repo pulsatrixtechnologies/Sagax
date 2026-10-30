@@ -1523,7 +1523,6 @@
   "call.live.keyChange": "Change key",
   "call.live.keyExplain": "Paste an OpenAI API key from a project with GPT-Live access. OpenAI bills about $0.05 per minute of call; the bot's own work is billed as usual.",
   "call.live.keyField": "OpenAI API key for Live calls",
-  "call.live.keyRemove": "Remove key",
   "call.live.keySaveAndCall": "Save and start the call",
   "call.live.keySaving": "Saving…",
   "call.live.keyTitle": "Live calls use OpenAI GPT-Live",
@@ -8145,7 +8144,6 @@
   "backup.restoreAction": "Restore a backup",
   "call.live.usesOpenAiKey": "Live calls use the OpenAI key of the list above.",
   "call.live.needsOpenAiKey": "Live calls use the OpenAI key of the list above. Add it there.",
-  "call.live.separateKey": "A separate OpenAI key is saved for Live calls. It is used instead of the one above until you remove it.",
   "vm.auto.announce": "The Local VM is starting.",
   "vm.auto.checking": "Checking the Local VM…",
   "vm.auto.ensureError": "The Local VM could not be asked to start.",
@@ -12173,7 +12171,7 @@
   "providers.add.serverHint": "Azure AI Foundry, vLLM, a gateway: each server is a provider of its own, under its name",
   "providers.add.noAccount": "Every account is connected already.",
   "providers.add.forOrg": "For the organization",
-  "providers.add.ownKeyHint": "A key you paste is yours: a model key goes to your keys in Perspicax, a voice key to your voice keys.",
+  "providers.add.ownKeyHint": "Your keys stay in your personal account in Perspicax. Add, replace or remove them here.",
   "providers.add.back": "Back",
   "providers.org.title": "Organization",
   "providers.org.body": "What the organization allows is set in Perspicax and applies to everyone, admins included.",
@@ -12197,5 +12195,7 @@
   "modelSwitches.switch": "{name} on",
   "modelSwitches.search": "Find a model",
   "modelSwitches.adminOff": "Turned off by the admin",
-  "modelSwitches.orgBand": "Organization: a model the admin turned off in Perspicax is greyed here, for everyone. Your own switches apply to your bots, Auto and voice."
+  "modelSwitches.orgBand": "Organization: a model the admin turned off in Perspicax is greyed here, for everyone. Your own switches apply to your bots, Auto and voice.",
+  "providers.server.protocol": "API protocol",
+  "providers.server.models": "Models, one ID per line (optional: ID | display name)"
 }

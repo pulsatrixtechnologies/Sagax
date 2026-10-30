@@ -15,7 +15,7 @@ export const WORKSPACE_CREDENTIALS = [
   { section: "decider", field: "key", name: "jevApiKey", env: "SAGAX_JEV_API_KEY" },
   { section: "imageGen", field: "key", name: "openaiImageApiKey", env: "SAGAX_OPENAI_IMAGE_KEY" },
   { section: "imageGen", field: "customApiKey", name: "customImageApiKey", env: "SAGAX_CUSTOM_IMAGE_KEY" },
-  { section: "live", field: "key", name: "openaiLiveKey", env: "SAGAX_OPENAI_LIVE_KEY" },
+  { section: "openai", field: "key", name: "openaiApiKey", env: "SAGAX_OPENAI_API_KEY" },
   { section: "opencodeGo", field: "apiKey", name: "opencodeGoApiKey", env: "OPENCODE_API_KEY" },
 ];
 
@@ -57,6 +57,24 @@ export function migrateWorkspaceCredentials(config, credentials) {
       credentialsChanged = true;
     }
     delete home[field];
+    configChanged = true;
+  }
+  // Live calls now use the OpenAI provider. Move the legacy config or
+  // encrypted credential only when no provider key is already stored.
+  const legacy = nextConfig?.live?.key;
+  const oldKey = typeof legacy === "string" && legacy.trim()
+    ? legacy.trim()
+    : typeof nextCredentials.openaiLiveKey === "string" ? nextCredentials.openaiLiveKey.trim() : "";
+  if (oldKey && !nextCredentials.openaiApiKey) {
+    nextCredentials.openaiApiKey = oldKey;
+    credentialsChanged = true;
+  }
+  if (Object.hasOwn(nextCredentials, "openaiLiveKey")) {
+    delete nextCredentials.openaiLiveKey;
+    credentialsChanged = true;
+  }
+  if (nextConfig.live && typeof legacy === "string") {
+    delete nextConfig.live.key;
     configChanged = true;
   }
   return { config: nextConfig, credentials: nextCredentials, configChanged, credentialsChanged };

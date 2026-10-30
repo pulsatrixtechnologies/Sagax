@@ -236,7 +236,7 @@ export function personalEngineLine(mine: MyEngine): { ready: boolean; line: stri
  * this engine. The card then shows one line on what pays for their turns and
  * their own Connect or Disconnect (EngineConnect), never the server's account
  * (which serves no one's turns there: server/engine-credentials.ts). */
-export function EngineRow({ instance, mine, member = false, issuer = "", bare = false }: { instance: InstanceInfo; mine?: MyEngine; member?: boolean; issuer?: string; bare?: boolean }) {
+export function EngineRow({ instance, mine, member = false, issuer = "", bare = false, keysManaged = false }: { instance: InstanceInfo; mine?: MyEngine; member?: boolean; issuer?: string; bare?: boolean; keysManaged?: boolean }) {
   const { refreshInstances } = useStore();
   const [open, setOpen] = useState(false);
   const cliMotion = useMenuMotion(open);
@@ -301,7 +301,7 @@ export function EngineRow({ instance, mine, member = false, issuer = "", bare = 
     <EngineCard instance={instance} personal={personalEngineLine(mine)} bare={bare}>
       {policyNote}
       {hostToolsNote}
-      <div data-member-engine={instance.instanceId}><EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} statusLine={false} /></div>
+      <div data-member-engine={instance.instanceId}><EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} statusLine={false} keysManaged={keysManaged} /></div>
     </EngineCard>
   );
   if (instance.readOnly) return <EngineCard instance={instance} bare={bare}>
@@ -314,9 +314,9 @@ export function EngineRow({ instance, mine, member = false, issuer = "", bare = 
     <EngineCard instance={instance} personal={mine && personalEngineLine(mine)} bare={bare}>
       {policyNote}
       {hostToolsNote}
-      {mine && <EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} className="mb-3" statusLine={false} />}
-      {!mine && !engineReady(instance) && <EngineSetup instance={instance} intent={instance.access === "custom" ? "inject" : "cloud"} unframed />}
-      {!mine && engineReady(instance) && <ApiKeyEngineManage instance={instance} className="mt-3" />}
+      {mine && <EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} className="mb-3" statusLine={false} keysManaged={keysManaged} />}
+      {!mine && !engineReady(instance) && <EngineSetup instance={instance} intent={instance.access === "custom" ? "inject" : "cloud"} unframed keysManaged={keysManaged} />}
+      {!mine && !keysManaged && engineReady(instance) && <ApiKeyEngineManage instance={instance} className="mt-3" />}
       {instance.snapshot.update && <EngineUpdateNotice update={instance.snapshot.update} instance={instance} className="mt-3" />}
       {instance.snapshot.warning && <EngineWarningNotice warning={instance.snapshot.warning} className="mt-3" />}
       {engineReady(instance) && <EngineConnectorsLine driverKind={instance.driverKind} />}

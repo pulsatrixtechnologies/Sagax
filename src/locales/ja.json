@@ -3221,7 +3221,6 @@
   "call.live.readTypedHint": "オフの場合、通話中に入力したメッセージと、それに対するボットの回答は OpenAI に送信されません。",
   "call.live.key": "OpenAI キー",
   "call.live.keyChange": "キーを変更",
-  "call.live.keyRemove": "キーを削除",
   "call.live.cost": "OpenAI GPT-Live 経由で、1 分あたり約 $0.05。",
   "call.live.disclosure": "Live 通話では、あなたの声、チャットの最近のメッセージ、ボットの回答、求められた承認の詳細を OpenAI に送信します。OpenAI キーはこのコンピューターに保存されます。",
   "call.live.disclosureCloud": "Live 通話では、あなたの声、チャットの最近のメッセージ、ボットの回答、求められた承認の詳細を OpenAI に送信します。OpenAI キーは My Cloud に保存されます。",

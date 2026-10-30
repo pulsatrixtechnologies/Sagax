@@ -31,6 +31,8 @@ export class NoVoiceConfigured extends Error {
  * solo server, or a provider that is not xAI). */
 export interface VoiceKeyAccess {
   xaiKeyGiven?: boolean;
+  elevenlabsKeyGiven?: boolean;
+  fishKeyGiven?: boolean;
 }
 
 /** The xAI voice was refused for this person: no fallback to the key. */
@@ -39,6 +41,18 @@ export class XaiVoiceNotGiven extends Error {
   constructor(message = "Your organization has not given you its xAI voice (read aloud and voice notes). Ask an admin to give it to you in Perspicax.") {
     super(message);
   }
+}
+
+function voiceKeyGiven(provider: VoiceProvider, access?: VoiceKeyAccess): boolean {
+  return provider === "xai" ? access?.xaiKeyGiven !== false
+    : provider === "elevenlabs" ? access?.elevenlabsKeyGiven !== false
+    : provider === "fish" ? access?.fishKeyGiven !== false : true;
+}
+
+function requireVoiceKey(provider: VoiceProvider, access?: VoiceKeyAccess): void {
+  if (voiceKeyGiven(provider, access)) return;
+  const label = provider === "fish" ? "Fish Audio" : provider === "elevenlabs" ? "ElevenLabs" : "xAI";
+  throw new XaiVoiceNotGiven(`Your organization has not given you its ${label} voice. Add your own provider key or ask an admin to give you the organization's voice.`);
 }
 
 /** The ElevenLabs credential in use: the person's own key, else the one
@@ -86,6 +100,7 @@ export function voiceConfigured(cfg: AppConfig): boolean {
  * because the app-wide fallback has not been selected yet. */
 export function voiceReady(cfg: AppConfig, voiceId?: string, access?: VoiceKeyAccess): boolean {
   const provider = voiceProvider(cfg);
+  if (!voiceKeyGiven(provider, access)) return false;
   if (provider === "xai") return Boolean(grokVoiceKey(cfg, access) && (voiceId || cfg.tts?.voice));
   if (provider === "system") {
     return systemVoices.systemVoicesAvailable() && Boolean(voiceId || cfg.tts?.voice);
@@ -124,6 +139,7 @@ export function verifyKey(provider: "elevenlabs" | "fish", key: string) {
 
 export async function listVoices(cfg: AppConfig, run?: systemVoices.Runner, access?: VoiceKeyAccess): Promise<elevenlabs.Voice[]> {
   const provider = voiceProvider(cfg);
+  requireVoiceKey(provider, access);
   if (provider === "xai") {
     if (access?.xaiKeyGiven === false) throw new XaiVoiceNotGiven();
     const key = grokVoiceKey(cfg);
@@ -148,6 +164,7 @@ export async function listVoices(cfg: AppConfig, run?: systemVoices.Runner, acce
  * and XaiVoiceNotGiven (a 403) when the xAI voice is not this person's. */
 export function speak(cfg: AppConfig, text: string, voiceId?: string, run?: systemVoices.Runner, access?: VoiceKeyAccess) {
   const provider = voiceProvider(cfg);
+  requireVoiceKey(provider, access);
   if (provider === "xai") {
     // Never a fallback to the organization's key for someone it was not given to.
     if (access?.xaiKeyGiven === false) throw new XaiVoiceNotGiven();

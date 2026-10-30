@@ -3302,7 +3302,6 @@
   "call.live.readTypedHint": "關閉時，你在通話期間輸入的訊息以及機器人對這些訊息的回答，都不會傳送給 OpenAI。",
   "call.live.key": "OpenAI 金鑰",
   "call.live.keyChange": "變更金鑰",
-  "call.live.keyRemove": "移除金鑰",
   "call.live.cost": "透過 OpenAI GPT-Live，每分鐘約 $0.05。",
   "call.live.disclosure": "即時通話會將你的語音傳送給 OpenAI，連同對話的近期訊息、機器人的回答，以及它所要求之任何核准的詳細內容。OpenAI 金鑰會保留在你的電腦上。",
   "call.live.disclosureCloud": "即時通話會將你的語音傳送給 OpenAI，連同對話的近期訊息、機器人的回答，以及它所要求之任何核准的詳細內容。OpenAI 金鑰會保留在 My Cloud 上。",

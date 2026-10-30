@@ -26,7 +26,7 @@ replies and tool calls without writing a wrapper CLI. Live calls add one
 exception: `SAGAX_OPENAI_LIVE_URL` crosses when it is a loopback
 `http://127.0.0.1:PORT` (the fake GPT-Live that
 `node --experimental-strip-types server/testing/fake-openai-live.ts` prints),
-and `SAGAX_OPENAI_LIVE_KEY` crosses only with it, so that key can only ever
+and `SAGAX_OPENAI_API_KEY` crosses only with it, so that key can only ever
 reach the fake. `SAGAX_CONTENT_ENCRYPTION` crosses too: the fixture seals
 transcripts by default, like a real server, and the test suite turns it off
 for the checks that read the message database raw

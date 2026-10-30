@@ -544,6 +544,7 @@ export function EngineSetup({
   intent = "cloud",
   unframed = false,
   description: descriptionOverride,
+  keysManaged = false,
 }: {
   instance: InstanceInfo;
   className?: string;
@@ -554,6 +555,8 @@ export function EngineSetup({
   /** Why this install is needed, when the caller knows better (a Company
    * model that runs this CLI with the organisation's access). */
   description?: string;
+  /** Keys are managed by the containing provider, while CLI setup stays here. */
+  keysManaged?: boolean;
 }) {
   // Sagax has no Cloud home (no OMB Cloud): only a remote client or a
   // missing terminal bridge keeps the install command off this computer.
@@ -593,7 +596,7 @@ export function EngineSetup({
         : t("engineSetup.installDesc"));
 
   if (apiKeySetup(instance)) {
-    return <ApiKeyEngineSetup instance={instance} className={className} unframed={unframed} />;
+    return keysManaged ? null : <ApiKeyEngineSetup instance={instance} className={className} unframed={unframed} />;
   }
 
   if (intent === "cloud" && grokKeyInstead(instance, cloudHome)) {
@@ -669,7 +672,7 @@ export function EngineSetup({
         </p>
       )}
 
-      {!signInOnly && install.apiKey && instance.snapshot.state !== "available" && (
+      {!keysManaged && !signInOnly && install.apiKey && instance.snapshot.state !== "available" && (
         <EngineApiKeyField instanceId={instance.instanceId} />
       )}
       {(install.command || signInCommand) && !deviceSignIn && !browserSignIn && !pasteSignIn && !install.managed && (

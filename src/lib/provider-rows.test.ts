@@ -27,6 +27,17 @@ const base = (input: Partial<ProviderInput>): ProviderInput => ({
 });
 
 describe("providerRows", () => {
+  it("merges a personal key with its engines and lists own voice keys and compatible servers", () => {
+    const server = { instanceId: "lab", name: "Lab", url: "https://api.example.com/v1", protocol: "anthropic" as const, models: [{ id: "vendor/model", label: "Model" }] };
+    const instances = [instance("codex", "codex", "subscription"), instance("personal-lab", "openai-compat", "api", { providerAccount: { serverId: "lab", provider: "compat:lab" } })];
+    const rows = providerRows(base({ organization: true, instances, allInstances: instances, manageKeys: false,
+      mine: [mine("codex", "codex", { myKey: true, myTurns: "key", keyWhere: "perspicax" })],
+      accounts: { keys: [{ provider: "openai", last4: "abcd" }, { provider: "fish", last4: "efgh" }, { provider: "compat:lab", last4: "ijkl" }], servers: [server] } }));
+    expect(rows.filter((row) => row.accountProvider === "openai")).toHaveLength(1);
+    expect(rows.find((row) => row.accountProvider === "openai")).toMatchObject({ manage: true, instanceIds: ["codex"], keyWhere: "perspicax" });
+    expect(rows.find((row) => row.accountProvider === "fish")).toMatchObject({ payer: "me", keyWhere: "perspicax", brings: ["voice"] });
+    expect(rows.filter((row) => row.kind === "server")).toEqual([expect.objectContaining({ accountServer: server, instanceIds: ["personal-lab"], manage: true })]);
+  });
   it("solo: a subscription, a key with its engine, a named server, a model of this computer", () => {
     const instances = [
       instance("claude", "claudeAgent", "subscription"),

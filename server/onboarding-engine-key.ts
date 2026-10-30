@@ -1,28 +1,16 @@
-// The access key a terminal / CLI onboarding saves for an OpenAI-compatible
-// instance.
-//
-// The wizard used to write it as plaintext into config.json (owner-only, but
-// in clear). It is sealed here instead, with the same vault key as the MCP
-// OAuth store and the file-backed engine keys (resolveVaultKey): on the
-// desktop that key comes from the operating system's encrypted credential
-// store (safeStorage, handed over as SAGAX_MCP_OAUTH_KEY); on a headless or
-// CLI-only host, where safeStorage is unavailable, it is a 0600 key file
-// beside the data directory. Either way the key leaves config.json.
-//
-// AES-256-GCM, AAD `sagax onboarding-engine-key v1`, file mode 0600,
-// `<data>/onboarding-engine-keys.enc`, keyed by instance id. The plaintext
-// never goes into a log, a bot prompt, a backup, an answer, or config.json.
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+// CLI onboarding reads and writes the common provider-key store. The
+// previous onboarding-engine-keys.enc is imported by ProviderKeysStore;
+// custom instance keys remain isolated under compat:<instance id>.
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { ProviderKeysStore, PROVIDER_KEYS_FILE } from "./provider-keys.ts";
 
 import { writeFileAtomic } from "./atomic.ts";
 import { resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
 import { parseJson, type JsonObject, type JsonValue } from "./schema.ts";
 
-export const ONBOARDING_ENGINE_KEYS_FILE = "onboarding-engine-keys.enc";
+export const ONBOARDING_ENGINE_KEYS_FILE = PROVIDER_KEYS_FILE;
 
-const AAD = Buffer.from("sagax onboarding-engine-key v1");
 // The ids the wizard creates (`api-<uuid8>`) and the built-in / reused ids it
 // may reuse (`openai`, `codex-1a2b3c4d`, …). Narrow enough to be a safe file
 // key, wide enough for every instance id the setup can save.
@@ -38,116 +26,29 @@ function sourceFor(dataDir: string, source?: OnboardingKeySource): OnboardingKey
   return source ?? (() => resolveVaultKey(dataDir));
 }
 
-function vaultKey(source: OnboardingKeySource): Buffer {
-  const got = source();
-  if (got.kind !== "key") {
-    throw new OnboardingKeyError("The access key could not be saved. Try again.");
-  }
-  return got.key;
+function providerFor(instanceId: string): string {
+  return instanceId === "openai" || instanceId === "openrouter" ? instanceId : `compat:${instanceId}`;
 }
 
-function storePath(dataDir: string): string {
-  return join(dataDir, ONBOARDING_ENGINE_KEYS_FILE);
-}
-
-function refuseSymlink(path: string): void {
-  try {
-    if (lstatSync(path).isSymbolicLink()) {
-      throw new OnboardingKeyError("The access key could not be saved. Try again.");
-    }
-  } catch (error) {
-    if (error instanceof OnboardingKeyError) throw error;
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw new OnboardingKeyError("The access key could not be saved. Try again.");
-    }
-  }
-}
-
-function parseKeys(value: unknown): Keys {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const out: Keys = {};
-  for (const [id, key] of Object.entries(value as Record<string, unknown>)) {
-    if (INSTANCE_ID.test(id) && typeof key === "string" && key) out[id] = key;
-  }
-  return out;
-}
-
-function openKeys(raw: string, key: Buffer): Keys {
-  const envelope = JSON.parse(raw) as { v?: unknown; iv?: unknown; tag?: unknown; data?: unknown };
-  if (envelope.v !== 1 || typeof envelope.iv !== "string" || typeof envelope.tag !== "string" || typeof envelope.data !== "string") {
-    throw new Error("format");
-  }
-  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(envelope.iv, "base64"));
-  decipher.setAAD(AAD);
-  decipher.setAuthTag(Buffer.from(envelope.tag, "base64"));
-  const plain = Buffer.concat([decipher.update(Buffer.from(envelope.data, "base64")), decipher.final()]).toString("utf8");
-  const parsed = JSON.parse(plain) as { version?: unknown; keys?: unknown };
-  if (parsed.version !== 1) throw new Error("format");
-  return parseKeys(parsed.keys);
-}
-
-function sealKeys(keys: Keys, key: Buffer): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  cipher.setAAD(AAD);
-  const data = Buffer.concat([cipher.update(JSON.stringify({ version: 1, keys }), "utf8"), cipher.final()]);
-  return JSON.stringify({ v: 1, iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), data: data.toString("base64") });
-}
-
-/** The whole map, or `{}` when the file is missing or cannot be opened — a
- * turn or a boot never breaks because a key could not be read. */
+/** Legacy callers read the same provider store as every other consumer. */
 export function readOnboardingEngineKeys(dataDir: string, source?: OnboardingKeySource): Keys {
-  const path = storePath(dataDir);
-  let raw: string;
   try {
-    if (lstatSync(path).isSymbolicLink()) return {};
-    raw = readFileSync(path, "utf8");
-  } catch {
-    return {};
-  }
-  try {
-    return openKeys(raw, vaultKey(sourceFor(dataDir, source)));
-  } catch {
-    return {};
-  }
+    const keys = new ProviderKeysStore(dataDir, source).keys();
+    return Object.fromEntries(Object.entries(keys).flatMap(([provider, key]) =>
+      provider === "openai" || provider === "openrouter" ? [[provider, key]]
+        : provider.startsWith("compat:") ? [[provider.slice(7), key]] : []));
+  } catch { return {}; }
 }
 
-/** One instance's key, or undefined. Never throws. */
 export function readOnboardingEngineKey(dataDir: string, instanceId: string, source?: OnboardingKeySource): string | undefined {
   if (!INSTANCE_ID.test(instanceId)) return undefined;
-  const key = readOnboardingEngineKeys(dataDir, source)[instanceId];
-  return key && key.length ? key : undefined;
+  return readOnboardingEngineKeys(dataDir, source)[instanceId];
 }
 
-/** Seal or clear one instance's key. An empty key removes it. Throws when the
- * vault key is unavailable or the file is not writable, so a caller fails
- * closed rather than falling back to plaintext. */
 export function storeOnboardingEngineKey(dataDir: string, instanceId: string, key: string, source?: OnboardingKeySource): void {
-  if (!INSTANCE_ID.test(instanceId)) {
-    throw new OnboardingKeyError("The access key could not be saved. Try again.");
-  }
-  const resolved = sourceFor(dataDir, source);
-  const vault = vaultKey(resolved);
-  const path = storePath(dataDir);
-  refuseSymlink(path);
-  let keys: Keys = {};
-  if (existsSync(path)) {
-    try {
-      keys = openKeys(readFileSync(path, "utf8"), vault);
-    } catch {
-      // A store we cannot open must not be silently overwritten and its other
-      // keys lost; refuse, the same as the file-backed engine store does.
-      throw new OnboardingKeyError("The access key could not be saved. Try again.");
-    }
-  }
-  if (key) keys[instanceId] = key;
-  else delete keys[instanceId];
-  if (!Object.keys(keys).length) {
-    rmSync(path, { force: true });
-    return;
-  }
-  mkdirSync(dataDir, { recursive: true });
-  writeFileAtomic(path, `${sealKeys(keys, vault)}\n`, { mode: 0o600 });
+  if (!INSTANCE_ID.test(instanceId)) throw new OnboardingKeyError("The access key could not be saved. Try again.");
+  try { new ProviderKeysStore(dataDir, source).set({}, providerFor(instanceId), key || null); }
+  catch { throw new OnboardingKeyError("The access key could not be saved. Try again."); }
 }
 
 /** A sentence for the wizard that says where the key went, without ever

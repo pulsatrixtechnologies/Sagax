@@ -34,6 +34,8 @@ import { CompactRow, DescribedRow, GROUP_CARD, PILL, PillSelect, SettingsGroup, 
 type Pick<P extends string> = "inherit" | "auto" | P;
 
 function label(provider: string): string {
+  if (provider === "system") return t("voice.engine.system");
+  if (provider === "chatterbox") return t("voice.engine.chatterbox");
   return VOICE_PROVIDER_LABELS[provider as VoiceTtsProvider] ?? provider;
 }
 

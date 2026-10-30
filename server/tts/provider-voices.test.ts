@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { grokVoiceFailure } from "./grok.ts";
 import { createElevenLabsVoice, elevenLabsLanguage, elevenLabsRefusal, elevenLabsSpeed } from "./elevenlabs-voice.ts";
 import { createOpenAiVoice, openAiRefusal } from "./openai-voice.ts";
+import { createFishVoice } from "./fish-voice.ts";
+import { wavPcm24 } from "./installed-voice.ts";
 
 const KEY = "sk-FAKEtest1Zx2Cv3Bn4Mm8Qq";
 
@@ -98,6 +100,16 @@ describe("ElevenLabs voice (server/tts/elevenlabs-voice.ts)", () => {
     { voice_id: "myClonedVoice01", name: "Moi", category: "cloned", labels: {} },
   ] };
 
+  it("keeps an included token on its relay and sends an own key to its provider", async () => {
+    const relay = await fake((_req, res) => { res.writeHead(200, { "content-type": "audio/mpeg" }); res.end(Buffer.from([1])); });
+    const provider = await fake((_req, res) => { res.writeHead(200, { "content-type": "audio/mpeg" }); res.end(Buffer.from([2])); });
+    const voice = createElevenLabsVoice({ apiForKey: (key) => key === "test-included-token" ? relay.api : provider.api });
+    await voice.synthesize("Hi", "premadeVoice001", "test-included-token");
+    await voice.synthesize("Hi", "premadeVoice001", KEY);
+    expect(relay.seen.map((entry) => entry.headers["xi-api-key"])).toEqual(["test-included-token"]);
+    expect(provider.seen.map((entry) => entry.headers["xi-api-key"])).toEqual([KEY]);
+  });
+
   it("lists the person's voices, cloned ones first, and keeps them a while", async () => {
     const { api, seen } = await fake((_req, res) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(voices)); });
     const voice = createElevenLabsVoice({ api });
@@ -137,5 +149,44 @@ describe("ElevenLabs voice (server/tts/elevenlabs-voice.ts)", () => {
     expect(elevenLabsSpeed(0.5)).toBe(0.7);
     expect(elevenLabsLanguage("auto")).toBeUndefined();
     expect(elevenLabsLanguage("pt-BR")).toBe("pt");
+  });
+});
+
+describe("Fish voice on the shared speech contract", () => {
+  it("streams 24 kHz PCM and reads MP3 with the same own key, voice and model", async () => {
+    const { api, seen } = await fake((_req, res) => { res.writeHead(200, { "content-type": "application/octet-stream" }); res.end(Buffer.from([4, 5])); });
+    const voice = createFishVoice({ api: api.replace(/\/v1$/, ""), model: () => "s2.1-pro" });
+    const clip = await voice.synthesizeStream!("Bonjour", "my-fish-voice", KEY, { speed: 1.2, language: "fr" });
+    expect(clip.sampleRate).toBe(24_000);
+    expect(await readAll(clip.body)).toEqual([4, 5]);
+    expect(seen[0]!.url).toBe("/v1/tts");
+    expect(seen[0]!.headers.authorization).toBe(`Bearer ${KEY}`);
+    expect(JSON.parse(seen[0]!.body)).toMatchObject({ reference_id: "my-fish-voice", format: "pcm", sample_rate: 24_000, prosody: { speed: 1.2 }, language: "fr" });
+    expect(seen[0]!.body).not.toContain(KEY);
+    const mp3 = await voice.synthesize!("Hi", "my-fish-voice", KEY, { language: "auto" });
+    expect(mp3.mime).toBe("audio/mpeg");
+    expect(JSON.parse(seen[1]!.body)).toMatchObject({ format: "mp3", sample_rate: 44_100, mp3_bitrate: 64 });
+    expect(JSON.parse(seen[1]!.body)).not.toHaveProperty("language");
+  });
+
+  it("does not expose a provider response containing a key", async () => {
+    const { api } = await fake((_req, res) => { res.writeHead(402, { "content-type": "application/json" }); res.end(JSON.stringify({ error: KEY })); });
+    const failure = await createFishVoice({ api: api.replace(/\/v1$/, "") }).synthesize!("Hi", "my-fish-voice", KEY, {}).catch((error: Error) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain("credits");
+    expect((failure as Error).message).not.toContain(KEY);
+  });
+});
+
+describe("installed voice audio in live calls", () => {
+  it("converts 48 kHz stereo WAV to the shared mono 24 kHz PCM", () => {
+    const wav = Buffer.alloc(44 + 16);
+    wav.write("RIFF", 0); wav.writeUInt32LE(wav.length - 8, 4); wav.write("WAVEfmt ", 8);
+    wav.writeUInt32LE(16, 16); wav.writeUInt16LE(1, 20); wav.writeUInt16LE(2, 22);
+    wav.writeUInt32LE(48_000, 24); wav.writeUInt16LE(16, 34); wav.write("data", 36); wav.writeUInt32LE(16, 40);
+    [1000, 3000, 4000, 6000, -2000, -4000, -6000, -8000].forEach((sample, i) => wav.writeInt16LE(sample, 44 + i * 2));
+    const pcm = Buffer.from(wavPcm24(wav));
+    expect([pcm.readInt16LE(0), pcm.readInt16LE(2)]).toEqual([2000, -3000]);
+    expect(() => wavPcm24(new Uint8Array([1, 2]))).toThrow("WAV");
   });
 });

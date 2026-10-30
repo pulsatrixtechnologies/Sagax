@@ -106,6 +106,17 @@ describe("request source for the lockout", () => {
 });
 
 describe("scopes", () => {
+  it("lets people manage their own provider keys and servers without an admin", () => {
+    expect(requiredScope("GET", "/api/me/providers")).toBe("client");
+    for (const method of ["PUT", "DELETE"]) {
+      for (const path of ["keys/elevenlabs", "keys/compat%3Alab", "servers/lab"]) {
+        expect(requiredScope(method, `/api/me/providers/${path}`)).toBe("client");
+      }
+    }
+    for (const method of ["GET", "POST"]) {
+      expect(routePermission(method, "/api/instances/mistral/api-key", { orgDirectory: true })).toBeNull();
+    }
+  });
   it("lets a person read their own Claude connectors; only an admin turns them off", () => {
     expect(requiredScope("GET", "/api/me/harness-connectors")).toBe("client");
     // A member sees the images a bot's Markdown renders, not only downloads.
