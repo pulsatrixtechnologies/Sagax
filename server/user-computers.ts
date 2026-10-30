@@ -4,7 +4,7 @@
 //
 // A person's computer is reached through a target:
 //   "user-desktop"  their own Sagax desktop app, connected to this server
-//                   (Settings > Organization > Share this computer), which
+//                   (Settings > Organization > This computer for your bots), which
 //                   runs each action on that computer within the folders and
 //                   capabilities they shared (server/shared-computers.ts,
 //                   electron/computer-sharing.mjs);
@@ -28,9 +28,15 @@ export interface UserComputerProvider<Computer = unknown, Operation extends { co
   request(principalId: string, operation: Operation, active: () => boolean): Promise<unknown>;
 }
 
+/** The settings row a person actually sees (settings.serverMode.computerTitle). */
+const COMPUTER_ROW = 'Settings > Organization, the row "This computer for your bots" (French: "Cet ordinateur pour vos bots")';
+
 export const USER_COMPUTER_MESSAGES = {
   noPerson: "No person asked in this turn, so no one's computer can be used: only the person's own words, or a routine of their own bot (scheduled or run by hand), can reach the computer they shared. A webhook, an email or someone else's routine cannot. Ask the person to request it themselves.",
-  notConnected: "The computer of the person asking is not connected. Ask them to open the Sagax desktop app on their computer, signed in to this server, and turn on Share this computer (Settings > Organization). Nothing runs on the server instead.",
+  notConnected: `The computer of the person asking is not connected. Ask them to open the Sagax desktop app on their computer, signed in to this server, and choose access under ${COMPUTER_ROW}. The button is "Choose access" (French: "Choisir l'accès"). Nothing runs on the server instead.`,
+  /** The server has not turned computer access on (features.sharedComputers).
+   * The member's row has no button; an administrator has to enable it. */
+  notAccepted: `The computer of the person asking is not connected. This server does not accept computer access yet, so the member cannot turn it on. An administrator turns it on in the server's settings. The row is ${COMPUTER_ROW}. Nothing runs on the server instead.`,
   notTheirs: "That computer is not the computer of the person asking. Only their own computer can be used; list it with list_shared_computers.",
 } as const;
 
@@ -77,14 +83,23 @@ export interface UserComputerRouter {
   request(speaker: TurnSpeaker | undefined, operation: { computer_id: string }, active: () => boolean, context?: SpeakingContext): Promise<unknown>;
 }
 
-export function createUserComputerRouter(providers: readonly UserComputerProvider<unknown, never>[]): UserComputerRouter {
+export function createUserComputerRouter(
+  providers: readonly UserComputerProvider<unknown, never>[],
+  options: { /** False when this server has not turned computer access on. */
+    sharingOffered?: () => boolean;
+  } = {},
+): UserComputerRouter {
   const all = providers as readonly UserComputerProvider<unknown, { computer_id: string }>[];
+  const notConnected = () =>
+    options.sharingOffered && !options.sharingOffered()
+      ? USER_COMPUTER_MESSAGES.notAccepted
+      : USER_COMPUTER_MESSAGES.notConnected;
   return {
     list(speaker, context) {
       const person = speakingPerson(speaker, context);
       if (!person) throw refusal(USER_COMPUTER_MESSAGES.noPerson, 403, "no_person");
       const computers = all.flatMap((provider) => provider.list(person).map((computer) => ({ target: provider.target, computer })));
-      if (!computers.length) throw refusal(USER_COMPUTER_MESSAGES.notConnected, 409, "not_connected");
+      if (!computers.length) throw refusal(notConnected(), 409, "not_connected");
       return computers;
     },
     async request(speaker, operation, active, context) {
@@ -95,7 +110,7 @@ export function createUserComputerRouter(providers: readonly UserComputerProvide
         const connected = all.some((candidate) => candidate.list(person).length > 0);
         throw connected
           ? refusal(USER_COMPUTER_MESSAGES.notTheirs, 403, "not_theirs")
-          : refusal(USER_COMPUTER_MESSAGES.notConnected, 409, "not_connected");
+          : refusal(notConnected(), 409, "not_connected");
       }
       return provider.request(person, operation, active);
     },

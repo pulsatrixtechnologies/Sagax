@@ -109,7 +109,25 @@ describe("whose computer a bot may use", () => {
     const router = createUserComputerRouter([provider]);
     expect(() => router.list(ada)).toThrow(USER_COMPUTER_MESSAGES.notConnected);
     await expect(router.request(ada, { computer_id: adaDesktop.id, action: "list_files" } as never, () => true))
-      .rejects.toMatchObject({ status: 409, code: "not_connected" });
+      .rejects.toMatchObject({ status: 409, code: "not_connected", message: USER_COMPUTER_MESSAGES.notConnected });
+    broker.close();
+  });
+
+  it("names the settings row, and says an administrator has to enable computer access when the server has it off (#1805)", () => {
+    const { broker, provider, live } = desktops();
+    live.delete("ada-session");
+    const offered = createUserComputerRouter([provider], { sharingOffered: () => true });
+    expect(() => offered.list(ada)).toThrow(USER_COMPUTER_MESSAGES.notConnected);
+    const refused = createUserComputerRouter([provider], { sharingOffered: () => false });
+    expect(() => refused.list(ada)).toThrow(USER_COMPUTER_MESSAGES.notAccepted);
+    for (const message of [USER_COMPUTER_MESSAGES.notConnected, USER_COMPUTER_MESSAGES.notAccepted, HOST_COMPUTER_REFUSAL]) {
+      expect(message).toContain("This computer for your bots");
+      expect(message).toContain("Cet ordinateur pour vos bots");
+      expect(message).not.toContain("Share this computer");
+    }
+    expect(USER_COMPUTER_MESSAGES.notConnected).toContain("Choose access");
+    expect(USER_COMPUTER_MESSAGES.notAccepted).toContain("administrator");
+    expect(USER_COMPUTER_MESSAGES.notAccepted).toContain("cannot turn it on");
     broker.close();
   });
 
