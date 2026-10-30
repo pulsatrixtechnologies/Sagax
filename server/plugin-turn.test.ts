@@ -86,4 +86,18 @@ describe("plugin skills and commands on a turn", () => {
       "command:look:Look at the diff",
     ]);
   });
+
+  it("indexes actual files at the exact sandbox mount without publishing host paths", () => {
+    const root = temp();
+    write(root, "skills/ship/SKILL.md", "---\nname: ship\ndescription: Verify shipping\n---\nInstructions");
+    write(root, "commands/track.md", "Track the package");
+    const files = pluginTurnFiles([root], () => "/workspace/sagax-plugins/packing");
+    expect(files.map((file) => file.path)).toEqual([
+      "/workspace/sagax-plugins/packing/skills/ship/SKILL.md",
+      "/workspace/sagax-plugins/packing/commands/track.md",
+    ]);
+    const prompt = pluginTurnPrompt({ driverKind: "pi", files });
+    expect(prompt).toContain("/workspace/sagax-plugins/packing/skills/ship/SKILL.md");
+    expect(prompt).not.toContain(root);
+  });
 });

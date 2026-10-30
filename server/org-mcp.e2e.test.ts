@@ -27,6 +27,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from "./testing/fake-oidc-provider.ts";
 import { freePortBlock } from "./testing/ports.ts";
+import { PluginMarketplaces } from "./plugin-marketplaces.ts";
 
 const SERVER_DIR = dirname(fileURLToPath(import.meta.url));
 const FAKE_CLAUDE = join(SERVER_DIR, "testing", "fake-claude-cli.ts");
@@ -222,6 +223,14 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
               { server: "agents", tool: "coordinate_bots", arguments: { bot_ids: ["Xavier"], message: "check the board for the person", request_key: "bob-hop" }, when: "COORD-XAVIER" },
               { server: "perspicax_*", tool: "api_list", arguments: {} },
               { server: "sagax-flow", tool: "flow_stats", arguments: { values: [1.5, 2.25, 10, 0.1] } },
+              ...[
+                "plugins/private-owner/skills/check/SKILL.md",
+                "/workspace/sagax-plugins/private-owner/skills/check/SKILL.md",
+                "/workspace/sagax-plugins/personal-tools/skills/check/SKILL.md",
+                "/workspace/sagax-plugins/organization-tools/skills/check/SKILL.md",
+                "/workspace/sagax-capability-skills/me/skills/owner-only/SKILL.md",
+                "/workspace/sagax-capability-skills/me/skills/member-only/SKILL.md",
+              ].map((path) => ({ server: "agents", tool: "workspace_read", arguments: { path }, when: "READ-CAPABILITY-FILES" })),
             ]),
             FAKE_CLAUDE_MCP_DUMP: mcpDump,
           },
@@ -251,6 +260,40 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
     await idp?.close();
     if (home) removeTempDir(home);
   });
+
+  it("reads capability files for the active member, never a shared bot owner's private plugin or library", async () => {
+    const dataDir = join(home, ".sagax");
+    const markets = new PluginMarketplaces({ dataDir, gitEnvironment: () => ({}), policy: () => undefined });
+    const repo = markets.repoPath("test-capabilities");
+    const names = ["private-owner", "personal-tools", "organization-tools"];
+    mkdirSync(join(repo, ".claude-plugin"), { recursive: true });
+    writeFileSync(join(repo, ".claude-plugin", "marketplace.json"), JSON.stringify({ name: "test-capabilities", owner: { name: "Example" }, plugins: names.map((name) => ({ name, source: `./${name}`, version: "1.0.0" })) }));
+    for (const name of names) {
+      mkdirSync(join(repo, name, ".claude-plugin"), { recursive: true });
+      mkdirSync(join(repo, name, "skills", "check"), { recursive: true });
+      writeFileSync(join(repo, name, ".claude-plugin", "plugin.json"), JSON.stringify({ name }));
+      writeFileSync(join(repo, name, "skills", "check", "SKILL.md"), `---\nname: check\ndescription: Verify a package\n---\nInstructions from ${name}.\n`);
+    }
+    markets.adopt({ name: "test-capabilities", record: { source: "example/test-capabilities", url: "https://github.com/example/test-capabilities.git", addedAt: 1, updatedAt: 1, visibility: "org" } });
+    const saved = async (path: string, auth: Auth, body: unknown) => {
+      const response = await api("POST", path, auth, body);
+      expect(response.status, response.text).toBeLessThan(400);
+    };
+    await saved(`/api/bots/${x.id}/plugins/install`, alice, { marketplace: "test-capabilities", plugin: "private-owner" });
+    await saved("/api/marketplaces/test-capabilities/plugins/organization-tools", alice, {});
+    await saved("/api/me/skills-library", alice, { text: "---\nname: owner-only\ndescription: Owner instructions\n---\nPrivate owner instructions.\n" });
+    const bob = await signIn(BOB);
+    await saved("/api/me/plugins/install", bob, { marketplace: "test-capabilities", plugin: "personal-tools" });
+    await saved("/api/me/skills-library", bob, { text: "---\nname: member-only\ndescription: Member instructions\n---\nCurrent member instructions.\n" });
+    await turn(bob, x, "READ-CAPABILITY-FILES");
+    const calls = (JSON.parse(readFileSync(mcpDump, "utf8")) as { calls: Array<{ tool: string; ok: boolean; text: string }> }).calls.filter((call) => call.tool === "workspace_read");
+    expect(calls.map((call) => call.ok)).toEqual([false, false, true, true, false, true]);
+    expect(calls[2]!.text).toContain("Instructions from personal-tools.");
+    expect(calls[3]!.text).toContain("Instructions from organization-tools.");
+    expect(calls[5]!.text).toContain("Current member instructions.");
+    expect(JSON.stringify(calls)).not.toContain("Private owner instructions.");
+    expect(JSON.stringify(calls)).not.toContain("Instructions from private-owner.");
+  }, 90_000);
 
   it("the bot editor offers the profiles alice holds, and saves them", async () => {
     const got = await api("GET", `/api/bots/${x.id}/perspicax`, alice);

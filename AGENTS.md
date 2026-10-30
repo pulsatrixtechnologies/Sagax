@@ -133,6 +133,11 @@ old connections. Keep the existing file/AAD compatibility tests.
   `scopedPluginFolders` and `scopedPluginMcp` feed execution and the receipt.
   Missing copies claim no name. Bot-private installs stay in their owner's
   environment when another person speaks through a shared bot.
+  `workspace_read` resolves these same folders for the active turn's speaker,
+  including Me skills. Organization prompts publish the copied sandbox paths
+  (`/workspace/sagax-plugins/<name>` and `/workspace/sagax-capability-skills/me`);
+  only these exact mounts have absolute aliases in `workspace_read`. An
+  unselected mount cannot fall back to a stale workspace copy.
 - MCP declarations are private execution data, stripped from native plugin
   folders and public lists/packages, then mounted separately. Commands
   cross `sagax-stdio` into the turn person's environment on org servers;

@@ -148,12 +148,17 @@ function walk(root: string, folder: "skills" | "commands" | "agents", out: Plugi
 
 /** Skills, then commands, then agents, stable by path. A disabled plugin is absent because
  * its folder is not in `dirs`. Symlinks are skipped and never resolved. */
-export function pluginTurnFiles(dirs: readonly string[]): PluginTurnFile[] {
+export function pluginTurnFiles(dirs: readonly string[], pathForDir?: (dir: string) => string): PluginTurnFile[] {
   const files: PluginTurnFile[] = [];
   for (const dir of dirs) {
+    const start = files.length;
     walk(dir, "skills", files);
     walk(dir, "commands", files);
     walk(dir, "agents", files);
+    if (pathForDir) {
+      const shown = pathForDir(dir);
+      for (const file of files.slice(start)) file.path = join(shown, relative(dir, file.path));
+    }
     if (files.length >= MAX_FILES) break;
   }
   const order = { skill: 0, command: 1, agent: 2 } as const;

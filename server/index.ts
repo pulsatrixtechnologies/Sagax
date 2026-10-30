@@ -1145,7 +1145,7 @@ import { fileInsideRoots } from "./imessage-db.ts";
 import { chooseHookTarget, commandWithFiles, dispatchLifecycleHooks, lifecycleEvent, type HookRun, type HookTarget } from "./lifecycle-hooks.ts";
 import { spawnPcHook } from "./lifecycle-hook-exec.ts";
 import { GithubConnect, githubGitEnvironment, githubSandboxArgv, githubTokenKind } from "./github-connect.ts";
-import { syncPluginsToSandbox } from "./sandbox-plugins.ts";
+import { SANDBOX_PLUGINS_DIR, syncPluginsToSandbox } from "./sandbox-plugins.ts";
 import { OrgGithubTokens } from "./org-github-tokens.ts";
 import { GithubCredentials, LOCAL_OWNER, ORG_OWNER } from "./github-credentials.ts";
 import { OrgBotSecrets } from "./org-bot-secrets.ts";
@@ -8818,10 +8818,12 @@ function scopedSkillsPrompt(bot: BotRecord, principal?: string): string {
 /** The same enabled skills and commands, for a workspace engine that is not Claude. Claude uses --plugin-dir instead. */
 function pluginSkillsForTurn(bot: { id: string; ownerUserId?: unknown }, instance: { driverKind: string } | undefined, principal?: string): string {
   if (!instance) return "";
-  const dirs = turnPluginPromptDirs(instance.driverKind, scopedPluginFolders(bot, principal).filter((plugin) => plugin.scope !== "organization" || installationPlugins.enabledPlugins().some((copy) => copy.dir === plugin.dir)).map((plugin) => plugin.dir));
+  const folders = scopedPluginFolders(bot, principal).filter((plugin) => plugin.scope !== "organization" || installationPlugins.enabledPlugins().some((copy) => copy.dir === plugin.dir));
+  const dirs = turnPluginPromptDirs(instance.driverKind, folders.map((plugin) => plugin.dir));
   const person = IDENTITY.kind === "perspicax" ? principal ?? effectiveBotOwner(bot) : localPrincipalId();
   const personal = supportsWorkspaceFiles(instance.driverKind) && skillsLibraryEnabled(cfg) && person ? personalSkills.prompt(person, IDENTITY.kind === "perspicax", new Set(personalSkillInputs(bot, principal).filter((skill) => skill.shadowed).map((skill) => skill.name))) : "";
-  return personal + (dirs.length ? pluginTurnPrompt({ driverKind: instance.driverKind, files: pluginTurnFiles(dirs) }) : "");
+  const shownPaths = IDENTITY.kind === "perspicax" ? new Map(folders.map((plugin) => [plugin.dir, `${SANDBOX_PLUGINS_DIR}/${plugin.name}`])) : undefined;
+  return personal + (dirs.length ? pluginTurnPrompt({ driverKind: instance.driverKind, files: pluginTurnFiles(dirs, shownPaths ? (dir) => shownPaths.get(dir)! : undefined) }) : "");
 }
 // ── a bot's capabilities: one resolved list (server/capabilities.ts) ──
 /** Everything a bot receives on top of its engine, for the person looking
@@ -43680,7 +43682,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         try {
           // Its own files, skill revisions and installed plugins (2026-10-19):
           // on an organization server this is the bot's only file read.
-          const read = readWorkspaceText(internalSender.id, url.searchParams.get("path") ?? "", Number(url.searchParams.get("offset") ?? 0), botPlugins.enabledPlugins(internalSender.id));
+          const person = IDENTITY.kind === "perspicax" ? turnSpeakerPrincipals.get(internalCapability.threadId) ?? "" : localPrincipalId();
+          const read = readWorkspaceText(internalSender.id, url.searchParams.get("path") ?? "", Number(url.searchParams.get("offset") ?? 0),
+            scopedPluginFolders(internalSender, person), skillsLibraryEnabled(cfg) && person ? personalSkills.root(person) : undefined);
           markWorkspaceUse(internalSender.id, [read.path]);
           return json(res, 200, read);
         } catch (error) {
