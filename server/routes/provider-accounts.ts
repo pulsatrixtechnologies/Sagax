@@ -4,7 +4,6 @@ import { ProviderAccountsError, type ProviderAccountOwner, type ProviderAccounts
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
-const ROOT = "/api/me/providers";
 export function createProviderAccountsRoutes(deps: {
   accounts: ProviderAccounts;
   /** Undefined is solo; null is a session without a personal identity. */
@@ -15,7 +14,7 @@ export function createProviderAccountsRoutes(deps: {
 }): RouteHandler {
   return async ({ req, res, path, method, auth, json, readBody }) => {
     const legacyVoice = path === "/api/me/voice-keys" || path.startsWith("/api/me/voice-keys/");
-    if (!legacyVoice && path !== ROOT && !path.startsWith(`${ROOT}/`)) return PASS;
+    if (!legacyVoice && path !== "/api/me/providers" && !path.startsWith("/api/me/providers/")) return PASS;
     res.setHeader("cache-control", "no-store");
     const owner = deps.owner(auth);
     if (owner === null) return json(res, 403, { error: "Sign in to manage your provider accounts." });
@@ -42,7 +41,7 @@ export function createProviderAccountsRoutes(deps: {
           return [name, { configured: Boolean(key), last4: key?.last4 ?? null }];
         })));
       }
-      if (path === ROOT && method === "GET") {
+      if (path === "/api/me/providers" && method === "GET") {
         const view = await deps.accounts.list(owner);
         await deps.listed?.(view, owner);
         return json(res, 200, view);
