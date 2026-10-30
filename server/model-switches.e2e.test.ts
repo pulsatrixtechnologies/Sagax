@@ -21,7 +21,19 @@ it("keeps a model off across selection, Auto and its fast model", async () => {
     await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: {
       instanceId, model: top, auto: true, fast: { instanceId, model: fast },
     } });
+    const { task: pinned } = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Own Auto fast model" }, 201);
+    await api("PATCH", `/api/bots/${bot.id}/tasks/${pinned.threadId}`, { modelSelection: {
+      instanceId, model: "claude-sonnet-5-5", auto: true, fast: { instanceId, model: fast },
+    } });
     await api("PUT", "/api/me/models", { disabledModels: [`${instanceId}/${fast}`] });
+    const cleaned = (await api("GET", "/api/bots")).bots.find((entry: any) => entry.id === bot.id);
+    expect(cleaned.modelSelection.fast).toBeUndefined();
+    expect(cleaned.tasks.find((entry: any) => entry.threadId === pinned.threadId).modelSelection.fast).toBeUndefined();
+    // A stale or forged UI cannot save a fast model now switched off.
+    await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: {
+      instanceId, model: top, auto: true, fast: { instanceId, model: fast },
+    } }, 403);
+
     expect((await api("GET", "/api/me/models")).mine).toEqual([`${instanceId}/${fast}`]);
     // Direct selection cannot revive a disabled model.
     await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: { instanceId, model: fast } }, 403);

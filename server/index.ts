@@ -6831,7 +6831,12 @@ function checkedModelSelection(
     if (typeof fast !== "object" || typeof fast.instanceId !== "string" || !fast.instanceId.trim() || typeof fast.model !== "string" || !fast.model.trim()) {
       return { ok: false, status: 400, error: "modelSelection.fast needs an instanceId and a model" };
     }
-    if (value.auto === true) selection.fast = { instanceId: fast.instanceId.trim(), model: fast.model.trim() };
+    if (value.auto === true) {
+      const fastSelection = { instanceId: fast.instanceId.trim(), model: fast.model.trim() };
+      const refusal = modelSwitchRefusal(fastSelection.instanceId, fastSelection.model, payer);
+      if (refusal) return { ok: false, status: 403, error: refusal };
+      selection.fast = fastSelection;
+    }
   }
   if (value.effort !== undefined) {
     if (!isEffortLevel(value.effort)) {
@@ -40939,6 +40944,13 @@ function applyModelSwitches(owner?: string): void {
     if (owner !== undefined && botOwner !== owner) continue;
     const switches = modelSwitchesFor(botOwner);
     const selection = bot.modelSelection;
+    const withoutDisabledFast = (value: ModelSelection): ModelSelection => {
+      if (!value.fast || modelOn(switches, value.fast.instanceId, value.fast.model)) return value;
+      const { fast: _fast, ...rest } = value;
+      return rest;
+    };
+    const cleaned = withoutDisabledFast(selection);
+    if (cleaned !== selection) store.applyModelDefault(id, cleaned);
     const offer = modelOffer(switches, selection.instanceId, selection.model);
     if (offer !== "on") {
       const live = registry.get(selection.instanceId);
@@ -40952,6 +40964,11 @@ function applyModelSwitches(owner?: string): void {
         const move = { from: selection.model, to: orgEngineName(selection.instanceId) };
         store.appendMessage(bot.threadId, { role: "bot", kind: "activity", tool: { name: `notice: ${orgEngineMoveLine(move)}`, ok: true, engineMove: move } });
       }
+    }
+    for (const task of store.bot(id)?.tasks ?? []) {
+      if (!task.modelSelection) continue;
+      const cleanedTask = withoutDisabledFast(task.modelSelection);
+      if (cleanedTask !== task.modelSelection) store.patchTask(id, task.threadId, { modelSelection: cleanedTask });
     }
     const stray = (store.bot(id)?.tasks ?? [])
       .filter((task) => task.modelSelection && !modelOn(switches, task.modelSelection.instanceId, task.modelSelection.model))
@@ -41086,6 +41103,11 @@ function applyOrgEngineAllowList(): void {
       // src/lib/activity-runs.ts), never a raw error.
       const move = { from: orgEngineName(bot.modelSelection.instanceId), to: orgEngineName(next.instanceId) };
       if (bot.threadId) store.appendMessage(bot.threadId, { role: "bot", kind: "activity", tool: { name: `notice: ${orgEngineMoveLine(move)}`, ok: true, engineMove: move } });
+    }
+    for (const task of store.bot(id)?.tasks ?? []) {
+      if (!task.modelSelection) continue;
+      const cleanedTask = withoutDisabledFast(task.modelSelection);
+      if (cleanedTask !== task.modelSelection) store.patchTask(id, task.threadId, { modelSelection: cleanedTask });
     }
     const stray = (store.bot(id)?.tasks ?? [])
       .filter((task) => task.modelSelection && !engineAllowed(allowed, task.modelSelection.instanceId) && !ownKept(task.modelSelection.instanceId))

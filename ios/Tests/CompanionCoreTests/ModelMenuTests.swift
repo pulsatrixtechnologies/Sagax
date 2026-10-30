@@ -105,4 +105,36 @@ final class ModelMenuTests: XCTestCase {
         XCTAssertFalse(ModelMenu.isSimple(stored: "1"))
         XCTAssertTrue(ModelMenu.isSimple(stored: "simple"))
     }
+    func testDisabledModelsFromBothLevelsStayOutOfEveryMenu() throws {
+        let config = try JSONDecoder().decode(ConfigStatus.self, from: Data(#"{"disabledModels":["claude/opus"],"myDisabledModels":["claude/sonnet"]}"#.utf8))
+        XCTAssertEqual(config.disabledModels, ["claude/opus"])
+        XCTAssertEqual(config.myDisabledModels, ["claude/sonnet"])
+        let menu = ModelMenu.sections(
+            instances: instances, selection: ModelSelection(instanceId: "claude", model: "opus"),
+            botModel: ModelSelection(instanceId: "claude", model: "sonnet"), botName: "Ara", follows: false,
+            organization: true, allowedEngines: nil, disabledModels: config.disabledModels,
+            myDisabledModels: config.myDisabledModels, labels: labels, engineLabel: { $0.instanceId }
+        )
+        let rows = menu.flatMap(\.rows)
+        XCTAssertFalse(rows.contains { $0.instanceId == "claude" })
+        XCTAssertFalse(rows.contains { $0.kind == .follow })
+        let favorites = ModelMenu.root(menu, favorites: [ModelFavorites.key(instanceId: "claude", modelId: "opus")])
+        XCTAssertTrue(favorites.favorites.isEmpty)
+        XCTAssertTrue(ModelMenu.filter(menu, query: "opus").isEmpty)
+        let older = try JSONDecoder().decode(ConfigStatus.self, from: Data("{}".utf8))
+        XCTAssertNil(older.disabledModels)
+        XCTAssertNil(older.myDisabledModels)
+    }
+
+    func testPersonalSwitchesApplyInSoloAndModelIdsMayContainSlashes() {
+        let endpoint = instance("compat", models: [("vendor/large", "Large"), ("vendor/small", "Small")])
+        let menu = ModelMenu.sections(
+            instances: [endpoint], selection: ModelSelection(instanceId: "compat", model: "vendor/small"),
+            botModel: ModelSelection(instanceId: "compat", model: "vendor/small"), botName: "Ara", follows: nil,
+            organization: false, allowedEngines: nil, myDisabledModels: ["compat/vendor/large"],
+            labels: labels, engineLabel: { $0.instanceId }
+        )
+        XCTAssertEqual(menu.filter { $0.key == "compat" }.flatMap(\.rows).map(\.modelId), ["vendor/small"])
+    }
+
 }

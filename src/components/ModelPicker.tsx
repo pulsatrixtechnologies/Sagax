@@ -1115,7 +1115,7 @@ export function ModelPicker({
   const fastKey = (instanceId: string, model: string) => `${instanceId}\u0000${model}`;
   const fastChoices = autoOn
     ? selectable.flatMap((instance) => localModelRows(instance.models.options, orgMode)
-      .filter((option) => !localRowUnavailable(instance.driverKind, option.id, option.anthropic))
+      .filter((option) => modelOn(switches, instance.instanceId, option.id) && !localRowUnavailable(instance.driverKind, option.id, option.anthropic))
       .map((option) => ({ key: fastKey(instance.instanceId, option.id), label: `${instance.displayName} · ${option.label || option.id}` })))
     : [];
   const chooseFast = (key: string) => {

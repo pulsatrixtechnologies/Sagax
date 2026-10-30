@@ -43,7 +43,12 @@ server refuses a model off by name (`modelSwitchRefusal`: 403 on a choice,
 `run_with_engine`'s candidates (the bot owner's switches), and moves a bot on
 it to Auto on the same engine (`applyModelSwitches`). Tests:
 `shared/offered-models.test.ts`, `server/routes/model-switches.test.ts`,
-`server/org-admin-ops.test.ts`, `ModelSwitchesSettings.test.ts`.
+`server/org-admin-ops.test.ts`, `ModelSwitchesSettings.test.ts`. Native iOS
+`ConfigStatus` carries both disabled lists into `ModelMenu.sections`; a
+disabled model stays out of provider, current, search, favorite and follow-bot
+rows. Auto's fast choices use the same switches: disabled choices are refused
+on save and removed from stored bot/thread selections when switches change.
+Covered by `ModelMenuTests` and `model-switches.e2e.test.ts` too.
 
 ## Settings > Providers (2026-10-30)
 
