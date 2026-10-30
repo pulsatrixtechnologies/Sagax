@@ -6311,6 +6311,21 @@ connectors and My MCP servers only.
   `src/components/plugins/ConnectAppsView.test.ts`. Captures:
   `scripts/capture-github-plugin.mjs`, `docs/screenshots/github-plugin/`.
 
+## Capabilities on iPhone and iPad (lot 1c, 2026-10-30)
+
+Library > Capabilities opens the server's one resolved list on the iPhone
+and iPad (`BotCapabilityList`, `ios/Sources/CompanionCore/BotCapabilities.swift`).
+It shows scope, state, source and the engine's receipt summary, including
+skills omitted by the prompt index. Keys and bot ids never appear. Unknown
+future fields and values remain decodable. The view's identity follows the
+bot, so a different bot creates a fresh state model.
+
+`BotCapabilitiesModel` calls existing plugin, server, Role and skill routes
+for switches that `canToggle` allows. Skill enablement still opens the skill
+text for review. A disabled installation server and a library whose feature
+is off stay unchanged. Sidecar pairings use the existing bot-plugins surface
+gate. Tests: `ios/Tests/CompanionCoreTests/BotCapabilitiesTests.swift`.
+
 ## Reserved MCP server names (2026-10-17, one rule since 2026-10-30)
 
 One rule, `reservedMcpName` (`shared/mcp-reserved-names.ts`), for this
