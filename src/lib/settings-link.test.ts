@@ -35,10 +35,14 @@ describe("settings links", () => {
   // link to Integrations opens it. Decision model, Privacy and Memory became
   // cards of that page. Connected apps stays its own section.
   it("redirects an old section link to the page and card that hold it now", () => {
-    expect(currentSettingsSection("connections")).toBe("engines");
+    // 2026-10-30: keys are on Providers; image generation and the online computers stay on Models
+    expect(currentSettingsSection("connections")).toBe("providers");
+    expect(currentSettingsSection("connections", "connections.image")).toBe("engines");
+    expect(currentSettingsSection("connections", "connections.integrations")).toBe("engines");
+    expect(currentSettingsSection("engines", "engines.keys")).toBe("providers");
     // 2026-10-28: the voice card is on the Voice page
     expect(currentSettingsSection("connections", "connections.voice")).toBe("voice");
-    expect(currentSettingsSection("connections", "connections.apps")).toBe("engines");
+    expect(currentSettingsSection("connections", "connections.apps")).toBe("providers");
     expect(currentSettingsSection("connectedApps")).toBe("connectedApps");
     expect(currentSettingsSection("decisionModel")).toBe("engines");
     expect(currentSettingsSection("privacy")).toBe("notifications");
@@ -75,16 +79,16 @@ describe("settings links", () => {
     openSettings((action) => sent.push(action), "connections", "connections.apps");
     openSettings((action) => sent.push(action), "decisionModel");
     expect(sent).toEqual([
-      { type: "toggleAppSettings", open: true, section: "engines" },
+      { type: "toggleAppSettings", open: true, section: "providers" },
       { type: "toggleAppSettings", open: true, section: "engines" },
     ]);
   });
 
   // New bot's "no model works" button opens the list of keys (PR #478).
-  it("opens Models at its keys for a model that needs one", () => {
+  it("opens Providers for a model that needs a key", () => {
     const sent: unknown[] = [];
     openModelKeysSettings((action) => sent.push(action));
-    expect(sent).toEqual([{ type: "toggleAppSettings", open: true, section: "engines" }]);
+    expect(sent).toEqual([{ type: "toggleAppSettings", open: true, section: "providers" }]);
   });
 
   it("splits a sentence on its settings placeholders", () => {

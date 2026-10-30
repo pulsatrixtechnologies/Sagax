@@ -104,7 +104,7 @@ describe("composer while the bot cannot answer", () => {
     await settle();
     expect($("[data-composer-send-block]")!.textContent).toContain("Claude is not connected for you.");
     flushSync(() => $<HTMLButtonElement>('[data-composer-send-block-action="connect"]')!.click());
-    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "toggleAppSettings", open: true, section: "engines" });
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "toggleAppSettings", open: true, section: "providers" });
   });
 
   it("comes back by itself once the cause is fixed, without a reload", async () => {

@@ -40,7 +40,10 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 const render = async () => {
-  const { EnginesSettings } = await import("./EnginesSettings");
+  const { EnginesSettings, LEGACY_CARD } = await import("./EnginesSettings");
+  // 2026-10-30: the engine cards and keys are the former view on Models (Providers, lot 1)
+  const { requestSettingsCard } = await import("./SettingsPrimitives");
+  requestSettingsCard(LEGACY_CARD);
   return renderToStaticMarkup(createElement(EnginesSettings));
 };
 
@@ -186,8 +189,8 @@ describe("Model providers on an organization server", () => {
     expect(renderToStaticMarkup(createElement(MyEngineAccess, { engine: mine("codex", "codex", "Codex", { installed: false, notAvailable: "Not available on this server" }) }))).toBe("");
   });
 
-  it("shows the Claude connectors status on the engines page", async () => {
-    expect(await render()).toContain('data-harness-connectors="settings"');
+  it("leaves the Claude connectors to the Claude row of Providers (2026-10-30), not on Models", async () => {
+    expect(await render()).not.toContain('data-harness-connectors="settings"');
   });
 });
 

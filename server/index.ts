@@ -1130,6 +1130,7 @@ import { pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { engineServerMcp, perspicaxServerName, personalMcpPrecheck, serverMcpAsPerson, turnPluginPromptDirs } from "./turn-mounts.ts";
 import { resolveBotCapabilities, type CapabilityInputs, type InstallationServerInput } from "./capabilities.ts";
 import { createBotCapabilitiesRoutes, type BotCapabilitiesAnswer } from "./routes/bot-capabilities.ts";
+import type { BotCapabilities } from "../shared/capabilities.ts";
 import { reservedMcpName } from "../shared/mcp-reserved-names.ts";
 import { createBotPluginRoutes, createPersonalPluginRoutes } from "./routes/bot-plugins.ts";
 import { personalPluginStorage } from "./person-plugins.ts";
@@ -8834,21 +8835,47 @@ function botCapabilitiesFor(auth: RequestAuth, botId: string, engineId: string |
   const bot = store.bot(botId);
   const level = bot ? viewerBotLevel(auth, bot) : null;
   if (!bot || (level === null && !orgAdminCaller(auth))) return { ok: false, status: 404, error: "no such bot", code: "not_found" };
-  const instance = registry.get(engineId ?? bot.modelSelection.instanceId);
-  if (!instance) return { ok: false, status: engineId ? 400 : 404, error: "Unknown engine.", code: "unknown_engine" };
-  const organization = IDENTITY.kind === "perspicax";
-  const principal = organization ? sessionPrincipal(auth)?.trim().toLowerCase() || undefined : undefined;
-  const speaker: TurnSpeaker = principal ? { origin: "person", principalId: principal } : { origin: "operator" };
+  const principal = IDENTITY.kind === "perspicax" ? sessionPrincipal(auth)?.trim().toLowerCase() || undefined : undefined;
   const mayChange = IDENTITY.kind !== "perspicax"
     ? auth.kind !== "session" || auth.scopes.includes("admin")
     : level === "owner" || level === "manage" || orgAdminCaller(auth);
+  return botCapabilitiesAs(bot, engineId, { ...(principal ? { principal } : {}), mayChange, marketplace: marketplaceViewer(auth) });
+}
+/** The Perspicax console's `GET bots/{id}/capabilities` (lot 1d): the same
+ * list for the console person, whose reach the admin router checked. Read
+ * only: the console never switches anything, so `canToggle` says what that
+ * person could change in Sagax. */
+function consoleBotCapabilities(botId: string, viewer: { principalId: string; orgAdmin: boolean }): BotCapabilities | null {
+  const bot = store.bot(botId);
+  if (!bot) return null;
+  const principal = viewer.principalId.trim().toLowerCase();
+  const person = authzViewerFromId(principal);
+  const level = person ? botLevel({ viewer: { ...person, orgAdmin: person.orgAdmin || viewer.orgAdmin }, ...botFacts(bot) }) : null;
+  const answer = botCapabilitiesAs(bot, undefined, {
+    principal,
+    mayChange: viewer.orgAdmin || level === "owner" || level === "manage",
+    marketplace: { principal },
+  });
+  return answer.ok ? answer.capabilities : null;
+}
+function botCapabilitiesAs(
+  bot: NonNullable<ReturnType<typeof store.bot>>,
+  engineId: string | undefined,
+  viewer: { principal?: string; mayChange: boolean; marketplace: MarketplaceViewer },
+): BotCapabilitiesAnswer {
+  const instance = registry.get(engineId ?? bot.modelSelection.instanceId);
+  if (!instance) return { ok: false, status: engineId ? 400 : 404, error: "Unknown engine.", code: "unknown_engine" };
+  const organization = IDENTITY.kind === "perspicax";
+  const principal = organization ? viewer.principal : undefined;
+  const speaker: TurnSpeaker = principal ? { origin: "person", principalId: principal } : { origin: "operator" };
+  const mayChange = viewer.mayChange;
   const owner = effectiveBotOwner(bot);
   const kind = instance.driverKind;
   const library = skillsLibraryEnabled(cfg);
   // what the marketplaces offer, for "update available" (names only)
   const offered = new Map<string, boolean>();
   try {
-    for (const market of botPlugins.listMarketplaces(bot.id, marketplaceViewer(auth))) {
+    for (const market of botPlugins.listMarketplaces(bot.id, viewer.marketplace)) {
       for (const plugin of market.plugins) if (plugin.updateAvailable) offered.set(`${plugin.name}@${market.name}`, true);
     }
   } catch { /* listed without updates */ }
@@ -24592,6 +24619,22 @@ const routineWatchDeps: RoutineWatchDeps = {
   now: () => Date.now(),
 };
 const routineWatchEvaluator = createRoutineWatchEvaluator(routineWatchDeps);
+// Recovery can synchronously offer failed-run events from the constructor.
+// Keep the waker ready so those events join its usual batch.
+const proactiveProposals = new ProactiveProposals(process.env.VITEST ? null : join(DATA_DIR, "proactive-proposals.json"));
+const proactiveWaker = new ProactiveWaker({
+  bot: (botId) => {
+    const bot = store.bot(botId);
+    // a hidden or temporary bot has no conversation to act in
+    return bot && !bot.hidden && !bot.temporary ? bot : undefined;
+  },
+  log: (botId, line) => proactiveEventsLine(botId, line),
+  wake: (batch) => startProactiveWake(batch),
+  propose: (batch) => postProactiveProposal(batch),
+  // the verification fixtures shorten the gathering window
+  ...(Number(process.env.SAGAX_PROACTIVE_GATHER_MS) > 0 ? { gatherMs: Number(process.env.SAGAX_PROACTIVE_GATHER_MS) } : {}),
+});
+
 routines = new RoutineManager({
   evaluateWatch: (routine, watch) => routineWatchEvaluator(routine, watch),
   forgetWatch: (routineId) => routineWatchStates.forget(routineId),
@@ -24916,19 +24959,7 @@ routines = new RoutineManager({
 // proactive mode: a proposal card (propose), or a background run that
 // reports into its one conversation only when it has something (read-auto,
 // follow-rules). One line in that conversation's Events tab per wake.
-const proactiveProposals = new ProactiveProposals(process.env.VITEST ? null : join(DATA_DIR, "proactive-proposals.json"));
-const proactiveWaker = new ProactiveWaker({
-  bot: (botId) => {
-    const bot = store.bot(botId);
-    // a hidden or temporary bot has no conversation to act in
-    return bot && !bot.hidden && !bot.temporary ? bot : undefined;
-  },
-  log: (botId, line) => proactiveEventsLine(botId, line),
-  wake: (batch) => startProactiveWake(batch),
-  propose: (batch) => postProactiveProposal(batch),
-  // the verification fixtures shorten the gathering window
-  ...(Number(process.env.SAGAX_PROACTIVE_GATHER_MS) > 0 ? { gatherMs: Number(process.env.SAGAX_PROACTIVE_GATHER_MS) } : {}),
-});
+
 
 /** A wake in "read and prepare on my own" runs at Ask (approvalModeForTurn). */
 function proactiveReadAutoTurn(threadId: string): boolean {
@@ -38080,6 +38111,9 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
           ...(notAvailable ? { notAvailable } : {}),
           subscription: { supported, signedIn, ...(expired ? { expired: true } : {}) },
           myKey,
+          // 2026-10-30 (Providers, lot 1): where the person's own key lives,
+          // in the order engine-credentials.ts reads them (Perspicax first)
+          ...(myKey ? { keyWhere: "perspicax" } : localKey ? { keyWhere: "server" } : {}),
           orgKey,
           ...(orgKeySet && !orgKey ? { orgKeyNotGiven: true } : {}),
           ...(orgNotAllowed ? { orgNotAllowed: true } : {}),
@@ -40196,6 +40230,7 @@ function setBotApprovalModeFromConsole(botId: string, mode: "ask" | "auto", thre
 
 const orgBotsDeps: BotsDeps = {
   bots: () => orgAdminBots(),
+  capabilities: (botId, viewer) => consoleBotCapabilities(botId, viewer),
   avatar: (botId) => {
     const bot = store.bot(botId);
     return bot ? readBotAvatar(bot, ATTACHMENTS_DIR) : null;

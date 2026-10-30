@@ -1178,7 +1178,9 @@ export function PluginsPanel() {
         <InstalledView
           loading={mcp.servers === null}
           entries={entries}
-          resolved={scope === "bot" ? botCapabilities.data ?? undefined : undefined}
+          resolved={scope === "bot" ? botCapabilities.data : undefined}
+          resolvedError={scope === "bot" && !botCapabilities.data ? botCapabilities.error : null}
+          onRetryResolved={() => void botCapabilities.reload()}
           botName={scopeBot?.name}
           organization={scope === "bot" && botCapabilities.data ? organizationRows(botCapabilities.data.items) : []}
           skills={scope === "bot" ? [] : privateSkills(items)}

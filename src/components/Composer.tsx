@@ -133,7 +133,6 @@ import { useVoiceNoteRecorder } from "./useVoiceNoteRecorder";
 import { dictationEngine, isDictationHold, joinDictated } from "@/lib/composer-dictation";
 import { botCtaColors } from "@/lib/voice-cta";
 import { useVoiceModeCheck } from "@/lib/voice-mode/api";
-import { requestSettingsCard } from "./SettingsPrimitives";
 import { openProviderKeyDialog } from "./settings/ProviderKeys";
 import { isMacPlatform } from "@/lib/keyboard-shortcuts";
 
@@ -1157,8 +1156,7 @@ export function Composer({
   });
   const voiceNoting = voiceNote.phase !== "idle";
   const openDictationSetup = () => {
-    requestSettingsCard("engines.keys");
-    dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
+    dispatch({ type: "toggleAppSettings", open: true, section: "providers" });
     // the xAI key carries voice and dictation (2026-10-14)
     openProviderKeyDialog("xai");
   };
@@ -1404,7 +1402,7 @@ export function Composer({
         {sendBlock && !locked && (
           <ComposerSendBlock
             block={sendBlock}
-            onConnect={() => dispatch({ type: "toggleAppSettings", open: true, section: "engines" })}
+            onConnect={() => dispatch({ type: "toggleAppSettings", open: true, section: "providers" })}
             onRetry={sendState.recheck}
           />
         )}
