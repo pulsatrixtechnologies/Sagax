@@ -64,8 +64,11 @@ export interface InstalledViewProps {
   /** a bot's scope: its organization Flow and Perspicax Roles, from the
    * bot's resolved list (lib/capabilities organizationRows) */
   organization?: Capability[];
-  /** In a bot's scope, the server's complete list is the only row source. */
-  resolved?: BotCapabilities;
+  /** Bot scope: null waits for the resolver, undefined uses the installation
+   * inventory. A loading or failed bot resolver never falls back to it. */
+  resolved?: BotCapabilities | null;
+  resolvedError?: string | null;
+  onRetryResolved?: () => void;
   botName?: string;
 }
 
@@ -78,7 +81,7 @@ function EmptyLine({ children, action }: { children: ReactNode; action?: ReactNo
   );
 }
 
-export function InstalledView({ entries, skills, sourceLabel, onOpenEntry, onOpenSkill, entryActions, onAddServer, onPasteConfig, addDisabled, onNewSkill, forms, loading, onDiscover, providers, organization = [], resolved, botName = "" }: InstalledViewProps) {
+export function InstalledView({ entries, skills, sourceLabel, onOpenEntry, onOpenSkill, entryActions, onAddServer, onPasteConfig, addDisabled, onNewSkill, forms, loading, onDiscover, providers, organization = [], resolved, resolvedError, onRetryResolved, botName = "" }: InstalledViewProps) {
   const tools = onAddServer || onPasteConfig || onNewSkill;
   return (
     <div data-plugins-installed-tab>
@@ -102,7 +105,7 @@ export function InstalledView({ entries, skills, sourceLabel, onOpenEntry, onOpe
         </div>
       )}
       {forms}
-      {resolved && <CapabilitiesBody botName={botName} data={resolved} switchable={() => false} showReceived={false}
+      {resolved !== undefined && <CapabilitiesBody botName={botName} data={resolved} error={resolvedError} onRetry={onRetryResolved} switchable={() => false} showReceived={false}
         rowActions={(item) => {
           const plugin = botPluginKey(item);
           const server = installationServerName(item);
@@ -117,14 +120,14 @@ export function InstalledView({ entries, skills, sourceLabel, onOpenEntry, onOpe
             <EntryMenu name={capabilityName(item)} actions={entryActions(entry)} updateWaiting={entry.updateAvailable} />
           </>;
         }} />}
-      {!resolved && entries.length === 0 && skills.length === 0 && organization.length === 0 && !loading && (
+      {resolved === undefined && entries.length === 0 && skills.length === 0 && organization.length === 0 && !loading && (
         <EmptyLine action={onDiscover ? (
           <button type="button" data-plugins-go-discover onClick={onDiscover} className="text-[12.5px] font-medium text-accent-text hover:underline">{t("connectApps.manage.tab.discover")}</button>
         ) : undefined}>
           {t("connectApps.manage.nothingInstalled")}
         </EmptyLine>
       )}
-      {!resolved && entries.length > 0 && (
+      {resolved === undefined && entries.length > 0 && (
         <section data-plugins-installed>
           <ul className="divide-y divide-hairline/60 rounded-2xl border border-border bg-card">
             {entries.map((entry) => (
@@ -135,7 +138,7 @@ export function InstalledView({ entries, skills, sourceLabel, onOpenEntry, onOpe
           </ul>
         </section>
       )}
-      {!resolved && organization.length > 0 && (
+      {resolved === undefined && organization.length > 0 && (
         <section className="mt-6 first:mt-0" data-plugins-organization>
           <h3 className="mb-2 text-[13px] font-semibold text-ink">{t("capabilities.installed.organization")}</h3>
           <ul className="divide-y divide-hairline/60 rounded-2xl border border-border bg-card">
@@ -145,7 +148,7 @@ export function InstalledView({ entries, skills, sourceLabel, onOpenEntry, onOpe
           </ul>
         </section>
       )}
-      {!resolved && skills.length > 0 && (
+      {resolved === undefined && skills.length > 0 && (
         <section className="mt-6" data-plugins-skills>
           <h3 className="mb-2 text-[13px] font-semibold text-ink">{t("connectApps.manage.skills")}</h3>
           <ul className="divide-y divide-hairline/60 rounded-2xl border border-border bg-card">
