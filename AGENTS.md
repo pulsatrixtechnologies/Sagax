@@ -52,7 +52,8 @@ Named OpenAI-compatible servers: Settings > Models > Keys, "Add an
 OpenAI-compatible server" (`OpenAiCompatServers`), each an engine
 `compat-<id>` on its own key (`server/openai-compat-servers.ts`,
 `openaiCompatServers` in config.json, `SAGAX_COMPAT_SERVER_API_KEY`),
-`POST/PATCH/DELETE /api/instances/openai-compat-servers[/id]`, an
+`POST/PATCH/DELETE /api/instances/openai-compat-servers[/id]`
+(`server/routes/openai-compat-servers.ts`), an
 organization admin's only. Tests: `shared/offered-engines.test.ts`,
 `shared/org-engine-readiness.test.ts`, `server/engine-credentials.test.ts`,
 `server/openai-compat-servers.test.ts`, `server/desktop-local-models.test.ts`,

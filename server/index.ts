@@ -995,7 +995,8 @@ import { recentPersonSignIn } from "./recent-sign-in.ts";
 import { createAuthRefusalLogger } from "./auth-refusal-log.ts";
 import { isAccountEmail, isPrincipalId, PrincipalRegistry, type Principal } from "./principals.ts";
 import { OrgTeams } from "./org-teams.ts";
-import { addCompatServer, compatServers, editCompatServer, editCompatServerSchema, newCompatServerSchema, removeCompatServer } from "./openai-compat-servers.ts";
+import { compatServers } from "./openai-compat-servers.ts";
+import { createOpenAiCompatServerRoutes } from "./routes/openai-compat-servers.ts";
 import { keyVia, materializeEngineAccess, paidByPerson, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type SubscriptionDriver, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
 import { configKeyPatch, engineKeyScope, engineKeyTarget, EngineKeyError, fileKeyConfigured, hermesProviderEnv, normalizeEngineKey, writeFileEngineKey } from "./engine-api-keys.ts";
 import { isLoginDriver, LOGIN_MARKER, loginCliFor, loginSlotOf, PrincipalEngineLogins, secondLoginSupported, type LoginSlot } from "./principal-engine-logins.ts";
@@ -41911,6 +41912,35 @@ ROUTES.push(createAntigravityLeftoverRoutes({
   find: () => findAntigravityLeftovers(),
   remove: () => removeAntigravityLeftovers(),
 }));
+// 2026-10-30: named OpenAI-compatible servers, each an engine on its own key
+// (server/openai-compat-servers.ts); the provider-settings lock as above.
+ROUTES.push(createOpenAiCompatServerRoutes({
+  // a hosted-models home keeps its providers (HOSTED_PROVIDER_SETTINGS_ERROR)
+  allowed: (auth) => !hostedModels && (IDENTITY.kind !== "perspicax" || orgAdminCaller(auth)),
+  instances: () => persistableInstanceConfigs(cfg),
+  keys: () => cfg.openaiCompatServers,
+  persist: async (instanceId, instances, keys) => {
+    providerInstancesChanging.add(instanceId);
+    try {
+      // the key first: the instance reads it when it loads
+      saveConfig({ openaiCompatServers: keys });
+      cfg.openaiCompatServers = keys;
+      await persistProviderInstance(instanceId, instances);
+      broadcast({ kind: "config", ...configStatus() });
+    } finally {
+      providerInstancesChanging.delete(instanceId);
+    }
+  },
+  inUse: (id) => cfg.defaultModelSelection?.instanceId === id || store.bots.some((bot) =>
+    bot.modelSelection.instanceId === id || bot.fallback?.some((candidate) => candidate.instanceId === id)
+    || store.tasks(bot.id).some((task) => task.modelSelection?.instanceId === id || (threadBusy(bot.id, task.threadId) && botForThread(bot.id, task.threadId)?.modelSelection.instanceId === id))),
+  describe: (auth) => instancesForViewer(auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null : null),
+  exclusive: (work) => {
+    if (providerConfigBusy) return null;
+    providerConfigBusy = true;
+    return work().finally(() => { providerConfigBusy = false; });
+  },
+}));
 // Another Google account for Antigravity; shares the provider-settings lock with the other account routes.
 ROUTES.push(createAntigravityAccountRoutes({
   instances: () => persistableInstanceConfigs(cfg),
@@ -53335,57 +53365,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // ── per-instance settings (CLI/account or API tool support) ──
     // PATCH /api/instances/:id {cli: "/path/to/cli" | ""} — "" reverts to the
     // driver default. Only this idle instance is replaced; siblings keep running.
-    // 2026-10-30: named OpenAI-compatible servers (server/openai-compat-servers.ts):
-    // each one an engine of its own, its key write-only. An address the
-    // server connects to: an organization admin's on an organization server.
-    const compatServer = /^\/api\/instances\/openai-compat-servers(?:\/([\w.-]+))?$/.exec(path);
-    if (compatServer && (method === "POST" || method === "PATCH" || method === "DELETE")) {
-      if (method !== "DELETE" && !String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
-        return json(res, 415, { error: "content-type must be application/json" });
-      }
-      if (IDENTITY.kind === "perspicax" && !orgAdminCaller(auth)) {
-        return json(res, 403, { error: "Only an organization admin can change an address the server connects to.", code: "admin_only_field", field: "openaiCompatServers" });
-      }
-      const targetId = compatServer[1];
-      if ((method === "POST") !== (targetId === undefined)) return json(res, 404, { error: "not found" });
-      if (providerConfigBusy) return json(res, 409, { error: "provider settings are already being updated" });
-      const viewer = auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null : null;
-      let next: { instanceId: string; instances: NonNullable<AppConfig["instances"]>; keys: NonNullable<AppConfig["openaiCompatServers"]> } | null;
-      if (method === "POST") {
-        const parsed = newCompatServerSchema.safeParse(await readBody(req, 8192));
-        if (!parsed.success) return json(res, 400, { error: "Name the server (up to 80 characters) and give its address: https, or http on this machine or a private network." });
-        next = addCompatServer(persistableInstanceConfigs(cfg), cfg.openaiCompatServers, parsed.data);
-      } else if (method === "PATCH") {
-        const parsed = editCompatServerSchema.safeParse(await readBody(req, 8192));
-        if (!parsed.success) return json(res, 400, { error: "Send a new name, address or key." });
-        const edited = editCompatServer(persistableInstanceConfigs(cfg), cfg.openaiCompatServers, targetId!, parsed.data);
-        next = edited && { instanceId: targetId!, ...edited };
-      } else {
-        const id = targetId!;
-        if (cfg.defaultModelSelection?.instanceId === id || store.bots.some((bot) =>
-          bot.modelSelection.instanceId === id || bot.fallback?.some((candidate) => candidate.instanceId === id) || store.tasks(bot.id).some((task) => task.modelSelection?.instanceId === id)) ||
-          busyProviderSelections().some((selection) => selection.instanceId === id)) {
-          return json(res, 409, { error: "Choose another model for the bots and default model using this server before removing it." });
-        }
-        const removed = removeCompatServer(persistableInstanceConfigs(cfg), cfg.openaiCompatServers, id);
-        next = removed && { instanceId: id, ...removed };
-      }
-      if (!next) return json(res, 404, { error: "unknown server" });
-      providerConfigBusy = true;
-      providerInstancesChanging.add(next.instanceId);
-      try {
-        // the key first: the instance reads it when it loads
-        saveConfig({ openaiCompatServers: next.keys });
-        cfg.openaiCompatServers = next.keys;
-        await persistProviderInstance(next.instanceId, next.instances);
-        broadcast({ kind: "config", ...configStatus() });
-        return json(res, method === "POST" ? 201 : 200, { instanceId: next.instanceId, instances: await instancesForViewer(viewer) });
-      } finally {
-        providerInstancesChanging.delete(next.instanceId);
-        providerConfigBusy = false;
-      }
-    }
-
     const instancePatch = /^\/api\/instances\/([\w.-]+)$/.exec(path);
     if (method === "PATCH" && instancePatch) {
       // same non-simple-request gate as the local-VM lifecycle routes
