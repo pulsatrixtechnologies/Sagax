@@ -1,5 +1,6 @@
 // One person's account, whether it is sealed here (solo) or in Perspicax.
 // A remote import never replaces an account the person already maintains.
+import { createHash } from "node:crypto";
 import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
@@ -28,7 +29,8 @@ const viewSchema = z.object({
 export type ProviderAccountOwner = { principalId: string; sub: string };
 export class ProviderAccountsError extends Error {
   readonly status: number;
-  constructor(status = 503, message = "Your provider accounts could not be saved. Try again.") { super(message); this.status = status; }
+  readonly code?: string;
+  constructor(status = 503, message = "Your provider accounts could not be saved. Try again.", code?: string) { super(message); this.status = status; this.code = code; }
 }
 
 interface ProviderAccountsOptions {
@@ -61,7 +63,11 @@ export class ProviderAccounts {
     const directory = this.options.directory;
     if (!directory) throw new ProviderAccountsError();
     const result = await directory.linkPostJson(`/api/v1/pulsabot/${route}`, { sub: owner.sub, ...value }, { subject: owner.sub, timeoutMs: 10_000, maxBytes: 1024 * 1024 });
-    if (!result.ok) throw new ProviderAccountsError(result.status === 400 ? 400 : result.status === 403 ? 403 : 503);
+    if (!result.ok) {
+      if (result.status === 404 || result.status === 405) throw new ProviderAccountsError(409,
+        "Your organization server needs an update to manage provider accounts.", "provider_accounts_update_required");
+      throw new ProviderAccountsError(result.status === 400 ? 400 : result.status === 403 ? 403 : 503);
+    }
     return result.body;
   }
 
@@ -154,7 +160,17 @@ export class ProviderAccounts {
 
   async resolve(owner: ProviderAccountOwner, provider: KeyProvider): Promise<ProviderKeyResult> {
     try { await this.serial(owner, () => this.migrate(owner)); }
-    catch { return { ok: false, error: "unreachable" }; }
+    catch (error) {
+      if (!(error instanceof ProviderAccountsError) || error.code !== "provider_accounts_update_required") return { ok: false, error: "unreachable" };
+      // An older organization host can still resolve its existing provider
+      // keys. Keep a pending local import usable until that host is updated;
+      // a disabled person or missing link never falls back to a local key.
+      const remote = await this.options.directory?.resolveProviderKey(owner.sub, provider);
+      if (remote?.ok || remote?.error === "user_inactive" || remote?.error === "link") return remote;
+      const key = this.store.keys(this.scope(owner))[provider] ?? this.store.legacy(this.scope(owner))[provider];
+      if (key) return { ok: true, key, fingerprint: createHash("sha256").update(key).digest("hex") };
+      return remote ?? { ok: false, error: "link" };
+    }
     return this.options.directory?.resolveProviderKey(owner.sub, provider) ?? { ok: false, error: "link" };
   }
 }

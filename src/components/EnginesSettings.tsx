@@ -4,43 +4,38 @@
 // binary (`<cli> --version`, same PATH a real turn uses); a failed probe
 // asks before registering: the classic miss is a path the terminal sees
 // but this GUI app can't.
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, Phone, RefreshCw, TriangleAlert } from "lucide-react";
 
 import { api, useStore, type ConfigStatus, type InstanceInfo } from "@/state/store";
-import { EngineCard, RefreshEngines, engineReady } from "./EngineLibrary";
+import { EngineCard, engineReady } from "./EngineLibrary";
 import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
-import { ApiKeyEngineManage, EngineSetup, EngineUpdateNotice, EngineWarningNotice, isApiKeyEngine } from "./EngineSetup";
+import { ApiKeyEngineManage, EngineSetup, EngineUpdateNotice, EngineWarningNotice } from "./EngineSetup";
 import { AddClaudeAccount, ClaudeAccountSettings } from "./ClaudeAccountSettings";
 import { AddProviderAccount, CodexAccountSettings } from "./CodexAccountSettings";
 import { DEVICE_SIGN_IN_COPY, deviceSignInProvider } from "./DeviceSignIn";
 import { AntigravityFreeSpace } from "./AntigravityFreeSpace";
-import { ManageMyKeysLink } from "./settings/MyEngines";
 import { EngineConnect, paysWithText } from "./EngineConnect";
 import { EngineConnectorsLine } from "./plugins/EngineCapabilities";
-import { reloadMyEngines, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
+import { reloadMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
 import { myTurnsReady } from "../../shared/org-engine-readiness";
 import { canEditConfig, canManageKeys, viewerCan, viewerIsOrgMember } from "@/lib/viewer";
 import { viewerIsOrgAdmin } from "@/lib/group-owner";
 import { boatComputerEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
-import { DescribedRow, FIELD, FoldRow, HelpTip, PILL, PillSelect, SettingsGroup, requestSettingsCard, useSettingsCardOpen } from "./SettingsPrimitives";
-import { KeyList, ProviderKeyDialog } from "./settings/ProviderKeys";
-import { OpenAiCompatServers } from "./settings/OpenAiCompatServers";
+import { DescribedRow, FIELD, FoldRow, PILL, PillSelect, SettingsGroup } from "./SettingsPrimitives";
+import { ProviderKeyDialog } from "./settings/ProviderKeys";
 import { AutoModelSettings } from "./settings/AutoModelSettings";
 import { ModelSwitchesSettings } from "./settings/ModelSwitchesSettings";
-import { CloudAgentProvidersSettings, useCloudAgentProviders } from "./settings/CloudAgentProvidersSettings";
 import { VoiceProviderSettings } from "./settings/VoiceProviderSettings";
-import { PersonalVoiceKeys } from "./settings/PersonalVoiceKeys";
 import { WebSearchSettings } from "./settings/WebSearchSettings";
-import { VoiceEngineSettings } from "./settings/VoiceEngineSettings";
+import { VoiceProviderOptions } from "./settings/VoiceProviderOptions";
 import { MicrophonePermissionRow, MicrophoneSettings } from "./settings/MicrophoneSettings";
 import { ImageGenerationSettings } from "./settings/ImageGenerationSettings";
 import { LiveCallInstallationSettings } from "./LiveCallSettings";
 import { ApiKeyRow, VpsConnection } from "./ApiKeys";
-import { useOfferedInstances } from "@/lib/offered-instances";
 import { useViewAsMember } from "@/lib/view-as-member";
 
 interface ProbeResult {
@@ -449,62 +444,16 @@ export function useModelsVoiceAccess() {
   return { member, org, keys, installation, personalVoiceKeys };
 }
 
-/** Settings > Models (2026-10-14 as "Models and voice"; Voice is a page of
- * its own since 2026-10-28), laid out as the reference design's settings
- * pages since 0.5.6: grey headings outside rounded cards, compact rows.
- * Engines first (Auto, the ready engines in view, the others folded under
- * "Needs setup" with their count), then every key (model, voice and image)
- * in one group, the rare ones folded under More providers, the only place a
- * key is managed (2026-10-15); then web search, image generation and, when
- * their experiments are on, the online computers. */
+/** Settings > Models: Auto, active models, web search, image generation
+ * and the optional computers. Accounts and keys live in Providers. */
 export function EnginesSettings() {
   const { state } = useStore();
-  // every KNOWN-driver instance has cliDefault; unknown-driver shadows have
-  // neither unless an override was set. Including them keeps a Reset-able row
-  // (and a Set CLI… path) for engines the running build doesn't recognize.
-  // An organization member's copy of the engines carries no CLI fields
-  // (server memberInstanceView): their rows are the engines the server
-  // reports to them (orgEngineRows keeps the installed ones). Key engines
-  // have no CLI; keep them once their key is saved, or the card (and the
-  // only way back to a mistyped key) vanishes (MOCA-292).
-  // 2026-10-09: a member whose profile includes engines.manage manages the
-  // server's engines as an admin does (the server sends them the full rows).
-  const { member, org, keys, installation } = useModelsVoiceAccess();
-  // an engine the organization does not offer is not listed
-  // (src/lib/offered-instances.ts; the server leaves it out too)
-  const offered = useOfferedInstances("settings");
-  const rows = offered.filter((i) => member || i.readOnly || i.cli !== undefined || i.cliDefault !== undefined || i.snapshot.state === "unavailable" || isApiKeyEngine(i));
-  // On an organization server each person signs in their own subscription
-  // here, on each engine's row (it was a separate "My subscriptions and
-  // keys" card until 2026-10-02), never the server's.
-  const myEngines = useMyEngines();
-  const mineOf = (instance: InstanceInfo) => (org ? myEngines?.find((engine) => engine.instanceId === instance.instanceId) : undefined);
-  const shown = org ? orgEngineRows(rows, myEngines).filter((instance) => !member || mineOf(instance)) : rows;
-  // 2026-10-30: an expired sign-in is never Ready; it counts under Needs setup
-  const isReady = (instance: InstanceInfo) => { const mine = mineOf(instance); return mine ? myTurnsReady(mine) : engineReady(instance); };
-  const [legacyOpen] = useSettingsCardOpen(LEGACY_CARD, false);
+  const { keys, installation } = useModelsVoiceAccess();
 
   return (
     <div className="flex min-w-0 flex-col gap-6 pb-2" data-models-voice="" data-models-page="">
-      {/* 2026-10-30 (Providers, lot 1): accounts, keys and servers are on
-          Providers; the former Engines and Keys groups stay here, folded
-          under "Former view", until the Models page replaces them. */}
       <ProvidersMovedNotice />
-      {/* 2026-10-30 (lot 2): one switch per model, two levels */}
       <ModelSwitchesSettings />
-      {legacyOpen && (
-        <>
-          <EnginesSection
-            engines={shown}
-            isReady={isReady}
-            refresh={!member}
-            renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} member={member} issuer={org?.org.identity.issuer} />}
-            empty={Boolean(member && org && myEngines !== null && shown.length === 0)}
-            memberIssuer={member && org ? org.org.identity.issuer : undefined}
-          />
-          {keys && <KeysSection issuer={org?.org.identity.issuer} />}
-        </>
-      )}
       {/* the person's own web search provider and key: theirs, no admin right */}
       <WebSearchSettings />
       {installation && (
@@ -529,20 +478,14 @@ export function EnginesSettings() {
   );
 }
 
-/** Settings > Voice (2026-10-28, out of Models and voice): the person's own
- * voice keys on an organization server, this computer's microphone, then the
- * voice engine with Live calls folded. Same rows and same rights as on
- * Models and voice; the voice engine's key stays in Models > Keys and its
- * "Add in Keys" opens it there. */
+/** The person's unified providers and voices, microphone, provider options
+ * and installation Live controls. Personal keys live in Providers. */
 export function VoiceSettingsPage() {
-  const { keys, installation, personalVoiceKeys } = useModelsVoiceAccess();
+  const { installation } = useModelsVoiceAccess();
   return (
     <div className="flex min-w-0 flex-col gap-6 pb-2" data-voice-page="">
-      {/* #1098: the person's own voice keys on an organization server (their
-          own speech and voice notes); the shared keys stay engines.manage */}
-      {personalVoiceKeys && <PersonalVoiceKeys />}
-      {/* 2026-10-29: who speaks and who hears on a call, read aloud and dictation */}
       <VoiceProviderSettings />
+      <VoiceProviderOptions installation={installation} />
       {/* this computer's microphone: everyone's, whoever edits the installation */}
       <div data-settings-card="connections.audio">
         <SettingsGroup title={t("settings.audio.title")} groupId="audio">
@@ -550,147 +493,32 @@ export function VoiceSettingsPage() {
           <MicrophoneSettings />
         </SettingsGroup>
       </div>
-      {installation && <VoiceSection keysLink={keys} />}
+      {installation && <VoiceSection />}
     </div>
   );
 }
 
-/** The card id of the former Engines and Keys groups on Models. */
-export const LEGACY_CARD = "engines.legacy";
-
-/** Top of Models while Providers is new (lot 1): Auto, where accounts and
- * keys went, and the switch to the former view. */
+/** Auto and the one link to accounts, keys and compatible servers. */
 function ProvidersMovedNotice() {
   const { dispatch } = useStore();
-  const [legacyOpen, toggleLegacy] = useSettingsCardOpen(LEGACY_CARD, false);
   return (
-    <div data-settings-card={LEGACY_CARD} data-open={legacyOpen ? "true" : "false"}>
-      <SettingsGroup title={t("engines.title")} groupId="engines-moved">
-        {/* Auto (docs/plans/2026-10-08-auto-model.md): one row, the detail behind its info button. */}
-        <div data-auto-model-explainer="">
-          <AutoModelSettings />
-        </div>
-        <DescribedRow label={t("providers.moved.title")} description={t("providers.moved.body")} rowId="providers-moved">
-          <button type="button" data-open-providers="" className={PILL}
-            onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: "providers" })}>
-            {t("providers.moved.open")}
-          </button>
-        </DescribedRow>
-        <DescribedRow label={t("providers.legacy.title")} description={t("providers.legacy.body")} rowId="providers-legacy">
-          <button type="button" data-legacy-toggle="" aria-expanded={legacyOpen} className={PILL} onClick={toggleLegacy}>
-            {legacyOpen ? t("providers.legacy.hide") : t("providers.legacy.show")}
-          </button>
-        </DescribedRow>
-      </SettingsGroup>
-    </div>
+    <SettingsGroup title={t("engines.title")} groupId="models-auto">
+      <div data-auto-model-explainer=""><AutoModelSettings /></div>
+      <DescribedRow label={t("providers.moved.title")} description={t("providers.moved.body")} rowId="providers-moved">
+        <button type="button" data-open-providers="" className={PILL}
+          onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: "providers" })}>
+          {t("providers.moved.open")}
+        </button>
+      </DescribedRow>
+    </SettingsGroup>
   );
 }
 
-/** Opens the former Engines and Keys groups on Models ("Former view"). */
-export function openLegacyEngines(dispatch: ReturnType<typeof useStore>["dispatch"]): void {
-  dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
-  requestSettingsCard(LEGACY_CARD);
-}
-
-/** Every key in one group: the main providers, then More providers, folded
- * with its count, with the rare ones not saved yet and the cloud coding
- * agents' keys (in the main list once one is saved). "Manage my keys in
- * Perspicax" sits by the heading when the server is linked to an
- * organization. */
-function KeysSection({ issuer }: { issuer?: string }) {
-  const cloud = useCloudAgentProviders();
-  const cloudSaved = cloud.rows?.some((row) => row.configured) ?? false;
-  const cloudRow = <CloudAgentProvidersSettings state={cloud} />;
-  return (
-    <div data-settings-card="engines.keys" data-keys-section="">
-      <SettingsGroup
-        title={t("modelsVoice.keys.title")}
-        groupId="keys"
-        accessory={(
-          <>
-            <HelpTip label={t("settings.moreAbout", { title: t("modelsVoice.keys.title") })}>{t("providerKeys.help")}</HelpTip>
-            {issuer && <span className="ml-auto"><ManageMyKeysLink issuer={issuer} /></span>}
-          </>
-        )}
-      >
-        <KeyList moreExtra={cloudSaved ? undefined : cloudRow} moreExtraCount={cloudSaved ? 0 : cloud.rows?.length ?? 0} />
-        {cloudSaved && cloudRow}
-        {/* 2026-10-30: each named OpenAI-compatible server, a provider of its own */}
-        <OpenAiCompatServers />
-      </SettingsGroup>
-    </div>
-  );
-}
-
-/** The engines (2026-10-15): Auto, then the ready ones always in view, then
- * the ones to set up folded under "Needs setup" with their count, open by
- * default only while none is ready. A row that changes group remounts (its
- * sign-in or CLI draft is done by then: it changed state). */
-function EnginesSection({ engines, isReady, refresh, renderEngine, empty, memberIssuer }: {
-  engines: InstanceInfo[];
-  isReady: (instance: InstanceInfo) => boolean;
-  /** Check again: whoever manages the server's engines. */
-  refresh: boolean;
-  renderEngine: (instance: InstanceInfo) => ReactNode;
-  /** An organization member with no engine on this server. */
-  empty: boolean;
-  /** An organization member: what their sign-ins do, behind the heading's
-   * info button, and the link to their keys in Perspicax. */
-  memberIssuer?: string;
-}) {
-  const ready = engines.filter(isReady);
-  const setup = engines.filter((instance) => !isReady(instance));
-  return (
-    <div data-settings-card="engines.list" data-engines-list="">
-      <SettingsGroup
-        title={t("engines.title")}
-        groupId="engines"
-        accessory={(memberIssuer || refresh) && (
-          <>
-            {memberIssuer && <HelpTip label={t("settings.moreAbout", { title: t("engines.title") })}>{t("myEngines.memberIntro")}</HelpTip>}
-            <span className="ml-auto flex items-center gap-1">
-              {memberIssuer && <ManageMyKeysLink issuer={memberIssuer} />}
-              {refresh && <RefreshEngines />}
-            </span>
-          </>
-        )}
-      >
-        {/* Auto sits above (ProvidersMovedNotice); the claude.ai connectors
-            are in the Claude row of Providers since 2026-10-30. */}
-        {ready.length > 0 && (
-          <div className="flex flex-col" data-engines-ready="">
-            {ready.map((instance) => <div key={instance.instanceId} className="contents">{renderEngine(instance)}</div>)}
-          </div>
-        )}
-        {setup.length > 0 && (
-          <FoldRow
-            cardId="engines.setup"
-            defaultOpen={ready.length === 0}
-            label={t("onboarding.engines.needsSetup")}
-            count={setup.length}
-            toggleLabel={t(setup.length === 1 ? "engines.library.countOne" : "engines.library.count", { count: setup.length })}
-          >
-            <div className="-mx-3.5 -mb-1 flex flex-col" data-engines-setup="">
-              {setup.map((instance) => <div key={instance.instanceId} className="contents">{renderEngine(instance)}</div>)}
-            </div>
-          </FoldRow>
-        )}
-        {engines.length === 0 && !empty && <p className="px-3.5 py-2 text-[13px] text-ink-secondary">{t("engines.none")}</p>}
-        {empty && <p className="px-3.5 py-2 text-[13px] text-ink-secondary" data-member-no-engines>{t("myEngines.noneOnServer")}</p>}
-      </SettingsGroup>
-    </div>
-  );
-}
-
-/** The voice engine: which one speaks, in a menu, with its key from the Keys
- * list (Grok uses the xAI key) and "Add in Keys" when it is missing
- * (2026-10-15). Live calls and their limits fold in their own row; values
- * set there stay applied while it is folded. */
-function VoiceSection({ keysLink }: { keysLink: boolean }) {
+/** Live call installation controls stay folded and preserve their values. */
+function VoiceSection() {
   return (
     <div data-settings-card="connections.voice" data-voice-section="">
       <SettingsGroup title={t("modelsVoice.voice.title")} groupId="voice">
-        <VoiceEngineSettings keysLink={keysLink} />
         <FoldRow cardId="voice.advanced" label={t("voice.live.title")} icon={<Phone size={14} />}>
           <div data-voice-advanced="">
             <LiveCallInstallationSettings />

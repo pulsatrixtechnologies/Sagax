@@ -9,6 +9,23 @@ import { uiCommandToAction } from "./bot-act.ts";
 import { decideSettingEffect } from "./settings-actions-policy.ts";
 
 describe("the settings registry", () => {
+  it("routes all personal provider keys and endpoints to the person's store on both kinds of server", () => {
+    const key = settingSpec("models.myProviderKey")!;
+    for (const provider of ["anthropic", "openai", "xai", "google", "moonshot", "elevenlabs", "fish", "openrouter", "mistral", "cerebras", "opencode", "cursor", "factory", "minimax", "glm", "zai", "groq", "compat:azure"]) {
+      expect(key.write({}, { provider, key: { $secret: "vault-key" } })).toEqual({ method: "PUT", path: `/api/me/providers/keys/${encodeURIComponent(provider)}`, body: { key: { $secret: "vault-key" } } });
+      expect(key.classes!({ provider, key: "fixture" }, { organization: true })).toEqual(["secret"]);
+    }
+    expect(key.write({}, { provider: "../other", key: null })).toBeTypeOf("string");
+    expect(key.write({}, { provider: "openai", key: null })).toEqual({ method: "DELETE", path: "/api/me/providers/keys/openai" });
+    const server = settingSpec("models.myProviderServer")!;
+    const value = { instanceId: "azure", name: "Azure Foundry", url: "https://example.test/v1", protocol: "openai", models: [{ id: "deployment", label: "Deployment" }] };
+    expect(server.write({}, value)).toEqual({ method: "PUT", path: "/api/me/providers/servers/azure", body: value });
+    expect(server.classes!(value, { organization: true })).toEqual(["own"]);
+    expect(server.write({}, { ...value, instanceId: "1Azure_Lab" })).toMatchObject({ path: "/api/me/providers/servers/1Azure_Lab" });
+    expect(key.write({}, { provider: "compat:1Azure_Lab", key: "fixture-key" })).toMatchObject({ path: "/api/me/providers/keys/compat%3A1Azure_Lab" });
+    expect(settingSpec("models.everyClaudeBot")).toBeUndefined();
+    expect(settingSpec("models.voiceProvider")).toBeUndefined();
+  });
   it("names each setting once, in a known family, with a route for any value it takes", () => {
     const keys = SETTINGS.map((spec) => spec.key);
     expect(new Set(keys).size).toBe(keys.length);

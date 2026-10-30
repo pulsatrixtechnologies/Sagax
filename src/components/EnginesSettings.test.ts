@@ -1,14 +1,10 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Bot, InstanceInfo } from "@/state/store";
-import { requestSettingsCard } from "./SettingsPrimitives";
-import { LEGACY_CARD, EnginesSettings } from "./EnginesSettings";
+import { EngineRow } from "./EnginesSettings";
 import { ClaudeAccountForm } from "./ClaudeAccountSettings";
 import { AntigravityFreeSpace, formatDiskSize } from "./AntigravityFreeSpace";
-
-// 2026-10-30: the engine cards and keys are the former view on Models (Providers, lot 1)
-beforeEach(() => requestSettingsCard(LEGACY_CARD));
 
 const fixture = vi.hoisted(() => ({ instances: [] as InstanceInfo[], bots: [] as Bot[] }));
 vi.mock("@/state/store", async (importOriginal) => ({
@@ -16,6 +12,10 @@ vi.mock("@/state/store", async (importOriginal) => ({
   useStore: () => ({ state: fixture, refreshInstances: async () => {}, refreshModels: async () => {} }),
 }));
 afterEach(() => vi.unstubAllGlobals());
+
+function EngineRows() {
+  return createElement("div", { "data-engines-list": "" }, fixture.instances.map((instance) => createElement(EngineRow, { key: instance.instanceId, instance, member: false })));
+}
 
 function render(authenticated: boolean, options: { email?: string; signOut?: boolean; assigned?: boolean } = {}): string {
   vi.stubGlobal("window", {});
@@ -31,7 +31,7 @@ function render(authenticated: boolean, options: { email?: string; signOut?: boo
     install: { signInCommand: "codex login" },
   }];
   fixture.bots = options.assigned ? [{ modelSelection: { instanceId: "codex" } } as Bot] : [];
-  return renderToStaticMarkup(createElement(EnginesSettings));
+  return renderToStaticMarkup(createElement(EngineRows));
 }
 
 describe("Settings → Engines → Codex", () => {
@@ -82,7 +82,7 @@ describe("Settings → Engines → Grok", () => {
       install: { command: { linux: "curl -fsSL https://x.ai/cli/install.sh | bash" }, signInCommand: "grok login" },
     }];
     fixture.bots = [];
-    return renderToStaticMarkup(createElement(EnginesSettings));
+    return renderToStaticMarkup(createElement(EngineRows));
   }
 
   it("signs in from Settings with a code, never ChatGPT's card", () => {
@@ -127,19 +127,19 @@ describe("Settings → Engines → setup cards", () => {
       [{ instanceId: "antigravity", driverKind: "antigravityAgent", displayName: "Antigravity", cliDefault: "agy_acp_server", snapshot: { state: "available", authenticated }, models: { default: "gemini", options: [] } } as InstanceInfo, "Add Google account", "Add ChatGPT account"],
     ] as const) {
       fixture.instances = [instance];
-      const html = renderToStaticMarkup(createElement(EnginesSettings));
+      const html = renderToStaticMarkup(createElement(EngineRows));
       expect(html).toContain(label);
       expect(html.indexOf(label)).toBeGreaterThan(html.indexOf(`data-engine-card="${instance.instanceId}"`));
       expect(html.indexOf(label)).toBeLessThan(html.lastIndexOf("</details>"));
       expect(html).not.toContain(other);
       expect(html).not.toContain("Provider icon");
       fixture.instances = [{ ...instance, readOnly: true }];
-      expect(renderToStaticMarkup(createElement(EnginesSettings))).not.toContain(label);
+      expect(renderToStaticMarkup(createElement(EngineRows))).not.toContain(label);
     }
     fixture.instances = [{ ...claude, access: "custom" }, {
       ...chatgpt, snapshot: { ...chatgpt.snapshot, authenticationUnavailableReason: "Not supported on this server" },
     }];
-    const unsupported = renderToStaticMarkup(createElement(EnginesSettings));
+    const unsupported = renderToStaticMarkup(createElement(EngineRows));
     expect(unsupported).not.toContain("Add Claude account");
     expect(unsupported).not.toContain("Add ChatGPT account");
   });
@@ -149,11 +149,11 @@ describe("Settings → Engines → setup cards", () => {
     fixture.bots = [];
     const instance: InstanceInfo = { instanceId: "google-work", driverKind: "antigravityAgent", displayName: "Work", cliDefault: "agy_acp_server", snapshot: { state: "available", authenticated: true, account: { email: "work@example.test" } }, models: { default: "gemini", options: [] } };
     fixture.instances = [instance];
-    expect(renderToStaticMarkup(createElement(EnginesSettings))).toContain("work@example.test");
+    expect(renderToStaticMarkup(createElement(EngineRows))).toContain("work@example.test");
     delete instance.snapshot.account;
-    expect(renderToStaticMarkup(createElement(EnginesSettings))).toContain("account email unavailable");
+    expect(renderToStaticMarkup(createElement(EngineRows))).toContain("account email unavailable");
     instance.snapshot.authenticated = false;
-    expect(renderToStaticMarkup(createElement(EnginesSettings))).not.toContain("account email unavailable");
+    expect(renderToStaticMarkup(createElement(EngineRows))).not.toContain("account email unavailable");
   });
 
   it("shows every Company provider as read-only while preserving personal controls", () => {
@@ -165,13 +165,13 @@ describe("Settings → Engines → setup cards", () => {
       // Ignore even accidentally supplied mutation metadata for read-only rows.
       authentication: { method: "device-code", signOut: true }, install: { signInCommand: "fixture login" },
     }));
-    const companyOnly = renderToStaticMarkup(createElement(EnginesSettings));
+    const companyOnly = renderToStaticMarkup(createElement(EngineRows));
     for (const driver of ["claudeAgent", "codex", "openai-compat"]) expect(companyOnly).toContain(`Company ${driver}`);
     expect(companyOnly).toContain("managed by your organization");
     for (const control of ["Set CLI", "CLI path and updates", "Sign out of ChatGPT", "Update Claude", "fixture login", "Add Claude account", "Add ChatGPT account"]) expect(companyOnly).not.toContain(control);
     fixture.instances.push({ instanceId: "personal", displayName: "Personal Claude", driverKind: "claudeAgent", cliDefault: "claude",
       snapshot: { state: "available" }, models: { default: "sonnet", options: [] } });
-    const withPersonal = renderToStaticMarkup(createElement(EnginesSettings));
+    const withPersonal = renderToStaticMarkup(createElement(EngineRows));
     expect(withPersonal).toContain("Set CLI"); expect(withPersonal).toContain("CLI path and updates"); expect(withPersonal).toContain("Update Claude");
   });
 
@@ -184,12 +184,12 @@ describe("Settings → Engines → setup cards", () => {
       snapshot: { state: "unavailable" }, models: { default: "model", options: [] },
       install: { server: { package: "kimi-fixture" }, command: { linux: "npm install -g kimi-fixture" } },
     }];
-    expect(renderToStaticMarkup(createElement(EnginesSettings))).toContain("Install Kimi on this server");
+    expect(renderToStaticMarkup(createElement(EngineRows))).toContain("Install Kimi on this server");
     fixture.instances[0].snapshot = {
       state: "available", authenticated: true,
       update: { title: "Kimi update available", message: "A newer version is available.", command: "npm install -g kimi-fixture@latest" },
     };
-    const html = renderToStaticMarkup(createElement(EnginesSettings));
+    const html = renderToStaticMarkup(createElement(EngineRows));
     expect(html).toContain("Update Kimi on this server");
     expect(html).not.toContain("Install Kimi on this server");
   });
@@ -206,13 +206,13 @@ describe("Settings → Engines → setup cards", () => {
       },
       models: { default: "model", options: [] },
     }];
-    const html = renderToStaticMarkup(createElement(EnginesSettings));
+    const html = renderToStaticMarkup(createElement(EngineRows));
     expect(html).toContain("data-engine-warning-notice");
     expect(html).toContain("Bots inherit this machine&#x27;s Claude Code setup");
     expect(html).toContain("SAGAX_CLAUDE_INHERIT_USER_CONFIG=1 is set.");
     expect(html).not.toContain("data-engine-update-notice");
     delete fixture.instances[0].snapshot.warning;
-    expect(renderToStaticMarkup(createElement(EnginesSettings))).not.toContain("data-engine-warning-notice");
+    expect(renderToStaticMarkup(createElement(EngineRows))).not.toContain("data-engine-warning-notice");
   });
 
   it("exposes managed Antigravity setup and keeps custom engines free of cloud sign-in", () => {
@@ -224,13 +224,13 @@ describe("Settings → Engines → setup cards", () => {
       snapshot: { state: "available", authenticated: false }, models: { default: "model", options: [] },
       install: { managed: { label: "Install Antigravity", downloadBytes: 10 } },
     }];
-    const html = renderToStaticMarkup(createElement(EnginesSettings));
+    const html = renderToStaticMarkup(createElement(EngineRows));
     expect(html).toContain("Sign in with Google");
     // 0.5.6: the row says what is missing (Grok-style row, no separate "Set up")
     expect(html).toContain("Sign-in required");
     expect(html).toContain("CLI path and updates");
     fixture.instances[0].access = "custom";
-    expect(renderToStaticMarkup(createElement(EnginesSettings))).not.toContain("Sign in with Google");
+    expect(renderToStaticMarkup(createElement(EngineRows))).not.toContain("Sign in with Google");
   });
 
   // MOCA-292: a key engine has no CLI, so it used to drop off this page the
@@ -244,13 +244,13 @@ describe("Settings → Engines → setup cards", () => {
       snapshot, models: { default: "gpt-5", options: [] },
     });
     fixture.instances = [openai({ state: "unavailable", reason: "No API key" })];
-    const before = enginesList(renderToStaticMarkup(createElement(EnginesSettings)));
+    const before = enginesList(renderToStaticMarkup(createElement(EngineRows)));
     expect(before).toContain("OpenAI needs an API key");
     expect(before).toContain("Add the key");
     expect(before).not.toContain("Change key");
 
     fixture.instances = [openai({ state: "available", authenticated: true, version: null })];
-    const saved = enginesList(renderToStaticMarkup(createElement(EnginesSettings)));
+    const saved = enginesList(renderToStaticMarkup(createElement(EngineRows)));
     expect(saved).toContain('data-engine-card="openai"');
     expect(saved).toContain('data-engine-setup-api-key="configured"');
     expect(saved).toContain("OpenAI uses your API key");
@@ -259,14 +259,14 @@ describe("Settings → Engines → setup cards", () => {
 
     // A remote client cannot reach this server's key settings.
     vi.stubGlobal("window", { ogb: { remoteClient: { active: true } } });
-    const remote = enginesList(renderToStaticMarkup(createElement(EnginesSettings)));
+    const remote = enginesList(renderToStaticMarkup(createElement(EngineRows)));
     expect(remote).toContain("open Settings &gt; Models on the computer running Sagax");
     expect(remote).not.toContain("Change key");
 
     // A Company-managed key is not the person's to change.
     vi.stubGlobal("window", {});
     fixture.instances = [{ ...openai({ state: "available", authenticated: true, version: null }), managed: { organizationId: "org", organizationName: "Acme" } }];
-    expect(enginesList(renderToStaticMarkup(createElement(EnginesSettings)))).not.toContain("Change key");
+    expect(enginesList(renderToStaticMarkup(createElement(EngineRows)))).not.toContain("Change key");
   });
 });
 
@@ -282,12 +282,12 @@ describe("Settings → Engines → Antigravity → Free up space", () => {
     vi.stubGlobal("navigator", { userAgent: "Linux" });
     fixture.bots = [];
     fixture.instances = [antigravity(true)];
-    const html = renderToStaticMarkup(createElement(EnginesSettings));
+    const html = renderToStaticMarkup(createElement(EngineRows));
     expect(html).toContain("Leftover files");
     expect(html).toContain("Free up space");
     expect(html).toContain("Nothing is deleted until you confirm.");
     fixture.instances = [antigravity()];
-    expect(renderToStaticMarkup(createElement(EnginesSettings))).not.toContain("Free up space");
+    expect(renderToStaticMarkup(createElement(EngineRows))).not.toContain("Free up space");
   });
 
   it("says how much it found before offering to delete", () => {
@@ -334,7 +334,7 @@ describe("Settings → Engines → Claude accounts", () => {
   function renderClaude(instance: InstanceInfo, assigned = false) {
     fixture.instances = [instance];
     fixture.bots = assigned ? [{ modelSelection: { instanceId: instance.instanceId } } as Bot] : [];
-    return renderToStaticMarkup(createElement(EnginesSettings));
+    return renderToStaticMarkup(createElement(EngineRows));
   }
 
   it("offers an account name and an optional directory without implying sign-in", () => {

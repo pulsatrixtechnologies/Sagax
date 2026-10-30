@@ -40,11 +40,12 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 const render = async () => {
-  const { EnginesSettings, LEGACY_CARD } = await import("./EnginesSettings");
-  // 2026-10-30: the engine cards and keys are the former view on Models (Providers, lot 1)
-  const { requestSettingsCard } = await import("./SettingsPrimitives");
-  requestSettingsCard(LEGACY_CARD);
-  return renderToStaticMarkup(createElement(EnginesSettings));
+  const { EngineRow, orgEngineRows } = await import("./EnginesSettings");
+  const instances = orgEngineRows(fixture.instances as import("@/state/store").InstanceInfo[], fixture.mine);
+  return renderToStaticMarkup(createElement("div", {}, instances.map((instance) => createElement(EngineRow, {
+    key: instance.instanceId, instance, member: fixture.org !== null && fixture.viewer?.role !== "admin", issuer: fixture.org?.org.identity.issuer,
+    mine: fixture.org ? fixture.mine?.find((row) => row.instanceId === instance.instanceId) : undefined,
+  }))));
 };
 
 describe("Model providers on an organization server", () => {
@@ -70,17 +71,13 @@ describe("Model providers on an organization server", () => {
     ];
   };
 
-  it("drops the separate My subscriptions and keys card and keeps one link to my keys", async () => {
-    expect(await render()).not.toContain("data-my-keys-link");
+  it("keeps personal sign-ins on their provider rows without the retired Keys heading", async () => {
     orgFixture();
     const html = await render();
     expect(html).not.toContain("My subscriptions and keys");
     expect(html).not.toContain("data-my-engines");
-    expect(html.match(/data-my-keys-link/g)).toHaveLength(1);
-    expect(html).toContain('href="https://px.example.test/console/credentials?kind=model"');
-    expect(html).toContain("Manage my keys in Perspicax");
-    setLocale("fr");
-    expect(await render()).toContain("Gérer mes clés dans Perspicax");
+    expect(html).toContain('data-engine-card="claude"');
+    expect(html).toContain('data-engine-card="codex"');
   });
 
   it("puts one status line and one Connect or Disconnect on each engine card, lists no engine missing from the server", async () => {
@@ -157,8 +154,6 @@ describe("Model providers on an organization server", () => {
     expect(html).toContain('data-member-engine="codex"');
     expect(html).toContain(">Disconnect<");
     expect(html).toContain("Connect ChatGPT");
-    expect(html).toContain("Sign in with your own Claude or Codex subscription");
-    expect(html.match(/data-my-keys-link/g)).toHaveLength(1);
     // nothing of the server's engine to change
     expect(html).not.toContain("Set CLI");
     expect(html).not.toContain("CLI path and updates");

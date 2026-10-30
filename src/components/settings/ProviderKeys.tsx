@@ -1,23 +1,13 @@
-// Settings > Models and voice: every key in one list, model keys, voice
-// keys and image keys alike, one row per provider (name, state in words, one
-// action) and a small dialog to add, replace, test or remove a key. Since
-// 2026-10-15 this list is the only place a key is managed on the page: the
-// Voice section and Image generation only say whether the key of the chosen
-// provider is saved and lead here (revealKeyRow), Grok voice and Grok images
-// use the xAI row. The dialog holds the same ApiKeyRow that Settings > API
-// keys used to show as a column of open fields (2026-10-12), so a key is
-// saved, tested and resolved exactly as before (PUT /api/config, POST
-// /api/keys/test). Keys stay write-only: a row says whether one is saved,
-// never its value.
+// Shared provider-key dialog used by Providers and image generation.
+// Values stay write-only; rows expose configured state only.
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
-import { ArrowUpRight, ExternalLink, KeyRound, X } from "lucide-react";
+import { ArrowUpRight, ExternalLink, X } from "lucide-react";
 
 import { useStore, type ConfigStatus } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import {
-  AnthropicEveryClaudeBot,
   ApiKeyRow,
   OpenAiCompatModel,
   OpenAiCompatUrl,
@@ -26,7 +16,7 @@ import {
   type ConfigSection,
   type TestableProvider,
 } from "../ApiKeys";
-import { FoldRow, HelpTip, PILL, requestSettingsCard } from "../SettingsPrimitives";
+import { HelpTip } from "../SettingsPrimitives";
 import { azureOpenAIEndpoint } from "../../../shared/azure-openai";
 
 export type KeyRowId = "openai" | "anthropic" | "xai" | "elevenlabs" | "fishAudio" | "openaiImage" | "customImage" | "openrouter" | "mistral" | "azureFoundry" | "openaiCompat" | "opencodeGo";
@@ -71,20 +61,6 @@ export function keyRowName(id: KeyRowId): string {
   return t(ROWS[id].nameKey);
 }
 
-/** A rare key that works already (saved, or included with Cloud Pro) sits in
- * the main list. */
-function inMainList(id: KeyRowId, config: ConfigStatus | null | undefined): boolean {
-  return config ? ROWS[id].saved(config) || ROWS[id].included?.(config) === true : false;
-}
-
-/** The rows of the main list and of "More providers" for this config. */
-export function splitKeyRows(config: ConfigStatus | null | undefined): { main: KeyRowId[]; more: KeyRowId[] } {
-  return {
-    main: [...MAIN_KEY_ROWS, ...MORE_KEY_ROWS.filter((id) => inMainList(id, config))],
-    more: MORE_KEY_ROWS.filter((id) => !inMainList(id, config)),
-  };
-}
-
 // The open dialog, in a module store so another page (an engine card's
 // "Add the key", an old link to API keys) can open it before this page mounts.
 let openRow: KeyRowId | null = null;
@@ -96,41 +72,6 @@ export function openProviderKeyDialog(row: KeyRowId | null): void {
 }
 function useOpenRow(): KeyRowId | null {
   return useSyncExternalStore((listener) => { listeners.add(listener); return () => listeners.delete(listener); }, () => openRow, () => openRow);
-}
-
-// The row another section asked to see ("Add in Keys"): highlighted for a
-// moment, so the eye lands on it after the scroll.
-let highlightRow: KeyRowId | null = null;
-let highlightTimer: ReturnType<typeof setTimeout> | null = null;
-const HIGHLIGHT_MS = 2400;
-function useHighlightRow(): KeyRowId | null {
-  return useSyncExternalStore((listener) => { listeners.add(listener); return () => listeners.delete(listener); }, () => highlightRow, () => highlightRow);
-}
-
-/** Shows a row of the Keys list: opens "More providers" when the row is
- * folded there, scrolls the row into view, highlights it and moves the focus
- * to its button. No form opens: the person adds the key from the row, the
- * one place keys are managed. */
-export function revealKeyRow(row: KeyRowId, config: ConfigStatus | null | undefined): void {
-  if (!inMainList(row, config) && (MORE_KEY_ROWS as readonly KeyRowId[]).includes(row)) requestSettingsCard("engines.moreProviders");
-  highlightRow = row;
-  emit();
-  if (highlightTimer) clearTimeout(highlightTimer);
-  highlightTimer = setTimeout(() => { highlightRow = null; highlightTimer = null; emit(); }, HIGHLIGHT_MS);
-  let frames = 0;
-  const reveal = () => {
-    try {
-      const item = document.querySelector<HTMLElement>(`[data-provider-key="${row}"]`);
-      // the card opens on the next render: wait until the row is laid out
-      if (item && item.getClientRects().length > 0) {
-        item.scrollIntoView?.({ block: "center", behavior: "smooth" });
-        item.querySelector<HTMLElement>("button")?.focus({ preventScroll: true });
-      } else if (++frames < 30) requestAnimationFrame(reveal);
-    } catch {
-      /* no document outside the renderer */
-    }
-  };
-  if (typeof requestAnimationFrame === "function") requestAnimationFrame(reveal);
 }
 
 /** The key line of a section that uses a key of the list (Voice, Image
@@ -192,70 +133,6 @@ export function keyRowForEngine(driverKind: string, instanceId: string): KeyRowI
   return null;
 }
 
-/** One row per key, as the reference design's settings rows: the provider and its state
- * in a grey line at the left, one pill at the right. Rows of the Keys group
- * card (no frame of their own). */
-export function ProviderKeyRows({ rows }: { rows: readonly KeyRowId[] }) {
-  const { state } = useStore();
-  const highlighted = useHighlightRow();
-  return (
-    <ul className="flex flex-col" data-provider-keys="">
-      {rows.map((id) => {
-        const row = ROWS[id];
-        const saved = state.config ? row.saved(state.config) : false;
-        const included = !saved && state.config ? row.included?.(state.config) === true : false;
-        return (
-          <li
-            key={id}
-            data-provider-key={id}
-            data-key-saved={saved ? "true" : "false"}
-            data-key-highlight={highlighted === id ? "true" : undefined}
-            className={cn("mx-1.5 flex min-h-[44px] items-center gap-3 rounded-lg px-2 py-1.5 transition-colors motion-reduce:transition-none", highlighted === id && "bg-accent/10")}
-          >
-            <KeyRound size={14} aria-hidden="true" className="shrink-0 text-ink-secondary" />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[13px] leading-[18px] text-ink">{t(row.nameKey)}</span>
-              <span className={cn("block text-[12px] leading-4", saved || included ? "text-accent-text" : "text-ink-secondary")}>
-                {saved ? t("providerKeys.saved") : included ? t("keys.includedWithCloudPro") : t("providerKeys.none")}
-              </span>
-            </span>
-            <button
-              type="button"
-              onClick={() => openProviderKeyDialog(id)}
-              aria-label={`${saved ? t("providerKeys.manage") : t("providerKeys.add")} · ${t(row.nameKey)}`}
-              className={cn(PILL, "shrink-0")}
-            >
-              {saved ? t("providerKeys.manage") : t("providerKeys.add")}
-            </button>
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
-
-/** The one list of keys: the main rows (with any rare key already saved),
- * then "More providers", folded with its count, with the rare ones not
- * saved yet and `moreExtra` (the cloud coding agents' keys, `moreExtraCount`
- * of them). */
-export function KeyList({ moreExtra, moreExtraCount = 0 }: { moreExtra?: ReactNode; moreExtraCount?: number }) {
-  const { state } = useStore();
-  const { main, more } = splitKeyRows(state.config);
-  return (
-    <>
-      <ProviderKeyRows rows={main} />
-      {(more.length > 0 || moreExtra) && (
-        <FoldRow cardId="engines.moreProviders" label={t("modelsVoice.keys.more")} count={more.length + moreExtraCount}>
-          <div className="-mx-3.5 flex flex-col" data-more-providers="">
-            {more.length > 0 && <ProviderKeyRows rows={more} />}
-            {moreExtra}
-          </div>
-        </FoldRow>
-      )}
-    </>
-  );
-}
-
 /** Mounted once on the page: the dialog of the row being edited. */
 export function ProviderKeyDialog() {
   const open = useOpenRow();
@@ -274,7 +151,6 @@ function KeyDialog({ id, onClose }: { id: KeyRowId; onClose: () => void }) {
     return () => previous?.focus();
   }, []);
   let extra: ReactNode = null;
-  if (id === "anthropic") extra = <AnthropicEveryClaudeBot />;
   if (id === "openaiCompat") extra = <><OpenAiCompatUrl /><OpenAiCompatModel /></>;
   if (id === "azureFoundry") extra = <><OpenAiCompatUrl azure /><OpenAiCompatModel azure /></>;
   if (id === "opencodeGo") {

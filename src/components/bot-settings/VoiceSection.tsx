@@ -6,8 +6,8 @@ import { requestNotificationPermission } from "@/lib/notify";
 import { useStore, type Bot } from "@/state/store";
 import { saveViewerBotOverride, useViewerBotOverride, viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
 import { DescribedRow, SettingsGroup, Switch } from "../SettingsPrimitives";
-import { VoiceSettings } from "../VoiceSettings";
 import { VoiceProviderSettings } from "../settings/VoiceProviderSettings";
+import { VoiceSettings } from "../VoiceSettings";
 import type { useBotSettingsDerived } from "./useBotSettingsDerived";
 import { useBotEditor } from "./BotEditorContext";
 
@@ -21,9 +21,8 @@ export function VoiceSection({
   const { patch } = derived;
   const { draft } = useBotEditor();
   const { state, dispatch } = useStore();
-  // Voice, read-aloud and voice notes are not member fields, and the
-  // engine key is an installation write. Notifications stay, and on a
-  // shared bot they are this person's own.
+  // Bot-wide read-aloud and voice-note switches follow edit rights. The
+  // provider, voice, ears and notifications remain this person's own.
   const showVoice = !derived.canEdit || derived.canEdit("voice");
   const viewerLocal = viewerLocalBotSettings(state.config, bot);
   const override = useViewerBotOverride(bot.id, viewerLocal);
@@ -33,8 +32,8 @@ export function VoiceSection({
     <div className="flex flex-col gap-5">
       {/* The page is titled Voice: its card needs no heading of its own. */}
       {/* 2026-10-29: this bot's voice provider, voice and ears, for this person */}
-      {!draft && <VoiceProviderSettings bot={bot} />}
-      {showVoice && <VoiceSettings bot={bot} onPatch={patch} />}
+      {showVoice && <VoiceSettings bot={bot} onPatch={patch} providers={!draft} />}
+      {!showVoice && !draft && <VoiceProviderSettings bot={bot} />}
 
       <SettingsGroup title={t("botPanel.remote.notifications")} groupId="botNotifications">
         <DescribedRow

@@ -226,6 +226,18 @@ describe("voice mode routes", () => {
     expect((await call({ method: "POST", path: "/api/tts/prepare", body: { text: "Bonjour" } })).body).toEqual({ ready: false, utterances: ["Bonjour"] });
   });
 
+  it("legacy read aloud follows the person's newer provider choice instead of the installed engine", async () => {
+    const synthesize = vi.fn(async () => ({ bytes: new Uint8Array([7, 8]), mime: "audio/mpeg" }));
+    const { call } = harness({
+      legacyChoice: () => ({ provider: "fish", voice: "oldVoice" }),
+      preference: () => ({ tts: "openai", voices: { openai: "cedar" } }),
+      openai: { listVoices: async () => [], synthesize },
+      providerKeys: (provider) => provider === "openai" ? [{ key: OWN_KEY, via: "speaker-key", source: "perspicax-key", last4: "c0Je", provider, payerPrincipalId: "p-ada" }] : [],
+    });
+    expect((await call({ method: "POST", path: "/api/tts/speak", body: { text: "Bonjour" } })).status).toBe(200);
+    expect(synthesize).toHaveBeenCalledWith("Bonjour", "cedar", OWN_KEY, { speed: 1, language: "auto" });
+  });
+
   it("only serves a signed-in person on an organization server", async () => {
     const { call } = harness();
     const anonymous: RequestAuth = { ...ada, session: { ...(ada as { session: SessionRecord }).session, principalId: "anon:x" } } as RequestAuth;
@@ -596,6 +608,27 @@ describe("voice mode with OpenAI and ElevenLabs (2026-10-29)", () => {
     expect(out.body.key).toEqual({ source: "voice-key", last4: "f8Dd", provider: "elevenlabs" });
     expect(leaks(out.body)).toBe(false);
     expect(JSON.stringify(out.body)).not.toContain(ELEVEN_KEY.slice(4, 14));
+  });
+
+  it("resolves the current status choice ahead of a stale synced preference without saving it", async () => {
+    const preference = { voice: "ara", speed: 1, language: "auto", tts: "openai", stt: "openai", voices: { openai: "cedar" } };
+    const before = structuredClone(preference);
+    const { call, xai, openai } = providers({ preference });
+    expect((await call({ method: "GET", path: "/api/bots/b-quasar/voice/status" })).body.tts).toBe("openai");
+    expect((await call({ method: "GET", path: "/api/bots/b-quasar/voice/status?tts=auto&stt=auto" })).body).toMatchObject({ tts: "xai", stt: "xai" });
+    expect((await call({ method: "GET", path: "/api/voice/status?tts=elevenlabs&stt=auto" })).body.tts).toBe("elevenlabs");
+    expect(preference).toEqual(before);
+    expect((await call({ method: "GET", path: "/api/bots/b-quasar/voice/status" })).body.tts).toBe("openai");
+    expect(xai.synthesize).not.toHaveBeenCalled();
+    expect(openai.synthesize).not.toHaveBeenCalled();
+  });
+
+  it("speaks with the current Auto choice ahead of a stale synced OpenAI preference", async () => {
+    const { call, xai, openai } = providers({ preference: { tts: "openai", voice: "ara" } });
+    const out = await call({ method: "POST", path: "/api/bots/b-quasar/voice/speak", body: { text: "Bonjour", tts: "auto", voice: "eve", voices: { xai: "eve" } } });
+    expect(out.status).toBe(200);
+    expect(xai.synthesize.mock.calls[0]?.[1]).toBe("eve");
+    expect(openai.synthesize).not.toHaveBeenCalled();
   });
 
   it("speaks with the provider and voice asked for, and books it under that provider", async () => {

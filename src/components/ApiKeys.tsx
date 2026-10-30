@@ -8,7 +8,6 @@ import { cn } from "@/lib/cn";
 import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
-import { SwitchRow } from "./SettingsPrimitives";
 import { azureOpenAIEndpoint, looksLikeAzureUrl } from "../../shared/azure-openai";
 
 export type ConfigSection = "box" | "opencodeGo" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "azureFoundry" | "xai" | "mistral" | "cerebras" | "groq" | "elevenlabs" | "fishAudio" | "openaiImage" | "customImage";
@@ -558,43 +557,6 @@ export function OpenCodeProviderKeys() {
         {error && <div role="alert" className="text-[12px] text-danger">{error}</div>}
       </div>
     </details>
-  );
-}
-
-/** Whether the Anthropic key also runs signed-in Claude bots. Off, only
- * "Claude (API key)" bills per token; on, every Claude bot does. */
-export function AnthropicEveryClaudeBot() {
-  const { state, dispatch } = useStore();
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  if (!state.config?.anthropic?.configured) return null;
-  const on = state.config.anthropic.everyClaudeBot === true;
-  const toggle = () => {
-    if (saving) return;
-    setSaving(true);
-    setError(null);
-    api("/api/config", { method: "PUT", body: JSON.stringify({ anthropic: { everyClaudeBot: !on } }) })
-      .then((status: ConfigStatus) => dispatch({ type: "configStatus", config: status }))
-      .catch((e) => setError(e.message))
-      .finally(() => setSaving(false));
-  };
-  return (
-    <div data-anthropic-every-claude-bot className="-mt-2">
-      <SwitchRow
-        label={t("keys.anthropic.everyBot")}
-        description={on ? t("keys.anthropic.everyBotOn") : t("keys.anthropic.everyBotOff")}
-        checked={on}
-        disabled={saving}
-        onChange={toggle}
-      />
-      {on && (
-        <div className="mt-1.5 flex gap-1.5 text-[11.5px] leading-[1.4] text-warning">
-          <TriangleAlert size={13} className="mt-px shrink-0" aria-hidden="true" />
-          <span>{t("keys.anthropic.warning")}</span>
-        </div>
-      )}
-      {error && <div className="mt-1 text-[12px] text-danger">{error}</div>}
-    </div>
   );
 }
 

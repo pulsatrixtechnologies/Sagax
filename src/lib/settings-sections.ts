@@ -29,9 +29,8 @@ const MERGED: Partial<Record<AppSettingsSection, { section: AppSettingsSection; 
  *   (they were under Account).
  * - Vault: the vault, the one-time card, purchases and 1Password (they were
  *   under Account).
- * - Voice: the voice engine, Live calls, the microphone and the person's own
- *   voice keys (they were in Models and voice). The Keys list stays in
- *   Models, the only place a key is managed. */
+ * - Voice: voice choice, Live calls and the microphone. Provider keys and
+ *   endpoints now live in Providers, including old personal-voice-key links. */
 export const CARD_HOME: Readonly<Record<string, AppSettingsSection>> = {
   security: "security",
   "security.keys": "security",
@@ -46,9 +45,11 @@ export const CARD_HOME: Readonly<Record<string, AppSettingsSection>> = {
   "voice.advanced": "voice",
   "voice.microphone": "voice",
   "connections.audio": "voice",
-  "connections.voiceKeys": "voice",
+  "connections.voiceKeys": "providers",
   // 2026-10-30 (Providers, lot 1): the engines' sign-ins and every key are on Providers
   "engines.keys": "providers",
+  "engines.list": "providers",
+  "engines.legacy": "providers",
   "engines.setup": "providers",
   "engines.moreProviders": "providers",
   // what stays on Models: image generation, web search, online computers, Decision model

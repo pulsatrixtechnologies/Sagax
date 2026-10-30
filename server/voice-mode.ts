@@ -718,7 +718,8 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     if (jsonBody && (!body || typeof body !== "object")) return json(res, 400, { error: "a JSON body is required" });
     // The installed TTS choice remains the default for an older client,
     // while key resolution, fallback and synthesis use this one path.
-    if (legacy) {
+    const preference = deps.preference?.(speaker);
+    if (legacy && preference == null) {
       const installed = deps.legacyChoice?.(speaker);
       if (installed) {
         if (!url.searchParams.has("tts")) url.searchParams.set("tts", installed.provider);
@@ -781,7 +782,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
         if (tagged.length) byProvider.set(provider, tagged);
       }
     }
-    const choice = requestedChoice(action, url, body as Record<string, unknown> | null, deps.preference?.(speaker), target.botId);
+    const choice = requestedChoice(action, url, body as Record<string, unknown> | null, preference, target.botId);
     /** a role's keys, the chosen provider first, then the other providers */
     const roleKeys = <P extends VoiceProviderId>(role: "tts" | "stt", picked: "auto" | P, all: readonly P[]): VoiceKeyCandidate[] => {
       const serving = all.filter((provider) => {
@@ -1020,7 +1021,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
  * same setting. `voice` is the voice of the provider asked for (xAI's when
  * none is): an older page's xAI voice keeps working. */
 export function requestedChoice(action: string, url: URL, body: Record<string, unknown> | null, preference: unknown, botId: string): EffectiveVoiceChoice & { badVoice?: true } {
-  const query = action === "speech" || action === "listen" || action === "transcribe" || action === "voices";
+  const query = action === "status" || action === "speech" || action === "listen" || action === "transcribe" || action === "voices";
   const read = (name: string): unknown => (query ? url.searchParams.get(name) ?? undefined : body?.[name]);
   const saved = effectiveVoiceChoice(preference === undefined || preference === null ? {} : cleanVoiceModeSettings(preference), botId || undefined);
   const tts = cleanTtsChoice(read("tts"));

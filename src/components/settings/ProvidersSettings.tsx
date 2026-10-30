@@ -30,7 +30,7 @@ import {
 import { PERSONAL_PROVIDER_NAMES, type PersonalProvider } from "../../../shared/provider-accounts";
 import { useProviderAccounts } from "@/lib/provider-accounts";
 import { PersonalProviderKey, PersonalProviderServerForm } from "./PersonalProviderAccount";
-import { EngineRow, openLegacyEngines, useModelsVoiceAccess } from "../EnginesSettings";
+import { EngineRow, useModelsVoiceAccess } from "../EnginesSettings";
 import { engineReady } from "../EngineLibrary";
 import { isApiKeyEngine } from "../EngineSetup";
 import { HarnessConnectorsSection } from "../HarnessConnectorsSection";
@@ -417,6 +417,7 @@ export function ProvidersSettings() {
           </SettingsGroup>
         </div>
       )}
+      {accounts.unavailable && <p data-needs-server-update="" className="text-[12px] text-ink-secondary">{accounts.unavailable}</p>}
       {accounts.error && <p role="alert" className="text-[12px] text-danger">{accounts.error}</p>}
       <div data-settings-card="providers.list">
         <SettingsGroup
@@ -461,7 +462,6 @@ export function ProvidersSettings() {
           )}
         </SettingsGroup>
       </div>
-      <LegacyLink />
       <ProviderKeyDialog />
     </div>
   );
@@ -470,16 +470,5 @@ export function ProvidersSettings() {
 function CloudAgentKeys() {
   const cloud = useCloudAgentProviders();
   return <CloudAgentProvidersSettings state={cloud} />;
-}
-
-/** "Former view": the Engines and Keys groups, on Models, as they were. */
-function LegacyLink() {
-  const { dispatch } = useStore();
-  return (
-    <p className="px-1 text-[12px] text-ink-secondary" data-providers-legacy="">
-      {t("providers.legacy.line")}{" "}
-      <button type="button" className="font-medium text-accent-text hover:underline" onClick={() => openLegacyEngines(dispatch)}>{t("providers.legacy.show")}</button>
-    </p>
-  );
 }
 

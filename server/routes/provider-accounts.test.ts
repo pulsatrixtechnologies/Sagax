@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { ProviderAccountsError } from "../provider-accounts.ts";
 import { createProviderAccountsRoutes } from "./provider-accounts.ts";
 
 describe("the person's provider routes", () => {
@@ -28,4 +29,14 @@ describe("the person's provider routes", () => {
     expect((await call("PUT", "/api/me/providers/keys/fish", {}))?.status).toBe(400);
     expect((await call("PUT", "/api/me/providers/keys/%ZZ", { key: "test-person-key" }))?.status).toBe(400);
   });
+});
+
+it("returns the organization update code without replacing it with an admin refusal", async () => {
+  const handler = createProviderAccountsRoutes({
+    accounts: { list: async () => { throw new ProviderAccountsError(409, "Organization update needed", "provider_accounts_update_required"); } } as never,
+    owner: () => ({ principalId: "person-a", sub: "subject-a" }),
+  });
+  const json = vi.fn();
+  await handler({ method: "GET", path: "/api/me/providers", auth: {}, req: {}, res: { setHeader: vi.fn() }, json } as never);
+  expect(json).toHaveBeenCalledWith(expect.anything(), 409, { error: "Organization update needed", code: "provider_accounts_update_required" });
 });

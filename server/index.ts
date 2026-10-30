@@ -237,6 +237,7 @@ import {
 import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
 import { buildRecall, CALL_RECALL_BUDGET, LOCAL_RECALL_BUDGET, recallQuery, sessionMemoryHitFor, type RecallBudget } from "./recall.ts";
 import { prepareSemanticRecall, setSemanticIndex } from "./semantic-recall.ts";
+import { prepareEveryClaudeRetirement, retireEveryClaudeBot } from "./retire-every-claude.ts";
 import { LocalSemanticIndex, semanticIndexFile } from "./semantic-index.ts";
 import { withoutWiderAudience, type MemoryDestination } from "./memory-audience.ts";
 import { BriefStore, type BriefAppCall } from "./background-brief.ts";
@@ -2134,6 +2135,8 @@ const FALLBACK_PUBLIC_URL = process.env.SAGAX_PUBLIC_URL?.trim().replace(/\/+$/,
 dropRetiredOrganizationKeys();
 const cfg = loadConfig();
 const hostedModels = hostedModelPolicy(DATA_DIR);
+const claudeRetirement = IDENTITY.kind === "solo" && !hostedModels ? prepareEveryClaudeRetirement(cfg) : undefined;
+if (claudeRetirement?.patch.instances) cfg.instances = claudeRetirement.patch.instances;
 const providerConfigs = () => hostedModels ? hostedModels.configs() : instanceConfigs(cfg);
 const decorateHostedProvider = hostedModels ? (instance: ProviderInstance) => hostedModels.decorate(instance) : undefined;
 if (hostedModels) {
@@ -7302,6 +7305,9 @@ const store = new Store(
   newBotApprovalMode,
   newBotGreetingLanguage,
 );
+// Preserve the payer of legacy solo choices before serving or probing them.
+// Persist bot/thread references first and the marker last so a failed write retries.
+if (claudeRetirement) retireEveryClaudeBot(cfg, store, saveConfig, claudeRetirement);
 setTurnTimingWriter((threadId, timing) => store.noteConversationTiming(threadId, timing));
 // One-time notice (migration): Composio was removed this release. Connected
 // apps now come only from the engines' own connectors (Claude, Grok) and
@@ -29642,7 +29648,7 @@ function configStatus() {
     mistral: { configured: Boolean(cfg.mistral?.key) },
     cerebras: { configured: Boolean(cfg.cerebras?.key) },
     groq: { configured: Boolean(cfg.groq?.key) },
-    anthropic: { configured: Boolean(cfg.anthropic?.key), everyClaudeBot: cfg.anthropic?.everyClaudeBot !== false },
+    anthropic: { configured: Boolean(cfg.anthropic?.key), everyClaudeBot: false },
     openai: { configured: Boolean(cfg.openai?.key) },
     openrouter: { configured: Boolean(cfg.openrouter?.key) },
     // a fleet agent on this server means Settings → Workspaces has something to drive
@@ -39466,8 +39472,9 @@ function claudeAccountForPrincipal(principalId: string): { cli: string; env: Nod
     delete env.ANTHROPIC_AUTH_TOKEN;
     return { cli, env, key: `person:${principalId}` };
   }
-  // a workspace key that runs every Claude bot replaces the login
-  if (cfg.anthropic?.key && cfg.anthropic.everyClaudeBot !== false) return { unavailable: "key" as const };
+  // A custom API instance has no claude.ai account. A separate provider key
+  // never hides the subscription account's connectors.
+  if (entry.environment?.ANTHROPIC_API_KEY) return { unavailable: "key" as const };
   if (typeof config.configDir === "string" && config.configDir.trim()) {
     try {
       env.CLAUDE_CONFIG_DIR = resolveClaudeConfigDir(config.configDir, env);

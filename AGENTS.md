@@ -62,6 +62,50 @@ server diagnostics for a chosen bot (`AutoModelSettings`). Tests: model
 picker interaction/Simple, model-health, model-auto, store, model-switches
 and bot-continuity fixtures; headless composer turn smoke.
 
+## Retired provider views and voice choice (2026-10-30)
+
+Lot 5 removes the former Engines/Keys view, Voice engine, My voice keys and
+Anthropic's every-Claude switch. Provider dialogs, CLI sign-ins and custom
+CLI paths stay in Providers. Old Keys/Engines and personal-voice-key links
+open Providers. Fish model, Chatterbox address/model and no-dashes remain
+under Voice > Advanced; installation options require the installation right
+because they configure the shared host, while the person's voice choice does
+not. Calls, read aloud and voice notes use VoiceProviderSettings on solo and
+organization servers. The first solo snapshot seeds `omb.voiceMode.v1` from
+its installed provider and each bot's old voice; an existing preference,
+including Auto, is never replaced. A paired Mac keeps its local voice choice.
+Legacy `/api/tts` clients honor a synced personal preference when one exists.
+Auto's voice picker saves the voice under the provider actually offered.
+Its status and audio requests include the current choice, including Auto,
+ahead of preference sync; the picker waits for that choice's resolution.
+Reading status never saves a preference.
+Shared-bot readers can still change their personal provider and voice.
+
+A solo server retires `anthropic.everyClaudeBot` before serving: old paid
+bot/thread/fast/default/recovery choices move to `claudeApi`, preserving
+permissions, native cursors and custom endpoint credentials. Saved model-off
+switches also apply to the moved account. The completion flag saves after the
+bot references, so failures retry. New key writes mark separate API billing
+immediately and never move subscription bots. The Anthropic key is injected
+only into explicit API instances; custom CLI paths/config directories keep
+an API counterpart prepared before the registry starts. Subscription
+connectors keep their signed-in account.
+
+`sagax_settings` keys `models.myProviderKey` and `models.myProviderServer`
+read/write the same personal `/api/me/providers` routes, with metadata-only
+reads and secret references supported. A missing route on an older server
+shows the neutral server-update note without an admin error. An older
+Perspicax missing the Link provider list/save routes gets an explicit
+organization-server-update state. Existing remote keys and pending local
+imports keep resolving; imports remain intact until acknowledged. Disabled
+people or missing Links never use that fallback. Full personal provider and
+endpoint management in an organization requires the Perspicax routes from
+#674 (after 1.9.12); solo has no such dependency. Tests include
+`retire-every-claude.test.ts` (real migrated first turn),
+`voice-mode/providers.test.ts`, `tts/index.test.ts`, the Settings/Voice setup
+and older-server tests, and the real renderer Azure-compatible journey in
+`control-omb-ui.e2e.test.ts` (loopback provider, no real credentials).
+
 ## Personal provider accounts and one voice path (2026-10-30)
 
 Lot 3 of "Providers, models and voice". A person manages all 17 personal
@@ -145,9 +189,8 @@ server). `GET /api/me/engines` says where a person's own key lives
 Perspicax for a key sealed on the server. An organization admin has "View
 as a member" (`src/lib/view-as-member.ts`, a view only, no right changes;
 `useModelsVoiceAccess` reads it). Models keeps Auto, web search, image
-generation and the online computers; the former Engines and Keys groups
-stay there folded under "Former view" (`LEGACY_CARD`, `engines.legacy`)
-until lot 5. Sign-in and key links (`engines.keys`, `connections`, "Add in
+generation and the online computers. The former Engines and Keys groups
+were removed in lot 5; their old card ids redirect to Providers. Sign-in and key links (`engines.keys`, `connections`, "Add in
 Providers") open Providers (`CARD_HOME`, `MERGED` in
 `src/lib/settings-sections.ts`).
 

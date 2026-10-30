@@ -98,6 +98,7 @@ import { useChatErrorClear } from "./chat-error";
 import type { OnboardingStatus } from "@/lib/onboarding";
 import { openLiveEvents, publishLiveFrame, publishMissedFrames } from "@/lib/live-events";
 import { receiveAchievementsFrame } from "@/lib/achievements";
+import { migrateInstalledVoiceSettings } from "@/lib/voice-mode/settings";
 import { announceServerPreferences, applyBotPreference } from "@/lib/user-preferences-sync";
 import { receiveDeviceSettingsFrame } from "@/lib/device-settings-app";
 import { isViewersPrimaryBot } from "@/lib/primary-bot";
@@ -940,7 +941,7 @@ export interface ConfigStatus {
   mistral?: { configured: boolean };
   cerebras?: { configured: boolean };
   groq?: { configured: boolean };
-  /** `everyClaudeBot`: the key runs every Claude bot, not only "Claude (API key)". */
+  /** Legacy status field, retained for older servers. New servers return false. */
   anthropic?: { configured: boolean; everyClaudeBot?: boolean };
   openai?: { configured: boolean };
   openrouter?: { configured: boolean };
@@ -4301,6 +4302,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, rawDispatch] = useReducer(reducer, initialState, restoreBotSettingsSection);
   const stateRef = useRef(state);
   stateRef.current = state;
+  useEffect(() => {
+    if (state.hydrated && state.config && !state.config.personalSettings) migrateInstalledVoiceSettings(state.config.tts, state.bots);
+  }, [state.hydrated, state.config, state.bots]);
   const showThreads = useShowThreads();
   const showThreadsRef = useRef(showThreads);
   showThreadsRef.current = showThreads;
