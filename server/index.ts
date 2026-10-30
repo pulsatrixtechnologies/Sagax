@@ -49855,7 +49855,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         return item && !refused.some((skip) => skip.instanceId === choice.instanceId && skip.model === choice.model) ? [item] : [];
       });
       const usablePick = turn && chain.some((choice) => choice.instanceId === turn.pick.selection.instanceId && choice.model === turn.pick.selection.model);
-      const backups = botRecoveryBackups(bot, cfg).flatMap((choice) => { const item = entry(choice); return item ? [item] : []; });
+      // Recovery uses the saved selections, including custom/local endpoints
+      // that the automatic candidate scorer intentionally leaves out.
+      const backups = botRecoveryBackups(bot, cfg).flatMap((choice) => {
+        const instance = registry.get(choice.instanceId);
+        if (!instance || !personalProviderInstances.visible(choice.instanceId, IDENTITY.kind === "perspicax" ? actorPrincipalId(auth) ?? "" : "solo")) return [];
+        const option = instance.models.options.find((candidate) => candidate.id === choice.model);
+        return [{ ...choice, engineLabel: engineDisplayName(instance), modelLabel: option?.label || choice.model }];
+      });
       return json(res, 200, { auto: bot.modelSelection.auto === true, pick: usablePick ? autoModelRecord(turn.pick, Date.now()) : null,
         chain, excluded, backups, explanation: usablePick ? explainPick(turn.pick) : "" });
     }

@@ -1187,9 +1187,11 @@ export function ModelPicker({
   const effectInstance = state.instances.find((instance) => instance.instanceId === previewRow?.instanceId) ?? active;
   const effectName = previewRow?.kind === "model" ? previewRow.label : modelLabel(active, selection.model);
   const effectAuto = previewRow?.kind === "auto" || (!previewRow && autoOn);
-  const effectEngine = effectInstance ? myEngines?.find((engine) => engine.instanceId === effectInstance.instanceId) : undefined;
-  const effectPayer = effectEngine?.myTurns === "org-key" ? t("model.effect.payer.org") : t("model.effect.payer.me");
-  const effectLine = effectAuto ? t("model.effect.auto") : t("model.effect.model", { model: effectName, provider: effectInstance?.displayName ?? selection.instanceId, payer: effectPayer });
+  // The reader's account does not identify a shared bot's payer. Owner-paid
+  // conversations and routine turns may use another person's credentials.
+  const effectLine = effectAuto ? t("model.effect.auto") : orgMode || !state.config || state.config.personalSettings === true || state.config.allowedEngines !== undefined
+    ? t("model.effect.model.pending", { model: effectName, provider: effectInstance?.displayName ?? selection.instanceId })
+    : t("model.effect.model", { model: effectName, provider: effectInstance?.displayName ?? selection.instanceId, payer: t("model.effect.payer.me") });
   // The composer's menu lists only the models that can run a turn now
   // (src/lib/model-health.ts, 2026-10-14): a provider left with none
   // goes. The model in use stays, checked, saying it does not respond.
