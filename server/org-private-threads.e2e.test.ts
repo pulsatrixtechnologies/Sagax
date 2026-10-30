@@ -512,7 +512,13 @@ posixOnly("Perspicax organization: private threads with a shared bot, group chat
     // carol's removal is her own: bob's key stays
     expect((await api("DELETE", "/api/me/voice-keys/elevenlabs", carol)).status).toBe(200);
     expect((await api("GET", "/api/me/voice-keys", bob)).body.elevenlabs.configured).toBe(true);
-    expect([403, 404]).toContain((await api("PUT", "/api/me/voice-keys/openai", bob, { key: "sk_bob_voice_key_0001" })).status);
+    // OpenAI is a personal voice key too since #1693: his, never carol's
+    const openai = await api("PUT", "/api/me/voice-keys/openai", bob, { key: "sk_bob_voice_key_0002" });
+    expect(openai.status, openai.text).toBe(200);
+    expect(openai.text).not.toContain("sk_bob_voice_key");
+    expect((await api("GET", "/api/me/voice-keys", carol)).body.openai).toEqual({ configured: false, last4: null });
+    expect((await api("DELETE", "/api/me/voice-keys/openai", bob)).body.openai.configured).toBe(false);
+    expect([403, 404]).toContain((await api("PUT", "/api/me/voice-keys/not-a-provider", bob, { key: "sk_bob_voice_key_0003" })).status);
     expect((await api("DELETE", "/api/me/voice-keys/elevenlabs", bob)).body.elevenlabs.configured).toBe(false);
 
     expect((await api("DELETE", `/api/groups/${roomId}`, bob)).status).toBe(200);
