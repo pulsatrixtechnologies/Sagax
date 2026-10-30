@@ -23,7 +23,7 @@ export type SlotKind =
   | "queueItem" | "parallelRun" | "card" | "resourceUsage" | "connectorSetup" | "phoneRequest"
   | "cardScan" | "purchase" | "phoneCall" | "invite" | "blocked" | "journalEntry" | "credentialGrant"
   | "draft" | "codeRun" | "cloudAgent" | "allowlistEntry" | "workflow" | "workflowRun" | "taskListItem" | "briefItem"
-  | "calendarCall";
+  | "calendarCall" | "proactiveProposal";
 
 /** Kinds a person owns: the matrix aims A at B's. The rest only ride along. */
 export const OWNED_KINDS: ReadonlySet<SlotKind> = new Set<SlotKind>([
@@ -115,6 +115,8 @@ export const SLOT_KINDS: Readonly<Record<string, SlotKind>> = {
   "background-brief/": "briefItem",
   // a scheduled call (#1482): reached when the caller may run every bot in it
   "calendar-calls/": "calendarCall",
+  // a proactive proposal of a bot (#1764): the request is aimed at the bot
+  "proactive/": "proactiveProposal",
 };
 
 type Atom = { lit: string } | { cls: string };
