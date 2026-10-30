@@ -29478,7 +29478,7 @@ function configStatus() {
     // recall by meaning (server/semantic-index.ts); the endpoint is an address, not a secret
     memory: { semanticRecall: semanticRecallEnabled(cfg), embeddingsUrl: cfg.memory?.embeddingsUrl ?? "", embeddingsModel: cfg.memory?.embeddingsModel ?? "" },
     // the base URL is a setting, not a secret; the key stays write-only
-    openaiCompat: { configured: Boolean(cfg.openaiCompat?.key), url: cfg.openaiCompat?.url ?? "" },
+    openaiCompat: { configured: Boolean(cfg.openaiCompat?.key), url: cfg.openaiCompat?.url ?? "", model: cfg.openaiCompat?.model ?? "" },
     // configured = cloud computers work here; included = through Cloud Pro,
     // not a saved key
     box: boat.describeBoatAccount(cfg),

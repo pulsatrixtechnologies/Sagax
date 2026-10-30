@@ -47,6 +47,18 @@ import { effortLabel } from "@/lib/effort-label";
 import { isUltracodeEffort, ULTRACODE_EFFORT } from "../../shared/ultracode-effort";
 import { effortForModel, fastBaseOf, fastTwinOf, modelDefaultEffort, modelEffortLevels } from "../../shared/model-capabilities";
 import { batchModelActions } from "@/lib/batch-bot-model";
+import { OpenAiCompatModel } from "./ApiKeys";
+import { azureOpenAIEndpoint, type ModelListIssue } from "../../shared/azure-openai";
+import type { LocaleKey } from "@/locales";
+
+/** Why an OpenAI-compatible endpoint listed nothing, as the picker says it. */
+const LIST_ISSUE_KEY: Record<ModelListIssue, LocaleKey> = {
+  "key-refused": "model.listIssue.key-refused",
+  "bad-url": "model.listIssue.bad-url",
+  unreachable: "model.listIssue.unreachable",
+  "azure-bad-url": "model.listIssue.azure-bad-url",
+  "azure-no-deployments": "model.listIssue.azure-no-deployments",
+};
 import { ModelMenuSettings } from "./ModelMenuSettings";
 import { favoriteKey, toggleModelFavorite, useModelFavorites } from "@/lib/model-favorites";
 import { engineRuns, modelUsable } from "@/lib/model-health";
@@ -1652,6 +1664,16 @@ export function ModelPicker({
         )}
         {!railHasModels && !signInFirst && (
           <p className="py-2 text-[12.5px] text-ink-secondary">{orgMode ? t("model.org.noModels") : t("model.simple.noModels")}</p>
+        )}
+        {!railHasModels && !signInFirst && railInstance.models.issue && (
+          // Why the endpoint listed nothing, in plain words (openai-compat.ts).
+          <p data-model-list-issue={railInstance.models.issue} className="text-[12.5px] leading-relaxed text-ink">
+            {t(LIST_ISSUE_KEY[railInstance.models.issue])}
+          </p>
+        )}
+        {!railHasModels && !signInFirst && keysHere && railInstance.instanceId === "openaiCompat" && (
+          // A deployment (Azure) or model typed by hand, when the list is empty.
+          <OpenAiCompatModel azure={railInstance.models.issue?.startsWith("azure-") || azureOpenAIEndpoint(state.config?.openaiCompat?.url) !== null} compact />
         )}
       </div>
     )

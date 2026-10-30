@@ -5,6 +5,8 @@
 // The answer is a verdict and, on success, a few model ids; never the key,
 // never the raw response. Keys travel only over TLS, except to a loopback
 // test double.
+import { azureDeployments, azureOpenAIEndpoint } from "../shared/azure-openai.ts";
+
 export type ProviderKeyKind = "anthropic" | "openai" | "openrouter" | "openaiCompat" | "xai" | "mistral" | "cerebras" | "groq";
 
 export type ProviderKeyVerdict =
@@ -89,9 +91,12 @@ export async function checkProviderKey(
   timeoutMs = 10_000,
 ): Promise<ProviderKeyVerdict> {
   if (!input.key.trim()) return { ok: false, reason: "rejected" };
+  // An Azure resource: its deployments, with its `api-key` header. Its
+  // /openai/v1/models is the region's catalog, not what the key can run.
+  const azure = input.provider === "openaiCompat" ? azureOpenAIEndpoint(input.url) : null;
   let url: URL;
   try {
-    url = new URL(providerModelsUrl(input.provider, input.url));
+    url = new URL(azure ? azure.deployments : providerModelsUrl(input.provider, input.url));
   } catch {
     return { ok: false, reason: "unexpected" };
   }
@@ -104,6 +109,7 @@ export async function checkProviderKey(
   const headers: Record<string, string> =
     input.provider === "anthropic"
       ? { "x-api-key": input.key, "anthropic-version": "2023-06-01" }
+      : azure ? { "api-key": input.key }
       : { authorization: `Bearer ${input.key}` };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -124,6 +130,7 @@ export async function checkProviderKey(
       // /key also returns account and usage details; none belong in this verdict.
       return { ok: true, check: "authentication", models: [] };
     }
+    if (azure) return { ok: true, check: "models", models: azureDeployments(body).slice(0, MAX_MODELS).map((deployment) => deployment.id) };
     return { ok: true, check: "models", models: modelIds(body) };
   } catch {
     return { ok: false, reason: "unreachable" };

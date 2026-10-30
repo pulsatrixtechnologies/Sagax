@@ -4,6 +4,13 @@ import type { ModelCatalog, ProviderDriver } from "../contracts.ts";
 import { publishedContextWindow } from "../published-context-window.ts";
 import { createOpenAIChatRuntime } from "./openai-chat.ts";
 import { currentEnvName, readEnvName } from "../../electron/legacy-names.mjs";
+import {
+  azureDeploymentLabel,
+  azureDeployments,
+  azureOpenAIEndpoint,
+  looksLikeAzureUrl,
+  type ModelListIssue,
+} from "../../shared/azure-openai.ts";
 
 const DRIVER_KIND = "openai-compat";
 const DEFAULT_IDLE_TIMEOUT_MS = 180_000;
@@ -59,6 +66,21 @@ export function isOpenAIReasoningModel(id: string): boolean {
 
 /** Effort levels OpenAI's reasoning models take as `reasoning.effort`. */
 const OPENAI_EFFORT_LEVELS = ["low", "medium", "high"] as const;
+
+/** Why a GET of the endpoint's list failed, in the picker's words. */
+function issueForStatus(status: number, azure: boolean): ModelListIssue | undefined {
+  if (status === 401 || status === 403) return "key-refused";
+  if (status === 404 || status === 400) return azure ? "azure-bad-url" : "bad-url";
+  return undefined;
+}
+
+/** A fetch that never reached the host: a name that does not resolve is a
+ * wrong address, anything else is the network. */
+function issueForError(error: unknown, azure: boolean): ModelListIssue {
+  const code = (error as { cause?: { code?: unknown } } | null)?.cause?.code;
+  if (code === "ENOTFOUND" || code === "EAI_NONAME") return azure ? "azure-bad-url" : "bad-url";
+  return "unreachable";
+}
 
 export interface OpenAICompatConfig {
   tools?: boolean;
@@ -151,13 +173,27 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
       ? "No API key — open Settings → API keys."
       : `no API key — set ${config.apiKeyEnv} or add it to the instance config`;
     const openai = config.catalog === "openai";
+    // Azure AI Foundry / Azure OpenAI, whether picked as such or pasted in
+    // "Other (OpenAI-compatible)": its v1 base, its `api-key` header, its
+    // deployments as the list (shared/azure-openai.ts).
+    const azure = openai ? null : azureOpenAIEndpoint(config.url);
+    const azureWrongUrl = !openai && !azure && looksLikeAzureUrl(config.url);
+    const apiUrl = azure ? azure.v1 : config.url;
+    /** Deployment name → the model under it, when Azure names it. */
+    const deployedModel = new Map<string, string>();
+    const underlying = (id: string) => deployedModel.get(id) ?? id;
+    let issue: ModelListIssue | undefined = azureWrongUrl ? "azure-bad-url" : undefined;
     /** Models OpenAI refused for a conversation (openai-chat.ts): they leave
      * the catalog, so neither the picker nor Auto offers them again. */
     const refused = new Set<string>();
-    const withEffort = (option: ModelCatalog["options"][number]) => openai
-      ? { ...option, effortLevels: isOpenAIReasoningModel(option.id) ? [...OPENAI_EFFORT_LEVELS] : [] }
+    const withEffort = (option: ModelCatalog["options"][number]) => openai || azure
+      ? { ...option, effortLevels: isOpenAIReasoningModel(underlying(option.id)) ? [...OPENAI_EFFORT_LEVELS] : [] }
       : option;
-    const seeded = openai ? { ...OPENAI_MODELS, options: OPENAI_MODELS.options.map(withEffort) } : DEFAULT_MODELS;
+    // An Azure resource runs only its own deployments: nothing is seeded,
+    // the deployment typed by hand (config.model) aside.
+    const seeded = openai ? { ...OPENAI_MODELS, options: OPENAI_MODELS.options.map(withEffort) }
+      : azure || azureWrongUrl ? { default: "", options: [] }
+      : DEFAULT_MODELS;
     let catalog: ModelCatalog = config.managedModels
       ? { default: config.managedModels[0], options: config.managedModels.map(id => ({ id, label: id })) }
       : config.model
@@ -165,19 +201,62 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
           default: config.model,
           options: seeded.options.some((model) => model.id === config.model)
             ? seeded.options
-            : [{ id: config.model, label: config.model, custom: true }, ...seeded.options],
+            // A deployment typed by hand is the resource's own, not a
+            // custom model: an organization server lists it to its members.
+            : [{ id: config.model, label: config.model, ...(azure ? {} : { custom: true }) }, ...seeded.options],
         }
       : seeded;
+
+    const azureHeaders = (key: string) => ({ "api-key": key });
+    const fetchDeployments = async () => {
+      if (!azure) return;
+      try {
+        const response = await fetch(azure.deployments, {
+          headers: azureHeaders(apiKey),
+          signal: AbortSignal.timeout(8_000),
+          redirect: "manual",
+        });
+        if (!response.ok) {
+          issue = issueForStatus(response.status, true) ?? "unreachable";
+          return;
+        }
+        const deployments = azureDeployments(await response.json());
+        if (!deployments.length) {
+          issue = "azure-no-deployments";
+          return;
+        }
+        issue = undefined;
+        deployedModel.clear();
+        for (const deployment of deployments) if (deployment.model) deployedModel.set(deployment.id, deployment.model);
+        // The resource's own list: not custom, so an organization server
+        // offers it to its members and Auto can pick from it.
+        const options: ModelCatalog["options"] = deployments.map((deployment) => withEffort({
+          id: deployment.id,
+          label: azureDeploymentLabel(deployment),
+        }));
+        if (config.model && !options.some((model) => model.id === config.model)) {
+          options.unshift(withEffort({ id: config.model, label: config.model }));
+        }
+        catalog = { default: config.model ?? options[0]!.id, options };
+      } catch (error) {
+        issue = issueForError(error, true);
+      }
+    };
 
     const fetchModels = async () => {
       if (config.managedModels) return;
       if (!apiKey) return;
+      if (azureWrongUrl) return;
+      if (azure) return fetchDeployments();
       try {
         const response = await fetch(`${config.url}/models`, {
           headers: { authorization: `Bearer ${apiKey}` },
           signal: AbortSignal.timeout(8_000),
         });
-        if (!response.ok) return;
+        if (!response.ok) {
+          issue = issueForStatus(response.status, false);
+          return;
+        }
         type Row = { id?: unknown; name?: unknown; created?: unknown };
         const json = await response.json() as { data?: Row[] } | Row[];
         let rows = Array.isArray(json) ? json : Array.isArray(json.data) ? json.data : [];
@@ -205,27 +284,31 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
           }));
         }
         if (!options.length) return;
+        issue = undefined;
         if (config.model && !options.some((model) => model.id === config.model)) {
           options.unshift({ id: config.model, label: config.model, custom: true });
         }
         catalog = { default: config.model ?? options[0].id, options };
-      } catch {
+      } catch (error) {
         // Catalog refresh is opportunistic; keep the seeded options.
+        issue = issueForError(error, false);
       }
     };
     if (apiKey) void fetchModels();
-    const models = (): ModelCatalog => {
+    const listed = (): ModelCatalog => {
       if (!refused.size) return catalog;
       const options = catalog.options.filter((option) => !refused.has(option.id));
       if (!options.length) return catalog;
       return { ...catalog, default: refused.has(catalog.default) ? options[0]!.id : catalog.default, options };
     };
+    const models = (): ModelCatalog => (issue ? { ...listed(), issue } : listed());
 
     return createOpenAIChatRuntime({
       input,
       driverKind: DRIVER_KIND,
       apiKey,
-      apiUrl: config.url,
+      apiUrl,
+      ...(azure ? { authHeaders: azureHeaders } : {}),
       tools: config.tools,
       computerUse: true,
       models,
@@ -239,12 +322,20 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
         modelFallback: true,
         onModelUnsupported: (model: string) => { refused.add(model); },
       } : {}),
+      // Azure serves /responses for the OpenAI models it deploys (#1688);
+      // any other deployment, or one /responses refuses, uses chat
+      // completions. The deployment's model decides, not its free name.
+      ...(azure ? {
+        responsesApi: (model: string) => isOpenAIChatModel(underlying(model)),
+        reasoningModel: (model: string) => isOpenAIReasoningModel(underlying(model)),
+        effortLevels: OPENAI_EFFORT_LEVELS,
+      } : {}),
       requestBody: (model, messages, stream) => ({
         model,
         messages,
         stream,
         stream_options: stream ? { include_usage: true } : undefined,
-        ...(config.provider && isOpenRouterUrl(config.url)
+        ...(!azure && config.provider && isOpenRouterUrl(config.url)
           ? { provider: { order: [config.provider], allow_fallbacks: false } }
           : {}),
       }),

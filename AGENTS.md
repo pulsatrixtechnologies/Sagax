@@ -24,6 +24,29 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Azure AI Foundry / Azure OpenAI (2026-10-30)
+
+The OpenAI-compatible connection (`openaiCompat`) treats an Azure resource
+URL (`*.openai.azure.com`, `*.services.ai.azure.com`,
+`*.cognitiveservices.azure.com`, whatever path was pasted) as Azure
+(`shared/azure-openai.ts`, `server/drivers/openai-compat.ts`): the engine
+calls `{resource}/openai/v1` with the `api-key` header (`authHeaders` in
+openai-chat.ts), its list is the resource's deployments (GET
+`/openai/deployments?api-version=2022-12-01`, never `/openai/v1/models`,
+which is the region's catalog of hundreds of undeployed models), each
+deployment labelled by its name and kept unless the model under it is no
+conversation model (embeddings, speech, images); #1688's gpt-4+/o-series
+list is not applied to deployment names. Deployment rows are not `custom`,
+so an organization server offers them (ModelPicker hides a server's custom
+rows) and Auto can pick them. /responses is tried for a deployment of an
+OpenAI model, chat completions otherwise. A list that fails sets
+`models.issue` (`key-refused`, `bad-url`, `unreachable`, `azure-bad-url`,
+`azure-no-deployments`), said in plain words in the picker
+(`model.listIssue.*`) with a field to type a deployment by hand
+(`openaiCompat.model`, `OpenAiCompatModel`). Settings has an "Azure AI
+Foundry / Azure OpenAI" key row (`azureFoundry`, the same connection) and
+the key test lists deployments. Tests: `server/drivers/openai-compat-azure.test.ts`.
+
 ## Proactive bots, wired for real (2026-10-30)
 
 A bot's proactive mode (`proactiveMode`, Edit bot > Permissions > Proactive,

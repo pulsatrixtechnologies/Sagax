@@ -13,6 +13,7 @@ import type {
   DriverKind, InstanceId, ModelVariantOption, RuntimeEventListener, ThreadId, TurnId,
 } from "../shared/runtime-events.ts";
 import type { ProviderIcon } from "../shared/provider-icon.ts";
+import type { ModelListIssue } from "../shared/azure-openai.ts";
 
 // These contract types live in shared/wire.ts now (part of the wire model);
 // re-exported here so existing server-side importers keep working.
@@ -647,6 +648,9 @@ export interface ProviderAuthenticationStatus extends Omit<ProviderAuthenticatio
 // a rejection to an unavailable shadow snapshot.
 export interface ModelCatalog {
   default: string;
+  /** The endpoint's own list could not be read, or was empty, and why
+   * (an OpenAI-compatible endpoint, Azure among them). Absent: it was read. */
+  issue?: ModelListIssue;
   options: Array<{
     id: string;
     label: string;
