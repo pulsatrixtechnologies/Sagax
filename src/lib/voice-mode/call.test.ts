@@ -250,9 +250,9 @@ describe("a turn that carries on the one sent before", () => {
 });
 
 describe("noise fragments", () => {
-  it("drops a lone short token no one says alone, keeps real short answers and numbers", () => {
-    for (const text of ["dwad", "Hm.", "a", "...", "zz"]) expect(isNoiseFragment(text), text).toBe(true);
-    for (const text of ["yes", "Non.", "OK", "42", "merci", "stop", "call Max", "Trois-Rivieres"]) expect(isNoiseFragment(text), text).toBe(false);
+  it("drops explicit hesitation sounds, keeps names, days, letters and non-Latin answers", () => {
+    for (const text of ["Hm.", "mm-hmm", "euh", "...", ""]) expect(isNoiseFragment(text), text).toBe(true);
+    for (const text of ["Steve", "Julie", "Grok", "lundi", "mardi", "aide", "A", "你好", "نعم", "yes", "Non.", "OK", "42", "merci", "stop", "call Max", "Trois-Rivieres"]) expect(isNoiseFragment(text), text).toBe(false);
     // a word or two xAI itself doubts
     expect(isNoiseFragment("call Max", 0.2)).toBe(true);
     expect(isNoiseFragment("call Max now please", 0.2)).toBe(false);
@@ -485,8 +485,8 @@ describe("VoiceCall", () => {
     expect(utterances.at(-1)?.continues).toBeUndefined();
   });
 
-  it("a sound the recognizer spelled is no turn", async () => {
-    const t = await setup({ transcripts: ["dwad", "yes"] });
+  it("a hesitation is ignored but a short name reaches the bot", async () => {
+    const t = await setup({ transcripts: ["euh", "Julie"] });
     await t.feed(0.95, 0.06, 20);
     await t.feed(0.02, 0.001, 25);
     await t.settle();
@@ -496,7 +496,7 @@ describe("VoiceCall", () => {
     await t.feed(0.95, 0.06, 20);
     await t.feed(0.02, 0.001, 25);
     await t.settle();
-    expect(t.utterances.map((u) => u.text)).toEqual(["yes"]);
+    expect(t.utterances.map((u) => u.text)).toEqual(["Julie"]);
   });
 
   it("only the turn that cut the bot is marked interrupted", async () => {

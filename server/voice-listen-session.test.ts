@@ -12,6 +12,7 @@ class FakeUpstream implements TranscriptionStream {
   ready: Promise<void>;
   audio: number[] = [];
   finalizes = 0;
+  requestIds: Array<string | undefined> = [];
   closed = false;
   private accept!: () => void;
   private refuse!: (error: Error) => void;
@@ -22,7 +23,7 @@ class FakeUpstream implements TranscriptionStream {
     this.ready.catch(() => {});
   }
   send(pcm: Uint8Array) { this.audio.push(pcm.byteLength); }
-  finalize() { this.finalizes += 1; }
+  finalize(requestId?: string) { this.finalizes += 1; this.requestIds.push(requestId); }
   close() {
     if (this.closed) return;
     this.closed = true;
@@ -32,7 +33,7 @@ class FakeUpstream implements TranscriptionStream {
   open() { this.accept(); }
   /** xAI ended the socket (its session limit, a network drop) */
   drop() { this.close(); }
-  words(text: string) { this.handlers.onTranscript({ text, final: true, speechFinal: true }); }
+  words(text: string, requestId?: string) { this.handlers.onTranscript({ text, final: true, speechFinal: true, ...(requestId ? { requestId } : {}) }); }
 }
 
 function make() {
@@ -65,6 +66,16 @@ afterEach(() => {
 });
 
 describe("the listen session", () => {
+  it("carries finalize identities to the provider and back to the page", async () => {
+    const t = make();
+    t.upstreams[0]!.open();
+    await t.session.ready;
+    t.session.finalize("stt-1");
+    expect(t.upstreams[0]!.requestIds).toEqual(["stt-1"]);
+    t.upstreams[0]!.words("Julie", "stt-1");
+    expect(t.frames.at(-1)).toEqual({ type: "transcript", text: "Julie", final: true, speechFinal: true, requestId: "stt-1" });
+    t.session.close();
+  });
   it("an xAI socket that drops is reopened behind the page's socket, which survives", async () => {
     vi.useFakeTimers();
     const t = make();
@@ -170,10 +181,11 @@ describe("the listen session", () => {
     expect(t.upstreams[0]!.closed).toBe(true);
     // the person starts talking while the next socket opens
     t.session.audio(new Uint8Array(320));
-    t.session.finalize();
+    t.session.finalize("stt-rotated");
     t.upstreams[1]!.open();
     await t.tick(0);
     expect(t.upstreams[1]!.audio).toEqual([320]);
+    expect(t.upstreams[1]!.requestIds).toEqual(["stt-rotated"]);
     expect(t.upstreams[1]!.finalizes).toBe(1);
     // a rotation is not a reconnect: the page has nothing to resend
     expect(t.frames).not.toContainEqual({ type: "reconnected" });

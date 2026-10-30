@@ -655,14 +655,15 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
           ears.audio(new Uint8Array(data));
         },
         onText: (text) => {
-          let message: { type?: unknown } | null = null;
-          try { message = JSON.parse(text) as { type?: unknown }; } catch { /* ignored */ }
+          let message: { type?: unknown; requestId?: unknown } | null = null;
+          try { message = JSON.parse(text) as { type?: unknown; requestId?: unknown }; } catch { /* ignored */ }
           // The page's keepalive keeps a proxy from dropping the listen
           // socket. It is never forwarded to the provider.
           if (message?.type === "keepalive") return;
           if (message?.type === "finalize") {
             finalizedAt = now();
-            ears.finalize();
+            const requestId = typeof message.requestId === "string" && /^[A-Za-z0-9_-]{1,80}$/.test(message.requestId) ? message.requestId : undefined;
+            ears.finalize(requestId);
             book();
             // the answer's first sentence goes to the voice a second or
             // two from now: have a connection open by then (a pooled one

@@ -110,6 +110,11 @@ export function createOpenAiStt(options: OpenAiSttOptions = {}) {
       const url = `${api().replace(/^http/, "ws")}/realtime?intent=transcription`;
       const upsample = createUpsampler();
       const texts = new Map<string, string>();
+      // Commit acknowledgements name items in input order; transcription
+      // completions need not arrive in that order. Keep that identity all
+      // the way to the page, including probes inside one local utterance.
+      const commits: Array<{ requestId?: string }> = [];
+      const items = new Map<string, { requestId?: string }>();
       let appended = false;
       let closed = false;
       let isReady = false;
@@ -163,7 +168,7 @@ export function createOpenAiStt(options: OpenAiSttOptions = {}) {
         });
       });
       socket.addEventListener("message", (event: MessageEvent) => {
-        if (typeof event.data !== "string") return;
+        if (closed || typeof event.data !== "string") return;
         let frame: Record<string, unknown>;
         try { frame = JSON.parse(event.data) as Record<string, unknown>; } catch { return; }
         const type = String(frame.type ?? "");
@@ -171,19 +176,36 @@ export function createOpenAiStt(options: OpenAiSttOptions = {}) {
         else if (type === "session.created" || type === "transcription_session.created") {
           grace = setTimeout(becomeReady, READY_GRACE_MS);
           grace.unref?.();
+        } else if (type === "input_audio_buffer.committed") {
+          if (typeof frame.item_id === "string" && commits.length) items.set(frame.item_id, commits.shift()!);
         } else if (type === "conversation.item.input_audio_transcription.delta") {
           const id = String(frame.item_id ?? "");
+          if (!items.has(id)) return;
           const text = (texts.get(id) ?? "") + (typeof frame.delta === "string" ? frame.delta : "");
           texts.set(id, text);
-          handlers.onTranscript({ text, final: false, speechFinal: false });
+          const requestId = items.get(id)?.requestId;
+          handlers.onTranscript({ text, final: false, speechFinal: false, ...(requestId ? { requestId } : {}) });
         } else if (type === "conversation.item.input_audio_transcription.completed") {
           const id = String(frame.item_id ?? "");
+          // Unknown and already-completed items are never an untagged
+          // transcript for the next turn (duplicates can arrive late).
+          if (!items.has(id)) return;
           texts.delete(id);
-          handlers.onTranscript({ text: typeof frame.transcript === "string" ? frame.transcript : "", final: true, speechFinal: true });
+          const requestId = items.get(id)?.requestId;
+          items.delete(id);
+          handlers.onTranscript({ text: typeof frame.transcript === "string" ? frame.transcript : "", final: true, speechFinal: true, ...(requestId ? { requestId } : {}) });
+        } else if (type === "conversation.item.input_audio_transcription.failed") {
+          fail("OpenAI could not transcribe the audio. Try again.");
         } else if (type === "error") {
           const code = String(((frame.error ?? {}) as Record<string, unknown>).code ?? "");
           // a finalize with nothing heard: an empty turn, not a failure
-          if (code === "input_audio_buffer_commit_empty") handlers.onTranscript({ text: "", final: true, speechFinal: true });
+          if (code === "input_audio_buffer_commit_empty") {
+            const eventId = ((frame.error ?? {}) as Record<string, unknown>).event_id;
+            const index = typeof eventId === "string" ? commits.findIndex((commit) => commit.requestId === eventId) : 0;
+            if (index < 0 || !commits.length) return;
+            const requestId = commits.splice(index, 1)[0]!.requestId;
+            handlers.onTranscript({ text: "", final: true, speechFinal: true, ...(requestId ? { requestId } : {}) });
+          }
           else fail(errorMessage(frame));
         }
       });
@@ -203,13 +225,14 @@ export function createOpenAiStt(options: OpenAiSttOptions = {}) {
           appended = true;
           sendJson({ type: "input_audio_buffer.append", audio: Buffer.from(up).toString("base64") });
         },
-        finalize() {
+        finalize(requestId) {
           if (!appended) {
-            handlers.onTranscript({ text: "", final: true, speechFinal: true });
+            handlers.onTranscript({ text: "", final: true, speechFinal: true, ...(requestId ? { requestId } : {}) });
             return;
           }
           appended = false;
-          sendJson({ type: "input_audio_buffer.commit" });
+          commits.push({ requestId });
+          sendJson({ type: "input_audio_buffer.commit", ...(requestId ? { event_id: requestId } : {}) });
         },
         close() {
           if (closed) return;

@@ -1,5 +1,25 @@
 # Voice mode with xAI
 
+## Recognition reliability (2026-10-30)
+
+Short answers such as names, weekdays, commands and single letters are
+accepted, including non-Latin text. Only empty text, explicit hesitation
+sounds and low-confidence short transcripts are discarded by the text
+filter; a word's length is not evidence of noise. Desktop and iOS use the
+same rule.
+
+Each page `finalize` carries a `requestId`. For OpenAI, the provider's
+`input_audio_buffer.committed` event associates its `item_id` with that
+request. Partial and final transcripts retain this identity through the
+server. Results can complete out of order: the page updates their own turn
+and assembles probes within a turn in audio order. Results of a discarded,
+timed-out, uploaded or reconnected turn cannot consume a newer turn's words.
+xAI and older clients continue using the existing ordered chunk protocol.
+
+This does not change the call architecture, provider preferences or duplex
+defaults. Server and client changes must both be delivered for identified
+OpenAI transcripts; an older server still uses ordered untagged results.
+
 Since 2026-10-29 OpenAI and ElevenLabs can be the voice too, picked per
 person and per bot, each falling back on the others (AGENTS.md, "Voice
 providers"). What follows is xAI's side, unchanged.

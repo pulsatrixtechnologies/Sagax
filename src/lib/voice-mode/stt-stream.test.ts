@@ -11,6 +11,7 @@ class Socket {
   readyState = 0;
   binaryType = "blob";
   finalizes = 0;
+  requestIds: string[] = [];
   /** audio frames received */
   audio = 0;
   onFinalize: (socket: Socket) => void = () => {};
@@ -32,13 +33,14 @@ class Socket {
   fire(type: string, event: unknown) {
     for (const cb of this.listeners[type] ?? []) cb(event);
   }
-  transcript(text: string, final: boolean, speechFinal: boolean, confidence?: number) {
-    this.fire("message", { data: JSON.stringify({ type: "transcript", text, final, speechFinal, ...(confidence !== undefined ? { confidence } : {}) }) });
+  transcript(text: string, final: boolean, speechFinal: boolean, confidence?: number, requestId?: string) {
+    this.fire("message", { data: JSON.stringify({ type: "transcript", text, final, speechFinal, ...(confidence !== undefined ? { confidence } : {}), ...(requestId ? { requestId } : {}) }) });
   }
   send(data: string | ArrayBuffer) {
     if (typeof data !== "string") this.audio += 1;
     if (typeof data === "string" && JSON.parse(data).type === "finalize") {
       this.finalizes += 1;
+      this.requestIds.push(JSON.parse(data).requestId);
       this.onFinalize(this);
     }
   }
@@ -66,6 +68,89 @@ async function ears(finalTimeoutMs = 300) {
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 describe("LiveTranscriber finalize", () => {
+  it("keeps two identified turns with their own words when the second finishes first", async () => {
+    const { socket, transcriber, speak } = await ears();
+    speak();
+    const first = transcriber.finishHeard();
+    speak();
+    const second = transcriber.finishHeard();
+    socket.transcript("Finalement, annule.", true, true, undefined, socket.requestIds[1]);
+    socket.transcript("Cherche le billet.", true, true, undefined, socket.requestIds[0]);
+    expect((await Promise.all([first, second])).map((heard) => heard.text)).toEqual(["Cherche le billet.", "Finalement, annule."]);
+    transcriber.close();
+  });
+
+  it("reassembles probes in audio order and replaces each segment's partial with its final", async () => {
+    const { socket, transcriber, speak } = await ears();
+    speak();
+    transcriber.probe();
+    transcriber.push(new Float32Array(VAD_FRAME).fill(0.05));
+    const finished = transcriber.finishHeard();
+    socket.transcript("le billet de lundi", false, false, undefined, socket.requestIds[1]);
+    socket.transcript("le billet de mardi", true, true, undefined, socket.requestIds[1]);
+    let settled = false;
+    void finished.then(() => { settled = true; });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    socket.transcript("Cherche", true, true, undefined, socket.requestIds[0]);
+    expect((await finished).text).toBe("Cherche le billet de mardi");
+    transcriber.close();
+  });
+
+  it("retains a phrase repeated in two different identified segments", async () => {
+    const { socket, transcriber, speak } = await ears();
+    speak();
+    transcriber.probe();
+    socket.transcript("non pas lui", true, true, undefined, socket.requestIds[0]);
+    transcriber.push(new Float32Array(VAD_FRAME).fill(0.05));
+    const finished = transcriber.finishHeard();
+    socket.transcript("non pas lui", true, true, undefined, socket.requestIds[1]);
+    expect((await finished).text).toBe("non pas lui non pas lui");
+    transcriber.close();
+  });
+
+  it("ignores a timed-out identified turn without draining the next turn's result", async () => {
+    const { socket, transcriber, speak } = await ears(10);
+    speak();
+    const first = transcriber.finishHeard();
+    socket.transcript("Cherche le billet", false, false, undefined, socket.requestIds[0]);
+    expect((await first).text).toBe("Cherche le billet");
+    speak();
+    const second = transcriber.finishHeard();
+    socket.transcript("Annule", true, true, undefined, socket.requestIds[1]);
+    socket.transcript("Cherche le billet de mardi", true, true, undefined, socket.requestIds[0]);
+    expect((await second).text).toBe("Annule");
+    transcriber.close();
+  });
+
+  it("never hands a discarded turn's delayed words to a newer identified turn", async () => {
+    const { socket, transcriber, speak } = await ears();
+    speak();
+    transcriber.discard();
+    speak();
+    const second = transcriber.finishHeard();
+    socket.transcript("Julie", true, true, undefined, socket.requestIds[1]);
+    socket.transcript("Steve", true, true, undefined, socket.requestIds[0]);
+    expect((await second).text).toBe("Julie");
+    transcriber.close();
+  });
+
+  it("commits audio resumed after a pending probe when discarding, before the next turn starts", async () => {
+    const { socket, transcriber, speak } = await ears();
+    speak();
+    transcriber.probe();
+    transcriber.push(new Float32Array(VAD_FRAME).fill(0.05));
+    transcriber.discard();
+    expect(socket.finalizes).toBe(2);
+    speak();
+    const next = transcriber.finishHeard();
+    socket.transcript("Julie", true, true, undefined, socket.requestIds[2]);
+    socket.transcript("discarded tail", true, true, undefined, socket.requestIds[1]);
+    socket.transcript("discarded start", true, true, undefined, socket.requestIds[0]);
+    expect((await next).text).toBe("Julie");
+    transcriber.close();
+  });
+
   it("waits for speech_final: a final chunk after finalize is not the end of the sentence", async () => {
     const { socket, transcriber, speak } = await ears();
     socket.onFinalize = (s) => {

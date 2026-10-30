@@ -45,6 +45,9 @@ export interface LiveTranscriberOptions {
 }
 
 interface Utterance {
+  /** One entry per finalize, in audio order. OpenAI echoes these ids so
+   * late results and probes cannot be mistaken for another turn. */
+  requests: Map<string, { text: string; final: boolean }>;
   frames: Float32Array[];
   /** frames already sent on the socket */
   sent: number;
@@ -81,7 +84,7 @@ export interface Heard {
   failed?: boolean;
 }
 
-type Frame = { type: "ready"; key?: unknown; skipped?: unknown } | { type: "reconnected" } | { type: "transcript"; text: string; final: boolean; speechFinal: boolean; confidence?: number; endOfTurnConfidence?: number } | { type: "error"; message: string };
+type Frame = { type: "ready"; key?: unknown; skipped?: unknown } | { type: "reconnected" } | { type: "transcript"; text: string; requestId?: string; final: boolean; speechFinal: boolean; confidence?: number; endOfTurnConfidence?: number } | { type: "error"; message: string };
 
 /** After a finalize xAI can send again a final chunk it had already closed
  * (then the rest). Appended, that resend doubled the sentence ("Yeah, but I
@@ -110,6 +113,8 @@ export class LiveTranscriber {
   /** utterances settled by the timeout before xAI's final words came: the
    * frames that still arrive for them are theirs, never the next turn's */
   private draining = 0;
+  private requestSequence = 0;
+  private identified = false;
   private keepalive: ReturnType<typeof setInterval> | null = null;
   /** reconnect attempts since the socket was last ready */
   private attempt = 0;
@@ -181,6 +186,7 @@ export class LiveTranscriber {
         let frame: Frame;
         try { frame = JSON.parse(event.data) as Frame; } catch { return; }
         if (frame.type === "ready") {
+          this.identified = false;
           clearTimeout(timer);
           // which key hears, and the ones xAI refused on the way
           noteVoiceKeyFrame(frame);
@@ -222,6 +228,7 @@ export class LiveTranscriber {
     const utterance = this.current;
     if (!utterance) return;
     utterance.sent = 0;
+    utterance.requests.clear();
     utterance.text = "";
     utterance.interim = undefined;
     utterance.lastChunk = undefined;
@@ -253,7 +260,7 @@ export class LiveTranscriber {
     if (this.current) return;
     // the person changed the language in the panel: a socket for it, between turns
     if (this.streaming && this.language !== this.options.language() && !this.utterances.length) this.reopen();
-    const utterance: Utterance = { frames: [], sent: 0, text: "", discard: false, finalized: false, ended: false };
+    const utterance: Utterance = { requests: new Map(), frames: [], sent: 0, text: "", discard: false, finalized: false, ended: false };
     this.current = utterance;
     this.utterances.push(utterance);
     for (const frame of preroll) this.push(frame);
@@ -287,8 +294,14 @@ export class LiveTranscriber {
     if (utterance.sent === 0 || utterance.closedAt === utterance.sent) return false;
     utterance.probing = true;
     utterance.closedAt = utterance.sent;
-    this.socket.send(JSON.stringify({ type: "finalize" }));
+    this.finalize(utterance);
     return true;
+  }
+
+  private finalize(utterance: Utterance): void {
+    const requestId = `stt-${++this.requestSequence}`;
+    utterance.requests.set(requestId, { text: "", final: false });
+    this.socket!.send(JSON.stringify({ type: "finalize", requestId }));
   }
 
   /** Stop sending silence: a probe is in flight, or it already closed this audio. */
@@ -366,7 +379,7 @@ export class LiveTranscriber {
       }
       utterance.closedAt = utterance.sent;
       utterance.probing = true;
-      this.socket!.send(JSON.stringify({ type: "finalize" }));
+      this.finalize(utterance);
       this.armFinalTimer(utterance);
     });
   }
@@ -377,7 +390,7 @@ export class LiveTranscriber {
       if (fallback) {
         if (!utterance.text.trim()) utterance.text = fallback;
         // its last words may still come: they belong to it, not the next turn
-        this.draining += 1;
+        if (!this.identified) this.draining += 1;
         this.settle(utterance);
       } else void this.upload(utterance);
     }, this.options.finalTimeoutMs ?? 2500);
@@ -395,13 +408,13 @@ export class LiveTranscriber {
       this.settle(utterance);
       return;
     }
-    if (this.open && this.socket?.readyState === 1 && !utterance.probing) {
+    if (this.open && this.socket?.readyState === 1 && utterance.closedAt !== utterance.sent) {
       utterance.closedAt = utterance.sent;
       utterance.probing = true;
-      this.socket.send(JSON.stringify({ type: "finalize" }));
+      this.finalize(utterance);
     }
     utterance.timer = setTimeout(() => {
-      if (this.utterances.includes(utterance)) this.draining += 1;
+      if (!this.identified && this.utterances.includes(utterance)) this.draining += 1;
       this.settle(utterance);
     }, this.options.finalTimeoutMs ?? 2500);
   }
@@ -425,6 +438,30 @@ export class LiveTranscriber {
   }
 
   private heard(frame: Extract<Frame, { type: "transcript" }>): void {
+    if (frame.requestId !== undefined) {
+      this.identified = true;
+      const utterance = this.utterances.find((candidate) => !candidate.uploading && candidate.requests.has(frame.requestId!));
+      // A timeout, discard, upload or reconnect already retired this audio.
+      // Its late result must never consume the next turn's transcript.
+      if (!utterance) return;
+      const segment = utterance.requests.get(frame.requestId)!;
+      if (segment.final) return;
+      segment.text = frame.text.trim();
+      segment.final = frame.final && frame.speechFinal;
+      // Each identified segment is cumulative; replace its partial, never
+      // append it or deduplicate a repeated phrase in another segment.
+      utterance.text = [...utterance.requests.values()].map((part) => part.text).filter(Boolean).join(" ");
+      this.forcedFlush = segment.final && !utterance.discard;
+      if (!utterance.discard && (!this.current || this.current === utterance)) {
+        for (const fn of Array.from(this.partialWatchers)) fn(utterance.text);
+      }
+      const pending = [...utterance.requests.values()].some((part) => !part.final);
+      utterance.probing = pending;
+      if (pending || utterance.sent !== utterance.closedAt) return;
+      if (utterance.finalized) this.settle(utterance);
+      else utterance.ended = true;
+      return;
+    }
     // the late words of an utterance the timeout already settled: theirs
     if (this.draining > 0) {
       if (frame.final && frame.speechFinal) this.draining -= 1;

@@ -37,7 +37,7 @@ const ROTATE_BUFFER_BYTES = 16_000 * 2 * 10;
 /** What the listen socket says to the page (JSON text frames). */
 export type ListenFrame =
   | { type: "ready" }
-  | { type: "transcript"; text: string; final: boolean; speechFinal: boolean; confidence?: number; endOfTurnConfidence?: number }
+  | { type: "transcript"; text: string; requestId?: string; final: boolean; speechFinal: boolean; confidence?: number; endOfTurnConfidence?: number }
   | { type: "error"; message: string }
   /** xAI's side was replaced: send the open utterance again */
   | { type: "reconnected" };
@@ -67,7 +67,7 @@ export interface ListenSession {
   /** PCM from the page */
   audio(pcm: Uint8Array): void;
   /** the page ended a turn */
-  finalize(): void;
+  finalize(requestId?: string): void;
   /** the page left (or the route gives up): close everything */
   close(): void;
 }
@@ -84,7 +84,7 @@ export function createListenSession(deps: ListenSessionDeps): ListenSession {
   let live = false;
   /** a rotation is opening the next socket: hold the page's audio for it */
   let holding = false;
-  let held: Array<Uint8Array | "finalize"> = [];
+  let held: Array<Uint8Array | { requestId?: string }> = [];
   let heldBytes = 0;
   let failures = 0;
   let lastError: string | undefined;
@@ -107,8 +107,8 @@ export function createListenSession(deps: ListenSessionDeps): ListenSession {
     heldBytes = 0;
     holding = false;
     for (const item of queue) {
-      if (item === "finalize") upstream?.finalize();
-      else upstream?.send(item);
+      if (item instanceof Uint8Array) upstream?.send(item);
+      else upstream?.finalize(item.requestId);
     }
   };
 
@@ -223,11 +223,11 @@ export function createListenSession(deps: ListenSessionDeps): ListenSession {
         heldBytes += pcm.byteLength;
       }
     },
-    finalize() {
+    finalize(requestId) {
       if (closed) return;
       lastActivity = now();
-      if (live) upstream?.finalize();
-      else if (holding) held.push("finalize");
+      if (live) upstream?.finalize(requestId);
+      else if (holding) held.push({ requestId });
     },
     close() {
       if (closed && !upstream && !retry) return;
@@ -249,6 +249,7 @@ export function createListenSession(deps: ListenSessionDeps): ListenSession {
 export function listenTranscriptFrame(event: TranscriptEvent): ListenFrame {
   return {
     type: "transcript", text: event.text, final: event.final, speechFinal: event.speechFinal,
+    ...(event.requestId !== undefined ? { requestId: event.requestId } : {}),
     ...(event.confidence !== undefined ? { confidence: event.confidence } : {}),
     ...(event.endOfTurnConfidence !== undefined ? { endOfTurnConfidence: event.endOfTurnConfidence } : {}),
   };
