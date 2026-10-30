@@ -22,6 +22,7 @@
 // source and its last four characters (as My voice keys shows them), never
 // more of it. Pure of HTTP: server/voice-mode.ts wires it to the routes.
 import type { VoiceKeySource, VoiceModeRefusalCause, VoiceModeVia } from "../shared/voice-mode.ts";
+import { VOICE_PROVIDER_LABELS, type VoiceProviderId } from "../shared/voice-providers.ts";
 import { grokVoiceFailure, type GrokVoiceFailure } from "./tts/grok.ts";
 
 export interface VoiceKeyCandidate {
@@ -31,20 +32,29 @@ export interface VoiceKeyCandidate {
   /** the last four characters of a key of 12 or more, as the settings show them */
   last4: string | null;
   payerPrincipalId?: string;
+  /** whose key (2026-10-29): xAI when absent */
+  provider?: VoiceProviderId;
 }
 
 /** A key as the page may know it: never the key itself. */
 export interface VoiceKeyRef {
   source: VoiceKeySource;
   last4: string | null;
+  /** absent for xAI, so an older page reads it as before */
+  provider?: VoiceProviderId;
+}
+
+export function candidateProvider(candidate: { provider?: VoiceProviderId }): VoiceProviderId {
+  return candidate.provider ?? "xai";
 }
 
 export type VoiceKeys =
   | { ok: true; keys: VoiceKeyCandidate[] }
   | { ok: false; cause: VoiceModeRefusalCause };
 
-export function voiceKeyRef(candidate: VoiceKeyCandidate): VoiceKeyRef {
-  return { source: candidate.source, last4: candidate.last4 };
+export function voiceKeyRef(candidate: VoiceKeyCandidate | VoiceKeyRef): VoiceKeyRef {
+  const provider = candidateProvider(candidate);
+  return { source: candidate.source, last4: candidate.last4, ...(provider !== "xai" ? { provider } : {}) };
 }
 
 export function keyLast4(key: string): string | null {
@@ -60,6 +70,10 @@ export interface VoiceKeyRefusal extends VoiceKeyRef {
  * key serves the person. */
 export const VOICE_KEY_REFUSAL_TTL_MS = 5 * 60_000;
 
+/** How long a provider that failed for itself (rate limited, down) is
+ * passed over while another provider serves the person. */
+export const VOICE_PROVIDER_REFUSAL_TTL_MS = 60_000;
+
 /** The failures another key can fix. */
 export function voiceKeyFailureIsFinal(failure: GrokVoiceFailure): boolean {
   return failure === "quota" || failure === "key";
@@ -68,7 +82,7 @@ export function voiceKeyFailureIsFinal(failure: GrokVoiceFailure): boolean {
 /** Keys xAI refused lately, per person: the next request skips them while
  * another key serves. Memory only, never a key, never written. */
 export class VoiceKeyRefusals {
-  private readonly refused = new Map<string, { failure: GrokVoiceFailure; at: number }>();
+  private readonly refused = new Map<string, { failure: GrokVoiceFailure; at: number; ttl: number }>();
   private readonly ttl: number;
   private readonly now: () => number;
 
@@ -78,12 +92,12 @@ export class VoiceKeyRefusals {
   }
 
   private id(who: string, candidate: VoiceKeyRef): string {
-    return `${who}\u0000${candidate.source}\u0000${candidate.last4 ?? ""}`;
+    return `${who}\u0000${candidateProvider(candidate)}\u0000${candidate.source}\u0000${candidate.last4 ?? ""}`;
   }
 
-  remember(who: string, candidate: VoiceKeyRef, failure: GrokVoiceFailure): void {
+  remember(who: string, candidate: VoiceKeyRef, failure: GrokVoiceFailure, ttlMs?: number): void {
     if (this.refused.size >= 10_000) this.refused.clear();
-    this.refused.set(this.id(who, candidate), { failure, at: this.now() });
+    this.refused.set(this.id(who, candidate), { failure, at: this.now(), ttl: ttlMs ?? this.ttl });
   }
 
   /** xAI took this key: whatever it was refused for is over. */
@@ -94,7 +108,7 @@ export class VoiceKeyRefusals {
   failure(who: string, candidate: VoiceKeyRef): GrokVoiceFailure | null {
     const entry = this.refused.get(this.id(who, candidate));
     if (!entry) return null;
-    if (this.now() - entry.at >= this.ttl) {
+    if (this.now() - entry.at >= entry.ttl) {
       this.refused.delete(this.id(who, candidate));
       return null;
     }
@@ -113,8 +127,23 @@ export class VoiceKeyRefusals {
 export interface VoiceKeyAttempt<T> {
   value: T;
   used: VoiceKeyCandidate;
-  /** the keys tried before, each with its refusal */
+  /** the keys of the same provider tried before, each with its refusal
+   * (the page says it once: a key that gave way is never a silent switch) */
   skipped: VoiceKeyRefusal[];
+  /** the providers that failed before this one: a silent fallback, noted
+   * in the thread's Events lens */
+  fellBack: VoiceKeyRefusal[];
+}
+
+/** Where to go after `candidate` failed with `failure`: the next key of the
+ * same provider when another key can fix it (credits, the key itself),
+ * else the first key of another provider (2026-10-29: a provider that
+ * fails or reaches its limit gives way to the next one), else nowhere. */
+export function nextCandidateIndex(ordered: readonly VoiceKeyCandidate[], i: number, failure: GrokVoiceFailure): number {
+  const provider = candidateProvider(ordered[i]!);
+  if (voiceKeyFailureIsFinal(failure) && i + 1 < ordered.length) return i + 1;
+  const other = ordered.findIndex((candidate, at) => at > i && candidateProvider(candidate) !== provider);
+  return other;
 }
 
 /** xAI failed the request on `used`, after `tried` (the keys refused
@@ -146,27 +175,37 @@ export async function withVoiceKeys<T>(
   attempt: (candidate: VoiceKeyCandidate) => Promise<T>,
   options: { log?(line: string): void; what?: string; scrub?(message: string): string } = {},
 ): Promise<VoiceKeyAttempt<T>> {
-  const ordered = refusals.order(who, keys);
+  const ordered = refusals.order(who, keys).map((entry) => entry.candidate);
   const skipped: VoiceKeyRefusal[] = [];
-  for (let i = 0; i < ordered.length; i += 1) {
-    const { candidate } = ordered[i]!;
+  const fellBack: VoiceKeyRefusal[] = [];
+  for (let i = 0; i >= 0 && i < ordered.length;) {
+    const candidate = ordered[i]!;
     try {
       const value = await attempt(candidate);
       refusals.forget(who, voiceKeyRef(candidate));
-      return { value, used: candidate, skipped };
+      return { value, used: candidate, skipped: skipped.filter((entry) => candidateProvider(entry) === candidateProvider(candidate)), fellBack };
     } catch (error) {
+      // the person's own abort (barge-in) is no provider failure
+      if (error instanceof Error && error.name === "AbortError") throw error;
       const raw = error instanceof Error ? error.message : String(error);
       const message = options.scrub ? options.scrub(raw) : raw;
       const failure = grokVoiceFailure(message);
       const refusal: VoiceKeyRefusal = { ...voiceKeyRef(candidate), failure };
-      const last = i === ordered.length - 1;
+      const next = nextCandidateIndex(ordered, i, failure);
       if (voiceKeyFailureIsFinal(failure)) refusals.remember(who, voiceKeyRef(candidate), failure);
-      if (!voiceKeyFailureIsFinal(failure) || last) throw new VoiceKeyFailure(message, candidate, failure, [...skipped, refusal]);
+      else if (next >= 0) refusals.remember(who, voiceKeyRef(candidate), failure, VOICE_PROVIDER_REFUSAL_TTL_MS);
+      if (next < 0) throw new VoiceKeyFailure(message, candidate, failure, [...skipped, refusal]);
       skipped.push(refusal);
-      options.log?.(`[voice-mode] xAI ${options.what ?? "request"} refused the ${describeVoiceKey(candidate)} (${failure}): trying the ${describeVoiceKey(ordered[i + 1]!.candidate)}`);
+      if (candidateProvider(ordered[next]!) !== candidateProvider(candidate)) fellBack.push(refusal);
+      options.log?.(`[voice-mode] ${providerName(candidate)} ${options.what ?? "request"} refused the ${describeVoiceKey(candidate)} (${failure}): trying the ${describeVoiceKey(ordered[next]!)}`);
+      i = next;
     }
   }
   throw new Error("no voice key");
+}
+
+export function providerName(candidate: { provider?: VoiceProviderId }): string {
+  return VOICE_PROVIDER_LABELS[candidateProvider(candidate)];
 }
 
 /** A key for the log: its source and last four characters, never more. */
@@ -174,5 +213,6 @@ export function describeVoiceKey(candidate: VoiceKeyRef): string {
   const name = candidate.source === "voice-key" ? "person's voice key"
     : candidate.source === "perspicax-key" ? "person's Perspicax key"
       : candidate.source === "org-key" ? "organization's key" : "server's key";
-  return candidate.last4 ? `${name} ···${candidate.last4}` : name;
+  const named = candidateProvider(candidate) === "xai" ? name : `${name} (${providerName(candidate)})`;
+  return candidate.last4 ? `${named} ···${candidate.last4}` : named;
 }

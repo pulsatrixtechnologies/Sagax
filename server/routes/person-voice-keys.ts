@@ -2,7 +2,7 @@
 // server/person-voice-keys.ts). Their own: no admin right, no right to edit
 // the installation. The organization's shared keys stay engines.manage.
 //
-//   GET    /api/me/voice-keys              { elevenlabs, fish, xai }: { configured, last4 }
+//   GET    /api/me/voice-keys              { elevenlabs, fish, xai, openai }: { configured, last4 }
 //   PUT    /api/me/voice-keys/<provider>   { key }
 //   DELETE /api/me/voice-keys/<provider>
 //
@@ -33,7 +33,7 @@ export function createPersonVoiceKeysRoutes(deps: PersonVoiceKeysRouteDeps): Rou
         return json(res, 200, deps.store.view(principalId));
       }
       const provider = path.slice(PERSON_VOICE_KEYS_PATH.length + 1);
-      if (!isPersonalVoiceKeyProvider(provider)) return json(res, 404, { error: "provider must be elevenlabs, fish or xai." });
+      if (!isPersonalVoiceKeyProvider(provider)) return json(res, 404, { error: "provider must be elevenlabs, fish, xai or openai." });
       if (method === "DELETE") return json(res, 200, deps.store.set(principalId, provider, null));
       if (method !== "PUT") return PASS;
       const body = await readBody(req).catch(() => undefined);

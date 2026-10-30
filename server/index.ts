@@ -875,7 +875,8 @@ import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes, resolveVoiceKey, type VoiceModeDeps, type VoiceSpeaker } from "./voice-mode.ts";
-import { VOICE_SERVER_ENGINE } from "../shared/voice-mode.ts";
+import { VOICE_MODE_STORAGE_KEY, VOICE_SERVER_ENGINE } from "../shared/voice-mode.ts";
+import { keyLast4, type VoiceKeyCandidate } from "./voice-keys.ts";
 import { IMAGE_SERVER_ENGINE } from "../shared/image-generation.ts";
 import { ORG_XAI_VOICE_NOTE_REFUSAL, orgXaiKeyAllowed, orgXaiMediaStatusFor, orgXaiRefusal, type OrgXaiMedia } from "./org-xai-media.ts";
 import { configuredKeyterms, VOICE_KEYTERM_RECENT_MESSAGES, voiceKeyterms } from "./voice-keyterms.ts";
@@ -947,6 +948,8 @@ import { parseVoiceClientTiming } from "./voice-timing.ts";
 import { noteFirstResponse, noteTurnQueued, setTurnTimingWriter, turnTrace } from "./turn-trace.ts";
 import { unansweredCallMessage, VOICE_CALL_WATCHDOG_MS, voiceCallRecoveryPrompt } from "./voice-call-watchdog.ts";
 import * as grokVoice from "./tts/grok.ts";
+import { createOpenAiVoice } from "./tts/openai-voice.ts";
+import { createElevenLabsVoice } from "./tts/elevenlabs-voice.ts";
 import { accountConnectorsForTurn, ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, connectorPrincipalFor, createHarnessConnectorRoutes, engineConnectorsPrompt, grokCloudConnectorsForTurn, runClaudeCli, type ClaudeAiTurnInput, type ConnectorElsewhere } from "./harness-connectors.ts";
 import { connectorSwitchText, pickConnectorSwitch, type ConnectorSwitch, type SwitchEngine } from "./connector-switch.ts";
 import { connectorNeed } from "../shared/engine-connectors.ts";
@@ -38716,6 +38719,31 @@ ROUTES.push(createMailSettingsRoutes({
   callerEmail: actorEmail,
 }));
 
+const openAiVoiceMode = createOpenAiVoice();
+const elevenLabsVoiceMode = createElevenLabsVoice();
+
+/** The OpenAI or ElevenLabs keys that may serve one person's voice, in the
+ * order of the xAI keys (server/voice-mode.ts resolveVoiceKeys): their own
+ * voice key (My voice keys), their own OpenAI key in Perspicax, then the
+ * organization's key when it was given to them (the same grant as its xAI
+ * voice). A solo server: the server's key. Never sent anywhere but to the
+ * provider. */
+async function voiceProviderKeys(provider: "openai" | "elevenlabs", speaker: VoiceSpeaker): Promise<VoiceKeyCandidate[]> {
+  const serverKey = (provider === "openai" ? cfg.openai?.key : cfg.tts?.key)?.trim();
+  if (IDENTITY.kind !== "perspicax") return serverKey ? [{ key: serverKey, via: "server", source: "server", last4: keyLast4(serverKey), provider }] : [];
+  if (speaker.disabled || !speaker.principalId) return [];
+  const keys: VoiceKeyCandidate[] = [];
+  const owner = personVoiceKeysPrincipal(speaker.principalId);
+  const personal = owner ? personVoiceKeys.keys(owner)[provider]?.trim() : undefined;
+  if (personal) keys.push({ key: personal, via: "speaker-key", source: "voice-key", last4: keyLast4(personal), payerPrincipalId: speaker.principalId, provider });
+  if (provider === "openai" && speaker.sub && perspicaxDirectory?.providerKeys(speaker.sub).includes("openai")) {
+    const own = await perspicaxDirectory.resolveProviderKey(speaker.sub, "openai").catch(() => null);
+    if (own?.ok) keys.push({ key: own.key, via: "speaker-key", source: "perspicax-key", last4: keyLast4(own.key), payerPrincipalId: speaker.principalId, provider });
+  }
+  if (serverKey && serverEngineAllowedFor(speaker.principalId, VOICE_SERVER_ENGINE)) keys.push({ key: serverKey, via: "org-key", source: "org-key", last4: keyLast4(serverKey), provider });
+  return keys;
+}
+
 // Voice mode (server/voice-mode.ts): xAI speech to text and text to speech
 // for the floating voice bar, with the speaker's own xAI key (Perspicax),
 // else the server's xAI key (Settings > Models and voice, xai.key; since
@@ -38772,6 +38800,18 @@ const voiceModeDeps: VoiceModeDeps = {
     openTranscription: (key, options, handlers) => grokVoice.openTranscriptionStream(key, options, handlers),
     openSpeech: (key, options, handlers) => grokVoice.openSpeechStream(key, options, handlers),
     warm: (key) => void grokVoice.listVoices(key).catch(() => {}),
+  },
+  // OpenAI and ElevenLabs (2026-10-29): the person picks who speaks and who
+  // hears in Settings > Voice and Edit bot > Voice; each falls back on the
+  // others (server/voice-mode.ts)
+  openai: openAiVoiceMode,
+  elevenlabs: elevenLabsVoiceMode,
+  providerKeys: (provider, speaker) => voiceProviderKeys(provider, speaker),
+  preference: (speaker) => {
+    if (IDENTITY.kind !== "perspicax" || !speaker.principalId || !isPrincipalId(speaker.principalId)) return undefined;
+    const raw = userPreferenceStore.get(speaker.principalId).preferences[VOICE_MODE_STORAGE_KEY];
+    if (typeof raw !== "string") return undefined;
+    try { return JSON.parse(raw) as unknown; } catch { return undefined; }
   },
   upgrade: (req) => desktopViewer.upgradeOf(req),
   utterances: toUtterances,
@@ -38846,8 +38886,8 @@ const voiceModeDeps: VoiceModeDeps = {
       botId: usage.target.botId,
       botName: usage.target.botName,
       threadId: usage.target.threadId,
-      instanceId: "xaiVoice",
-      driverKind: "xai-voice",
+      instanceId: `${usage.provider ?? "xai"}Voice`,
+      driverKind: `${usage.provider ?? "xai"}-voice`,
       model: usage.model,
       input: usage.input,
       output: 0,

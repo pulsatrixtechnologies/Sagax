@@ -42,14 +42,36 @@ function wavSeconds(bytes: number, mime: string): number | undefined {
   return (bytes - 44) / (16_000 * 2);
 }
 
-export function uploadedTranscriptNotice(input: { bytes: number; mime: string; ms: number }): string {
-  const audio = wavSeconds(input.bytes, input.mime);
-  const length = audio !== undefined ? `${audio.toFixed(1)} s of audio` : `${Math.round(input.bytes / 1024)} KB of audio`;
-  return `Voice: speech to text (whole recording) took ${seconds(input.ms)} for ${length}`;
+/** " with OpenAI": the provider of a request, named when it is not xAI
+ * (xAI's lines stay as they were). */
+function by(provider?: string): string {
+  return provider && provider !== "xAI" ? `, ${provider}` : "";
 }
 
-export function streamedTranscriptNotice(ms: number): string {
-  return `Voice: speech to text (streaming) gave the final words ${seconds(ms)} after the end of speech`;
+export function uploadedTranscriptNotice(input: { bytes: number; mime: string; ms: number; provider?: string }): string {
+  const audio = wavSeconds(input.bytes, input.mime);
+  const length = audio !== undefined ? `${audio.toFixed(1)} s of audio` : `${Math.round(input.bytes / 1024)} KB of audio`;
+  return `Voice: speech to text (whole recording${by(input.provider)}) took ${seconds(input.ms)} for ${length}`;
+}
+
+export function streamedTranscriptNotice(ms: number, provider?: string): string {
+  return `Voice: speech to text (streaming${by(provider)}) gave the final words ${seconds(ms)} after the end of speech`;
+}
+
+/** One sentence of the bot's voice: how soon its first audio came. */
+export function firstAudioNotice(ms: number, provider: string): string {
+  return `Voice: ${provider} voice gave the first audio of a sentence ${seconds(ms)} after it was asked`;
+}
+
+const FAILURE_WORDS: Record<string, string> = {
+  key: "the key was refused", quota: "no credits left", busy: "rate limit", down: "not reachable", voice: "unknown voice", other: "an error",
+};
+
+/** A provider that failed and the one that took over (2026-10-29): said
+ * nowhere but here, the switch itself is silent. */
+export function providerFallbackNotice(role: "speech to text" | "voice", from: ReadonlyArray<{ provider: string; failure: string }>, to: string): string {
+  const failed = from.map((entry) => `${entry.provider} (${FAILURE_WORDS[entry.failure] ?? entry.failure})`).join(", ");
+  return `Voice: ${role} went on with ${to} after ${failed}`;
 }
 
 /** One call turn, page and server side by side. */

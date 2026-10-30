@@ -7,6 +7,7 @@ import { useStore, type Bot } from "@/state/store";
 import { saveViewerBotOverride, useViewerBotOverride, viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
 import { DescribedRow, SettingsGroup, Switch } from "../SettingsPrimitives";
 import { VoiceSettings } from "../VoiceSettings";
+import { VoiceProviderSettings } from "../settings/VoiceProviderSettings";
 import type { useBotSettingsDerived } from "./useBotSettingsDerived";
 import { useBotEditor } from "./BotEditorContext";
 
@@ -31,6 +32,8 @@ export function VoiceSection({
   return (
     <div className="flex flex-col gap-5">
       {/* The page is titled Voice: its card needs no heading of its own. */}
+      {/* 2026-10-29: this bot's voice provider, voice and ears, for this person */}
+      {!draft && <VoiceProviderSettings bot={bot} />}
       {showVoice && <VoiceSettings bot={bot} onPatch={patch} />}
 
       <SettingsGroup title={t("botPanel.remote.notifications")} groupId="botNotifications">

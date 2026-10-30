@@ -63,7 +63,9 @@ describe("a person's own voice keys (#1098)", () => {
     expect(JSON.stringify(saved.body)).not.toContain("fish_alex_key");
     expect(saved.body.fish).toEqual({ configured: true, last4: "1234" });
     expect((await call(route, "PUT", `${PERSON_VOICE_KEYS_PATH}/fish`, { key: "short" })).status).toBe(400);
-    expect((await call(route, "PUT", `${PERSON_VOICE_KEYS_PATH}/openai`, { key: "fish_alex_key_1234" })).status).toBe(404);
+    expect((await call(route, "PUT", `${PERSON_VOICE_KEYS_PATH}/anthropic`, { key: "fish_alex_key_1234" })).status).toBe(404);
+    // 2026-10-29: an OpenAI key for the voice is one of them
+    expect((await call(route, "PUT", `${PERSON_VOICE_KEYS_PATH}/openai`, { key: "sk-alex-openai-5678" })).body.openai).toEqual({ configured: true, last4: "5678" });
     const solo = createPersonVoiceKeysRoutes({ store: keys, principal: () => null });
     expect((await call(solo, "GET", PERSON_VOICE_KEYS_PATH)).status).toBe(404);
   });

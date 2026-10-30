@@ -8,7 +8,7 @@
 // MenuMotion useReveal) and folds back into it; the row itself never moves. On a narrow
 // column the waveform shrinks first, then folds away; the controls never
 // shrink.
-import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Hand, MessageSquareMore, Mic, MicOff, Pause, Play, Settings, X } from "lucide-react";
 
 import { useStore, type Bot } from "@/state/store";
@@ -20,9 +20,10 @@ import { voiceKeyLabel } from "@/lib/voice-mode/failure";
 import type { VoiceCall } from "@/lib/voice-mode/call";
 import type { CallState } from "@/lib/voice-mode/call-machine";
 import { notifyCallSettings, useCallSettings, writeCallSettings } from "@/lib/voice-mode/call-settings";
-import { useVoiceModeSettings, writeVoiceModeSettings } from "@/lib/voice-mode/settings";
+import { useVoiceModeSettings, voiceSettingsForBot, writeVoiceForBot, writeVoiceModeSettings } from "@/lib/voice-mode/settings";
 import { forgetVoiceprint } from "@/lib/voice-mode/speaker-id";
 import type { VoiceModeRefusalCause } from "../../../shared/voice-mode";
+import { VOICE_PROVIDER_LABELS } from "../../../shared/voice-providers";
 import { BotAvatar } from "../Avatar";
 import { requestSettingsCard } from "../SettingsPrimitives";
 import { openProviderKeyDialog } from "../settings/ProviderKeys";
@@ -178,11 +179,18 @@ type Panel = "settings" | "transcript" | null;
 export function VoiceModeBar(props: VoiceModeBarProps) {
   const { bot, call, state, heard, caption, note, noteRetry = true, notice, refusal, transcript, metrics, onRetry, onEnd, defaultPanel, startedAt } = props;
   const { dispatch } = useStore();
-  const settings = useVoiceModeSettings();
+  // the voice of the provider this bot speaks with for this person
+  const stored = useVoiceModeSettings();
+  const settings = useMemo(() => voiceSettingsForBot(stored, bot.id), [stored, bot.id]);
   const callSettings = useCallSettings();
   // which xAI key the voice runs on (its source and last four, never more)
   const voiceStatus = useVoiceModeStatus(bot.id);
-  const keyLine = voiceStatus?.key ? t("voiceMode.keyLine", { key: voiceKeyLabel(voiceStatus.key, t) }) : null;
+  const keyProvider = voiceStatus?.key?.provider;
+  const keyLine = voiceStatus?.key
+    ? keyProvider && keyProvider !== "xai"
+      ? t("voiceMode.keyLineProvider", { provider: VOICE_PROVIDER_LABELS[keyProvider], key: voiceKeyLabel(voiceStatus.key, t) })
+      : t("voiceMode.keyLine", { key: voiceKeyLabel(voiceStatus.key, t) })
+    : null;
   const [panel, setPanel] = useState<Panel>(defaultPanel ?? null);
   const settingsOpen = panel === "settings";
   const transcriptOpen = panel === "transcript";
@@ -198,6 +206,13 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
   const bubble = useRef<HTMLButtonElement>(null);
   const cardId = useId();
 
+  // another provider picked: its own voices
+  const [voicesOf, setVoicesOf] = useState(settings.tts);
+  if (voicesOf !== settings.tts) {
+    setVoicesOf(settings.tts);
+    setVoices(null);
+    setVoicesError(null);
+  }
   useEffect(() => {
     if (!settingsOpen || voices !== null) return;
     const controller = new AbortController();
@@ -330,7 +345,10 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
         open={list}
         previewing={previewing}
         onOpen={setList}
-        onChange={(patch) => writeVoiceModeSettings(patch)}
+        onChange={({ voice, ...rest }) => {
+          if (voice !== undefined) writeVoiceForBot(bot.id, voice);
+          if (Object.keys(rest).length) writeVoiceModeSettings(rest);
+        }}
         onPreview={preview}
         call={callSettings}
         enrollment={enrollment}

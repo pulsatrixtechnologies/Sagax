@@ -170,11 +170,11 @@ struct PhoneBotCallVoiceCard: View {
     var body: some View {
         ProfileCard(margin: SettingsMetrics.cardMargin) {
             menuRow("Voice", value: voiceName, id: "panel-edit-voice") {
-                Picker(selection: binding(\.voice)) {
+                Picker(selection: voiceBinding) {
                     Text("Not set").tag("")
                     ForEach(voices ?? []) { voice in Text(verbatim: voice.label).tag(voice.id) }
-                    if !settings.voice.isEmpty, !(voices ?? []).contains(where: { $0.id == settings.voice }) {
-                        Text(verbatim: settings.voice).tag(settings.voice)
+                    if !botVoice.isEmpty, !(voices ?? []).contains(where: { $0.id == botVoice }) {
+                        Text(verbatim: botVoice).tag(botVoice)
                     }
                 } label: { Text("Voice") }
             }
@@ -197,13 +197,27 @@ struct PhoneBotCallVoiceCard: View {
         }
         .task {
             guard voices == nil, let client = session.callClient else { return }
-            voices = (try? await client.voiceModeVoices(botId: bot.id)) ?? []
+            voices = (try? await client.voiceModeVoices(botId: bot.id, provider: settings.ttsChoice(botId: bot.id))) ?? []
         }
     }
 
+    /// The voice of this bot's provider (2026-10-29: xAI, OpenAI or
+    /// ElevenLabs, as picked in Settings > Voice or Edit bot > Voice).
+    private var botVoice: String { settings.forBot(bot.id).voice }
+
+    private var voiceBinding: Binding<String> {
+        Binding(
+            get: { botVoice },
+            set: { value in
+                voiceRaw = settings.withVoice(value, forBot: bot.id).encoded
+                Haptics.selection()
+            }
+        )
+    }
+
     private var voiceName: String {
-        guard !settings.voice.isEmpty else { return String(localized: "Not set") }
-        return voices?.first { $0.id == settings.voice }?.label ?? settings.voice
+        guard !botVoice.isEmpty else { return String(localized: "Not set") }
+        return voices?.first { $0.id == botVoice }?.label ?? botVoice
     }
 
     private var languageName: String {

@@ -11,6 +11,14 @@ import {
   cleanVoiceModeSettings,
   type VoiceModeSettings,
 } from "../../../shared/voice-mode";
+import {
+  effectiveVoiceChoice,
+  type BotVoiceChoice,
+  type ProviderVoices,
+  type VoiceSttChoice,
+  type VoiceTtsChoice,
+  type VoiceTtsProvider,
+} from "../../../shared/voice-providers";
 
 type Storage = Pick<globalThis.Storage, "getItem" | "setItem">;
 
@@ -83,4 +91,54 @@ export function speedLabel(speed: number): string {
 
 export function languageLabel(code: string): string {
   return VOICE_MODE_LANGUAGES.find((language) => language.code === code)?.label ?? code;
+}
+
+/** These settings as one bot speaks (2026-10-29): `voice` is the voice of
+ * the provider this bot speaks with for this person, `tts` and `stt` its
+ * providers (the bot's own choice first, then the person's, then Auto).
+ * What every request to the server sends (api.ts). */
+export type BotVoiceSettings = VoiceModeSettings & { tts: VoiceTtsChoice; stt: VoiceSttChoice; voices: ProviderVoices; forBot: string };
+
+export function voiceSettingsForBot(settings: VoiceModeSettings, botId?: string): BotVoiceSettings {
+  const view = settings as Partial<BotVoiceSettings>;
+  // already this bot's view (a preview may have changed its voice): kept
+  if (view.forBot !== undefined && view.forBot === (botId ?? "")) return settings as BotVoiceSettings;
+  const choice = effectiveVoiceChoice(settings, botId);
+  const provider = choice.tts === "auto" ? "xai" : choice.tts;
+  return { ...settings, tts: choice.tts, stt: choice.stt, voices: choice.voices, voice: choice.voices[provider] ?? "", forBot: botId ?? "" };
+}
+
+/** Does this bot have its own providers for this person (Edit bot > Voice)? */
+export function botHasOwnVoice(settings: VoiceModeSettings, botId: string): boolean {
+  return Boolean(settings.bots?.[botId]);
+}
+
+/** Pick a voice for the provider this bot speaks with: in the bot's own
+ * choice when it has one, else the person's (xAI's in `voice`). */
+export function writeVoiceForBot(botId: string | undefined, voice: string, store: Storage | null = storage()): VoiceModeSettings {
+  const settings = readVoiceModeSettings(store);
+  const choice = effectiveVoiceChoice(settings, botId);
+  const provider: VoiceTtsProvider = choice.tts === "auto" ? "xai" : choice.tts;
+  const own = botId ? settings.bots?.[botId] : undefined;
+  if (botId && own) {
+    const voices = { ...own.voices, [provider]: voice || undefined };
+    return writeVoiceModeSettings({ bots: { ...settings.bots, [botId]: { ...own, voices } } }, store);
+  }
+  if (provider === "xai") return writeVoiceModeSettings({ voice }, store);
+  return writeVoiceModeSettings({ voices: { ...settings.voices, [provider]: voice || undefined } }, store);
+}
+
+/** Change the person's own providers (Settings > Voice). */
+export function writeVoiceProviders(patch: { tts?: VoiceTtsChoice; stt?: VoiceSttChoice }, store: Storage | null = storage()): VoiceModeSettings {
+  return writeVoiceModeSettings(patch, store);
+}
+
+/** Change one bot's own providers for this person (Edit bot > Voice);
+ * `null` goes back to the person's settings. */
+export function writeBotVoiceChoice(botId: string, patch: BotVoiceChoice | null, store: Storage | null = storage()): VoiceModeSettings {
+  const settings = readVoiceModeSettings(store);
+  const bots = { ...settings.bots };
+  if (patch === null) delete bots[botId];
+  else bots[botId] = { ...bots[botId], ...patch };
+  return writeVoiceModeSettings({ bots }, store);
 }

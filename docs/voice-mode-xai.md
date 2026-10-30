@@ -1,5 +1,9 @@
 # Voice mode with xAI
 
+Since 2026-10-29 OpenAI and ElevenLabs can be the voice too, picked per
+person and per bot, each falling back on the others (AGENTS.md, "Voice
+providers"). What follows is xAI's side, unchanged.
+
 Voice mode is the floating voice bar above the composer: the bot's name on
 top, its avatar, a live waveform, then settings (Voice, Speed, Language),
 transcript, mute and end. xAI does the voice; the bot stays the brain.

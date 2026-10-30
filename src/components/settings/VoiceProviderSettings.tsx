@@ -1,0 +1,186 @@
+// Who speaks and who hears (2026-10-29, shared/voice-providers.ts): the
+// bot's voice (xAI, OpenAI or ElevenLabs), the speech to text (xAI or
+// OpenAI) and the voice itself, with "Test the voice". In Settings > Voice
+// it is the person's own choice; in Edit bot > Voice it is this bot's, for
+// this person ("Same as my settings" by default). Only the providers the
+// person has a usable key for are offered (the server's status). A
+// provider that fails or reaches its limit gives way to another one by
+// itself, and the thread's Events tab says so. Kept in the person's synced
+// voice preference (`omb.voiceMode.v1`): the desktop, the web and the
+// iPhone follow the same choice.
+import { useEffect, useRef, useState } from "react";
+import { Volume2 } from "lucide-react";
+
+import { cn } from "@/lib/cn";
+import { t } from "@/lib/i18n";
+import { fetchProviderVoices, fetchVoiceProviders, testVoice, type VoiceOption } from "@/lib/voice-mode/api";
+import {
+  useVoiceModeSettings,
+  voiceSettingsForBot,
+  writeBotVoiceChoice,
+  writeVoiceForBot,
+  writeVoiceProviders,
+} from "@/lib/voice-mode/settings";
+import type { VoiceModeStatus } from "../../../shared/voice-mode";
+import {
+  VOICE_PROVIDER_LABELS,
+  VOICE_STT_PROVIDERS,
+  VOICE_TTS_PROVIDERS,
+  type VoiceSttProvider,
+  type VoiceTtsProvider,
+} from "../../../shared/voice-providers";
+import { CompactRow, DescribedRow, GROUP_CARD, PILL, PillSelect, SettingsGroup, type PillOption } from "../SettingsPrimitives";
+
+type Pick<P extends string> = "inherit" | "auto" | P;
+
+function label(provider: string): string {
+  return VOICE_PROVIDER_LABELS[provider as VoiceTtsProvider] ?? provider;
+}
+
+/** The options of one role: the providers offered, the one picked kept
+ * even when its key went away (named so). */
+export function providerOptions<P extends string>(offered: readonly P[], all: readonly P[], picked: Pick<P>, inherit: string | null): Array<PillOption<Pick<P>>> {
+  const options: Array<PillOption<Pick<P>>> = [];
+  if (inherit !== null) options.push({ value: "inherit", label: inherit });
+  else options.push({ value: "auto", label: t("voiceProviders.auto") });
+  for (const provider of all) {
+    if (offered.includes(provider)) options.push({ value: provider, label: label(provider) });
+    else if (picked === provider) options.push({ value: provider, label: t("voiceProviders.noKey", { provider: label(provider) }) });
+  }
+  return options;
+}
+
+export function VoiceProviderSettings({ bot }: { bot?: { id: string; name: string } }) {
+  const botId = bot?.id;
+  const settings = useVoiceModeSettings();
+  const view = voiceSettingsForBot(settings, botId);
+  const [status, setStatus] = useState<VoiceModeStatus | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const [voices, setVoices] = useState<VoiceOption[] | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const audio = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchVoiceProviders(botId, controller.signal).then(setStatus, (error: unknown) => {
+      if (!controller.signal.aborted) setFailed(error instanceof Error ? error.message : String(error));
+    });
+    return () => controller.abort();
+  }, [botId]);
+
+  const offeredTts = status?.providers?.tts ?? [];
+  const offeredStt = status?.providers?.stt ?? [];
+  // the provider whose voice is picked: the one chosen, else the one the server starts with
+  const speaking: VoiceTtsProvider | undefined = view.tts !== "auto" ? view.tts : status?.tts ?? offeredTts[0];
+
+  useEffect(() => {
+    if (!speaking || !offeredTts.includes(speaking)) { setVoices(null); return; }
+    const controller = new AbortController();
+    setVoices(null);
+    fetchProviderVoices(speaking, botId, controller.signal).then(setVoices, () => { if (!controller.signal.aborted) setVoices([]); });
+    return () => controller.abort();
+    // offeredTts is derived from status: its identity follows it
+  }, [speaking, botId, status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => () => { audio.current?.pause(); }, []);
+
+  const own = botId ? settings.bots?.[botId] : undefined;
+  const personTts = settings.tts ?? "auto";
+  const personStt = settings.stt ?? "auto";
+  const inheritLabel = (picked: string) => t("voiceProviders.inherit", { provider: picked === "auto" ? t("voiceProviders.auto") : label(picked) });
+  const ttsValue: Pick<VoiceTtsProvider> = botId ? (own?.tts ?? "inherit") : personTts;
+  const sttValue: Pick<VoiceSttProvider> = botId ? (own?.stt ?? "inherit") : personStt;
+
+  const chooseTts = (next: Pick<VoiceTtsProvider>) => {
+    setNote(null);
+    if (!botId) writeVoiceProviders({ tts: next === "inherit" ? "auto" : next });
+    else writeBotVoiceChoice(botId, { ...own, tts: next === "inherit" ? undefined : next });
+  };
+  const chooseStt = (next: Pick<VoiceSttProvider>) => {
+    if (!botId) writeVoiceProviders({ stt: next === "inherit" ? "auto" : next });
+    else writeBotVoiceChoice(botId, { ...own, stt: next === "inherit" ? undefined : next });
+  };
+
+  const test = async () => {
+    setTesting(true);
+    setNote(null);
+    try {
+      const clip = await testVoice(t("voiceProviders.sample"), view, botId);
+      audio.current?.pause();
+      const player = new Audio(URL.createObjectURL(clip));
+      audio.current = player;
+      player.onended = () => URL.revokeObjectURL(player.src);
+      await player.play().catch(() => {});
+    } catch (error) {
+      setNote(t("voiceProviders.testFailed", { error: error instanceof Error ? error.message : String(error) }));
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const none = status !== null && !offeredTts.length && !offeredStt.length;
+  const voiceOptions: Array<PillOption<string>> = [
+    { value: "", label: voices === null && speaking ? t("voiceProviders.loading") : t("voiceProviders.default") },
+    ...(view.voice && !(voices ?? []).some((voice) => voice.id === view.voice) ? [{ value: view.voice, label: view.voice }] : []),
+    ...(voices ?? []).map((voice) => ({ value: voice.id, label: voice.own ? t("voiceProviders.ownVoice", { voice: voice.label }) : voice.description ? `${voice.label} (${voice.description})` : voice.label })),
+  ];
+
+  const body = (
+    <>
+      {failed && !status && <DescribedRow label={t("voiceProviders.tts")} description={failed} />}
+      {none && <DescribedRow label={t("voiceProviders.tts")} description={t("voiceProviders.none")} />}
+      {status && !none && (
+        <>
+          <DescribedRow label={t("voiceProviders.tts")} help={t("voiceProviders.fallbackNote")} rowId="voiceProviders.tts">
+            <PillSelect<Pick<VoiceTtsProvider>>
+              value={ttsValue}
+              ariaLabel={t("voiceProviders.tts")}
+              options={providerOptions(offeredTts, VOICE_TTS_PROVIDERS, ttsValue, botId ? inheritLabel(personTts) : null)}
+              onChange={chooseTts}
+            />
+          </DescribedRow>
+          <CompactRow label={t("voiceProviders.voice")} rowId="voiceProviders.voice">
+            <span data-voice-provider-voice={speaking ?? ""} className="inline-flex min-w-0">
+              <PillSelect
+                value={view.voice}
+                ariaLabel={t("voiceProviders.voiceOf", { provider: speaking ? label(speaking) : "" })}
+                disabled={!speaking}
+                options={voiceOptions}
+                onChange={(voice) => { setNote(null); writeVoiceForBot(botId, voice); }}
+              />
+            </span>
+            <button
+              type="button"
+              data-voice-provider-test=""
+              onClick={() => void test()}
+              disabled={testing || !offeredTts.length}
+              aria-label={t("voiceProviders.test")}
+              className={cn(PILL, "gap-1.5 disabled:cursor-not-allowed")}
+            >
+              <Volume2 size={13} aria-hidden="true" /> {t("voiceProviders.test")}
+            </button>
+          </CompactRow>
+          <DescribedRow label={t("voiceProviders.stt")} help={t("voiceProviders.sttHelp")} rowId="voiceProviders.stt">
+            <PillSelect<Pick<VoiceSttProvider>>
+              value={sttValue}
+              ariaLabel={t("voiceProviders.stt")}
+              options={providerOptions(offeredStt, VOICE_STT_PROVIDERS, sttValue, botId ? inheritLabel(personStt) : null)}
+              onChange={chooseStt}
+            />
+          </DescribedRow>
+        </>
+      )}
+      {note && <p role="alert" className="px-3.5 pb-2 text-[12px] text-danger">{note}</p>}
+    </>
+  );
+
+  if (bot) {
+    return <div className={GROUP_CARD} data-voice-providers="bot">{body}</div>;
+  }
+  return (
+    <div data-settings-card="voice.providers" data-voice-providers="person">
+      <SettingsGroup title={t("voiceProviders.title")} groupId="voiceProviders">{body}</SettingsGroup>
+    </div>
+  );
+}
