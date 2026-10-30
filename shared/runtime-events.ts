@@ -218,6 +218,11 @@ export type RuntimeEvent = RuntimeEventBase &
         /** An engine's own connector call (Grok's use_tool to a server Sagax
          * did not mount, server/drivers/acp/connector-ask.ts). */
         engineConnector?: boolean;
+        /** That connector is one of the cloud connectors of the account the
+         * turn runs on (Grok's managed gateway, the person's own grok.com
+         * Outlook, Teams, calendar...): a read of it passes with no card at
+         * any level (2026-10-30). */
+        accountConnector?: boolean;
         /** The driver read this ask as outward-facing (a send, an engine
          * connector call that is not plainly a read): the outbound guard
          * holds it and no session-wide allow is offered (review of #943). */

@@ -27,6 +27,7 @@ const BY_SOURCE: Readonly<Record<string, AutoApprovalReason>> = {
   "allowed-recipient": "recipients",
   "reach-me": "recipients",
   "safety-read": "trusted",
+  "connector-read": "trusted",
   "perspicax-read": "trusted",
   "perspicax-lease": "trusted",
   "sagax-internal": "trusted",

@@ -97,14 +97,17 @@ describe("whose account connectors a turn reaches (review of #943, point 5)", ()
     expect(accountConnectorsForTurn(input)).toBe("foreign");
     expect(claudeAiConnectorsForTurn(input)).toBe(false);
   });
-  it("a key, a solo Grok turn or another engine: none", () => {
+  it("a key or another engine: none", () => {
     expect(accountConnectorsForTurn({ ...base, driver: "grokAgent", via: "org-key", speaker: { origin: "person", principalId: BOB } })).toBe("none");
-    expect(accountConnectorsForTurn({ ...base, identity: "solo", driver: "grokAgent", speaker: { origin: "operator" } })).toBe("none");
     expect(accountConnectorsForTurn({ ...base, driver: "codex", via: "subscription", speaker: { origin: "person", principalId: BOB } })).toBe("none");
   });
-  it("solo Claude: the operator owns the machine's login, anyone else is foreign", () => {
-    expect(accountConnectorsForTurn({ ...base, identity: "solo", driver: "claudeAgent", speaker: { origin: "operator" } })).toBe("own");
-    expect(accountConnectorsForTurn({ ...base, identity: "solo", driver: "claudeAgent", speaker: { origin: "person", principalId: BOB } })).toBe("foreign");
+  it("solo Claude and Grok (2026-10-30): the operator owns the machine's login, anyone else is foreign", () => {
+    for (const driver of ["claudeAgent", "grokAgent", "grok"]) {
+      expect(accountConnectorsForTurn({ ...base, identity: "solo", driver, speaker: { origin: "operator" } }), driver).toBe("own");
+      expect(accountConnectorsForTurn({ ...base, identity: "solo", driver, speaker: { origin: "person", principalId: BOB } }), driver).toBe("foreign");
+    }
+    expect(grokCloudConnectorsForTurn({ ...base, identity: "solo", driver: "grokAgent", speaker: { origin: "operator" } })).toBe(true);
+    expect(grokCloudConnectorsForTurn({ ...base, identity: "solo", driver: "grokAgent", speaker: { origin: "person", principalId: BOB } })).toBe(false);
   });
   it("tells a foreign turn the connectors belong to someone else and offers nothing", () => {
     const text = engineConnectorsPrompt({ driver: "grokAgent", claudeAi: false, grokCloud: false, foreign: true });
