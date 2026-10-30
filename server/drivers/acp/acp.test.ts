@@ -3374,6 +3374,33 @@ createInterface({ input: process.stdin }).on("line", (line) => {
       expect(launches()).toBe(2);
     });
 
+    it("rejects a call warm immediately when its process exits during initialize", async () => {
+      await create(GrokAgentDriver, "exit-early");
+      await expect(instance.adapter.sendTurn({
+        threadId: "t-call-warm-crash", text: "", keepWarm: true, warmOnly: true,
+      })).rejects.toThrow("exited 3");
+      expect(recorder.events.filter((event) => event.threadId === "t-call-warm-crash")).toEqual([]);
+      expect(instance.adapter.hasSession("t-call-warm-crash")).toBe(false);
+
+      process.env.FAKE_ACP_MODE = "happy";
+      const next = await instance.adapter.sendTurn({ threadId: "t-call-warm-crash", text: "hello", keepWarm: true });
+      expect(await recorder.until((event) => event.type === "turn.completed" && event.turnId === next.turnId)).toMatchObject({ ok: true });
+    }, 5_000);
+
+    it("rejects a call warm immediately when its process cannot spawn", async () => {
+      const missing = join(scratch, "missing-warm-engine");
+      const driver = createAcpDriver({
+        ...SELECT_MODEL_SUPPORT,
+        warmSession: true,
+        resolveCommand: async () => ({ command: missing }),
+      });
+      await create(driver);
+      await expect(instance.adapter.sendTurn({
+        threadId: "t-call-warm-spawn-error", text: "", keepWarm: true, warmOnly: true,
+      })).rejects.toThrow();
+      expect(recorder.events.filter((event) => event.threadId === "t-call-warm-spawn-error")).toEqual([]);
+    }, 5_000);
+
     it("warms a new conversation with session/new, and a hangup during the call's wait closes it", async () => {
       countFile = join(scratch, "launches");
       const appendFile = join(scratch, "rpc-all.jsonl");

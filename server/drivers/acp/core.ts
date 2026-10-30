@@ -1971,6 +1971,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         });
         child.on("error", (e) => {
           session.dead = true;
+          // A call warm has pending RPCs but no current turn. Reject them
+          // too, so the first real turn never waits for a dead handshake.
+          session.acp.failAll(e);
           const current = session.current;
           if (!current) return;
           emit({ ...base(threadId, current.turnId), type: "runtime.error", ...describeSpawnFailure(e, launch.command, cwd) });
@@ -1978,6 +1981,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         });
         child.on("close", (code) => {
           session.dead = true;
+          session.acp.failAll(new Error(`${DRIVER_KIND} exited ${code} before the prompt result${session.stderr ? `: ${session.stderr.trim().slice(-300)}` : ""}`));
           const current = session.current;
           if (current) {
             emit({

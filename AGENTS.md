@@ -5313,7 +5313,10 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   `reused`. Claude and Grok (`AcpSupport.warmSession`) start that process
   when the call is accepted (`POST /voice/call`; Grok pays initialize,
   authenticate and `session/load` or `session/new`, no prompt); the first
-  spoken turn reuses it. A hangup closes the idle process
+  spoken turn reuses it. If that process exits or fails to spawn during
+  the warm, reject its pending ACP requests immediately, without turn
+  events; the next spoken turn starts a fresh process (#1717).
+  A hangup closes the idle process
   (`releaseWarmSession`). Codex and the API drivers are not warmed (no
   hidden prompt is sent). A call turn and its warm run at the engine's low
   effort (`server/voice-call-effort.ts`: "low", never "none", a bot set
