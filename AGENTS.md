@@ -9048,3 +9048,22 @@ re-seals everything of it at once. A locked key throws
 `ContentKeyUnavailable`; a memory read never answers empty on it
 (`isAtRestRefusal`). Tests: `server/content-at-rest.test.ts`. Benchmark:
 `scripts/bench-content-at-rest.ts [--before <checkout of main>]`.
+
+## Sagax in the car: Siri, CallKit, CarPlay (2026-10-30)
+
+Every build: a bot call is a CallKit call whose handle names the bot
+(`CarCallHandle`, `sagax-bot:<id>`), Siri handles `INStartCallIntent` and
+`INSendMessageIntent` in the app's process (`SagaxAppDelegate.application(_:handlerFor:)`,
+`ios/App/CarAssist/SiriIntentHandlers.swift`, `INIntentsSupported`,
+`com.apple.developer.siri`), a reply to an announced message goes back to
+the conversation the banner donated (`CarDirectory.route`), and a call in a
+car (`CarRoute`: CarPlay connected or car audio) asks approvals aloud and
+short, a skill waits, nothing says to look at the screen (`DrivingSafety`).
+The app, Siri and the car share one Session (`SessionHub.session`). The
+CarPlay screen (`CarPlaySceneDelegate`: recent bots, then the voice screen
+with mute and hang up) is Apple's voice-based conversational category
+(`com.apple.developer.carplay-voice-based-conversation`, iOS 26.4), added
+only by `ios/project-carplay.yml` (`xcodegen generate --spec project-carplay.yml`)
+once Apple grants it; never put that entitlement in `project.yml`. Never show
+a message's content on the car's screen. Tests:
+`ios/Tests/CompanionCoreTests/CarAssistTests.swift`. See `docs/ios-carplay.md`.

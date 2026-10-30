@@ -9,10 +9,12 @@ import SwiftUI
 import UIKit
 import CompanionCore
 import UserNotifications
+import Intents
 
 @main
 struct CompanionApp: App {
-    @StateObject private var session = Session()
+    // the one Session, shared with Siri and the car (CarAssist/CarAssist.swift)
+    @StateObject private var session = SessionHub.session
     @Environment(\.scenePhase) private var scenePhase
     /// ⌘, (the app menu's Settings) for the iPad's desktop shell.
     @UIApplicationDelegateAdaptor(SagaxAppDelegate.self) private var appDelegate
@@ -84,6 +86,12 @@ struct CompanionApp: App {
                     widgetSync.attach(to: session)
                 }
                 .onOpenURL { session.receiveURL($0) }
+                // "Call Scout with Sagax", or calling again from the car or
+                // the call screen (SiriIntentHandlers.swift): the CallKit call
+                .onContinueUserActivity(NSStringFromClass(INStartCallIntent.self)) { activity in
+                    guard let id = CarCalls.contactId(in: activity) else { return }
+                    Task { await CarCalls.call(contactId: id) }
+                }
                 .onValueChange(of: scenePhase) { phase in
                     switch phase {
                     case .active:
@@ -393,6 +401,16 @@ final class SagaxAppDelegate: UIResponder, UIApplicationDelegate {
         )
         settings.wantsPriorityOverSystemBehavior = true
         builder.insertSibling(UIMenu(options: .displayInline, children: [settings]), afterMenu: .about)
+    }
+
+    /// Siri's requests, handled in the app's own process (iOS 14+):
+    /// a message to a bot, a call to a bot (docs/ios-carplay.md).
+    func application(_ application: UIApplication, handlerFor intent: INIntent) -> Any? {
+        switch intent {
+        case is INSendMessageIntent: SendMessageToBotHandler()
+        case is INStartCallIntent: StartCallToBotHandler()
+        default: nil
+        }
     }
 
     @objc func openDesktopSettings() {
