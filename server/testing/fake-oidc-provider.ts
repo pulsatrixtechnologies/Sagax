@@ -13,6 +13,7 @@
 import { createHash, generateKeyPairSync, randomBytes, sign, type KeyObject } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { PERSONAL_PROVIDER_NAMES, type PersonalProviderServer } from "../../shared/provider-accounts.ts";
 
 export interface FakeOidcUser {
   sub: string;
@@ -193,6 +194,8 @@ export interface FakeOidcProvider {
   setTeams(sub: string, teams: Array<{ id: string; name: string; manager: boolean }> | undefined): void;
   /** Slice 4: owner keys the resolve endpoint answers, by `${sub}/${provider}`. */
   providerKeys: Map<string, string>;
+  /** Personal compatible endpoints, owned by the subject, for provider-account tests. */
+  providerServers: Map<string, PersonalProviderServer[]>;
   /** Every resolve request's body (never the answer). */
   resolveRequests: Array<{ sub: string; provider: string }>;
   /** Slice 5: the profile catalog, who holds what (by sub), every exchange
@@ -361,6 +364,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
       teamsBySub.set(sub, teams);
     },
     providerKeys: new Map(),
+    providerServers: new Map(),
     resolveRequests: [],
     profiles: [],
     profilesBySub: new Map(),
@@ -478,6 +482,39 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
       res.end(bytes);
       return;
     }
+    if (req.method === "POST" && ["/api/v1/pulsabot/provider-keys/list", "/api/v1/pulsabot/provider-keys/save", "/api/v1/pulsabot/provider-servers/save"].includes(url.pathname)) {
+      let raw = "";
+      req.setEncoding("utf8");
+      req.on("data", (chunk: string) => (raw += chunk));
+      req.on("end", () => {
+        if (req.headers.authorization !== `Bearer ${provider.linkToken}`) return send(res, 401, { error: "unauthorized" });
+        let body: { sub?: string; provider?: string; value?: string | null; import?: boolean; instanceId?: string; server?: PersonalProviderServer | null };
+        try { body = JSON.parse(raw); } catch { return send(res, 400, { error: "bad_request" }); }
+        const token = req.headers["x-perspicax-subject-token"];
+        const subject = typeof token === "string" ? accessTokens.get(token) : undefined;
+        if (!body.sub || subject?.sub !== body.sub) return send(res, 403, { error: "wrong_subject" });
+        if (!provider.directoryPeople.some((person) => person.sub === body.sub && person.status === "active")) return send(res, 409, { error: "user_inactive" });
+        if (url.pathname.endsWith("provider-keys/save")) {
+          if (!body.provider) return send(res, 400, { error: "bad_request" });
+          const id = `${body.sub}/${body.provider}`;
+          if (body.value === null) provider.providerKeys.delete(id);
+          else if (typeof body.value === "string" && (!body.import || !provider.providerKeys.has(id))) provider.providerKeys.set(id, body.value);
+          return send(res, 200, { provider: body.provider, configured: provider.providerKeys.has(id) });
+        }
+        if (url.pathname.endsWith("provider-servers/save")) {
+          if (!body.instanceId) return send(res, 400, { error: "bad_request" });
+          const servers = (provider.providerServers.get(body.sub) ?? []).filter((server) => server.instanceId !== body.instanceId);
+          if (body.server) servers.push(body.server);
+          else provider.providerKeys.delete(`${body.sub}/compat:${body.instanceId}`);
+          provider.providerServers.set(body.sub, servers);
+          return send(res, 200, { ok: true });
+        }
+        const prefix = `${body.sub}/`;
+        const keys = [...provider.providerKeys].filter(([id]) => id.startsWith(prefix)).map(([id, value]) => ({ provider: id.slice(prefix.length), last4: value.length >= 12 ? value.slice(-4) : null }));
+        return send(res, 200, { keys, servers: provider.providerServers.get(body.sub) ?? [] });
+      });
+      return;
+    }
     if (req.method === "POST" && url.pathname === "/api/v1/pulsabot/provider-keys/resolve") {
       let raw = "";
       req.setEncoding("utf8");
@@ -486,7 +523,7 @@ export async function startFakeOidcProvider(options: { clientId?: string; user?:
         if (req.headers.authorization !== `Bearer ${provider.linkToken}`) return send(res, 401, { error: "unauthorized" });
         let asked: { sub?: unknown; provider?: unknown } = {};
         try { asked = JSON.parse(raw) as typeof asked; } catch { return send(res, 400, { error: "bad_request" }); }
-        if (typeof asked.sub !== "string" || (asked.provider !== "anthropic" && asked.provider !== "openai")) return send(res, 400, { error: "bad_request" });
+        if (typeof asked.sub !== "string" || typeof asked.provider !== "string" || !(asked.provider in PERSONAL_PROVIDER_NAMES || /^compat:[a-z0-9][a-z0-9._-]{0,63}$/.test(asked.provider))) return send(res, 400, { error: "bad_request" });
         provider.resolveRequests.push({ sub: asked.sub, provider: asked.provider });
         const person = provider.directoryPeople.find((entry) => entry.sub === asked.sub);
         const key = provider.providerKeys.get(`${asked.sub}/${asked.provider}`);

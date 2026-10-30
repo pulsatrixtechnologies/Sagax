@@ -27,7 +27,9 @@ import {
   type ProviderFilter,
   type ProviderRow,
 } from "@/lib/provider-rows";
-import type { PersonalVoiceKeysView } from "../../../shared/person-voice-keys";
+import { PERSONAL_PROVIDER_NAMES, type PersonalProvider } from "../../../shared/provider-accounts";
+import { useProviderAccounts } from "@/lib/provider-accounts";
+import { PersonalProviderKey, PersonalProviderServerForm } from "./PersonalProviderAccount";
 import { EngineRow, openLegacyEngines, useModelsVoiceAccess } from "../EnginesSettings";
 import { engineReady } from "../EngineLibrary";
 import { isApiKeyEngine } from "../EngineSetup";
@@ -45,7 +47,6 @@ import {
 } from "./ProviderKeys";
 import { ServerForm } from "./OpenAiCompatServers";
 import { CloudAgentProvidersSettings, useCloudAgentProviders } from "./CloudAgentProvidersSettings";
-import { PERSONAL_VOICE_KEYS_PATH } from "./PersonalVoiceKeys";
 import { DescribedRow, FoldRow, HelpTip, PILL, SettingsGroup, Switch, requestSettingsCard } from "../SettingsPrimitives";
 
 const PAYER_KEY = { me: "providers.payer.me", org: "providers.payer.org", computer: "providers.payer.computer" } as const satisfies Record<ProviderRow["payer"], LocaleKey>;
@@ -156,7 +157,7 @@ function ProviderDetail({ row, member, issuer }: { row: ProviderRow; member: boo
       <p className="text-[12px] leading-relaxed text-ink-secondary">{t(`providers.explain.${row.payer}` as LocaleKey)} {t(`providers.explainWhere.${row.keyWhere}` as LocaleKey)}</p>
       {row.state === "adminOff" && <p className="text-[12px] leading-relaxed text-ink-secondary">{t("providers.adminOffHint")}</p>}
       {/* the organization's or the server's key: its dialog */}
-      {row.keyRow && row.manage && !row.voiceKey && (
+      {row.keyRow && row.manage && !row.voiceKey && !row.accountProvider && (
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" className={PILL} data-provider-key-open={row.keyRow} onClick={() => openProviderKeyDialog(row.keyRow!)}>
             {keyRowSaved(row.keyRow, state.config) ? t("providerKeys.manage") : t("providerKeys.add")}
@@ -164,13 +165,21 @@ function ProviderDetail({ row, member, issuer }: { row: ProviderRow; member: boo
         </div>
       )}
       {/* the person's own key in Perspicax */}
-      {row.payer === "me" && row.keyWhere === "perspicax" && issuer && (
+      {row.payer === "me" && row.keyWhere === "perspicax" && issuer && !row.accountProvider && !row.accountServer && (
         <a href={perspicaxKeysUrl(issuer)} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1.5 self-start text-[12.5px] font-medium text-accent-text hover:underline">
           {t("myEngines.manageKeys")}
           <ExternalLink size={12} aria-hidden="true" />
         </a>
       )}
-      {/* the person's own voice key: still on Voice until lot 3 */}
+      {row.accountProvider && <PersonalProviderKey provider={row.accountProvider} name={row.name} />}
+      {row.accountServer && (editing
+        ? <PersonalProviderServerForm server={row.accountServer} onDone={() => setEditing(false)} />
+        : <div className="flex min-w-0 flex-col gap-2">
+            <span className="truncate text-[12px] text-ink-secondary">{row.accountServer.url}</span>
+            <button type="button" className={cn(PILL, "self-start")} onClick={() => setEditing(true)}>{t("compatServers.edit")}</button>
+            <PersonalProviderKey provider={`compat:${row.accountServer.instanceId}`} name={row.name} />
+          </div>)}
+      {/* The old voice route remains for older servers. */}
       {row.voiceKey && (
         <button type="button" className={cn(PILL, "self-start")} onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: "voice" })}>
           {t("providers.manageVoiceKeys")}
@@ -191,10 +200,10 @@ function ProviderDetail({ row, member, issuer }: { row: ProviderRow; member: boo
         </button>
       )}
       {/* each engine this row serves, managed as on the former Engines group */}
-      {instances.map((instance) => (
+      {!row.accountServer && instances.map((instance) => (
         <div key={instance.instanceId} className="flex min-w-0 flex-col gap-1">
           {instances.length > 1 && <span className="text-[12px] font-medium text-ink">{instance.displayName}</span>}
-          <EngineRow instance={instance} mine={issuer ? mineAll?.find((engine) => engine.instanceId === instance.instanceId) : undefined} member={member} issuer={issuer} bare />
+          <EngineRow instance={instance} mine={issuer ? mineAll?.find((engine) => engine.instanceId === instance.instanceId) : undefined} member={member} issuer={issuer} bare keysManaged />
         </div>
       ))}
       {/* the claude.ai connectors of the person's own Claude account (were under Auto) */}
@@ -223,7 +232,7 @@ function RemoveServer({ instanceId }: { instanceId: string }) {
 type AddStep = "choose" | "account" | "key" | "server";
 
 /** "Add a provider": one flow, three ways (an account, a key, a server). */
-function AddProvider({ toConnect, onPick, onClose, organization, manageKeys, issuer, nameOf }: {
+function AddProvider({ toConnect, onPick, onClose, organization, manageKeys, nameOf }: {
   toConnect: ProviderRow[];
   onPick: (rowId: string) => void;
   onClose: () => void;
@@ -232,21 +241,18 @@ function AddProvider({ toConnect, onPick, onClose, organization, manageKeys, iss
   issuer?: string;
   nameOf: (instanceId: string) => string;
 }) {
-  const { state, dispatch } = useStore();
+  const { state } = useStore();
+  const [personalKey, setPersonalKey] = useState<PersonalProvider | null>(null);
   const [step, setStep] = useState<AddStep>("choose");
   const [forOrg, setForOrg] = useState(false);
   const accounts = toConnect.filter((row) => row.kind === "account" || row.kind === "key");
-  const serverAllowed = !organization || manageKeys;
+  const serverAllowed = true;
   const keyRows: readonly KeyRowId[] = [...MAIN_KEY_ROWS, ...MORE_KEY_ROWS];
   const choose = (id: KeyRowId) => {
     if (!organization || (forOrg && manageKeys)) { onClose(); openProviderKeyDialog(id); return; }
-    // the person's own key: Perspicax for a model key, Voice for a voice key (lot 3 brings them here)
-    if (id === "elevenlabs" || id === "fishAudio") { onClose(); dispatch({ type: "toggleAppSettings", open: true, section: "voice" }); return; }
-    if (issuer) window.open(perspicaxKeysUrl(issuer), "_blank", "noopener,noreferrer");
-    onClose();
+    setPersonalKey((id === "fishAudio" ? "fish" : id) as PersonalProvider);
   };
-  const ownKeyRows = keyRows.filter((id) => ["anthropic", "openai", "xai", "elevenlabs", "fishAudio"].includes(id));
-  const shownKeys = organization && !(forOrg && manageKeys) ? ownKeyRows : keyRows;
+  const shownKeys = keyRows;
   return (
     <div data-add-provider="" data-step={step} className="mx-1.5 mb-1.5 flex flex-col gap-2 rounded-lg bg-inset/40 px-2 py-2">
       {step === "choose" && (
@@ -292,7 +298,10 @@ function AddProvider({ toConnect, onPick, onClose, organization, manageKeys, iss
             </label>
           )}
           {organization && !(forOrg && manageKeys) && <p className="px-2 text-[12px] leading-relaxed text-ink-secondary">{t("providers.add.ownKeyHint")}</p>}
-          <ul className="flex flex-col gap-1">
+          {(!organization || !forOrg) && (personalKey
+            ? <PersonalProviderKey key={personalKey} provider={personalKey} name={PERSONAL_PROVIDER_NAMES[personalKey]} onDone={onClose} />
+            : <ul className="flex flex-col gap-1">{(Object.keys(PERSONAL_PROVIDER_NAMES) as PersonalProvider[]).map((provider) => <li key={provider}><button type="button" className="flex min-h-[44px] w-full items-center rounded-lg px-2 text-left text-[13px] hover:bg-hover" data-add-personal-provider-key={provider} onClick={() => setPersonalKey(provider)}>{PERSONAL_PROVIDER_NAMES[provider]}</button></li>)}</ul>)}
+          {organization && forOrg && <ul className="flex flex-col gap-1">
             {shownKeys.map((id) => (
               <li key={id}>
                 <button type="button" data-add-provider-key={id} onClick={() => choose(id)} className="flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left text-[13px] text-ink hover:bg-hover">
@@ -302,10 +311,11 @@ function AddProvider({ toConnect, onPick, onClose, organization, manageKeys, iss
                 </button>
               </li>
             ))}
-          </ul>
+          </ul>}
+          {!organization && <ul className="flex flex-col gap-1">{(["azureFoundry", "openaiCompat", "openaiImage", "customImage"] as const).map((id) => <li key={id}><button type="button" className="flex min-h-[44px] w-full items-center rounded-lg px-2 text-left text-[13px] hover:bg-hover" data-add-provider-key={id} onClick={() => { onClose(); openProviderKeyDialog(id); }}>{keyRowName(id)}</button></li>)}</ul>}
         </>
       )}
-      {step === "server" && <div className="-mx-1.5"><ServerForm onDone={onClose} /></div>}
+      {step === "server" && <PersonalProviderServerForm onDone={onClose} />}
       <div className="flex justify-end gap-2">
         {step !== "choose" && <button type="button" className={PILL} onClick={() => setStep("choose")}>{t("providers.add.back")}</button>}
         <button type="button" className={PILL} onClick={onClose}>{t("common.cancel")}</button>
@@ -318,18 +328,6 @@ function AddProvider({ toConnect, onPick, onClose, organization, manageKeys, iss
  * Configuration > Policies). */
 export function perspicaxProvidersUrl(issuer: string): string {
   return `${issuer.replace(/\/+$/, "")}/console/settings/org.bots?tab=policies`;
-}
-
-/** The person's own voice keys (voice-keys.enc), on an organization server. */
-function usePersonalVoiceKeys(organization: boolean): PersonalVoiceKeysView | null {
-  const [view, setView] = useState<PersonalVoiceKeysView | null>(null);
-  useEffect(() => {
-    if (!organization) { setView(null); return; }
-    let live = true;
-    api<PersonalVoiceKeysView>(PERSONAL_VOICE_KEYS_PATH).then((next) => { if (live) setView(next); }, () => { if (live) setView(null); });
-    return () => { live = false; };
-  }, [organization]);
-  return view;
 }
 
 /** This person's local model servers (Settings > Computer; the same
@@ -352,7 +350,7 @@ export function ProvidersSettings() {
   const admin = organization && viewerIsOrgAdmin(state.config);
   const offered = useOfferedInstances("settings");
   const mine = useMyEngines();
-  const voiceKeys = usePersonalVoiceKeys(organization);
+  const accounts = useProviderAccounts();
   const local = useLocalModels();
   const [filter, setFilter] = useState<ProviderFilter>("all");
   const [openRow, setOpenRow] = useState<string | null>(null);
@@ -372,10 +370,11 @@ export function ProvidersSettings() {
     apiKeyEngine: isApiKeyEngine,
     ready: engineReady,
     compatServers: state.config?.openaiCompatServers ?? [],
-    voiceKeys,
+    voiceKeys: null,
+    accounts: accounts.view,
     local,
     keyName: keyRowName,
-  }), [organization, offered, member, mine, state.instances, state.config, keys, voiceKeys, local]);
+  }), [organization, offered, member, mine, state.instances, state.config, keys, accounts.view, local]);
   const { active, toConnect, off } = splitProviderRows(filterProviderRows(rows, filter));
   const filters: ProviderFilter[] = organization ? ["all", "mine", "org", "computer"] : ["all", "mine", "computer"];
 
@@ -413,6 +412,7 @@ export function ProvidersSettings() {
           </SettingsGroup>
         </div>
       )}
+      {accounts.error && <p role="alert" className="text-[12px] text-danger">{accounts.error}</p>}
       <div data-settings-card="providers.list">
         <SettingsGroup
           title={t("providers.title")}

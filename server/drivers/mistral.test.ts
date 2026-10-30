@@ -11,6 +11,24 @@ const create = (config = {}) => MistralDriver.create({
 });
 
 describe("Mistral provider", () => {
+  it("uses each turn's personal key and never falls back to the organization's key for a personal turn", async () => {
+    const sent: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (url, init) => {
+      if (String(url).endsWith("/models")) return Response.json({ data: [] });
+      sent.push((init?.headers as Record<string, string>).authorization);
+      return new Response('data: {"choices":[{"delta":{"content":"Hello"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n', { headers: { "content-type": "text/event-stream" } });
+    }));
+    const instance = await create();
+    for (const [index, key] of ["lab-person-a", "lab-person-b"].entries()) {
+      const events = recordEvents(instance.adapter);
+      await instance.adapter.sendTurn({ threadId: `chat-${index}`, text: "hello", access: { via: "speaker-key", identity: `person-${index}`, environment: { SAGAX_PERSONAL_PROVIDER_KEY: key } } });
+      expect(await events.until((event) => event.type === "turn.completed")).toMatchObject({ ok: true });
+      events.stop();
+    }
+    await expect(instance.adapter.sendTurn({ threadId: "missing", text: "hello", access: { via: "speaker-key", identity: "missing", environment: {} } })).rejects.toThrow("Mistral API key");
+    expect(sent).toEqual(["Bearer lab-person-a", "Bearer lab-person-b"]);
+    await instance.dispose();
+  });
   it("rejects invalid tools flags and non-TLS remote endpoints", () => {
     expect(() => MistralDriver.decodeConfig({ tools: "false" })).toThrow();
     expect(() => MistralDriver.decodeConfig({ url: "http://example.com/v1" })).toThrow("HTTPS");

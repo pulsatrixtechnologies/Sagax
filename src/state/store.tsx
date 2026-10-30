@@ -1207,6 +1207,8 @@ export interface EngineInstall {
 /** One row of GET /api/instances — the model picker's data. */
 export interface InstanceInfo {
   instanceId: string;
+  /** Metadata of this viewer's own compatible server. Never a credential. */
+  providerAccount?: { provider: string; serverId: string };
   driverKind: string;
   displayName: string;
   /** Optional presentation override belonging to this instance, independent

@@ -3,6 +3,7 @@
 import type { ModelCatalog, ProviderDriver } from "../contracts.ts";
 import { publishedContextWindow } from "../published-context-window.ts";
 import { createOpenAIChatRuntime } from "./openai-chat.ts";
+import { anthropicTransport } from "./anthropic-compat.ts";
 import { currentEnvName, readEnvName } from "../../electron/legacy-names.mjs";
 import {
   azureDeploymentLabel,
@@ -94,6 +95,10 @@ export interface OpenAICompatConfig {
   model?: string;
   provider?: string;
   managedModels?: string[];
+  protocol?: "openai" | "anthropic";
+  allowNoKey?: boolean;
+  personal?: boolean;
+  modelNames?: Record<string, string>;
 }
 
 function isOpenRouterUrl(url: string): boolean {
@@ -110,6 +115,7 @@ function decodeConfig(raw: unknown): OpenAICompatConfig {
   // A variable saved under its old name (OMB_OPENAI_API_KEY) reads as the new one.
   if (typeof config.apiKeyEnv === "string") config.apiKeyEnv = currentEnvName(config.apiKeyEnv);
   if (config.tools !== undefined && typeof config.tools !== "boolean") throw new Error("tools must be a boolean");
+  if (config.protocol !== undefined && config.protocol !== "openai" && config.protocol !== "anthropic") throw new Error("Invalid API protocol.");
   if (config.managedModels !== undefined && (!Array.isArray(config.managedModels) || !config.managedModels.length || config.managedModels.some(model => typeof model !== "string" || !model.trim()))) throw new Error("Invalid managed models.");
   const ownKey = typeof config.apiKeyEnv === "string" && OWN_KEY_ENVS.has(config.apiKeyEnv);
   if (config.catalog !== undefined && config.catalog !== "openai") throw new Error("catalog must be \"openai\"");
@@ -117,6 +123,10 @@ function decodeConfig(raw: unknown): OpenAICompatConfig {
   const envUrl = ownKey ? undefined : process.env.OPENAI_COMPAT_URL;
   return {
     ...(config.tools !== undefined ? { tools: config.tools as boolean } : {}),
+    ...(config.protocol === "anthropic" ? { protocol: "anthropic" as const } : {}),
+    ...(config.allowNoKey === true ? { allowNoKey: true } : {}),
+    ...(config.personal === true ? { personal: true } : {}),
+    ...(config.modelNames && typeof config.modelNames === "object" ? { modelNames: Object.fromEntries(Object.entries(config.modelNames).filter((entry): entry is [string, string] => typeof entry[1] === "string")) } : {}),
     ...(config.managedModels ? { managedModels: config.managedModels as string[] } : {}),
     url: (typeof config.url === "string" && config.url ? config.url : envUrl || "https://openrouter.ai/api/v1")
       .replace(/\/+$/, ""),
@@ -177,7 +187,7 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
     // Azure AI Foundry / Azure OpenAI, whether picked as such or pasted in
     // "Other (OpenAI-compatible)": its v1 base, its `api-key` header, its
     // deployments as the list (shared/azure-openai.ts).
-    const azure = openai ? null : azureOpenAIEndpoint(config.url);
+    const azure = openai || config.protocol === "anthropic" ? null : azureOpenAIEndpoint(config.url);
     const azureWrongUrl = !openai && !azure && looksLikeAzureUrl(config.url);
     const apiUrl = azure ? azure.v1 : config.url;
     /** Deployment name → the model under it, when Azure names it. */
@@ -192,7 +202,7 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
       : option;
     // An Azure resource runs only its own deployments: nothing is seeded,
     // the deployment typed by hand (config.model) aside.
-    const seeded = openai ? { ...OPENAI_MODELS, options: OPENAI_MODELS.options.map(withEffort) }
+    const seeded = config.personal ? { default: "", options: [] } : openai ? { ...OPENAI_MODELS, options: OPENAI_MODELS.options.map(withEffort) }
       : azure || azureWrongUrl ? { default: "", options: [] }
       : DEFAULT_MODELS;
     let catalog: ModelCatalog = config.managedModels
@@ -246,12 +256,13 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
 
     const fetchModels = async () => {
       if (config.managedModels) return;
-      if (!apiKey) return;
+      if (!apiKey && !config.allowNoKey) return;
       if (azureWrongUrl) return;
       if (azure) return fetchDeployments();
       try {
         const response = await fetch(`${config.url}/models`, {
-          headers: { authorization: `Bearer ${apiKey}` },
+          headers: config.protocol === "anthropic" ? { ...(apiKey ? { "x-api-key": apiKey } : {}), "anthropic-version": "2023-06-01" } : apiKey ? { authorization: `Bearer ${apiKey}` } : {},
+          redirect: "error",
           signal: AbortSignal.timeout(8_000),
         });
         if (!response.ok) {
@@ -281,7 +292,7 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
             // The endpoint's own window wins over the hardcoded table.
             ...(published ? { contextWindow: published } : {}),
             // A provider's own catalog is its official list, not a custom model.
-            ...(config.catalog === "openai" ? {} : { custom: true }),
+            ...(config.catalog === "openai" || config.personal ? {} : { custom: true }),
           }));
         }
         if (!options.length) return;
@@ -295,20 +306,26 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
         issue = issueForError(error, false);
       }
     };
-    if (apiKey) void fetchModels();
+    if (apiKey || config.allowNoKey) void fetchModels();
     const listed = (): ModelCatalog => {
       if (!refused.size) return catalog;
       const options = catalog.options.filter((option) => !refused.has(option.id));
       if (!options.length) return catalog;
       return { ...catalog, default: refused.has(catalog.default) ? options[0]!.id : catalog.default, options };
     };
-    const models = (): ModelCatalog => (issue ? { ...listed(), issue } : listed());
+    const models = (): ModelCatalog => {
+      const current = listed();
+      return { ...current, ...(issue ? { issue } : {}), options: current.options.map((option) => ({ ...option, label: config.modelNames?.[option.id] || option.label })) };
+    };
 
     return createOpenAIChatRuntime({
       input,
       driverKind: DRIVER_KIND,
       apiKey,
       apiUrl,
+      allowNoKey: config.allowNoKey,
+      ...(config.allowNoKey ? { authHeaders: (key: string): Record<string, string> => key ? (azure ? azureHeaders(key) : { authorization: `Bearer ${key}` }) : {} } : {}),
+      ...(config.protocol === "anthropic" ? { chatRequest: anthropicTransport(apiUrl) } : {}),
       ...(azure ? { authHeaders: azureHeaders } : {}),
       tools: config.tools,
       computerUse: true,

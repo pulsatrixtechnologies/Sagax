@@ -113,7 +113,7 @@ const personSchema = z.object({
   locale: z.string().max(40).nullable().optional(),
   /** Slice 4: which model providers this person keeps a key for in
    * Perspicax (names only, never a key). */
-  provider_keys: z.array(z.string().max(32)).max(16).optional(),
+  provider_keys: z.array(z.string().max(80)).optional(),
   /** Slice 5: the Perspicax MCP profiles this person holds (directly or
    * through a team), by id. */
   profiles: z.array(z.string().min(1).max(64)).max(1_000).optional(),
@@ -311,9 +311,13 @@ export const PROVIDER_KEY_CACHE_MS = 60_000;
  * voice mode, server/voice-mode.ts), google (Gemini CLI, pi) and moonshot
  * (Kimi Code, pi). Perspicax 1.8 lists the first three; google and moonshot
  * are read as soon as its directory lists them (server/engine-credentials.ts). */
-export type ModelProvider = "anthropic" | "openai" | "xai" | "google" | "moonshot";
-export type KeyProvider = ModelProvider;
-export const MODEL_PROVIDERS: readonly ModelProvider[] = ["anthropic", "openai", "xai", "google", "moonshot"];
+export type ModelProvider = "anthropic" | "openai" | "xai" | "google" | "moonshot" | "openrouter" | "mistral" | "cerebras" | "opencode" | "cursor" | "factory" | "minimax" | "glm" | "zai" | "groq" | `compat:${string}`;
+export const MODEL_PROVIDERS: readonly ModelProvider[] = ["anthropic", "openai", "xai", "google", "moonshot", "openrouter", "mistral", "cerebras", "opencode", "cursor", "factory", "minimax", "glm", "zai", "groq"];
+export const KEY_PROVIDERS = ["anthropic", "openai", "xai", "google", "moonshot", "elevenlabs", "fish", "openrouter", "mistral", "cerebras", "opencode", "cursor", "factory", "minimax", "glm", "zai", "groq"] as const;
+export type KeyProvider = (typeof KEY_PROVIDERS)[number] | `compat:${string}`;
+export function isKeyProvider(value: string): value is KeyProvider {
+  return (KEY_PROVIDERS as readonly string[]).includes(value) || /^compat:[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(value);
+}
 export type ProviderKeyResult =
   | { ok: true; key: string; fingerprint: string }
   | { ok: false; error: "no_key" | "user_inactive" | "unreachable" | "link" };
@@ -474,6 +478,7 @@ export class PerspicaxDirectory {
   private timer: ReturnType<typeof setInterval> | null = null;
   /** Slice 4: provider names per subject, from the last directory. */
   private keysBySub = new Map<string, string[]>();
+  private providerUpdates = new Map<string, { names: string[]; at: number }>();
   /** 2026-10-20: a known subject missing from the directory, since when
    * (memory only). Out only once it is still missing on a later answer at
    * least DIRECTORY_ABSENT_CONFIRM_MS after: a partial answer from a
@@ -546,6 +551,14 @@ export class PerspicaxDirectory {
    * from the last directory; [] when unknown. */
   providerKeys(sub: string): string[] {
     return [...(this.keysBySub.get(sub) ?? [])];
+  }
+
+  /** A successful personal write is visible at once. A directory fetch
+   * started before that write must not put the old list back. */
+  rememberProviderKeys(sub: string, names: readonly string[]): void {
+    const next = [...new Set(names.filter(isKeyProvider))].sort();
+    this.keysBySub.set(sub, next);
+    this.providerUpdates.set(sub, { names: next, at: this.now() });
   }
 
   /** What this subject may do with bots (Perspicax `sagax_bots`): `use`
@@ -891,7 +904,7 @@ export class PerspicaxDirectory {
     const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
     const key = record.key;
     const fingerprint = typeof record.fingerprint === "string" ? record.fingerprint.slice(0, 128) : "";
-    if (record.provider !== provider || typeof key !== "string" || key.length < 20 || key.length > 512 || [...key].some((char) => char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 127) || /\s/.test(key)) {
+    if (record.provider !== provider || typeof key !== "string" || key.length < 8 || key.length > 512 || [...key].some((char) => char.charCodeAt(0) <= 32 || char.charCodeAt(0) === 127) || /\s/.test(key)) {
       return { ok: false, error: "unreachable" };
     }
     this.keyCache.set(cacheKey, { key, fingerprint, until: this.now() + PROVIDER_KEY_CACHE_MS });
@@ -1422,11 +1435,14 @@ export class PerspicaxDirectory {
     for (const person of directory.people) {
       // A disabled person's keys serve nobody (S4-14): resolve would answer
       // 409, and the cache must not outlive the disable.
-      const names: string[] = person.status === "disabled" ? [] : [...new Set((person.provider_keys ?? []).filter((name) => (MODEL_PROVIDERS as readonly string[]).includes(name)))].sort();
+      let names: string[] = person.status === "disabled" ? [] : [...new Set((person.provider_keys ?? []).filter(isKeyProvider))].sort();
+      const update = this.providerUpdates.get(person.sub);
+      if (person.status !== "disabled" && update && update.at >= fetchStartedAt) names = update.names;
+      else this.providerUpdates.delete(person.sub);
       keys.set(person.sub, names);
       if (person.status === "disabled") this.forgetSubject(person.sub);
       // A provider the directory no longer lists for this person: drop its key.
-      for (const name of MODEL_PROVIDERS) if (!names.includes(name)) this.invalidate(person.sub, name);
+      for (const name of this.keysBySub.get(person.sub) ?? []) if (!names.includes(name)) this.invalidate(person.sub, name);
     }
     for (const sub of this.keysBySub.keys()) {
       if (!keys.has(sub)) this.forgetSubject(sub);

@@ -24,6 +24,42 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Personal provider accounts and one voice path (2026-10-30)
+
+Lot 3 of "Providers, models and voice". A person manages all 17 personal
+provider keys and their own OpenAI or Anthropic compatible servers directly
+in Providers, without an admin (`GET /api/me/providers`,
+`PUT/DELETE /api/me/providers/keys/:provider` and `/servers/:id`,
+`server/routes/provider-accounts.ts`). Metadata alone returns. Organization
+accounts are stored in Perspicax using the Link and subject tokens; solo
+accounts use the server's existing provider config or `provider-keys.enc`.
+`ProviderAccounts` serializes imports per person and retires legacy encrypted
+files only after every remote import is acknowledged. Imports preserve an
+existing remote key. A deleted key cannot be reimported from an old file.
+
+`PersonalProviderInstances` gives each person's compatible endpoint a stable
+instance of its own. Its payer must own it, including when another person
+chooses the same server id; no organization key falls back onto it. Anonymous
+local endpoints also work. The shared OpenAI chat runtime handles both
+protocols; `drivers/anthropic-compat.ts` translates Messages, tools, images,
+usage and SSE while retaining the same approvals and tool loop. Its own
+model catalog replaces the built-in seeds.
+
+Voice-mode serves xAI, OpenAI, ElevenLabs, Fish, system voices and Chatterbox;
+speech recognition stays xAI or OpenAI. `/api/tts/prepare`, `/voices` and
+`/speak` delegate to this same pipeline. Each person's ElevenLabs and Fish
+organization grants are separate (`elevenlabsVoice`, `fishVoice`), like
+`xaiVoice`; their own key needs no grant. Fish streams 24 kHz PCM and installed
+WAV voices convert to it. Live uses the existing OpenAI key: old `live.key`
+is folded into `openai.key` when needed, and the retired Live key variable
+is no longer read. The verification launcher forwards `SAGAX_OPENAI_API_KEY`
+only with its fake loopback Live URL.
+
+Tests: `provider-keys.test.ts`, `provider-accounts.test.ts`,
+`routes/provider-accounts.test.ts`, `personal-provider-instances.test.ts`,
+`drivers/anthropic-compat.test.ts`, `provider-accounts.e2e.test.ts`,
+`provider-accounts-org.e2e.test.ts` (real two-person catalogs), the existing voice, credentials, Live and provider-row tests.
+
 ## Models switched one by one (2026-10-30)
 
 Lot 2 of "Providers, models and voice". Each model has a stable id

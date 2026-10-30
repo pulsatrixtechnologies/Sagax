@@ -1002,7 +1002,7 @@ async function secureWorkspaceConfig() {
   const dataDir = desktopDataDir();
   const configPath = path.join(dataDir, "config.json");
   try {
-    const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
+    const config = fs.existsSync(configPath) ? JSON.parse(fs.readFileSync(configPath, "utf8")) : {};
     const migrated = migrateWorkspaceCredentials(config, secureCredentials);
     // Grok voice runs on the xAI key (2026-10-14): fold an older Grok voice key into it.
     const folded = foldGrokVoiceCredential(migrated.credentials);
@@ -5333,7 +5333,7 @@ const CREDENTIAL_PATCH = {
   jevApiKey: (value) => ({ decider: { key: value } }),
   openaiImageApiKey: (value) => ({ imageGen: { key: value } }),
   customImageApiKey: (value) => ({ imageGen: { customApiKey: value } }),
-  openaiLiveKey: (value) => ({ live: { key: value } }),
+  openaiApiKey: (value) => ({ openai: { key: value } }),
 };
 
 async function saveWorkspaceCredential(name, value) {

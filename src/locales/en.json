@@ -12080,7 +12080,7 @@
   "providers.add.serverHint": "Azure AI Foundry, vLLM, a gateway: each server is a provider of its own, under its name",
   "providers.add.noAccount": "Every account is connected already.",
   "providers.add.forOrg": "For the organization",
-  "providers.add.ownKeyHint": "A key you paste is yours: a model key goes to your keys in Perspicax, a voice key to your voice keys.",
+  "providers.add.ownKeyHint": "Your keys stay in your personal account in Perspicax. Add, replace or remove them here.",
   "providers.add.back": "Back",
   "providers.org.title": "Organization",
   "providers.org.body": "What the organization allows is set in Perspicax and applies to everyone, admins included.",
@@ -12104,5 +12104,7 @@
   "modelSwitches.switch": "{name} on",
   "modelSwitches.search": "Find a model",
   "modelSwitches.adminOff": "Turned off by the admin",
-  "modelSwitches.orgBand": "Organization: a model the admin turned off in Perspicax is greyed here, for everyone. Your own switches apply to your bots, Auto and voice."
+  "modelSwitches.orgBand": "Organization: a model the admin turned off in Perspicax is greyed here, for everyone. Your own switches apply to your bots, Auto and voice.",
+  "providers.server.protocol": "API protocol",
+  "providers.server.models": "Models, one ID per line (optional: ID | display name)"
 }

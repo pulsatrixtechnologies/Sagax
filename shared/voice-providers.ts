@@ -15,7 +15,7 @@
 // to the next one the person has a key for (server/voice-mode.ts), silently,
 // with a line in the thread's Events lens.
 
-export const VOICE_TTS_PROVIDERS = ["xai", "openai", "elevenlabs"] as const;
+export const VOICE_TTS_PROVIDERS = ["xai", "openai", "elevenlabs", "fish", "system", "chatterbox"] as const;
 export const VOICE_STT_PROVIDERS = ["xai", "openai"] as const;
 export type VoiceTtsProvider = (typeof VOICE_TTS_PROVIDERS)[number];
 export type VoiceSttProvider = (typeof VOICE_STT_PROVIDERS)[number];
@@ -27,6 +27,9 @@ export const VOICE_PROVIDER_LABELS: Record<VoiceProviderId, string> = {
   xai: "xAI",
   openai: "OpenAI",
   elevenlabs: "ElevenLabs",
+  fish: "Fish Audio",
+  system: "System voices",
+  chatterbox: "Chatterbox",
 };
 
 /** OpenAI's built-in voices for /v1/audio/speech (gpt-4o-mini-tts). Marin
@@ -37,6 +40,13 @@ export const OPENAI_DEFAULT_VOICE = "marin";
 /** A voice id as a provider lists it: short and plain (ElevenLabs ids are
  * 20 characters of letters and digits, OpenAI's are names). */
 export const PROVIDER_VOICE_ID = /^[\w.-]{1,64}$/;
+
+/** Installed voice names can contain spaces, accents and parentheses. */
+export function isProviderVoiceId(provider: VoiceProviderId, value: string): boolean {
+  return provider === "system" || provider === "chatterbox"
+    ? /^[^\x00-\x1f\x7f,:]{1,128}$/.test(value)
+    : PROVIDER_VOICE_ID.test(value);
+}
 
 export function isVoiceTtsProvider(value: unknown): value is VoiceTtsProvider {
   return typeof value === "string" && (VOICE_TTS_PROVIDERS as readonly string[]).includes(value);
@@ -63,7 +73,7 @@ export function cleanProviderVoices(value: unknown): ProviderVoices | undefined 
   const out: ProviderVoices = {};
   for (const provider of VOICE_TTS_PROVIDERS) {
     const voice = (value as Record<string, unknown>)[provider];
-    if (typeof voice === "string" && PROVIDER_VOICE_ID.test(voice)) out[provider] = voice;
+    if (typeof voice === "string" && isProviderVoiceId(provider, voice)) out[provider] = voice;
   }
   return Object.keys(out).length ? out : undefined;
 }

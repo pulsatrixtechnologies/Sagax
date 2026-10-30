@@ -9,6 +9,28 @@ import {
 } from "./workspace-credentials.mjs";
 
 describe("workspace credential migration", () => {
+  it("migrates a Live-only key to the OpenAI provider from config or the encrypted store", () => {
+    for (const [config, credentials] of [
+      [{ live: { key: "legacy-live", voice: "ash" } }, {}],
+      [{ live: { voice: "ash" } }, { openaiLiveKey: "legacy-live" }],
+    ]) {
+      const first = migrateWorkspaceCredentials(config, credentials);
+      expect(first.credentials).toEqual({ openaiApiKey: "legacy-live" });
+      expect(first.config.live).toEqual({ voice: "ash" });
+      expect(workspaceCredentialEnv(first.credentials)).toEqual({ SAGAX_OPENAI_API_KEY: "legacy-live" });
+      const second = migrateWorkspaceCredentials(first.config, first.credentials);
+      expect(second.credentialsChanged).toBe(false);
+      expect(second.configChanged).toBe(false);
+    }
+  });
+
+  it("keeps the OpenAI provider key when retiring an older Live-only duplicate", () => {
+    const result = migrateWorkspaceCredentials({ openai: { key: "new-provider" }, live: { key: "old-live" } }, { openaiLiveKey: "old-stored-live" });
+    expect(result.credentials).toEqual({ openaiApiKey: "new-provider" });
+    expect(result.config).toEqual({ openai: {}, live: {} });
+    expect(migrateWorkspaceCredentials({}, { openaiApiKey: "keep-provider", openaiLiveKey: "old-live" }).credentials).toEqual({ openaiApiKey: "keep-provider" });
+  });
+
   it("stores the router key separately while keeping provider settings", () => {
     const result = migrateWorkspaceCredentials({ imageGen: {
       provider: "custom", key: "openai-only", customApiKey: "router-only",
