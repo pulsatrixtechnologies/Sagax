@@ -593,6 +593,11 @@ export function ownerVerdictOver<V extends { approve: string | null; source: str
     return { approve: null, source: "owner-rule-ask", rule: owner.rule.id };
   }
   if (owner?.kind !== "allow") return base;
+  // 2026-10-30: Approve for me never sends for the person. An outward call
+  // the driver flagged (an engine connector's write whose tool name does not
+  // read as a send, connector-ask.ts) is held by the outbound guard; only a
+  // rule the person saved, or Full access (already the base), answers it.
+  if (owner.source === "owner-auto" && base?.source === "outbound-guard") return base;
   return {
     approve: owner.source === "owner-rule"
       ? `approved ${tool} (your rule)`

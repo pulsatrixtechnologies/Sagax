@@ -676,6 +676,21 @@ describe("Bypass on the owner's own computer, and what always wins over it (#106
   });
 });
 
+describe("an outward engine connector call at Approve for me (2026-10-30)", () => {
+  it("the owner's automatic level never answers what the outbound guard holds; a saved rule still does", () => {
+    // a gateway tool name that does not read as a send, flagged outward by the driver
+    const tool = "cursor__user-Tasks-do_5fthing___3";
+    const base = autoVerdict("auto", "other", { toolName: tool, outbound: true });
+    expect(base.source).toBe("outbound-guard");
+    const auto = ownerDecision({ mode: "auto", rules: [], call: { ownerId: ALICE, botId: "b1", tool } });
+    expect(auto).toMatchObject({ kind: "allow", source: "owner-auto" });
+    expect(ownerVerdictOver(base, auto, tool)).toEqual(base);
+    const rule: OwnerRule = { id: "a1", ownerId: ALICE, botId: null, tool, scope: {}, behavior: "allow", description: "ok", createdAt: 1, updatedAt: 1 };
+    const ruled = ownerDecision({ mode: "approval", rules: [rule], call: { ownerId: ALICE, botId: "b1", tool } });
+    expect(ownerVerdictOver(base, ruled, tool)).toMatchObject({ source: "owner-rule" });
+  });
+});
+
 describe("Toujours permettre: ce fichier ou tout le dossier (#1065)", () => {
   const DESKTOP_READ = "mcp__sagax-desktop__read_file";
   const DESKTOP_LIST = "mcp__sagax-desktop__list_files";

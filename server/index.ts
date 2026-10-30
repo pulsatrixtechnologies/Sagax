@@ -17117,9 +17117,15 @@ bus.subscribe((event: RuntimeEvent) => {
       // the bot's allowed recipients goes with no card (shared/allowed-recipients.ts).
       const recipientsListed = Boolean(permission && asker && event.requestId && !strictCard && !guestDriven && !foreignDestination
         && sendRecipientsAllowed((botForThread(asker.id, event.threadId) ?? asker).allowedRecipients, event.mcpTool ?? event.tool, event.input));
+      // 2026-10-30: a plain read of the person's own engine account
+      // connector (their grok.com Outlook, Teams, calendar): no card at any
+      // level; a write keeps its card (outbound)
+      const connectorRead = Boolean(permission && event.accountConnector === true && event.engineConnector === true && event.outbound !== true
+        && !strictCard && !guestDriven && !foreignDestination);
       const baseVerdict = permission && asker && event.requestId
         ? autoVerdict(strictCard || foreignDestination ? "ask" : effectiveApprovalMode, event.tool, {
           recipientsAllowed: recipientsListed,
+          connectorRead,
           reachMeSelf: Boolean(reachMeTeams?.answersConnectorCall(event.threadId, event.mcpTool ?? event.tool, event.input)),
           ...(event.outbound === true ? { outbound: true } : {}),
           requiresExplicitApproval: event.requiresExplicitApproval,
@@ -17153,7 +17159,7 @@ bus.subscribe((event: RuntimeEvent) => {
           ...(perspicaxSelfKind && !strictCard && !foreignDestination && perspicaxSelfAnswerAt(perspicaxSelfKind, effectiveApprovalMode)
             ? { perspicaxSelf: perspicaxSelfKind } : {}),
           ...(event.mcpTool ? { toolName: event.mcpTool } : {}),
-          stepUpRequired: (attachmentRead || readOnlyCommand || recipientsListed) && !selfAnswerStepUp.length && asker
+          stepUpRequired: (attachmentRead || readOnlyCommand || recipientsListed || connectorRead) && !selfAnswerStepUp.length && asker
             ? autoAnswerStepUp(asker, event.threadId, {
               tool: event.tool,
               ...(event.mcpTool ? { mcpTool: event.mcpTool } : {}),
@@ -30661,7 +30667,7 @@ function turnReachPrompt(bot: BotRecord, instance: Parameters<typeof withholdHos
     servers: Object.keys(integrations.custom ?? {}),
     builtins,
     claudeAi: claudeAiConnectorsForTurn(account),
-    grokCloud: grokCloudConnectorsForTurn(account) && withholdHostToolsFor(instance) && bot.toolScope === undefined,
+    grokCloud: grokCloudOnTurn(account, instance, bot),
     lines: reach.lines,
   });
 }
@@ -30703,8 +30709,15 @@ function turnConnectorsFor(bot: BotRecord, instance: Parameters<typeof withholdH
     plugins,
     claudeAi,
     ...(claudeConnectors ? { claudeConnectors } : {}),
-    grokCloud: grokCloudConnectorsForTurn(account) && withholdHostToolsFor(instance) && bot.toolScope === undefined,
+    grokCloud: grokCloudOnTurn(account, instance, bot),
   });
+}
+/** Whether a turn loads the grok.com connectors of its own xAI account
+ * (harness-connectors.ts grokCloudConnectorsForTurn, no tool selection): on
+ * an organization server where the engine withholds host tools, and on a
+ * solo server (2026-10-30), where each write still waits for its card. */
+function grokCloudOnTurn(input: ClaudeAiTurnInput, instance: Parameters<typeof withholdHostToolsFor>[0], bot: BotRecord): boolean {
+  return grokCloudConnectorsForTurn(input) && bot.toolScope === undefined && (IDENTITY.kind !== "perspicax" || withholdHostToolsFor(instance));
 }
 function claudeAiConnectorsFor(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker, via?: TurnAccess["via"]): boolean {
   return claudeAiConnectorsForTurn(accountConnectorInput(bot, instance, speaker, via));
@@ -30837,7 +30850,7 @@ function engineConnectorsPromptFor(bot: BotRecord, instance: Parameters<typeof w
   return engineConnectorsPrompt({
     driver: instance.driverKind,
     claudeAi: claudeAiConnectorsForTurn(input),
-    grokCloud: grokCloudConnectorsForTurn(input) && withholdHostToolsFor(instance) && bot.toolScope === undefined,
+    grokCloud: grokCloudOnTurn(input, instance, bot),
     foreign: account === "foreign",
     // what Full and run_with_engine change in the connector rules (2026-10-28)
     full: turn.level === "full",

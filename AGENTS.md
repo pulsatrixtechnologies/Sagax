@@ -1030,6 +1030,42 @@ alone lists no `managed_gateway:` server at all. Measured on grok 1.0.46
   (managed servers only with both variables), `acp.test.ts`,
   `grok-tool-catalog.test.ts`, `routes/connector-setup.test.ts`.
 
+## Grok's account connectors on a solo server, with their card (2026-10-30)
+
+The operator's own grok.com connectors (Outlook, Teams, Outlook Calendar)
+now load on a solo server too ("Oui, avec carte, si le allow always est
+respecté, et si je suis en bypass que ça ne le demande pas.").
+- `accountConnectorsForTurn`: on a solo server the machine's Grok sign-in is
+  the operator's (`own`), anyone else's turn `foreign`, as for Claude.
+  `grokCloudConnectorEnv(toolScope, ownAccount)` no longer needs host tools
+  withheld; a tool selection still turns them off.
+- Measured on grok 1.0.70 (solo, 2026-10-30): a gateway `use_tool` call asks
+  in `default` and `acceptEdits`, and runs unasked in `auto` (its
+  classifier). So a turn that loads the connectors (`grokPermissionMode`)
+  never runs Grok's `auto` or `bypassPermissions`: Edits keeps
+  `acceptEdits`, Ask, Auto and Full run `default`, and `--no-leader` keeps
+  the process's own environment. Every connector call reaches Sagax.
+- Sagax answers at the bot's level (index.ts request.opened): a read of the
+  person's own connector (`accountConnector` on the ask, from the session's
+  own catalog; not outward) passes with no card at any level
+  (`connector-read`); a write keeps its card at Ask, Edits and Auto, unless
+  an Always allow rule covers it; Full access answers it with no card. An
+  organization Refuser or Demander d'abord rule and the person's own deny or
+  ask rule still come first, Full included. Unknown or unreadable: outward
+  (connector-ask.ts), a card below Full.
+- A gateway tool whose name is no plain `server__tool`
+  (`cursor__user-Outlook-send_5fmail___12`) is named by its use_tool target
+  (`mcpTool`), so rules and the outbound reading key on the real tool; and
+  Approve for me (`owner-auto`) never answers what the outbound guard holds
+  (`ownerVerdictOver`).
+- Same on an organization server: Full there used to run Grok in
+  `bypassPermissions`, so its connector calls skipped the organization's
+  rules; it now asks Sagax, which answers Full with no card.
+- Tests: the fake CLI's `gateway-call` mode, `acp.test.ts`,
+  `server/grok-account-connectors.e2e.test.ts` (solo and organization: a
+  read passes, a send at Ask and Auto shows its card, Always allow is kept,
+  Full sends with no card).
+
 ## Bot content has a default theme (2026-10-28)
 
 Pages and widgets bots make draw in the app's look, sober as Grok Bot's.

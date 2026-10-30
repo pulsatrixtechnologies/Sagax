@@ -113,11 +113,20 @@ export function grokHome(env: Record<string, string | undefined> = process.env):
 }
 
 /** Env for the xAI account's cloud connectors (hosted and managed MCP).
- * Only an organization turn loads them: host tools are withheld, so Grok
- * reaches every MCP tool through use_tool, and a server Sagax did not mount
- * keeps its card (connector-ask.ts). A solo turn in `--permission-mode
- * default` can call those servers with no prompt, so they stay off. A tool
- * selection stays off too: that turn refuses any MCP server it did not list.
+ * Loaded on the person's own sign-in only (harness-connectors.ts
+ * grokCloudConnectorsForTurn), on an organization turn and, since
+ * 2026-10-30, on a solo server too. A tool selection stays off: that turn
+ * refuses any MCP server it did not list.
+ *
+ * Every grok.com connector call is a use_tool call to a server Sagax did not
+ * mount, and Grok asks before a use_tool call in `default` and
+ * `acceptEdits` (measured on grok 1.0.70, solo, 2026-10-30: an Outlook
+ * read asked in both; in `auto` Grok's own classifier ran it unasked). So a
+ * turn that loads them never runs in Grok's `auto` or `bypassPermissions`
+ * (grokPermissionMode): each ask reaches Sagax, which answers it at the
+ * bot's level (connector-ask.ts, index.ts request.opened): a read passes, a
+ * write shows its card unless an Always allow rule covers it or the level
+ * is Full access.
  *
  * 2026-10-28: the grok.com connectors a person connects (Outlook, Microsoft
  * Teams, Gmail, Google Drive, SharePoint...) are served through xAI's
@@ -138,14 +147,14 @@ export function grokHome(env: Record<string, string | undefined> = process.env):
  * connector". Measured on grok 1.0.46 (organization server, team account)
  * and 1.0.70 (personal account): unset, no gateway; true, the gateway. So
  * the on path sets both. */
-export function grokCloudConnectorEnv(toolScope: unknown, withholdHostTools?: boolean, ownAccount?: boolean): {
+export function grokCloudConnectorEnv(toolScope: unknown, ownAccount?: boolean): {
   GROK_MANAGED_MCPS_ENABLED: "true" | "false";
   GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "true" | "false";
 } {
   // Review of #943 (point 5): only on the person's own xAI sign-in
   // (harness-connectors.ts grokCloudConnectorsForTurn), never on an account
   // that pays for someone else's turn.
-  if (toolScope !== undefined || withholdHostTools !== true || ownAccount !== true) {
+  if (toolScope !== undefined || ownAccount !== true) {
     return { GROK_MANAGED_MCPS_ENABLED: "false", GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" };
   }
   // set, never left to an environment variable the server inherited nor to
@@ -153,11 +162,41 @@ export function grokCloudConnectorEnv(toolScope: unknown, withholdHostTools?: bo
   return { GROK_MANAGED_MCPS_ENABLED: "true", GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "true" };
 }
 
+/** Whether a turn loads the xAI account's cloud connectors: the person's own
+ * sign-in (turn.grokCloudConnectors) and no tool selection, the same reading
+ * as grokCloudConnectorEnv. */
+export function grokLoadsAccountConnectors(turn: { grokCloudConnectors?: boolean; toolScope?: unknown }): boolean {
+  return turn.grokCloudConnectors === true && turn.toolScope === undefined;
+}
+
+/** Grok's `--permission-mode` for a turn.
+ *
+ * Without the account's connectors: Full access (`fullAuto`) bypasses, a
+ * gated Auto turn runs in `default` (grok-approval-gate.ts), Auto runs Grok's
+ * own `auto`, Edits `acceptEdits`, Ask `default`.
+ *
+ * With them (2026-10-30, the operator: "Oui, avec carte, si le allow always
+ * est respecté, et si je suis en bypass que ça ne le demande pas."): Grok
+ * must ask before every connector call so Sagax decides it, at every level.
+ * Grok's `auto` runs a connector call on its classifier's word and
+ * `bypassPermissions` runs it unasked, so neither is used: Edits keeps
+ * `acceptEdits` (file edits only; a use_tool call still asks), every other
+ * level runs `default`. Sagax then answers each ask at the bot's level
+ * (index.ts request.opened): Full access and an Always allow rule with no
+ * card, a read with no card, a write with its card. A turn that carries no
+ * level (an embedder's) keeps the legacy instance flag. */
+export function grokPermissionMode(input: { fullAuto: boolean; gated: boolean; approvalMode?: string; accountConnectors: boolean }): string {
+  if (input.accountConnectors && input.approvalMode !== undefined) return input.approvalMode === "edits" ? "acceptEdits" : "default";
+  if (input.fullAuto) return "bypassPermissions";
+  if (input.gated) return "default";
+  return input.approvalMode === "auto" ? "auto" : input.approvalMode === "edits" ? "acceptEdits" : "default";
+}
+
 /** The xAI cloud connectors this turn could reach through use_tool, named
  * for the capability summary (grok-tool-catalog.ts) so a connector on the
  * Connect-apps card that the person never connected on grok.com is surfaced
  * as connectable (a one-step open_connector_setup) instead of a dead end.
- * Only an own-account organization turn loads managed MCP at all
+ * Only an own-account turn loads managed MCP at all
  * (grokCloudConnectorsForTurn -> turn.grokCloudConnectors); on any other
  * turn there is nothing to connect here, so the list is empty. The summary
  * drops any of these the live catalog already carries. */
@@ -367,7 +406,7 @@ const REACH_PROBE_TIMEOUT_MS = 45_000;
 export async function probeGrokReach(cli: string, env: Record<string, string | undefined>): Promise<unknown> {
   // both variables, as an own-account turn sets them (grokCloudConnectorEnv):
   // the gateway one alone brings no managed server since 2026-10-30
-  const probeEnv: Record<string, string | undefined> = { ...env, GROK_AGENT: "grok-build", ...grokCloudConnectorEnv(undefined, true, true), SAGAX_GROK_REACH_PROBE: "1" };
+  const probeEnv: Record<string, string | undefined> = { ...env, GROK_AGENT: "grok-build", ...grokCloudConnectorEnv(undefined, true), SAGAX_GROK_REACH_PROBE: "1" };
   delete probeEnv.XAI_API_KEY;
   const home = grokHome(probeEnv);
   if (!existsSync(join(home, "auth.json"))) return null;
@@ -953,27 +992,33 @@ const support: AcpSupport = {
   approvalGate: (config, turn, context) => !config.fullAuto && turn.approvalMode === "auto" && grokApprovalGateEnabled(turn.botId)
     && (turn.withholdHostTools === true || !grokConfigDeclaresMcp(context?.env ?? process.env, context?.cwd)),
   approvalReadOnly: (server, botId) => gateReadOnlyTools(server, botId),
+  // a use_tool target the session's own catalog lists on a managed gateway
+  // server: the person's own grok.com connector (grok-tool-catalog.ts)
+  accountConnectorTool: (sessionId, tool) => (grokCatalogFor(sessionId) ?? []).some((server) => server.gateway === true && server.tools.includes(tool)),
 
   spawnArgs: (config, turn, launch) => {
     const withhold = turn.withholdHostTools === true;
     const gated = launch?.approvalGate === true && !config.fullAuto;
+    const accountConnectors = grokLoadsAccountConnectors(turn);
+    const mode = grokPermissionMode({ fullAuto: config.fullAuto, gated, approvalMode: turn.approvalMode, accountConnectors });
     return [
       // Global flags. `--deny` does not strip the agent-stdio tool list;
       // the session profile does. `--no-leader` is after `agent`: a shared
       // leader ignores the profile and keeps the host tools.
       ...grokHostToolArgs(withhold),
       "--permission-mode",
-      config.fullAuto
-        ? "bypassPermissions"
-        : gated ? "default"
-          : turn.approvalMode === "auto" ? "auto" : turn.approvalMode === "edits" ? "acceptEdits" : "default",
-      // Auto mode only: reviewed read-only Sagax tools skip Grok's classifier
-      // (grok-read-only-tools.ts). Ask and Edits keep every card as before.
+      mode,
+      // An Auto turn Grok does not gate: reviewed read-only Sagax tools skip
+      // Grok's classifier, or its ask when the account's connectors keep the
+      // turn in `default` (grok-read-only-tools.ts). Ask and Edits keep every
+      // card as before.
       ...(!config.fullAuto && !gated && turn.approvalMode === "auto"
         ? grokReadOnlyAllowRules(turn.integrations).flatMap((rule) => ["--allow", rule])
         : []),
       "agent",
-      ...(withhold || turn.toolScope !== undefined ? ["--no-leader"] : []),
+      // the account's connectors follow this process's own environment
+      // (grokCloudConnectorEnv), never a shared leader's
+      ...(withhold || turn.toolScope !== undefined || accountConnectors ? ["--no-leader"] : []),
       ...(turn.model ? ["-m", turn.model] : []),
       // long form on purpose: `--effort` is documented as an alias, and an
       // alias is the part a CLI is free to rename
@@ -1109,7 +1154,7 @@ const support: AcpSupport = {
     // managed configs and the gateway connectors (Outlook, Teams, Gmail...)
     // alike. A tool selection or someone else's account still turns them off
     // (grokCloudConnectorEnv).
-    const cloud = grokCloudConnectorEnv(toolScope, withholdHostTools === true, accountConnectors === true);
+    const cloud = grokCloudConnectorEnv(toolScope, accountConnectors === true);
     env.GROK_MANAGED_MCPS_ENABLED = cloud.GROK_MANAGED_MCPS_ENABLED;
     env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED = cloud.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED;
     if (withholdHostTools === true || (toolScope !== undefined && narrowsNativeTools(toolScope))) {

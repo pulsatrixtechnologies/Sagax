@@ -38,6 +38,17 @@ describe("Full access delivery", () => {
 });
 
 describe("autoVerdict", () => {
+  it("answers a read of the person's own account connector at every level, never a write (2026-10-30)", () => {
+    for (const mode of ["ask", "edits", "auto", "custom", "full"] as const) {
+      expect(autoVerdict(mode, "other", { toolName: "outlook__search", connectorRead: true }).source).toBe("connector-read");
+      // the person's own words, a safety hold and a security key come first
+      expect(autoVerdict(mode, "other", { toolName: "outlook__search", connectorRead: true, customRule: { behavior: "ask", id: "r" } }).approve).toBeNull();
+      expect(autoVerdict(mode, "other", { toolName: "outlook__search", connectorRead: true, safetyHold: true }).approve).toBeNull();
+      if (mode !== "full") expect(autoVerdict(mode, "other", { toolName: "outlook__search", connectorRead: true, stepUpRequired: ["mail"] }).approve).toBeNull();
+      // an outward call is never a read, whatever the flag says
+      expect(autoVerdict(mode, "other", { toolName: "outlook__send_message", connectorRead: true, outbound: true }).source).toBe(mode === "full" ? "full-access" : "outbound-guard");
+    }
+  });
   it("answers a read-only command on the person's own computer at every level (Owner 2026-10-20)", () => {
     const tool = "mcp__sagax-environment__run_command";
     for (const mode of ["ask", "edits", "auto", "custom"] as const) {

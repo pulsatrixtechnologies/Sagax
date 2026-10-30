@@ -92,6 +92,15 @@
 //                     injected agents MCP, ask a question card, call it again
 //                     once the card is answered, and reply
 //                     "before: <first> | after: <second>" — the lent-Mac e2e)
+//                   | gateway-call (FAKE_ACP_GATEWAY_CALLS="outlook__search,outlook__send_message":
+//                     call each grok.com connector tool of the managed gateway
+//                     (FAKE_ACP_MCP_LIST_FILE, loaded only with both
+//                     GROK_MANAGED_* variables) through use_tool, the way grok
+//                     1.0.70 does: in --permission-mode default or acceptEdits
+//                     it asks first (measured 2026-10-30), in auto (its
+//                     classifier) and bypassPermissions it runs unasked. Reply
+//                     one line per call: "tool -> ran (asked|unasked)",
+//                     "tool -> refused", or "tool -> not available")
 //   FAKE_ACP_MCP_TRANSPORTS  comma list of remote MCP transports the agent
 //                       advertises in initialize (mcpCapabilities), e.g. "http,sse"
 //   FAKE_ACP_PERMISSION_OPTIONS JSON options override in permission mode
@@ -1383,6 +1392,44 @@ function handle(msg: any) {
             out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { text: `delegate error: ${message}` } } } });
             complete();
           });
+        return;
+      }
+      if (mode === "gateway-call") {
+        const calls = (process.env.FAKE_ACP_GATEWAY_CALLS ?? "").split(",").map((entry) => entry.trim()).filter(Boolean);
+        const listFile = process.env.FAKE_ACP_MCP_LIST_FILE;
+        const managed = process.env.GROK_MANAGED_MCPS_ENABLED === "true" && process.env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED === "true";
+        const recorded = managed && listFile ? JSON.parse(readFileSync(listFile, "utf8")) as { servers?: Array<{ type?: string; session?: { tools?: Array<{ name?: string }> } }> } : null;
+        const gatewayTools = new Set((recorded?.servers ?? []).filter((server) => server.type === "managedGateway")
+          .flatMap((server) => (server.session?.tools ?? []).map((tool) => tool.name)));
+        const permissionMode = argv[argv.indexOf("--permission-mode") + 1] ?? "default";
+        const asks = permissionMode === "default" || permissionMode === "acceptEdits";
+        void (async () => {
+          const results: string[] = [];
+          for (const [index, tool] of calls.entries()) {
+            if (!gatewayTools.has(tool)) { results.push(`${tool} -> not available`); continue; }
+            const writes = /send|reply|forward|create|update|delete|rsvp|move/.test(tool);
+            const toolInput = writes ? { to: ["ana@example.com"], subject: "Suivi", body: "Bonjour" } : { query: "folder:inbox", max_results: 1 };
+            if (asks) {
+              const allowed = await new Promise<boolean>((resolve) => {
+                pendingPermissionId = 9300 + index;
+                onPermissionAnswered = resolve;
+                out({ jsonrpc: "2.0", id: pendingPermissionId, method: "session/request_permission", params: {
+                  toolCall: {
+                    toolCallId: `call-gateway-${index}`, kind: "other", title: tool,
+                    rawInput: { variant: "UseTool", tool_name: tool, tool_input: toolInput },
+                    _meta: { "x.ai/tool": { version: 1, name: "use_tool", kind: "use_tool", namespace: "grok_build", label: "Use Tool", read_only: false } },
+                  },
+                  options: [{ optionId: "allow-always", name: "always allow", kind: "allow_always" }, { optionId: "allow-once", name: "allow once", kind: "allow_once" }, { optionId: "reject-once", name: "reject once", kind: "reject_once" }],
+                } });
+              });
+              results.push(allowed ? `${tool} -> ran (asked)` : `${tool} -> refused`);
+            } else {
+              results.push(`${tool} -> ran (unasked)`);
+            }
+          }
+          out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { text: results.join("\n") } } } });
+          complete();
+        })();
         return;
       }
       if (mode === "mcp-call") {

@@ -92,8 +92,10 @@ const ACCOUNT_CONNECTOR_DRIVERS = new Set(["claudeAgent", "grokAgent", "grok"]);
  * it is someone else's sign-in (another person's subscription, the
  * machine's login in solo for anyone but the operator): those connectors
  * are never offered, the turn says they belong to someone else. "none":
- * an engine or an access (a key) that brings none. Grok's cloud
- * connectors stay off on a solo server (#918). */
+ * an engine or an access (a key) that brings none. On a solo server the
+ * machine's own sign-in is the operator's: Claude's claude.ai connectors and,
+ * since 2026-10-30, Grok's grok.com connectors (each write through them still
+ * waits for its card, grok.ts grokCloudConnectorEnv). */
 export function accountConnectorsForTurn(input: ClaudeAiTurnInput): "own" | "foreign" | "none" {
   if (input.restrictedByPolicy || !ACCOUNT_CONNECTOR_DRIVERS.has(input.driver)) return "none";
   const principal = connectorPrincipalFor(input);
@@ -102,7 +104,6 @@ export function accountConnectorsForTurn(input: ClaudeAiTurnInput): "own" | "for
     if (input.payerPrincipalId !== undefined && input.payerPrincipalId.trim().toLowerCase() !== principal) return "foreign";
     return principal ? "own" : "foreign";
   }
-  if (input.driver !== "claudeAgent") return "none";
   return principal && principal === input.localPrincipalId.trim().toLowerCase() ? "own" : "foreign";
 }
 
@@ -113,9 +114,10 @@ export function claudeAiConnectorsForTurn(input: ClaudeAiTurnInput): boolean {
 }
 
 /** Whether a Grok turn may load the cloud connectors of the xAI account it
- * runs on: an organization turn on the person's own grok.com sign-in only
- * (the driver adds host tools withheld and no tool selection,
- * grokCloudConnectorEnv). */
+ * runs on: the person's own grok.com sign-in only, on an organization turn
+ * and, since 2026-10-30, on a solo server (the operator's own sign-in). The
+ * driver adds no tool selection (grokCloudConnectorEnv) and keeps a card on
+ * every write (grok.ts spawnArgs: never Grok's own auto or bypass mode). */
 export function grokCloudConnectorsForTurn(input: ClaudeAiTurnInput): boolean {
   return GROK_DRIVERS.has(input.driver) && accountConnectorsForTurn(input) === "own";
 }
@@ -186,7 +188,7 @@ export function engineConnectorsPrompt(input: { driver: string; claudeAi: boolea
   if (input.relay) {
     return `\nThis turn's engine brings no mail, calendar, Microsoft Teams or SharePoint connector of this person's.${relay} If no engine you may use has it, say so plainly and do not claim anything was sent. When the person asks to connect one, call open_connector_setup (agents__open_connector_setup) once: it posts the card for their own Grok or Claude account, or says why there is none.${outward}`;
   }
-  return "\nThis turn's engine brings no mail, calendar, Microsoft Teams or SharePoint connector, and no other engine of this person was found with the one needed (Sagax moves such a request on its own when it finds one). If asked for one of those, say so plainly and do not claim anything was sent: the person can connect it on Claude (claude.ai connectors, such as Microsoft 365 or Gmail) or on Grok (the xAI account's cloud connectors, such as Outlook, Microsoft Teams or SharePoint, on an organization server), and you can offer to ask a teammate bot on that engine with your teammate tools. When the person asks to connect one, call the Sagax tool open_connector_setup (agents__open_connector_setup) once: it posts the right card, or says why there is none.";
+  return "\nThis turn's engine brings no mail, calendar, Microsoft Teams or SharePoint connector, and no other engine of this person was found with the one needed (Sagax moves such a request on its own when it finds one). If asked for one of those, say so plainly and do not claim anything was sent: the person can connect it on Claude (claude.ai connectors, such as Microsoft 365 or Gmail) or on Grok (the xAI account's cloud connectors, such as Outlook, Microsoft Teams or SharePoint), and you can offer to ask a teammate bot on that engine with your teammate tools. When the person asks to connect one, call the Sagax tool open_connector_setup (agents__open_connector_setup) once: it posts the right card, or says why there is none.";
 }
 
 // ── what the person has ──────────────────────────────────────────────────

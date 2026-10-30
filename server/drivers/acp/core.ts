@@ -482,6 +482,12 @@ export interface AcpSupport {
   };
   /** Bound provider-native tool payloads before writing diagnostic logs. */
   sanitizeToolPayload?: boolean;
+  /** Whether a use_tool target is one of the cloud connectors of the account
+   * the session runs on (Grok's managed gateway, from the session's own
+   * `_x.ai/mcp/list`). Such an ask says so (`accountConnector`), so a read
+   * of the person's own connector passes with no card (index.ts). Unknown:
+   * false, the ask keeps the level's card. */
+  accountConnectorTool?(sessionId: string | undefined, tool: string): boolean;
   /** Mutate the child env after the turn model is known. Catalog refresh and
    *  snapshot share `transformEnv` and must not see a per-turn overlay. */
   applyTurnEnv?(
@@ -1623,13 +1629,21 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           // title (Grok: "agents__list_bots"), never a command or a file
           // change; the summary below may come from the model's arguments.
           const mcpTitle = typeof toolCall.title === "string" ? toolCall.title.trim() : "";
-          const mcpTool = !isQuestion && !["execute", "edit", "delete", "move"].includes(kind) && /^(?:mcp__)?[a-z][\w-]{0,63}__[a-z][a-z0-9_]{0,63}$/i.test(mcpTitle)
-            ? mcpTitle
-            : undefined;
           // An engine's own connector (Grok's use_tool to the xAI account's
           // cloud connectors): its arguments for the card, and whether it
           // acts outside the app, fail closed (connector-ask.ts).
           const connector = isQuestion || isShellCommand ? { engineConnector: false, outward: false } : connectorAsk(toolCall, current.mountedServers);
+          // 2026-10-30: a gateway tool's name may not fit the title pattern
+          // (`cursor__user-Outlook-send_5fmail___12`); its use_tool target
+          // then names the call, so a rule ("Always allow") and the outbound
+          // reading key on the very tool, never on the bare kind "other".
+          const mcpTool = !isQuestion && !["execute", "edit", "delete", "move"].includes(kind) && /^(?:mcp__)?[a-z][\w-]{0,63}__[a-z][a-z0-9_]{0,63}$/i.test(mcpTitle)
+            ? mcpTitle
+            : connector.engineConnector && connector.target && /^[A-Za-z0-9][\w.-]{0,63}__[A-Za-z0-9][\w.-]{0,255}$/.test(connector.target)
+              ? connector.target
+              : undefined;
+          const accountConnector = connector.engineConnector && connector.target !== undefined
+            && support.accountConnectorTool?.(session.sessionId ?? undefined, connector.target) === true;
           const rawSummary = String(toolCall.rawInput?.command ?? toolCall.title ?? tool);
           const summary = rawSummary.slice(0, isQuestion ? MAX_QUESTION_TEXT : 200);
           // One structured question beside the flat choices: the richer card
@@ -1746,6 +1760,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             allowSession: canAllowSession ? true : undefined,
             ...(connector.input ? { input: connector.input } : {}),
             ...(connector.engineConnector ? { engineConnector: true } : {}),
+            ...(accountConnector ? { accountConnector: true } : {}),
             ...(connector.outward ? { outbound: true } : {}),
           });
         };

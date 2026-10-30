@@ -21,7 +21,7 @@ import { recordEvents, type EventRecorder } from "../../testing/events.ts";
 import { promptSplitFingerprints, writePromptSplitReceipt } from "../prompt-split.ts";
 import { GROK_TOOL_REUSE_HINT as HINT } from "./grok.ts";
 import { createAcpDriver, DEFAULT_ACP_PROMPT_IDLE_MS, skipSubscriptionAuthForLocalInject, type AcpSupport } from "./core.ts";
-import { GrokAgentDriver, grokAcceptsUnadvertisedImages, grokCloudConnectorEnv, grokConfigDeclaresMcp, grokConnectableConnectors } from "./grok.ts";
+import { GrokAgentDriver, grokAcceptsUnadvertisedImages, grokCloudConnectorEnv, grokConfigDeclaresMcp, grokConnectableConnectors, grokPermissionMode } from "./grok.ts";
 import { grokAccountReach } from "./grok-tool-catalog.ts";
 import { READ_ONLY_AGENT_TOOL_NAMES } from "../../agent-tool-policy.ts";
 import { GeminiAgentDriver } from "./gemini.ts";
@@ -1772,7 +1772,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
         const seen = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[] };
         expect(seen.argv.slice(0, 2)).toEqual(["--permission-mode", "default"]);
         expect(seen.argv).not.toContain("--allow");
-        // a solo Auto turn can call account connectors with no prompt: they stay off
+        // a turn not on the person's own sign-in: the account connectors stay off
         expect((seen as unknown as { env: Record<string, string> }).env.GROK_MANAGED_MCPS_ENABLED).toBe("false");
         expect((seen as unknown as { env: Record<string, string> }).env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED).toBe("false");
       }
@@ -2056,7 +2056,77 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(grokAccountReach(home)).toBeUndefined();
   });
 
-  it("offers no connectable connectors on a solo turn (cloud connectors never load there)", async () => {
+  describe("the account's connectors ask Sagax at every level (2026-10-30)", () => {
+    // The operator: "Oui, avec carte, si le allow always est respecté, et si je
+    // suis en bypass que ça ne le demande pas." The fake CLI calls gateway tools
+    // the way grok 1.0.70 does: it asks in default and acceptEdits, runs
+    // unasked in auto (its classifier) and bypassPermissions.
+    const TEAM_LIST = fileURLToPath(new URL("../../testing/grok-gateway-team-mcp-list.json", import.meta.url));
+    const run = async (input: { label: string; approvalMode: "ask" | "edits" | "auto" | "full"; org: boolean; answer: "allow" | "deny" }) => {
+      const dump = join(scratch, `grok-gateway-ask-${input.label}.json`);
+      process.env.FAKE_ACP_DUMP = dump;
+      process.env.FAKE_ACP_MCP_LIST_FILE = TEAM_LIST;
+      process.env.FAKE_ACP_GATEWAY_CALLS = "outlook__search,outlook__send_message";
+      onTestFinished(() => { delete process.env.FAKE_ACP_MCP_LIST_FILE; delete process.env.FAKE_ACP_GATEWAY_CALLS; });
+      const threadId = `t-gateway-ask-${input.label}-${randomUUID()}`;
+      const { turnId } = await instance.adapter.sendTurn({
+        threadId, botId: "bot-gateway", text: "envoie le courriel", model: "grok-4.7", approvalMode: input.approvalMode,
+        grokCloudConnectors: true,
+        ...(input.org ? { withholdHostTools: true, access: { via: "subscription" as const, identity: "subscription:a", engineHome: join(scratch, `home-${input.label}`) } } : {}),
+        integrations: { agents: { command: "node", args: ["/fixture/agents-proxy.mjs"], env: {} } },
+      });
+      const asks: Array<Record<string, unknown>> = [];
+      for (;;) {
+        const event = await recorder.until((e) => (e.type === "request.opened" && e.turnId === turnId && !asks.some((ask) => ask.requestId === (e as { requestId?: string }).requestId))
+          || (e.type === "turn.completed" && e.turnId === turnId));
+        if (event.type === "turn.completed") break;
+        asks.push(event as unknown as Record<string, unknown>);
+        await instance.adapter.respondToRequest(threadId, (event as { requestId: string }).requestId, { behavior: input.answer });
+      }
+      const seen = JSON.parse(readFileSync(dump, "utf8")) as { argv: string[]; env: Record<string, string> };
+      const reply = recorder.events.filter((e) => e.type === "content.delta" && e.turnId === turnId).map((e) => (e as { delta?: string }).delta ?? "").join("");
+      return { seen, asks, reply };
+    };
+
+    it.each([
+      ["solo", false],
+      ["organization", true],
+    ] as const)("%s: every level runs Grok in a mode that asks, the read and the send both reach Sagax, the send outward", async (label, org) => {
+      await create(GrokAgentDriver, "gateway-call");
+      for (const approvalMode of ["ask", "edits", "auto", "full"] as const) {
+        const { seen, asks, reply } = await run({ label: `${label}-${approvalMode}`, approvalMode, org, answer: "allow" });
+        expect(seen.argv.slice(seen.argv.indexOf("--permission-mode"), seen.argv.indexOf("--permission-mode") + 2), approvalMode)
+          .toEqual(["--permission-mode", approvalMode === "edits" ? "acceptEdits" : "default"]);
+        expect(seen.argv).toContain("--no-leader");
+        expect(seen.env.GROK_MANAGED_MCPS_ENABLED).toBe("true");
+        expect(seen.env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED).toBe("true");
+        expect(asks.map((ask) => ({ mcpTool: ask.mcpTool, accountConnector: ask.accountConnector, outbound: ask.outbound ?? false }))).toEqual([
+          { mcpTool: "outlook__search", accountConnector: true, outbound: false },
+          { mcpTool: "outlook__send_message", accountConnector: true, outbound: true },
+        ]);
+        // a send is never offered a session-wide allow
+        expect(asks[1]!.allowSession).toBeUndefined();
+        expect(reply).toContain("outlook__send_message -> ran (asked)");
+      }
+    });
+
+    it("a refused send never runs", async () => {
+      await create(GrokAgentDriver, "gateway-call");
+      const { reply } = await run({ label: "solo-refused", approvalMode: "ask", org: false, answer: "deny" });
+      expect(reply).toContain("outlook__send_message -> refused");
+    });
+
+    it("an allowed send answers Grok once, never its allow_always", async () => {
+      await create(GrokAgentDriver, "gateway-call");
+      const answers = join(scratch, "gateway-answer.txt");
+      process.env.FAKE_ACP_PERMISSION_ANSWER = answers;
+      onTestFinished(() => { delete process.env.FAKE_ACP_PERMISSION_ANSWER; });
+      await run({ label: "solo-once", approvalMode: "full", org: false, answer: "allow" });
+      expect(readFileSync(answers, "utf8")).toBe("allow-once");
+    });
+  });
+
+  it("offers no connectable connectors on a turn without the person's own sign-in (cloud connectors never load there)", async () => {
     const dump = join(scratch, "grok-solo-no-connectable.json");
     process.env.FAKE_ACP_DUMP = dump;
     process.env.FAKE_ACP_DUMP_PROMPT = "1";
@@ -3765,23 +3835,24 @@ describe("ACP snapshot", () => {
 });
 
 describe("grokCloudConnectorEnv", () => {
-  it("keeps cloud connectors off on a solo turn, where default mode can call them unasked", () => {
+  it("keeps cloud connectors off on a turn that is not the person's own sign-in", () => {
     expect(grokCloudConnectorEnv(undefined)).toEqual({
       GROK_MANAGED_MCPS_ENABLED: "false",
       GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false",
     });
   });
 
-  it("lets an organization turn on the person's own xAI sign-in fetch the account connectors, gateway connectors included", () => {
+  it("lets a turn on the person's own xAI sign-in fetch the account connectors, gateway connectors included, solo or organization", () => {
     // 2026-10-28: Outlook and Microsoft Teams of grok.com are gateway connectors;
     // with the gateway off the person's own Grok turn had no Teams at all
-    // 2026-10-30: and the managed configs explicitly, grok's own default is off
-    expect(grokCloudConnectorEnv(undefined, true, true)).toEqual({ GROK_MANAGED_MCPS_ENABLED: "true", GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "true" });
+    // 2026-10-30: and the managed configs explicitly, grok's own default is off;
+    // a solo turn too, its writes keep their card (grokPermissionMode)
+    expect(grokCloudConnectorEnv(undefined, true)).toEqual({ GROK_MANAGED_MCPS_ENABLED: "true", GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "true" });
   });
 
   it("keeps them off when the account is not the person's own (review of #943: payer is not the speaker)", () => {
     for (const own of [undefined, false]) {
-      expect(grokCloudConnectorEnv(undefined, true, own)).toEqual({
+      expect(grokCloudConnectorEnv(undefined, own)).toEqual({
         GROK_MANAGED_MCPS_ENABLED: "false",
         GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false",
       });
@@ -3789,10 +3860,31 @@ describe("grokCloudConnectorEnv", () => {
   });
 
   it("turns cloud connectors off when a tool selection cannot list them", () => {
-    expect(grokCloudConnectorEnv({ allow: ["native:read_file"] })).toEqual({
+    expect(grokCloudConnectorEnv({ allow: ["native:read_file"] }, true)).toEqual({
       GROK_MANAGED_MCPS_ENABLED: "false",
       GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false",
     });
+  });
+});
+
+describe("grokPermissionMode", () => {
+  const base = { fullAuto: false, gated: false, accountConnectors: false };
+  it("keeps every level as before when the account's connectors are not loaded", () => {
+    expect(grokPermissionMode({ ...base, approvalMode: "ask" })).toBe("default");
+    expect(grokPermissionMode({ ...base, approvalMode: "edits" })).toBe("acceptEdits");
+    expect(grokPermissionMode({ ...base, approvalMode: "auto" })).toBe("auto");
+    expect(grokPermissionMode({ ...base, gated: true, approvalMode: "auto" })).toBe("default");
+    expect(grokPermissionMode({ ...base, fullAuto: true, approvalMode: "full" })).toBe("bypassPermissions");
+  });
+
+  it("never runs Grok's own auto or bypass with the account's connectors: every connector call asks Sagax", () => {
+    const on = { ...base, accountConnectors: true };
+    expect(grokPermissionMode({ ...on, approvalMode: "ask" })).toBe("default");
+    expect(grokPermissionMode({ ...on, approvalMode: "edits" })).toBe("acceptEdits");
+    expect(grokPermissionMode({ ...on, approvalMode: "auto" })).toBe("default");
+    expect(grokPermissionMode({ ...on, fullAuto: true, approvalMode: "full" })).toBe("default");
+    // an embedder's turn with no level keeps the legacy instance flag
+    expect(grokPermissionMode({ ...on, fullAuto: true })).toBe("bypassPermissions");
   });
 });
 

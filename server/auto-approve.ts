@@ -187,6 +187,9 @@ export type AutoVerdictSource =
    * bot's allowed recipients (shared/allowed-recipients.ts). */
   | "allowed-recipient"
   | "reach-me"
+  /** 2026-10-30: a read of the person's own engine account connector (their
+   * grok.com Outlook, Teams, calendar...), at any level. */
+  | "connector-read"
   | "no-grant";
 
 export interface AutoVerdict {
@@ -283,6 +286,13 @@ export function autoVerdict(
      * connector call that is not plainly a read, review of #943): held by
      * the outbound guard like a send, never answered as read-only. */
     outbound?: boolean;
+    /** 2026-10-30 (the operator: reads pass with no card, writes keep it): a
+     * call to one of the cloud connectors of the person's own engine account
+     * (Grok's managed gateway, the person's own grok.com sign-in) that the
+     * driver read as a plain read (connector-ask.ts, never outward).
+     * Answered at any level after the safety hold and the person's own deny
+     * and ask rules, never a widening or a call a security key protects. */
+    connectorRead?: boolean;
     /** The call is one of Sagax's own tools that must never answer itself:
      * a rule change (rules_update and the like, "rule-change" class). */
     ruleChange?: boolean;
@@ -326,6 +336,9 @@ export function autoVerdict(
   if (context?.customRule?.behavior === "ask") return { approve: null, source: "custom-rule-ask" };
   const outward = isOutboundTool(tool) || context?.outbound === true || (context?.toolName !== undefined && isOutboundTool(context.toolName));
   if (context?.safetyAllow && !outward) return { approve: `approved ${tool} (read-only)`, source: "safety-read" };
+  if (context?.connectorRead && !outward && !context.requiresExplicitApproval && !(context.stepUpRequired?.length)) {
+    return { approve: `approved ${tool} (read of your own connector)`, source: "connector-read" };
+  }
   if (context?.widgetApproved) return { approve: `approved ${tool} (approved in the ConnectWise widget)`, source: "widget-approval" };
   // An allow rule never answers a sandbox widening (only Full may), and its
   // risk scope was checked against the call before it got here.
