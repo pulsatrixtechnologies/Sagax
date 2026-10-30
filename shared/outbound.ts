@@ -90,7 +90,7 @@ export function isOutboundTool(name: string): boolean {
   // returns other-write. Its approval still follows the bot's level and
   // rules; it must never become an outbound draft/send hold.
   const connector = connectorWriteKind(name);
-  if (connector) return connector !== "other-write";
+  if (connector && connector !== "other-write") return true;
   if (tokens.includes("DRAFT")) return false;
   return tokens.some((token) => CREATE_VERBS.has(token)) && tokens.some((token) => SENT_NOUNS.has(token));
 }

@@ -21,6 +21,8 @@ describe("isOutboundTool", () => {
       "mcp__claude_ai_Gmail__reply",
       "mcp__claude_ai_Gmail__forward",
       "mcp__claude_ai_Slack__slack_send_message",
+      "mcp__claude_ai_Microsoft_365__create_task_comment",
+      "outlook__create_invoice",
     ]) {
       expect(isOutboundTool(name), name).toBe(true);
     }
