@@ -98,6 +98,26 @@ for want in "kind: PriorityClass" "preemptionPolicy: Never" "priorityClassName: 
   fi
 done
 
+# The reserve runs the pause image (and any prepull image). The images policy
+# must admit them even when a values file replaces admission.allowedImages with
+# a list that lacks them (--reuse-values keeps old lists).
+pause_ref=$(sed -n 's/^  pauseImage: //p' "$chart/values.yaml")
+prepull_ref="registry.example.com/sagax-sandbox:v0.0.0@sha256:$(printf 'cd%.0s' $(seq 1 32))"
+helm template sandboxes "$chart" --set warmNode.spare.enabled=true \
+  --set 'admission.allowedImages={registry.example.com/other@sha256:'"$(printf 'ef%.0s' $(seq 1 32))"'}' \
+  --set "warmNode.prepullImages[0]=$prepull_ref" > "$tmp/admit.yaml"
+policy_allowed=$(awk '/name: sandboxes-images$/ { p = 1 } p && /name: allowed/ { getline; print; exit }' "$tmp/admit.yaml")
+for ref in "$pause_ref" "$prepull_ref"; do
+  if ! printf '%s\n' "$policy_allowed" | grep -qF "$ref"; then
+    echo "sandboxes-images does not admit the reserve image $ref" >&2
+    exit 1
+  fi
+done
+if ! grep -A40 'name: sagax-sandbox-spare$' "$tmp/admit.yaml" | grep -qF "image: \"$pause_ref\""; then
+  echo "the reserve Deployment does not run the pinned pause image" >&2
+  exit 1
+fi
+
 # 2026-10-26: the reserve follows the people at work. The provisioner may
 # read and set the scale of the one reserve Deployment, nothing else.
 render "$tmp/spare.yaml" --set provisioner.spareScaler.enabled=true --set provisioner.spareScaler.serviceAccount.namespace=sandboxes

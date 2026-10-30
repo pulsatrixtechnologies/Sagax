@@ -40,8 +40,8 @@ spec:
           effect: NoSchedule
       {{- with .Values.warmNode.prepullImages }}
       # Pull the sandbox images onto the warm node so a cold pod start does not
-      # wait on the registry. Each image must be digest-pinned and listed in
-      # admission.allowedImages.
+      # wait on the registry. Each image must be digest-pinned; the chart admits
+      # it by itself (sandboxes.allowedImages).
       initContainers:
         {{- range $i, $img := . }}
         - name: prepull-{{ $i }}
