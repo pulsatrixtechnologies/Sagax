@@ -5226,20 +5226,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // channel. Ask, Edits, and Auto can use the thread settings route.
           const needsDesktop = mode === "full" || mode === "custom" || current === "custom";
           // #1674: without the private channel (the desktop app on a remote
-          // server, a browser), Full here is the bot's Full grant naming this
-          // conversation: the server makes it follow (organization server)
-          // or says why it cannot.
-          const refreshed = needsDesktop
-            ? window.ogb?.approvals
-              ? stepUpApprovals(window.ogb.approvals)!.setMode(action.botId, mode, {
+          // server, a browser), Full comes back through the thread route:
+          // an organization server grants it to the bot's owner, any other
+          // says why. Custom stays on the desktop channel.
+          const bridge = window.ogb?.approvals;
+          const refreshed = needsDesktop && (bridge || mode === "custom" || current === "custom")
+            ? bridge
+              ? stepUpApprovals(bridge)!.setMode(action.botId, mode, {
                 threadId: action.threadId, threadOnly: true, refreshPermissions: true, acknowledgeLocalAuto,
               })
-              : mode === "full" && current !== "custom"
-                ? api<{ bot: BotAnnouncement }>(`/api/bots/${action.botId}`, {
-                  method: "PATCH",
-                  body: JSON.stringify({ approvalMode: "full", threadId: action.threadId }),
-                }).then((result) => result.bot)
-                : Promise.reject(new Error("Custom approval, and leaving it, are set in the Sagax desktop app on the computer that runs this server"))
+              : Promise.reject(new Error("Custom approval, and leaving it, are set in the Sagax desktop app on the computer that runs this server"))
             : api<{ bot: BotAnnouncement }>(`/api/bots/${action.botId}/tasks/${action.threadId}`, {
               method: "PATCH",
               body: JSON.stringify({ refreshPermissions: true, ...(acknowledgeLocalAuto ? { acknowledgeLocalAuto: true } : {}) }),

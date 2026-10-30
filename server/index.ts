@@ -51910,7 +51910,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // Full and Custom never travel over the bot-reachable HTTP surface.
         // The desktop's private channel copies those levels, and it is also
         // the only way to leave Custom.
-        if (nextMode === "full" || nextMode === "custom") {
+        // #1674: on an organization server Full comes back to this thread as
+        // the bot's owner grants it (orgFullGrant below): the same rule, no
+        // desktop channel there.
+        const orgFullRefresh = nextMode === "full" && IDENTITY.kind === "perspicax";
+        if (orgFullRefresh) {
+          if (callerBotsReadOnly(auth)) return json(res, 403, BOTS_READ_ONLY);
+          const refusal = orgFullAccessRefusalFor(auth, profile, false);
+          if (refusal) return json(res, refusal.status, { error: refusal.error, code: refusal.code, ...("permission" in refusal ? permissionRefusal(refusal.permission) : {}) });
+        }
+        if (!orgFullRefresh && (nextMode === "full" || nextMode === "custom")) {
           return json(res, 403, { error: "Full access and Custom approval are turned on in the Sagax desktop app on the computer that runs this server" });
         }
         if (approvalModeFor(current) === "custom") {

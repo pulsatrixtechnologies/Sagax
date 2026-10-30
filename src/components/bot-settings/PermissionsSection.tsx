@@ -86,7 +86,9 @@ export function PermissionsSection({
   // threads and routines) over HTTP while the organization allows it.
   const perspicaxOrg = usePerspicaxOrg();
   const viewerId = state.config?.viewer?.principalId ?? null;
-  const orgFullAccess = draft ? undefined : orgFullAccessFor(perspicaxOrg, bot, viewerId);
+  // Edit N bots (#1674) offers Full as Edit bot does: the draft stands for
+  // the viewer's bots, and the server decides each one at Apply.
+  const orgFullAccess = draft && !bulk ? undefined : orgFullAccessFor(perspicaxOrg, bot, viewerId);
   // The menu shows the open conversation. The grant names that conversation
   // so the saved level is the one still on screen after the reply.
   const grantOrgFull = (target: string, confirm: boolean) => {
@@ -111,7 +113,7 @@ export function PermissionsSection({
     setApprovalNotice(null);
     if (mode === "full" && orgFullAccess !== undefined) {
       if (orgFullAccess !== "allowed") return;
-      if (fullAccessNeedsConfirmation(bot, viewerId, true)) setFullAccessTarget(bot.id);
+      if (bulk || fullAccessNeedsConfirmation(bot, viewerId, true)) setFullAccessTarget(bot.id);
       else grantOrgFull(bot.id, false);
       return;
     }
@@ -343,7 +345,9 @@ export function PermissionsSection({
           const target = fullAccessTarget;
           setFullAccessTarget(null);
           if (!target) return;
-          if (orgFullAccess !== undefined) {
+          // Edit N bots keeps the level as each bot's own change; its save
+          // takes the organization's route where there is no desktop channel
+          if (orgFullAccess !== undefined && !bulk) {
             grantOrgFull(target, true);
             return;
           }

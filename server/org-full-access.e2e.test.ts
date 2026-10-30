@@ -20,7 +20,8 @@
 //   FA-6  (#1674) the packaged desktop app on this remote server has no
 //         private approval channel (its page is the server's): the app's own
 //         saves turn Full on through the server, for the conversation and
-//         for the bot, never a false "requires the packaged desktop app"
+//         for the bot, never a false "requires the packaged desktop app";
+//         Refresh permissions brings the bot's Full back to a thread
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -335,5 +336,15 @@ posixOnly("organization Full access", () => {
     const bot = await persistBotUpdate(zed.id, { approvalMode: "full", confirmFullAccess: true, threadId: zed.threadId }, new AbortController().signal, request, undefined);
     expect(bot.approvalMode).toBe("full");
     expect(await threadOf(zed.threadId)).not.toHaveProperty("approvalOwn");
+
+    // "Use Full access here" / Refresh permissions: the thread's own level
+    // gives way to the bot's Full through the thread route, no desktop channel
+    expect((await api("PATCH", `/api/bots/${zed.id}/tasks/${zed.threadId}`, erin, { approvalMode: "ask" })).status).toBe(200);
+    expect(await threadOf(zed.threadId)).toMatchObject({ approvalMode: "ask", approvalOwn: "thread" });
+    const refreshed = await api("PATCH", `/api/bots/${zed.id}/tasks/${zed.threadId}`, erin, { refreshPermissions: true });
+    expect(refreshed.status, refreshed.text).toBe(200);
+    expect(await threadOf(zed.threadId)).not.toHaveProperty("approvalOwn");
+    // someone who does not own the bot is refused in the server's words
+    expect((await api("PATCH", `/api/bots/${zed.id}/tasks/${zed.threadId}`, alice, { refreshPermissions: true })).status).toBeGreaterThanOrEqual(400);
   }, 60_000);
 });
