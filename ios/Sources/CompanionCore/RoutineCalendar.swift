@@ -174,18 +174,21 @@ public enum RoutineCalendar {
         _ day: Date, routines: [Routine], runs: [RoutineRun], botId: String? = nil, calendar: Calendar = .current
     ) -> [RoutineCalendarItem] {
         let start = startOfDay(day, calendar: calendar)
-        return planned(items(routines: routines, runs: runs, from: start, to: addDays(start, 1, calendar: calendar), calendar: calendar))
+        // Calendar is not a log (#872): plans from the schedule only. Run
+        // receipts stay in List / Logs and must not paint the day.
+        _ = runs
+        return planned(items(routines: routines, runs: [], from: start, to: addDays(start, 1, calendar: calendar), calendar: calendar))
             .filter { botId == nil || $0.botId == botId }
     }
 
-    /// The calendar shows what was PLANNED, never what ran: a receipt becomes
-    /// its plain planned occurrence (no status), a receipt of a deleted
-    /// routine goes away, and the history stays in the list view.
+    /// The calendar shows what was PLANNED, never what ran (#872). Plans come
+    /// from the schedule alone; run receipts (including a deleted routine's
+    /// past runs) stay in List / Logs.
     public static func planned(_ items: [RoutineCalendarItem]) -> [RoutineCalendarItem] {
         var seen = Set<String>()
         var out: [RoutineCalendarItem] = []
         for item in items {
-            guard let routine = item.routine else { continue }
+            guard let routine = item.routine, item.run == nil else { continue }
             let id = "plan-\(routine.id)-\(Int64(item.at.rounded()))"
             if !seen.insert(id).inserted { continue }
             out.append(RoutineCalendarItem(id: id, at: item.at, durationMinutes: item.durationMinutes, routine: routine, run: nil))

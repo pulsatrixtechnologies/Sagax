@@ -317,25 +317,22 @@ export function projectedRoutineItems(
 
 /**
  * What the Calendar view draws: the PLANNED occurrences only, past and future,
- * at their scheduled time. A run is a log entry (status, result), so it never
- * shows here; it only confirms that a planned occurrence took place. A
- * deleted routine has no plan left: its past runs show from their own record
- * (name kept on the run, `routine` null), so its history stays (#1506).
+ * at their scheduled time (#872). A run is a log entry (status, result): it
+ * never paints the calendar, including past runs of a deleted routine.
+ * History stays in List / Logs.
  */
 export function scheduledRoutineItems(
   routines: Routine[],
-  runs: RoutineRun[],
+  _runs: RoutineRun[],
   from: number,
   to: number,
 ): RoutineCalendarItem[] {
   const seen = new Set<string>();
   const items: RoutineCalendarItem[] = [];
-  // A manual "Run now" is not a planned occurrence.
-  for (const item of projectedRoutineItems(routines, runs.filter((run) => !run.manual), from, to)) {
-    if (!item.routine) {
-      if (item.run) items.push({ ...item, id: `deleted-${item.run.id}` });
-      continue;
-    }
+  // Empty runs: do not inject receipts as calendar markers. Plans come from
+  // the schedule alone (nextRunAt / daily / cron / once).
+  for (const item of projectedRoutineItems(routines, [], from, to)) {
+    if (!item.routine) continue;
     const id = `plan-${item.routine.id}-${item.at}`;
     if (seen.has(id)) continue;
     seen.add(id);
