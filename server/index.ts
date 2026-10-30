@@ -41104,11 +41104,6 @@ function applyOrgEngineAllowList(): void {
       const move = { from: orgEngineName(bot.modelSelection.instanceId), to: orgEngineName(next.instanceId) };
       if (bot.threadId) store.appendMessage(bot.threadId, { role: "bot", kind: "activity", tool: { name: `notice: ${orgEngineMoveLine(move)}`, ok: true, engineMove: move } });
     }
-    for (const task of store.bot(id)?.tasks ?? []) {
-      if (!task.modelSelection) continue;
-      const cleanedTask = withoutDisabledFast(task.modelSelection);
-      if (cleanedTask !== task.modelSelection) store.patchTask(id, task.threadId, { modelSelection: cleanedTask });
-    }
     const stray = (store.bot(id)?.tasks ?? [])
       .filter((task) => task.modelSelection && !engineAllowed(allowed, task.modelSelection.instanceId) && !ownKept(task.modelSelection.instanceId))
       .map((task) => task.threadId);
