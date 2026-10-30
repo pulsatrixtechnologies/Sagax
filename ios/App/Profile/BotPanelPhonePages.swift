@@ -181,7 +181,7 @@ struct BotModelSection: View {
                         busy = true
                         Task {
                             defer { busy = false }
-                            if let updated = await session.updateModel(profile.modelSelection, for: current, updateBotDefault: false) {
+                            if let updated = await session.updateModel(profile.modelSelection, for: current, updateBotDefault: true) {
                                 saved = updated.projected(forThread: bot.threadId)?.currentTaskModelSelection ?? profile.modelSelection
                                 instanceID = saved.instanceId
                                 modelID = saved.model
@@ -196,14 +196,6 @@ struct BotModelSection: View {
                 if current.busy == true {
                     Label("Stop this bot before changing its model.", systemImage: "hourglass")
                         .font(.footnote).foregroundStyle(Theme.textSecondary)
-                }
-            }
-        } footer: {
-            let own = ModelPickerRules.threadsOnOwnModel(botModel: profile.modelSelection, tasks: profile.tasks ?? [])
-            VStack(alignment: .leading, spacing: 4) {
-                Text("This thread and the bot's model. Groups and new threads use the bot's model; a thread on its own model keeps it.")
-                if own > 0 {
-                    Text(own == 1 ? String(localized: "1 thread uses its own model.") : String(localized: "\(own) threads use their own model."))
                 }
             }
         }

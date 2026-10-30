@@ -240,7 +240,7 @@ describe("reviewed Chief team setup", () => {
     expect(h.messages).toHaveLength(1);
     expect(request.title).toBe("Apply setup for 1 bot?");
     expect(h.messages[0].card?.teamSetupRequest?.operations).toHaveLength(1);
-    expect(request.detail).toContain("Every existing thread keeps its current model and permissions");
+    expect(request.detail).toContain("Existing permissions stay unchanged");
     expect(h.peer.title).toBe("");
     expect((await h.resolve(request.requestId))?.result.state).toBe("applied");
     expect(h.peer).toMatchObject({ title: "Research lead", soul: "Verify sources.", modelSelection: { instanceId: "codex", model: "gpt-fixture" } });

@@ -44,3 +44,16 @@ export interface AutoModelRecord {
   fromEngineLabel?: string;
   at: number;
 }
+
+/** A live explanation uses the same candidate list and chain as dispatch. */
+export type AutoExclusionReason = "adminOff" | "modelOff" | "offline" | "reconnect" | "credentials" | "policy" | "approval" | "capabilities" | "refused" | "limit";
+export interface AutoModelEntry { instanceId: string; engineLabel: string; model: string; modelLabel: string; via?: AutoPayerVia }
+export interface AutoModelExcluded { instanceId: string; engineLabel: string; model?: string; modelLabel?: string; reason: AutoExclusionReason }
+export interface AutoModelPreview {
+  auto: boolean;
+  pick: AutoModelRecord | null;
+  chain: AutoModelEntry[];
+  excluded: AutoModelExcluded[];
+  /** Actual configured startup recovery for a pinned model. */
+  backups: AutoModelEntry[];
+}

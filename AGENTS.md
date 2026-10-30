@@ -38,6 +38,30 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## One flat model picker and dispatch preview (2026-10-30)
+
+Lot 4 of "Providers, models and voice". The window and composer list active,
+ready models by provider, without connection cards or nested provider menus.
+A single Providers link opens Settings. The change is silent, with no scope notice, counter, extra CTA or notification.
+The window previews the model and provider on hover or keyboard navigation and shows
+actual configured recovery choices, including custom/local compatible endpoints.
+It names the solo account; organization payers remain unconfirmed until a turn
+plan is known, since the reader's account does not determine a shared bot or routine
+payer. A model picked in a thread with
+`updateBotDefault: true` updates the bot and clears every thread's old model
+override atomically (`switchTaskModel`, matching renderer reducer). Each
+thread keeps its permissions. Bot PATCH, reviewed defaults and native iOS picks
+use the same rule. Low-level thread-only calls still work.
+
+`GET /api/bots/:id/auto-model` also answers for a pinned bot: `auto` says
+whether it is on, `chain` is the dispatch chain, `excluded` names candidate
+exclusions and their reasons, and `backups` is configured startup recovery.
+Another person's endpoint never appears. Disabled or refused base models
+cannot sneak back into Auto's chain. Settings > Models shows these same
+server diagnostics for a chosen bot (`AutoModelSettings`). Tests: model
+picker interaction/Simple, model-health, model-auto, store, model-switches
+and bot-continuity fixtures; headless composer turn smoke.
+
 ## Personal provider accounts and one voice path (2026-10-30)
 
 Lot 3 of "Providers, models and voice". A person manages all 17 personal

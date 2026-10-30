@@ -2365,24 +2365,13 @@ export class Store {
     return result;
   }
 
-  /** A bot's threads as a change of its model to `next` leaves them. Each
-   * keeps the level it runs at now (older threads may still inherit the
-   * bot's, which may change in the same write); one that follows the bot
-   * moves with it, at the same level; a thread's own model stays. */
+  /** Every bot-default model change clears old thread pins silently. Each
+   * conversation keeps its own permission level and other settings. */
   private withDefaultModel(bot: BotRecord): TaskRecord[] | undefined {
-    return bot.tasks?.map((task) => ({
-      // 2026-10-20 (prod: routines left on the old instance): a thread whose
-      // own model is the bot's old default was only a copy of it and follows
-      // the bot like the others; a model the person picked there stays
-      ...(task.modelSelection !== undefined && sameModelSelection(task.modelSelection, bot.modelSelection) ? withoutModel(task) : task),
-      // #1169/#1170: the level is the bot's, live; a thread's own exception stays
-    }));
+    return bot.tasks?.map(withoutModel);
   }
 
-  /** One reviewed default-model change (propose_model), with
-   * applyTeamSetup's task stamping (withDefaultModel): every thread that
-   * follows the bot moves to the new model, and a thread's own model, which a
-   * person picked there, stays. */
+  /** A reviewed default-model change reaches all conversations in one save. */
   applyModelDefault(id: string, modelSelection: ModelSelection): BotRecord | null {
     const previous = this.bot(id);
     if (!previous) return null;
@@ -2498,6 +2487,9 @@ export class Store {
       const parsed = parseToolScope(patch.toolScope);
       if (!parsed.ok) throw new Error(parsed.error);
       patch = { ...patch, toolScope: parsed.scope };
+    }
+    if (patch.modelSelection !== undefined) {
+      patch = { ...patch, tasks: (patch.tasks ?? bot.tasks)?.map(withoutModel) };
     }
     const wideningToolScope = Object.hasOwn(patch, "toolScope") && toolScopeWidens(bot.toolScope, patch.toolScope);
     const nextToolScope = patch.toolScope;
@@ -3455,9 +3447,9 @@ export class Store {
     }
     const nextTask = persistedPin({ ...task, ...taskPatch, modelSelection: own,
       ...(typeof taskPatch.title === "string" ? { title: taskPatch.title.trim().slice(0, 80) || UNTITLED_THREAD } : {}) });
-    // A new bot model moves the threads that follow it (withDefaultModel);
-    // every other thread keeps its model and the level it runs at now.
-    const others = updateBotDefault ? this.withDefaultModel(bot)! : bot.tasks!;
+    // 2026-10-30: a model picked for this bot applies to every thread,
+    // including earlier thread-specific picks. Permission levels stay.
+    const others = updateBotDefault ? bot.tasks!.map(withoutModel) : bot.tasks!;
     const nextTasks = bot.tasks!.map((candidate, index) => candidate === task ? nextTask : others[index]!);
     const botPatch = updateBotDefault ? { modelSelection: structuredClone(selection) } : {};
     this.saveBots(this.bots.map((candidate) => candidate === bot ? { ...bot, ...botPatch, tasks: nextTasks } : candidate));

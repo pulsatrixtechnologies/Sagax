@@ -156,6 +156,11 @@ function ProviderDetail({ row, member, issuer }: { row: ProviderRow; member: boo
     <>
       <p className="text-[12px] leading-relaxed text-ink-secondary">{t(`providers.explain.${row.payer}` as LocaleKey)} {t(`providers.explainWhere.${row.keyWhere}` as LocaleKey)}</p>
       {row.state === "adminOff" && <p className="text-[12px] leading-relaxed text-ink-secondary">{t("providers.adminOffHint")}</p>}
+      {instances.map((instance) => instance.models.issue && (
+        <p key={instance.instanceId} data-model-list-issue={instance.models.issue} className="text-[12.5px] leading-relaxed text-ink">
+          {t(`model.listIssue.${instance.models.issue}`)}
+        </p>
+      ))}
       {/* the organization's or the server's key: its dialog */}
       {row.keyRow && row.manage && !row.voiceKey && !row.accountProvider && (
         <div className="flex flex-wrap items-center gap-2">

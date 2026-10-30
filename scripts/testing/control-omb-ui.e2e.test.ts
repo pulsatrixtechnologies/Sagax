@@ -213,12 +213,13 @@ describe("control-omb ui drives the real renderer", () => {
     // Settings is its own chunk (src/components/lazy-screens.tsx): opened before
     // the idle prefetch has fetched it, it paints once the chunk arrives.
     await expect.poll(() => evaluate(`(() => {
-      const tab = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Models');
+      const tab = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Providers');
       tab?.click();
       return Boolean(tab);
     })()`), { timeout: 10_000 }).toBe(true);
     // The OpenAI-compatible key opens in its own dialog from the provider key list.
-    await expect.poll(() => evaluate(`(() => { const b = document.querySelector('[data-provider-key="openaiCompat"] button'); b?.click(); return Boolean(b); })()`), { timeout: 10_000 }).toBe(true);
+    await expect.poll(() => evaluate(`(() => { const b = document.querySelector('[data-provider-row$=":openaiCompat"] > button'); b?.click(); return Boolean(b); })()`), { timeout: 10_000 }).toBe(true);
+    await expect.poll(() => evaluate(`(() => { const b = document.querySelector('[data-provider-key-open="openaiCompat"]'); b?.click(); return Boolean(b); })()`), { timeout: 10_000 }).toBe(true);
     await expect.poll(() => evaluate(`document.querySelector('[data-provider-key-dialog="openaiCompat"] [data-api-key-row="openaiCompat"]') !== null`), { timeout: 10_000 }).toBe(true);
 
     // A saved key with an untouched field can be checked again.
@@ -290,14 +291,12 @@ describe("control-omb ui drives the real renderer", () => {
     // the mascot opens with omb:composer-model (Composer.grok.test.ts).
     await expect.poll(async () => (await ui("eval", info.ui, "--js", "String(Boolean(document.querySelector('[data-composer-model]')))")).result, { timeout: 10_000 }).toBe("true");
     await ui("eval", info.ui, "--js", `window.dispatchEvent(new CustomEvent("omb:composer-model", { detail: { botId: ${JSON.stringify(info.botId)} } })); true`);
+    await ui("screenshot", info.ui, "--out", join(evidenceDir, "before-model-menu.png"));
     await expect.poll(async () => (await ui("eval", info.ui, "--js", "String(document.querySelector('[aria-label=\"Apply model changes to\"]') === null && Boolean(document.querySelector('[data-model-menu]')))")).result, { timeout: 10_000 }).toBe("true");
     const scopeShot = join(evidenceDir, "model-dropdown.png");
     mkdirSync(evidenceDir, { recursive: true });
     await ui("screenshot", info.ui, "--out", scopeShot);
-    // Models sit in a submenu per provider (#477), behind Provider (2026-10-18): open the bot's provider first.
-    await ui("eval", info.ui, "--js", "document.querySelector('[data-model-menu] [data-model-all]').click(); true");
-    await expect.poll(async () => (await ui("eval", info.ui, "--js", `String(Boolean(document.querySelector('[data-model-menu] [data-model-provider="${originalBot.modelSelection.instanceId}"]')))`)).result, { timeout: 10_000 }).toBe("true");
-    await ui("eval", info.ui, "--js", `document.querySelector('[data-model-menu] [data-model-provider="${originalBot.modelSelection.instanceId}"]').click(); true`);
+    // Active models are immediately visible in the flat provider groups.
     await expect.poll(async () => (await ui("eval", info.ui, "--js", `Boolean(document.querySelector('[data-model-menu] [data-model-option="${nextModel.id}"]'))`)).result, { timeout: 10_000 }).toBe(true);
     await ui("eval", info.ui, "--js", `document.querySelector('[data-model-menu] [data-model-option="${nextModel.id}"]').click(); true`);
     await expect.poll(async () => (await savedBot()).modelSelection.model, { timeout: 10_000 }).toBe(nextModel.id);
@@ -340,12 +339,13 @@ describe("control-omb ui drives the real renderer", () => {
     // CLI, so all three are verified; one failed and one was a dry run.
     expect(tree).toContain("3 steps · 3 verified · 1 failed · 1 dry run");
 
+    await ui("screenshot", info.ui, "--out", join(evidenceDir, "model-picked-fixture-turn.png"));
     // Hit-test the actual layout, not just the Tailwind class strings: the
     // blank band beside the floating card must reach the transcript while
     // the card and composer remain interactive.
     const hitTest = await ui("eval", info.ui, "--js", `(() => {
       const card = document.querySelector('section[aria-label="This run"]');
-      const dock = card.parentElement.parentElement;
+      const dock = card.closest("[data-run-overlay]");
       const rect = card.getBoundingClientRect();
       const blank = document.elementFromPoint(dock.getBoundingClientRect().left + 8, rect.top + rect.height / 2);
       const onCard = document.elementFromPoint(rect.left + 20, rect.top + 20);

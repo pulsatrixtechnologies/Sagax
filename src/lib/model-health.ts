@@ -52,7 +52,7 @@ export function modelUsable(instance: InstanceInfo, modelId: string, context: He
   const localRows = localModelRows(instance.models.options, context.orgMode);
   const localIds = new Set(localRows.map((row) => row.id));
   // an organization server never offers its own custom models
-  if (context.orgMode && option.custom && !localIds.has(option.id)) return false;
+  if (context.orgMode && option.custom && !localIds.has(option.id) && instance.access !== "api") return false;
   if (isLocalOption(option, context.orgMode, localIds)) {
     return !localIds.has(option.id) || localRowUnavailable(instance.driverKind, option.id, option.anthropic) === null;
   }

@@ -444,7 +444,7 @@ import { renewalPrompt, type RenewalStep } from "./context-renewal.ts";
 import { ModelCatalogStore } from "./model-catalog/catalog.ts";
 import { turnRunFor, type TurnRun } from "./turn-run.ts";
 import { attachmentsInText, autoModelRecord, bareModelId, concrete as concreteSelection, explainPick, familyOfModel, isModelRefusal, nextInChain, pickEquivalentModel, pickOrchestrationModel, pickVoiceModel, pickWorkerModel, tierOfModel, type AutoChainEntry, type AutoEngine, type AutoPick, type CatalogFacts } from "./model-auto.ts";
-import type { AutoModelRecord } from "../shared/auto-model.ts";
+import type { AutoModelRecord, AutoModelExcluded, AutoModelEntry, AutoExclusionReason } from "../shared/auto-model.ts";
 import { decodeGeneratedImage } from "./generated-image.ts";
 import {
   MAX_DISABLED_TOOLS,
@@ -25657,7 +25657,7 @@ function dispatchTeamSetupResume(entry: TeamSetupResumeEntry): void {
   }
   const notNow = request.suggestion && request.result?.state === "denied"
     ? " The user chose Not now for this suggested specialist. Do not suggest another specialist in this conversation unless they ask for one." : "";
-  const prompt = `Sagax team setup decision ${request.requestId}: ${JSON.stringify(request.result)}. Report this exact result and continue the user's already requested work. Do not ask for confirmation again or repeat this setup/deletion. A denied or cancelled operation did not authorize any substitute action. Existing thread models were not changed.${notNow}`;
+  const prompt = `Sagax team setup decision ${request.requestId}: ${JSON.stringify(request.result)}. Report this exact result and continue the user's already requested work. Do not ask for confirmation again or repeat this setup/deletion. A denied or cancelled operation did not authorize any substitute action. Each changed bot's model applies to all its threads.${notNow}`;
   const failed = (error: string) => {
     if (cancelled()) return;
     const current = store.messagesFor(request.threadId).find((item) => item.id === messageId);
@@ -30535,7 +30535,7 @@ function autoRefusalsFor(payer: string): AutoChainEntry[] {
  * engine counts while its availability is unknown; another engine only when
  * it is known to work, the payer can pay for it, and moving there keeps the
  * bot's approval level, tools and workspace. */
-function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = false): AutoEngine[] {
+function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = false, excluded?: AutoModelExcluded[]): AutoEngine[] {
   const base = registry.get(bot.modelSelection.instanceId);
   const mode = approvalModeFor(bot);
   const engines: AutoEngine[] = [];
@@ -30544,33 +30544,50 @@ function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = fa
   if (IDENTITY.kind !== "perspicax" && (!engineProbes.size || [...engineProbes.values()].some((probe) => Date.now() - probe.at > ENGINE_PROBE_TTL_MS))) {
     void probeEngines().catch(() => {});
   }
+  const payer = autoPayerKey(bot, speaker);
   for (const instance of registry.instances()) {
-    if (!instance.enabled || providerInstancesChanging.has(instance.instanceId) || policyModelRefusal(instance)) continue;
+    // Another person's endpoint is never named, including in exclusions.
+    if (!personalProviderInstances.visible(instance.instanceId, IDENTITY.kind === "perspicax" ? payer : "solo")) continue;
+    const omit = (reason: AutoExclusionReason) => excluded?.push({ instanceId: instance.instanceId, engineLabel: engineDisplayName(instance), reason });
+    if (!instance.enabled || providerInstancesChanging.has(instance.instanceId)) { omit("offline"); continue; }
+    if (policyModelRefusal(instance)) { omit("policy"); continue; }
     // 2026-10-30: Auto picks only what the organization's list allows, even
     // when the person's own account could run another engine (that one is
     // picked by name, when the organization lets own accounts through).
-    if (!consoleEngineAllowed(instance.instanceId) || orgEngineTurnRefusal(bot, instance, speaker)) continue;
+    if (!consoleEngineAllowed(instance.instanceId)) { omit("adminOff"); continue; }
+    if (orgEngineTurnRefusal(bot, instance, speaker)) {
+      const expired = payer && isLoginDriver(instance.driverKind) && engineLogins?.expired(payer, instance.driverKind);
+      omit(expired ? "reconnect" : "credentials"); continue;
+    }
     // A guest's turn on a Cloud home runs only on an engine that confines it.
-    if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") continue;
+    if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") { omit("capabilities"); continue; }
     const own = instance.instanceId === base?.instanceId;
     if (!own) {
-      if (!base) continue;
-      if (modelSwitchNeedsAsk(mode, base.driverKind, instance.driverKind)) continue;
+      if (!base) { omit("capabilities"); continue; }
+      if (modelSwitchNeedsAsk(mode, base.driverKind, instance.driverKind)) { omit("approval"); continue; }
       if (recoveryCapabilityError(
         { driverKind: base.driverKind, capabilities: base.adapter.capabilities },
-        { driverKind: instance.driverKind, capabilities: instance.adapter.capabilities })) continue;
+        { driverKind: instance.driverKind, capabilities: instance.adapter.capabilities })) { omit("capabilities"); continue; }
       if (IDENTITY.kind === "perspicax") {
-        if (instance.adapter.capabilities.withholdsHostTools !== true) continue;
-      } else if (engineProbes.get(instance.instanceId)?.ready !== true) continue;
+        if (instance.adapter.capabilities.withholdsHostTools !== true) { omit("capabilities"); continue; }
+      } else if (engineProbes.get(instance.instanceId)?.ready !== true) {
+        omit("offline"); continue;
+      }
     }
     let via: AutoEngine["via"] = "server";
     if (IDENTITY.kind === "perspicax") {
       const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
-      if (!plan.ok) continue;
+      if (!plan.ok) {
+        const expired = payer && isLoginDriver(instance.driverKind) && engineLogins?.expired(payer, instance.driverKind);
+        omit(expired ? "reconnect" : "credentials"); continue;
+      }
       via = plan.via;
     }
     // 2026-10-30 (lot 2): only models still on, for the organization and the bot's owner
     const switches = modelSwitchesFor(effectiveBotOwner(bot));
+    for (const option of instance.models.options) {
+      if (!modelOn(switches, instance.instanceId, option.id)) excluded?.push({ instanceId: instance.instanceId, engineLabel: engineDisplayName(instance), model: option.id, modelLabel: option.label || option.id, reason: "modelOff" });
+    }
     const options = instance.models.options.filter((option) => !option.custom && modelOn(switches, instance.instanceId, option.id) &&
       (!hostedModels || hostedModels.allows({ instanceId: instance.instanceId, model: option.id })));
     // The bot's fast model (#1209): any row this engine lists, a local or
@@ -49839,9 +49856,40 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     m = path.match(/^\/api\/bots\/([\w-]+)\/auto-model$/);
     if (m && method === "GET") {
       const bot = requestedTaskBot(m[1], url.searchParams.get("threadId") ?? undefined);
-      if (bot.modelSelection.auto !== true) return json(res, 200, { auto: false });
-      const turn = autoPickForTurn({ bot, threadId: bot.threadId, speaker: speakerFor(auth), role: "orchestration", text: "" });
-      return json(res, 200, { auto: true, pick: turn ? autoModelRecord(turn.pick, Date.now()) : null, explanation: turn ? explainPick(turn.pick) : "" });
+      const speaker = speakerFor(auth);
+      const previewBot = { ...bot, modelSelection: { ...bot.modelSelection, auto: true as const } };
+      const excluded: AutoModelExcluded[] = [];
+      const engines = autoEnginesFor(previewBot, speaker, false, excluded);
+      const payer = autoPayerKey(bot, speaker);
+      const refused = autoRefusalsFor(payer);
+      const limited = limitFailover.autoExcluded(payer, engines);
+      const entry = (choice: { instanceId: string; model: string }): AutoModelEntry | null => {
+        const engine = engines.find((candidate) => candidate.instanceId === choice.instanceId);
+        const option = engine?.models.options.find((candidate) => candidate.id === choice.model);
+        return engine && option ? { ...choice, engineLabel: engine.displayName, modelLabel: option.label || option.id, ...(engine.via ? { via: engine.via } : {}) } : null;
+      };
+      for (const choice of refused) {
+        const item = entry(choice); if (item) excluded.push({ ...item, reason: "refused" });
+      }
+      for (const engine of engines) {
+        if (limited.has(engine.instanceId) && engines.some((candidate) => !limited.has(candidate.instanceId))) excluded.push({ instanceId: engine.instanceId, engineLabel: engine.displayName, reason: "limit" });
+      }
+      const turn = autoPickForTurn({ bot: previewBot, threadId: bot.threadId, speaker, role: "orchestration", text: "" });
+      const chain = (turn?.pick.chain ?? []).flatMap((choice) => {
+        const item = entry(choice);
+        return item && !refused.some((skip) => skip.instanceId === choice.instanceId && skip.model === choice.model) ? [item] : [];
+      });
+      const usablePick = turn && chain.some((choice) => choice.instanceId === turn.pick.selection.instanceId && choice.model === turn.pick.selection.model);
+      // Recovery uses the saved selections, including custom/local endpoints
+      // that the automatic candidate scorer intentionally leaves out.
+      const backups = botRecoveryBackups(bot, cfg).flatMap((choice) => {
+        const instance = registry.get(choice.instanceId);
+        if (!instance || !personalProviderInstances.visible(choice.instanceId, IDENTITY.kind === "perspicax" ? actorPrincipalId(auth) ?? "" : "solo")) return [];
+        const option = instance.models.options.find((candidate) => candidate.id === choice.model);
+        return [{ ...choice, engineLabel: engineDisplayName(instance), modelLabel: option?.label || choice.model }];
+      });
+      return json(res, 200, { auto: bot.modelSelection.auto === true, pick: usablePick ? autoModelRecord(turn.pick, Date.now()) : null,
+        chain, excluded, backups, explanation: usablePick ? explainPick(turn.pick) : "" });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/command-allowlist(?:\/([\w-]+))?$/);
     if (m && ["GET", "POST", "DELETE"].includes(method)) {
@@ -50693,8 +50741,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // the next turn on each thread follows the new setting. Person-set pins
       // and pins that already match stay; returning to Auto sweeps nothing.
       if (computerSpecified && requestedComputer !== undefined) store.clearAutoSurfacePins(m[1], requestedComputer);
-      // A new bot model moves every thread that follows the bot; the selected
-      // thread follows it from now on too.
+      // patchBot moved every thread silently; hosted state for the selected
+      // thread is reset through the same model-change path.
       if (normalizedSelection && selectedTask) store.patchTask(bot.id, selectedTask.threadId, { modelSelection: undefined,
         ...hostedModels?.resetTask(selectedTask.modelSelection, normalizedSelection) });
       if (existingBot && (bot.browserProfile !== beforeBrowserProfile || bot.browser !== beforeBrowserEnabled)) {

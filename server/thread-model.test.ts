@@ -55,7 +55,7 @@ describe("threads follow their bot's model", () => {
       .every((task: TaskRecord) => !("modelSelection" in task))).toBe(true);
   });
 
-  it("a person's pick in one thread survives every change of the bot's model", () => {
+  it("a bot-default change clears every old thread model choice", () => {
     const store = open();
     const bot = store.createBot();
     const picked = store.createTask(bot.id, "Picked")!;
@@ -68,9 +68,9 @@ describe("threads follow their bot's model", () => {
     store.switchTaskModel(bot.id, follower.threadId, sonnet, true);
     store.applyTeamSetup({ version: 1, requestId: "setup", botId: bot.id, threadId: bot.threadId, reason: "Requested", createdAt: 1,
       requesterRevision: "fixture", newTeams: [], operations: [{ action: "update", botId: bot.id, fields: { modelSelection: opus } }] } as TeamSetupRequest);
-    expect(runsOn(store, bot.id, picked.threadId)).toEqual(codex);
+    expect(runsOn(store, bot.id, picked.threadId)).toEqual(opus);
     expect(runsOn(store, bot.id, follower.threadId)).toEqual(opus);
-    expect(ownModel(open(), bot.id, picked.threadId)).toEqual(codex);
+    expect(ownModel(open(), bot.id, picked.threadId)).toBeUndefined();
   });
 
   it("a thread whose own model is only a copy of the bot's old default follows the new one (prod 2026-10-20)", () => {
@@ -81,11 +81,11 @@ describe("threads follow their bot's model", () => {
     store.switchTaskModel(bot.id, copy.threadId, codex, false);
     store.switchTaskModel(bot.id, picked.threadId, opus, false);
     store.patchBot(bot.id, { modelSelection: codex });
-    // copy now holds the bot's default; a new default moves it, not the pick
+    // Both older pins follow the bot default after a change.
     store.applyModelDefault(bot.id, sonnet);
     expect(ownModel(store, bot.id, copy.threadId)).toBeUndefined();
     expect(runsOn(store, bot.id, copy.threadId)).toEqual(sonnet);
-    expect(ownModel(store, bot.id, picked.threadId)).toEqual(opus);
+    expect(ownModel(store, bot.id, picked.threadId)).toBeUndefined();
     // the same from a thread's "make it the bot's model", in memory too
     store.switchTaskModel(bot.id, copy.threadId, codex, false);
     store.patchBot(bot.id, { modelSelection: codex });
@@ -135,13 +135,13 @@ describe("threads follow their bot's model", () => {
     const saved = JSON.parse(readFileSync(join(DATA_DIR, "bots.json"), "utf8"))[0].tasks as TaskRecord[];
     expect(saved.map((entry) => entry.modelSelection)).toEqual([undefined, codex, { ...sonnet, effort: "high" }]);
 
-    // Once only: a pick that later equals the bot's model is still a pick, so
-    // when the bot moves on again the thread stays where the person put it.
+    // A later bot model change clears all historical picks, including a
+    // pick that already equals the new default.
     store.patchBot("legacy", { modelSelection: codex });
     const again = open();
-    expect(ownModel(again, "legacy", "different")).toEqual(codex);
+    expect(ownModel(again, "legacy", "different")).toBeUndefined();
     again.patchBot("legacy", { modelSelection: opus });
-    expect(runsOn(again, "legacy", "different")).toEqual(codex);
+    expect(runsOn(again, "legacy", "different")).toEqual(opus);
     expect(runsOn(again, "legacy", "copy")).toEqual(opus);
   });
 

@@ -195,7 +195,8 @@ describe("independent bot threads", () => {
     expect(thread.bots[0]?.tasks?.[0]).toMatchObject({ modelSelection: claude, approvalMode: "auto", alwaysAllow: ["Read"] });
     const everywhere = reducer(start(), { type: "setModel", botId: bot.id, threadId: "first", selection: claude, updateBotDefault: true });
     expect(everywhere.bots[0]?.tasks?.[0]).toMatchObject({ modelSelection: claude, approvalMode: "auto", alwaysAllow: ["Read"] });
-    expect(everywhere.bots[0]?.tasks?.[1]).toMatchObject({ approvalMode: "ask" });
+    expect(everywhere.bots[0]?.tasks?.[1]).toMatchObject({ approvalMode: "ask", modelSelection: claude, followsBotModel: true });
+    expect(everywhere.bots[0]?.modelSelection).toEqual(claude);
     expect(everywhere.bots[0]?.approvalMode).toBe(bot.approvalMode);
     const botOnly = reducer(start(), { type: "setModel", botId: bot.id, selection: claude });
     expect(botOnly.bots[0]).toMatchObject({ modelSelection: claude, approvalMode: bot.approvalMode });

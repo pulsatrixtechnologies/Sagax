@@ -473,6 +473,10 @@ export async function launchUi(
     checkpoint();
     const api = fixtureApi(fixture.info.url);
     await api("PATCH", "/api/config", { language: "en" });
+    // This disposable fixture person accepts terms before layout/interaction
+    // checks. An unrelated first-use dialog must not cover the tested screen.
+    const terms = await api("GET", "/api/me/terms") as { current?: string };
+    if (terms.current) await api("POST", "/api/me/terms", { version: terms.current });
     const created = await runControlOmb(["new-bot", "--name", SEEDED_BOT, "--url", fixture.info.url]) as { bot: { id: string } };
     checkpoint();
     // stdout carries the handle and nothing else; Vite's port and dependency
