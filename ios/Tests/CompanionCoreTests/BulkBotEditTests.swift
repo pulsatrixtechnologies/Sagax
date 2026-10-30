@@ -191,6 +191,27 @@ final class BulkBotEditTests: XCTestCase {
         XCTAssertEqual(api.calls, [#"PATCH b1 {"applyToAllThreads":true,"approvalMode":"full","confirmFullAccess":true}"#])
     }
 
+    // #1674: a bot with several threads refused a model that named none.
+    // The change is the bot's own, as Edit bot makes it: it names the bot's
+    // thread, on Apply and on undo; a change without a model names none.
+    func testANewModelNamesEachBotsThreadOnApplyAndUndo() async {
+        let api = FakeBulkAPI()
+        let model = BulkValue.object(["instanceId": .string("claude"), "model": .string("other")])
+        let plan = BulkBotEditPlan(fields: ["modelSelection": model, "speakReplies": .bool(true)])
+        let bots = [Bot.bulkFixture(id: "b1", name: "Atlas"), Bot.bulkFixture(id: "b2", name: "Iris")]
+        let result = await BulkBotEditRunner.apply(plan, bots: bots, enabledServers: [], api: api, reason: Self.reason)
+        XCTAssertEqual(result.outcomes.map(\.ok), [true, true])
+        XCTAssertEqual(api.calls, [
+            #"PATCH b1 {"modelSelection":{"instanceId":"claude","model":"other"},"speakReplies":true,"threadId":"t-b1"}"#,
+            #"PATCH b2 {"modelSelection":{"instanceId":"claude","model":"other"},"speakReplies":true,"threadId":"t-b2"}"#,
+        ])
+        let undoAPI = FakeBulkAPI()
+        _ = await BulkBotEditRunner.undo(result.undo, api: undoAPI, reason: Self.reason)
+        XCTAssertEqual(undoAPI.calls.count, 2)
+        XCTAssertTrue(undoAPI.calls.allSatisfy { $0.contains(#""threadId":"t-b"#) }, "\(undoAPI.calls)")
+        XCTAssertEqual(BulkBotEdit.withConsents(["voice": .string("ava"), "threadId": .string("draft")], threadId: "t-b1"), ["voice": .string("ava")])
+    }
+
     private static let reason: @Sendable (Error) -> String = { error in
         (error as? APIError)?.errorDescription ?? "failed"
     }

@@ -3960,7 +3960,10 @@ export async function persistTaskApproval(
 ): Promise<BotAnnouncement> {
   const { approvalMode, autoApprove, confirmFullAccess, organizationFullAccess, acknowledgeLocalAuto, ...ordinary } = patch;
   const mode = approvalMode ?? (autoApprove === undefined ? undefined : autoApprove ? "auto" : "ask");
-  if (mode === "full" && organizationFullAccess === true) {
+  // #1674: no private desktop channel (the desktop app on a remote server,
+  // a browser) is no reason to refuse Full here: the server decides. An
+  // organization server grants it to the bot's owner; any other answers why.
+  if (mode === "full" && (organizationFullAccess === true || !bridge)) {
     // Organization server: no desktop channel; the server decides (policy,
     // owner, the one-time confirmation it remembers for the bot).
     const result = await request(`/api/bots/${botId}/tasks/${threadId}`, { method: "PATCH",
@@ -3968,7 +3971,7 @@ export async function persistTaskApproval(
     return result.bot;
   }
   if (mode === "full" && confirmFullAccess !== true) throw new Error("Confirm Full access for this thread first");
-  if ((mode === "full" || mode === "custom") && !bridge) throw new Error("This approval change requires the packaged desktop app");
+  if (mode === "custom" && !bridge) throw new Error("Custom approval, and leaving it, are set in the Sagax desktop app on the computer that runs this server");
   if (mode && bridge) {
     if (Object.keys(ordinary).length) await request(`/api/bots/${botId}/tasks/${threadId}`, { method: "PATCH", body: JSON.stringify(ordinary) });
     return bridge.setMode(botId, mode, { threadId, threadOnly: true, acknowledgeLocalAuto: acknowledgeLocalAuto === true });
@@ -4003,7 +4006,9 @@ export async function persistBotUpdate(
   // names it, on its own request. Anywhere else it would be refused.
   const { threadId: openThreadId, ...withoutThread } = withThread;
   const ordinaryPatch: typeof withThread = withThread.modelSelection !== undefined ? withThread : withoutThread;
-  if (approvalMode === "full" && organizationFullAccess === true) {
+  // #1674: without the private desktop channel (a remote server) Full goes
+  // to the server, which grants it on an organization server.
+  if (approvalMode === "full" && (organizationFullAccess === true || !trustedApprovals)) {
     // Organization server: ordinary fields first, then the Full grant alone
     // (the server refuses anything riding along with it). The open
     // conversation is named so the level on screen is the one just saved.
@@ -4042,7 +4047,7 @@ export async function persistBotUpdate(
     throw new Error("Confirm the Full access warning before enabling it");
   }
   if (!trustedApprovals || approvalMode === undefined) {
-    throw new Error("This approval-level change requires the packaged desktop app");
+    throw new Error("Custom approval, and leaving it, are set in the Sagax desktop app on the computer that runs this server");
   }
 
   const trustedOptions = {
@@ -5220,12 +5225,21 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // Full, Custom, and leaving Custom stay on the private desktop
           // channel. Ask, Edits, and Auto can use the thread settings route.
           const needsDesktop = mode === "full" || mode === "custom" || current === "custom";
+          // #1674: without the private channel (the desktop app on a remote
+          // server, a browser), Full here is the bot's Full grant naming this
+          // conversation: the server makes it follow (organization server)
+          // or says why it cannot.
           const refreshed = needsDesktop
             ? window.ogb?.approvals
               ? stepUpApprovals(window.ogb.approvals)!.setMode(action.botId, mode, {
                 threadId: action.threadId, threadOnly: true, refreshPermissions: true, acknowledgeLocalAuto,
               })
-              : Promise.reject(new Error("This approval change requires the packaged desktop app"))
+              : mode === "full" && current !== "custom"
+                ? api<{ bot: BotAnnouncement }>(`/api/bots/${action.botId}`, {
+                  method: "PATCH",
+                  body: JSON.stringify({ approvalMode: "full", threadId: action.threadId }),
+                }).then((result) => result.bot)
+                : Promise.reject(new Error("Custom approval, and leaving it, are set in the Sagax desktop app on the computer that runs this server"))
             : api<{ bot: BotAnnouncement }>(`/api/bots/${action.botId}/tasks/${action.threadId}`, {
               method: "PATCH",
               body: JSON.stringify({ refreshPermissions: true, ...(acknowledgeLocalAuto ? { acknowledgeLocalAuto: true } : {}) }),

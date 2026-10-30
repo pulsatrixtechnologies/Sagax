@@ -69,7 +69,8 @@ describe("paired thread targets through an isolated HTTP fixture", () => {
     for (const [method, suffix, body] of actions) {
       const result = await paired(method, `/api/bots/${bot.id}${suffix}`, body);
       expect(result.status, `${method} ${suffix}`).toBe(409);
-      expect(result.body.error).toMatch(/Update the Sagax app on this device.*choose a thread/);
+      expect(result.body.error).toMatch(/several conversations and the change did not say which one/);
+      expect(result.body.error).not.toMatch(/Update the Sagax app/);
     }
     // The native sidecar's existing marker only narrows local behavior.
     const legacyPhone = await api("POST", `/api/bots/${bot.id}/read`, undefined, { "x-openmausbot-companion": "1", "x-openmausbot-companion-device": "fixture-phone" });
@@ -146,4 +147,46 @@ describe("paired thread targets through an isolated HTTP fixture", () => {
     expect(spoofed.status).toBe(403);
     expect((await page(bot.threadId)).messages).toEqual(before.messages);
   });
+
+  // #1674: Edit N bots on bots with several threads. Each bot took the whole
+  // change refused ("Update the Sagax app on this device") because the model
+  // named no thread; it is the bot's own edit, as Edit bot makes it.
+  it("applies Edit N bots to bots with several threads: model, permissions, voice and workspace change", async () => {
+    const created = [] as any[];
+    for (const name of ["Bulk one", "Bulk two", "Bulk three"]) {
+      const bot = (await api("POST", "/api/bots", { name, modelSelection: selection(models[0]) })).body.bot;
+      expect((await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Second" })).status).toBe(201);
+      created.push(bot);
+    }
+    const bots = await Promise.all(created.map((bot) => botState(bot.id)));
+    for (const bot of bots) expect(bot.tasks.length).toBeGreaterThan(1);
+    const saveBot = async (bot: any, patch: Record<string, unknown>) => {
+      const answer = await paired("PATCH", `/api/bots/${bot.id}`, patch);
+      if (answer.status >= 400) throw new Error(String(answer.body.error ?? answer.status));
+      return answer.body.bot;
+    };
+    // the app's own run (src/lib/bulk-bot-edit.ts, loaded at run time: the
+    // server's typecheck does not compile the app)
+    const appBulk: string = "../src/lib/bulk-bot-edit.ts";
+    type Outcome = { ok: boolean; skipped?: boolean; reasons?: string[] };
+    const { runBulkEdit } = await import(appBulk) as { runBulkEdit: (...args: unknown[]) => Promise<{ outcomes: Outcome[] }> };
+    const run = await runBulkEdit(bots, {
+      model: { patch: { modelSelection: selection(models[1]) } },
+      permissions: { patch: { approvalMode: "edits" } },
+      voice: { patch: { speakReplies: true } },
+      access: { patch: { cwd: "/tmp" } },
+    }, { request: (path: string, init?: RequestInit) => paired(init?.method ?? "GET", path, init?.body ? JSON.parse(String(init.body)) : undefined).then((r) => r.body), saveBot });
+    for (const outcome of run.outcomes) {
+      expect(outcome, JSON.stringify(outcome)).toMatchObject({ ok: true });
+      expect(outcome.skipped).toBeUndefined();
+      expect(outcome.reasons).toBeUndefined();
+    }
+    for (const bot of bots) {
+      const now = await botState(bot.id);
+      expect(now.modelSelection).toEqual(selection(models[1]));
+      expect(now.approvalMode).toBe("edits");
+      expect(now.speakReplies).toBe(true);
+      expect(now.cwd).toBe("/tmp");
+    }
+  }, 60_000);
 });

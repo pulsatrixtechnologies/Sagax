@@ -539,6 +539,17 @@ export function createSettingsActions(deps: SettingsActionDeps) {
       if (!current || typeof current !== "object") return text(404, "This bot's model could not be read.");
       built = { ...built, body: { modelSelection: { ...(current as Record<string, unknown>), effort: value } } };
     }
+    if ((spec.key === "bot.model" || spec.key === "bot.effort") && "method" in built && built.body && typeof built.body === "object" && !Array.isArray(built.body)
+      && (built.body as Record<string, unknown>).modelSelection !== undefined && ids.target) {
+      // #1674: the bot's own model, as Edit bot sets it: the change names the
+      // bot's thread (this conversation for the speaking bot, else the one
+      // the person sees), or a bot with several threads refuses it.
+      let threadId: unknown = ids.target === input.botId ? input.threadId : undefined;
+      if (threadId === undefined) {
+        try { threadId = await readValue(facts, input, "/api/bots", { messages: "0" }, "bots", ids.target, "threadId"); } catch { /* the PATCH says why */ }
+      }
+      if (typeof threadId === "string" && threadId) built = { ...built, body: { ...(built.body as Record<string, unknown>), threadId } };
+    }
     if (spec.key === "bot.mcpServer" && "method" in built) {
       // 2026-10-29: one server attached or detached: the bot's list read now
       // (none: every server of the person, as the editor shows it)

@@ -104,11 +104,21 @@ describe("composer thread approval persistence", () => {
     expect(bridge.setMode).toHaveBeenCalledExactlyOnceWith("bot", mode, { threadId: "thread", threadOnly: true, acknowledgeLocalAuto: false });
     expect(request).not.toHaveBeenCalled();
   });
-  it("never falls back to HTTP for Full or Custom, or grants Full without confirmation", async () => {
+  it("never falls back to HTTP for Custom, or grants Full without confirmation", async () => {
     const request = vi.fn(), bridge = { setMode: vi.fn() };
     await expect(persistTaskApproval("bot", "thread", { approvalMode: "full" }, bridge, request)).rejects.toThrow("Confirm Full");
-    for (const mode of ["full", "custom"] as const) await expect(persistTaskApproval("bot", "thread", { approvalMode: mode, confirmFullAccess: true }, undefined, request)).rejects.toThrow("packaged desktop");
+    await expect(persistTaskApproval("bot", "thread", { approvalMode: "custom", confirmFullAccess: true }, undefined, request)).rejects.toThrow("desktop app on the computer that runs this server");
     expect(request).not.toHaveBeenCalled(); expect(bridge.setMode).not.toHaveBeenCalled();
+  });
+  // #1674: the packaged desktop app on a remote organization server has no
+  // private channel (the page is the server's); Full goes to the server,
+  // which decides, never a false "requires the packaged desktop app".
+  it("asks the server for Full when there is no private desktop channel", async () => {
+    const bot = { id: "bot" };
+    const request = vi.fn().mockResolvedValue({ bot });
+    expect(await persistTaskApproval("bot", "thread", { approvalMode: "full", confirmFullAccess: true }, undefined, request)).toBe(bot);
+    expect(request.mock.calls[0][0]).toBe("/api/bots/bot/tasks/thread");
+    expect(JSON.parse(request.mock.calls[0][1].body)).toEqual({ approvalMode: "full", confirmFullAccess: true });
   });
   it("grants Full over HTTP on an organization server only, and only with the server deciding", async () => {
     const bot = { id: "bot" };
@@ -517,7 +527,7 @@ describe("trusted approval-mode persistence", () => {
     expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({ approvalMode: "ask" });
   });
 
-  it("fails closed when trusted modes have no packaged desktop bridge", async () => {
+  it("fails closed for Custom when there is no private desktop channel", async () => {
     const request = vi.fn(async (_path: string, _init?: RequestInit) => ({ bot: announcement("ask") }));
     await expect(persistBotUpdate(
       "bot-1",
@@ -525,8 +535,24 @@ describe("trusted approval-mode persistence", () => {
       new AbortController().signal,
       request,
       undefined,
-    )).rejects.toThrow("packaged desktop app");
+    )).rejects.toThrow("desktop app on the computer that runs this server");
     expect(request).not.toHaveBeenCalled();
+  });
+
+  // #1674: the packaged app on a remote organization server (no private
+  // channel there) turns Full on through the server, which decides.
+  it("sends Full to the server when there is no private desktop channel", async () => {
+    const request = vi.fn(async (_path: string, _init?: RequestInit) => ({ bot: announcement("full") }));
+    await expect(persistBotUpdate(
+      "bot-1",
+      { approvalMode: "full", confirmFullAccess: true, applyToAllThreads: true, threadId: "talk" },
+      new AbortController().signal,
+      request,
+      undefined,
+    )).resolves.toMatchObject({ approvalMode: "full" });
+    expect(request).toHaveBeenCalledOnce();
+    expect(request.mock.calls[0]?.[0]).toBe("/api/bots/bot-1");
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({ approvalMode: "full", confirmFullAccess: true, threadId: "talk" });
   });
 
   it("uses the private bridge to leave Custom instead of the bot-callable HTTP API", async () => {
