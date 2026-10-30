@@ -643,16 +643,16 @@ describe("the flat model picker", () => {
     }
   });
 
-  it("previews the hovered model's provider and payer without choosing it", () => {
+  it("previews the hovered provider without guessing its future payer", () => {
     ready();fixture.org = org;fixture.myEngines = [mine("claude"), mine("codex", "subscription")];
     const forBot = bot("claude", "claude-opus-5-5");
     const opened = open(forBot);
-    expect(opened.html).toContain("paid by the organization");
+    expect(opened.html).toContain("Who pays is confirmed when the turn starts");
     const list = lists(opened)[0]!;
     (list.props as unknown as { onPreview: (row: MenuRow) => void }).onPreview(row(opened, "gpt-5.6").props);
     const preview = render(forBot).html;
     expect(preview).toContain("GPT-5.6");
-    expect(preview).toContain("paid by me");
+    expect(preview).toContain("Who pays is confirmed when the turn starts");
     expect(fixture.dispatch).not.toHaveBeenCalled();
   });
 
@@ -734,6 +734,16 @@ describe("the flat model picker", () => {
     const opened = open(forBot);
     expect(opened.html).toContain("Auto · Fable 5.1");expect(opened.html).toContain("data-auto-model-status");
     expect(row(opened, "auto").props.current).toBe(true);
+  });
+
+  it("does not guess an owner-paid shared bot payer from the reader's organization key", () => {
+    ready();
+    fixture.org = { org: { name: "Example Org" }, link: { state: "ok" } };
+    fixture.myEngines = [{ instanceId: "claude", myTurns: "org-key" }];
+    const opened = open({ ...bot("claude", "claude-opus-5-5"), turnPayer: "owner" });
+    expect(opened.html).toContain("Who pays is confirmed when the turn starts");
+    expect(opened.html).not.toContain("paid by the organization");
+    expect(opened.html).not.toContain("paid by me");
   });
 
   it("says when no recovery is configured for a pinned model", () => {

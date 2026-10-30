@@ -12089,5 +12089,5 @@
   "model.backup.none": "No automatic backup is configured for this model.",
   "model.auto.chain.waiting": "The current chain is not available yet.",
   "model.effect.payer.me": "me",
-  "model.effect.payer.org": "the organization"
+  "model.effect.model.pending": "This bot will answer with {model} ({provider}). Who pays is confirmed when the turn starts."
 }

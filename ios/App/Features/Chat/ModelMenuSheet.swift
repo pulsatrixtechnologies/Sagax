@@ -286,7 +286,7 @@ struct ModelMenuSheet: View {
             apply(next, updateBotDefault: true)
         case .follow:
             guard follows == false, choose == nil else { return finish() }
-            apply(profile.modelSelection, updateBotDefault: false)
+            apply(profile.modelSelection, updateBotDefault: true)
         case .model:
             guard let instance = instances.first(where: { $0.instanceId == row.instanceId }), let model = row.modelId else { return }
             if row.current && selection.auto != true && choose == nil { return finish() }

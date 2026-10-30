@@ -12089,5 +12089,5 @@
   "model.backup.none": "Aucun modèle de secours automatique n’est configuré pour ce modèle.",
   "model.auto.chain.waiting": "La chaîne actuelle n’est pas encore disponible.",
   "model.effect.payer.me": "moi",
-  "model.effect.payer.org": "l’organisation"
+  "model.effect.model.pending": "Ce bot répondra avec {model} ({provider}). Le payeur est confirmé au démarrage du tour."
 }
