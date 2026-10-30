@@ -17,6 +17,11 @@
 //         another person's thread is never named or audited, and the level
 //         that person chose for their own conversation stays theirs. Since
 //         #1169 the level is the bot's: the owner's threads follow it
+//   FA-6  (#1674) the packaged desktop app on this remote server has no
+//         private approval channel (its page is the server's): the app's own
+//         saves turn Full on through the server, for the conversation and
+//         for the bot, never a false "requires the packaged desktop app";
+//         Refresh permissions brings the bot's Full back to a thread
 import { spawn, type ChildProcess } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -300,5 +305,46 @@ posixOnly("organization Full access", () => {
     expect(await threadMode(erin, zed.threadId)).toBeUndefined();
     expect(await botMode(erin)).toBe("full");
     await waitFor(async () => (await threadRows()) === rowsBefore + 1);
+  }, 60_000);
+
+  it("FA-6: the packaged desktop app on a remote organization server turns Full on, for the conversation and the bot (#1674)", async () => {
+    // the app's own saves (src/state/store.tsx, loaded at run time: the
+    // server's typecheck does not compile the app)
+    const appStore: string = "../src/state/store.tsx";
+    type Save = (...args: unknown[]) => Promise<{ id: string; approvalMode?: string }>;
+    const { persistBotUpdate, persistTaskApproval } = await import(appStore) as { persistBotUpdate: Save; persistTaskApproval: Save };
+    // the app's own transport on a remote page: the session cookie, no private channel
+    const request = async (path: string, init?: RequestInit) => {
+      const got = await api(init?.method ?? "GET", path, erin, init?.body ? JSON.parse(String(init.body)) : undefined);
+      if (got.status >= 400) throw new Error(got.body?.error ?? got.text);
+      return got.body;
+    };
+    const threadOf = async (threadId: string) =>
+      ((await api("GET", `/api/bots`, erin)).body.bots.find((bot: { id: string }) => bot.id === zed.id)?.tasks ?? [])
+        .find((task: { threadId: string }) => task.threadId === threadId) as { approvalMode?: string; approvalOwn?: string } | undefined;
+    await waitFor(async () => !(await api("GET", `/api/bots`, erin)).body.bots.find((bot: { id: string; busy?: boolean }) => bot.id === zed.id)?.busy);
+    expect((await api("PATCH", `/api/bots/${zed.id}/tasks/${zed.threadId}`, erin, { approvalMode: "ask" })).status).toBe(200);
+
+    // this conversation: the composer's save, no bridge
+    const thread = await persistTaskApproval(zed.id, zed.threadId, { approvalMode: "full", confirmFullAccess: true }, undefined, request);
+    expect(thread.id).toBe(zed.id);
+    expect((await threadOf(zed.threadId))?.approvalMode).toBe("full");
+
+    // the bot (Edit bot > Permissions), naming the open conversation, which follows
+    expect((await api("PATCH", `/api/bots/${zed.id}/tasks/${zed.threadId}`, erin, { approvalMode: "ask" })).status).toBe(200);
+    expect(await threadOf(zed.threadId)).toMatchObject({ approvalMode: "ask", approvalOwn: "thread" });
+    const bot = await persistBotUpdate(zed.id, { approvalMode: "full", confirmFullAccess: true, threadId: zed.threadId }, new AbortController().signal, request, undefined);
+    expect(bot.approvalMode).toBe("full");
+    expect(await threadOf(zed.threadId)).not.toHaveProperty("approvalOwn");
+
+    // "Use Full access here" / Refresh permissions: the thread's own level
+    // gives way to the bot's Full through the thread route, no desktop channel
+    expect((await api("PATCH", `/api/bots/${zed.id}/tasks/${zed.threadId}`, erin, { approvalMode: "ask" })).status).toBe(200);
+    expect(await threadOf(zed.threadId)).toMatchObject({ approvalMode: "ask", approvalOwn: "thread" });
+    const refreshed = await api("PATCH", `/api/bots/${zed.id}/tasks/${zed.threadId}`, erin, { refreshPermissions: true });
+    expect(refreshed.status, refreshed.text).toBe(200);
+    expect(await threadOf(zed.threadId)).not.toHaveProperty("approvalOwn");
+    // someone who does not own the bot is refused in the server's words
+    expect((await api("PATCH", `/api/bots/${zed.id}/tasks/${zed.threadId}`, alice, { refreshPermissions: true })).status).toBeGreaterThanOrEqual(400);
   }, 60_000);
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyListEdit,
+  botLevelPatch,
   bulkOutcomeCounts,
   commonListItems,
   commonValue,
@@ -110,5 +111,15 @@ describe("bulk bot edit: results and targets", () => {
     expect(splitBulkTargets("atlas, iris,atlas")).toEqual(["atlas", "iris"]);
     expect(splitBulkTargets("atlas")).toBeNull();
     expect(splitBulkTargets(undefined)).toBeNull();
+  });
+});
+
+// #1674: Edit N bots is the bot's own edit, as Edit bot makes it
+describe("bulk bot edit: botLevelPatch", () => {
+  it("names the bot's thread with a new model and drops any other thread id", () => {
+    const model = { instanceId: "claude", model: "m" };
+    expect(botLevelPatch({ modelSelection: model, threadId: "draft" }, "t1")).toEqual({ modelSelection: model, threadId: "t1" });
+    expect(botLevelPatch({ voice: "ava", threadId: "draft" }, "t1")).toEqual({ voice: "ava" });
+    expect(botLevelPatch({ modelSelection: model }, undefined)).toEqual({ modelSelection: model });
   });
 });

@@ -40,6 +40,28 @@ function server() {
 }
 
 describe("runBulkEdit", () => {
+
+  // #1674: a bot with several threads refused a model that named none
+  it("names each bot's own thread with a new model, never the draft's, and on undo too", async () => {
+    const fake = server();
+    const bots = [bot("atlas"), bot("iris")];
+    const run = await runBulkEdit(bots, {
+      model: { patch: { modelSelection: { instanceId: "claude", model: "n" }, threadId: "draft-1" } },
+      voice: { patch: { speakReplies: true } },
+    }, { request: fake.request as never, saveBot: fake.saveBot });
+    expect(run.outcomes).toEqual([{ botId: "atlas", ok: true }, { botId: "iris", ok: true }]);
+    expect(fake.saved).toEqual([
+      { id: "atlas", patch: { modelSelection: { instanceId: "claude", model: "n" }, speakReplies: true, threadId: "t-atlas" } },
+      { id: "iris", patch: { modelSelection: { instanceId: "claude", model: "n" }, speakReplies: true, threadId: "t-iris" } },
+    ]);
+    fake.saved.length = 0;
+    await undoBulkEdit(bots, run.before, { request: fake.request as never, saveBot: fake.saveBot });
+    expect(fake.saved.map((row) => row.patch.threadId)).toEqual(["t-atlas", "t-iris"]);
+    // a change without a model sends no thread
+    fake.saved.length = 0;
+    await runBulkEdit([bot("lina")], { voice: { patch: { speakReplies: true, threadId: "draft-1" } } }, { request: fake.request as never, saveBot: fake.saveBot });
+    expect(fake.saved).toEqual([{ id: "lina", patch: { speakReplies: true } }]);
+  });
   it("changes each bot in turn and says which refused why (a partial result)", async () => {
     const fake = server();
     const bots = [bot("atlas", { computer: "local" }), bot("iris", { computer: "cloud" }), bot("lina")];

@@ -6,6 +6,7 @@
 // is journaled as that bot's own edit and refused for that bot's reasons.
 import {
   applyListEdit,
+  botLevelPatch,
   commonListItems,
   grantRevertSteps,
   grantSteps,
@@ -205,7 +206,7 @@ export async function runBulkEdit(bots: readonly Bot[], changes: BulkChanges, de
     const own = patchForBot(bot as unknown as Record<string, unknown>, patch);
     if (patchFields(own).length > 0) {
       try {
-        await deps.saveBot(bot, own);
+        await deps.saveBot(bot, botLevelPatch(own, bot.threadId));
         kept.patch = revertPatch(bot as unknown as Record<string, unknown>, own);
         changed = true;
       } catch (error) {
@@ -275,7 +276,7 @@ export async function undoBulkEdit(bots: readonly Bot[], before: readonly BulkBe
     try { await deps.flush?.(bot.id); } catch { /* the save says */ }
     if (kept.patch && patchFields(kept.patch).length > 0) {
       const back = { ...kept.patch, ...(kept.patch.approvalMode === "full" ? { confirmFullAccess: true } : {}) };
-      try { await deps.saveBot(bot, back); } catch (error) { reasons.push(reasonOf(error)); }
+      try { await deps.saveBot(bot, botLevelPatch(back, bot.threadId)); } catch (error) { reasons.push(reasonOf(error)); }
     }
     if (kept.grants) {
       const steps = grantRevertSteps(kept.grants.before, kept.grants.after);

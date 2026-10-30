@@ -162,6 +162,24 @@ describe("sagax_settings", () => {
     expect(h.planned.at(-1)).toMatchObject({ method: "PATCH", body: { modelSelection: { model: "m", effort: "high" } } });
   });
 
+  // #1674: a model change is the bot's own, as Edit bot makes it: it names
+  // the bot's thread (this conversation for the speaking bot, else the one
+  // the person sees), or a bot with several threads refuses it
+  it("names each bot's thread with a new model, for one bot and for several", async () => {
+    const model = { instanceId: "claude", model: "opus" };
+    const h = harness({ answer: { bots: [{ id: "b1", threadId: "th-other" }, { id: "b2", threadId: "th-b2" }] } });
+    const done = await h.call({ action: "set", key: "bot.model", target: "b1,b2", value: model });
+    expect(String(done.body.text), JSON.stringify(done.body)).toMatch(/^2 of 2 bots changed/);
+    const patches = h.planned.filter((row) => row.method === "PATCH");
+    expect(patches).toMatchObject([
+      { path: "/api/bots/b1", body: { modelSelection: model, threadId: "th1" } },
+      { path: "/api/bots/b2", body: { modelSelection: model, threadId: "th-b2" } },
+    ]);
+    // another setting names no thread
+    await h.call({ action: "set", key: "bot.name", target: "b2", value: "Owl" });
+    expect(h.planned.at(-1)?.body).toEqual({ name: "Owl" });
+  });
+
   // 2026-10-28 (one source of truth): the level is the bot's own setting, as
   // Permissions shows it, never the level of the conversation the read
   // landed on; this conversation's real level is said beside it.

@@ -46967,7 +46967,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // Organization server: only the caller's own threads count, never an
         // outside agent's conversation with the bot (shared/agent-conversation.ts).
         (owner ? threadsShownTo(owner, store.tasks(botId), scopedThreadViewer()) : store.tasks(botId)).filter((task) => !isAgentConversation(task)).length > 1) {
-        throw Object.assign(new Error("This bot has more than one thread. Update the Sagax app on this device, then choose a thread and try again."), { status: 409 });
+        // #1674: the request did not say which conversation it is for. An up
+        // to date app names it (Edit bot, Edit N bots, sagax_settings); the
+        // words never blame the app's version, which may well be current.
+        throw Object.assign(new Error("This bot has several conversations and the change did not say which one. Open the conversation to change, then try again."), { status: 409, code: "thread_required" });
       }
     };
     if (method === "GET" && path === "/api/bots") {
@@ -49773,7 +49776,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         (currentApprovalMode === "custom" && requestedApprovalMode !== "custom");
       if (requiresPrivateApprovalTransition) {
         return json(res, 403, {
-          error: "This approval-level change can only be made from the packaged desktop app",
+          error: "Full access and Custom approval are turned on in the Sagax desktop app on the computer that runs this server",
         });
       }
       // "Auto on this Mac" hands a bot the user's real session, so the grant
@@ -51913,8 +51916,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // Full and Custom never travel over the bot-reachable HTTP surface.
         // The desktop's private channel copies those levels, and it is also
         // the only way to leave Custom.
-        if (nextMode === "full" || nextMode === "custom") {
-          return json(res, 403, { error: "Refresh Full or Custom access from the packaged desktop app" });
+        // #1674: on an organization server Full comes back to this thread as
+        // the bot's owner grants it (orgFullGrant below): the same rule, no
+        // desktop channel there.
+        const orgFullRefresh = nextMode === "full" && IDENTITY.kind === "perspicax";
+        if (orgFullRefresh) {
+          if (callerBotsReadOnly(auth)) return json(res, 403, BOTS_READ_ONLY);
+          const refusal = orgFullAccessRefusalFor(auth, profile, false);
+          if (refusal) return json(res, refusal.status, { error: refusal.error, code: refusal.code, ...("permission" in refusal ? permissionRefusal(refusal.permission) : {}) });
+        }
+        if (!orgFullRefresh && (nextMode === "full" || nextMode === "custom")) {
+          return json(res, 403, { error: "Full access and Custom approval are turned on in the Sagax desktop app on the computer that runs this server" });
         }
         if (approvalModeFor(current) === "custom") {
           return json(res, 403, { error: "Leaving Custom approval requires the packaged desktop app" });
@@ -51998,7 +52010,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!orgFullGrant && (mode === "full" || mode === "custom") && memberOwnedInOrg(current)) return json(res, 409, MEMBER_BOT_FULL_ACCESS);
         // Elevated modes still require the trusted desktop transition. A
         // thread settings PATCH cannot manufacture that grant.
-        if (!orgFullGrant && mode !== "ask" && mode !== "auto" && mode !== "edits") return json(res, 403, { error: "Full and Custom access require trusted desktop confirmation" });
+        if (!orgFullGrant && mode !== "ask" && mode !== "auto" && mode !== "edits") return json(res, 403, { error: "Full access and Custom approval are turned on in the Sagax desktop app on the computer that runs this server" });
         if (approvalModeFor(current) === "custom") return json(res, 403, { error: "Leaving Custom approval requires confirmation in the packaged desktop app" });
         if (!supportsApprovalMode(patch.modelSelection ?? current.modelSelection, mode)) {
           return json(res, 400, { error: "This provider does not support the selected approval level" });

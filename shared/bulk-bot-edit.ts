@@ -98,6 +98,18 @@ export function patchForBot(bot: Readonly<Record<string, unknown>>, patch: Reado
   return changes ? out : {};
 }
 
+/** A bulk change is the bot's own edit, as Edit bot makes it: a new model
+ * names the bot's thread (the one the person sees), so the server sets the
+ * bot's model and that thread follows it. Without it a bot with several
+ * threads refuses the change (requirePinnedClientThread, #1674). A threadId
+ * left from the dialog's draft bot never rides along. */
+export function botLevelPatch(patch: Readonly<Record<string, unknown>>, threadId: string | undefined): Record<string, unknown> {
+  const { threadId: _draftThread, ...rest } = patch;
+  const out: Record<string, unknown> = { ...rest };
+  if (out.modelSelection !== undefined && out.modelSelection !== null && threadId) out.threadId = threadId;
+  return out;
+}
+
 /** What puts the patched fields back: each field's value before (a field
  * that was not set goes back to null, "not set"). */
 export function revertPatch(before: Readonly<Record<string, unknown>>, patch: Readonly<Record<string, unknown>>): Record<string, unknown> {

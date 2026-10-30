@@ -210,11 +210,19 @@ public enum BulkBotEdit {
 
     /// Full access always carries its confirmation, as the bot's own editor
     /// sends it (`BotPanelPatch.approval(.full)`); the other levels never.
-    public static func withConsents(_ patch: BulkPatch) -> BulkPatch {
+    ///
+    /// A new model names the bot's thread (`botLevelPatch`, #1674): the
+    /// bot's model changes and that thread follows it, as in Edit bot. A bot
+    /// with several threads refuses a model change that names none.
+    public static func withConsents(_ patch: BulkPatch, threadId: String? = nil) -> BulkPatch {
         var out = patch
+        out.removeValue(forKey: "threadId")
         if patch["approvalMode"] == .string(ApprovalLevel.full.rawValue) {
             out["confirmFullAccess"] = .bool(true)
             out["applyToAllThreads"] = .bool(true)
+        }
+        if let threadId, !threadId.isEmpty, let model = patch["modelSelection"], model != .null {
+            out["threadId"] = .string(threadId)
         }
         return out
     }
@@ -396,7 +404,7 @@ public struct BulkBotEditPlan: Hashable, Sendable {
             wanted["mcpServers"] = .strings(BulkBotEdit.mcpServersAfter(bot.mcpServers, enabled: enabledServers, mcpServers))
         }
         let patch = BulkBotEdit.patchForBot(BulkBotField.snapshot(bot), wanted)
-        return patch.isEmpty ? [:] : BulkBotEdit.withConsents(patch)
+        return patch.isEmpty ? [:] : BulkBotEdit.withConsents(patch, threadId: bot.threadId)
     }
 }
 
@@ -456,15 +464,18 @@ extension CompanionClient: BulkBotEditAPI {
 /// What one bot had before the change, for the undo.
 public struct BulkBotUndo: Hashable, Sendable {
     public var botId: String
+    /// The bot's thread a model change names (`withConsents`).
+    public var threadId: String?
     /// The fields to send back (`revertPatch`), consents added when sent.
     public var patch: BulkPatch
     public var grantsBefore: [BotGrantRecord]?
     public var grantsAfter: [BotGrantRecord]?
     public var profilesBefore: [String]?
 
-    public init(botId: String, patch: BulkPatch = [:], grantsBefore: [BotGrantRecord]? = nil,
+    public init(botId: String, threadId: String? = nil, patch: BulkPatch = [:], grantsBefore: [BotGrantRecord]? = nil,
                 grantsAfter: [BotGrantRecord]? = nil, profilesBefore: [String]? = nil) {
         self.botId = botId
+        self.threadId = threadId
         self.patch = patch
         self.grantsBefore = grantsBefore
         self.grantsAfter = grantsAfter
@@ -500,7 +511,7 @@ public enum BulkBotEditRunner {
         for bot in bots {
             var reasons: [String] = []
             var changed = false
-            var undo = BulkBotUndo(botId: bot.id)
+            var undo = BulkBotUndo(botId: bot.id, threadId: bot.threadId)
             let patch = plan.patch(for: bot, enabledServers: enabledServers)
             if !patch.isEmpty {
                 do {
@@ -562,7 +573,7 @@ public enum BulkBotEditRunner {
         for step in steps {
             var reasons: [String] = []
             if !step.patch.isEmpty {
-                do { result.updated.append(try await api.patchBotFields(botId: step.botId, patch: BulkBotEdit.withConsents(step.patch))) }
+                do { result.updated.append(try await api.patchBotFields(botId: step.botId, patch: BulkBotEdit.withConsents(step.patch, threadId: step.threadId))) }
                 catch { reasons.append(reason(error)) }
             }
             if let before = step.grantsBefore, let after = step.grantsAfter {
