@@ -359,6 +359,7 @@ disabled person's routines stop anyway). Listed in `GET capabilities` as
 |---|---|---|
 | `GET bots/{id}` | manager | a bot's page |
 | `GET bots/{id}/avatar` | manager | the bot's uploaded picture |
+| `GET bots/{id}/capabilities` | manager | the bot's capabilities, read only |
 | `POST bots/{id}/clone` | manager (bot and new owner in reach) | a copy for its owner or another person |
 | `POST bots/{id}/archive` | manager in reach, admin | archive |
 | `POST bots/{id}/restore` | manager in reach, admin | restore |
@@ -455,6 +456,17 @@ has no picture (or shows its mascot), `413 too_large` past the cap, and the
 bot route's reach rules (out of a manager's reach is 404). The answer never
 names a file or a path; the picture is read without following a link. Not
 audited (a read of what the bot shows everyone it talks to).
+
+### `GET bots/{id}/capabilities`
+
+Capacités lot 1d (2026-10-30): the bot's one resolved list of what it
+receives on top of its engine, `BotCapabilities` of `shared/capabilities.ts`,
+the same list as `GET /api/bots/:id/capabilities`, resolved for the console
+person (their own servers, GitHub and Roles stand in for the speaker of a
+turn; `canToggle` says what they could change in Sagax). Read only, not
+audited; the bot route's reach rules (out of a manager's reach is 404); the
+owner reaches it by the `own-bot` grant. The Perspicax console shows it on
+the bot's page, labelled « Gérée dans Sagax ».
 
 ### `POST bots/{id}/clone`
 
@@ -1024,7 +1036,7 @@ no call of a member is ever signed above their own role:
 
 | Grant kind | Routes | Answered |
 |---|---|---|
-| `own-bot` | `GET bots`, `GET bots/{id}`, `bots/{id}/avatar`, `bots/{id}/package`, `files/{bot}/roots\|list\|stat\|read\|download`, `POST bots/{id}/clone\|archive\|restore\|model\|stop\|delete`, `GET usage`, `GET incidents`, `GET logs`, `GET audit?target=<bot>` | the person's own bots only (not one shared with them); a copy stays theirs (another owner `403`); usage rows, incidents and log lines of their own bots; the activity of one bot of theirs (`target` required) |
+| `own-bot` | `GET bots`, `GET bots/{id}`, `bots/{id}/avatar`, `bots/{id}/package`, `bots/{id}/capabilities`, `files/{bot}/roots\|list\|stat\|read\|download`, `POST bots/{id}/clone\|archive\|restore\|model\|stop\|delete`, `GET usage`, `GET incidents`, `GET logs`, `GET audit?target=<bot>` | the person's own bots only (not one shared with them); a copy stays theirs (another owner `403`); usage rows, incidents and log lines of their own bots; the activity of one bot of theirs (`target` required) |
 | `own-routine` | `GET routines`, `GET routines/{id}`, `GET routines/{id}/runs`, `POST routines/{id}/run\|pause` | the routines of the person's own bots |
 
 The transfer, `bots/bulk`, `bots/import` and every other route take no
