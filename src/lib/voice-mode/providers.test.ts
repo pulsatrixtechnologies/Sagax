@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { VOICE_MODE_STORAGE_KEY, cleanVoiceModeSettings } from "../../../shared/voice-mode";
 import { providerOrder } from "../../../shared/voice-providers";
-import { fetchVoiceProviders, speakVoiceMode, voiceModeListenUrl, voiceModeSpeechUrl } from "./api";
+import { fetchVoiceProviders, speakVoiceMode, transcribeVoiceMode, voiceModeListenUrl, voiceModeSpeechUrl } from "./api";
 import { migrateInstalledVoiceSettings, readVoiceModeSettings, voiceSettingsForBot, writeBotVoiceChoice, writeVoiceForBot, writeVoiceProviders } from "./settings";
 
 function memory(initial?: unknown) {
@@ -79,6 +79,10 @@ describe("what a request says about the voice", () => {
     const url = new URL(voiceModeSpeechUrl("b-1", readVoiceModeSettings(), "t-1", "http://x"));
     expect(url.searchParams.get("tts")).toBe("auto");
     expect(url.searchParams.get("stt")).toBe("auto");
+    expect(new URL(voiceModeListenUrl("b-1", "auto", "t-1", "http://x")).searchParams.get("stt")).toBe("auto");
+    fetch.mockResolvedValueOnce(Response.json({ text: "Bonjour" }));
+    await transcribeVoiceMode("b-1", new Blob(["audio"], { type: "audio/wav" }), "auto");
+    expect(new URL(fetch.mock.calls.at(-1)![0], "http://x").searchParams.get("stt")).toBe("auto");
     fetch.mockResolvedValueOnce(Response.json({ tts: "xai", stt: "xai" }));
     await fetchVoiceProviders("b-1", undefined, { tts: "auto", stt: "auto" });
     expect(fetch.mock.calls.at(-1)![0]).toBe("/api/bots/b-1/voice/status?tts=auto&stt=auto");

@@ -412,7 +412,7 @@ export function voiceLocale(): string | undefined {
 
 function sttQuery(language: string, threadId: string | undefined, locale: string | undefined, botId?: string): URLSearchParams {
   const stt = botId ? voiceSettingsForBot(readVoiceModeSettings(), botId).stt : "auto";
-  return new URLSearchParams({ language, ...(language === "auto" && locale ? { locale } : {}), ...(threadId ? { threadId } : {}), ...(stt !== "auto" ? { stt } : {}) });
+  return new URLSearchParams({ language, ...(language === "auto" && locale ? { locale } : {}), ...(threadId ? { threadId } : {}), stt });
 }
 
 export function voiceModeListenUrl(botId: string, language: string, threadId?: string, origin = typeof location === "undefined" ? "http://localhost" : location.origin, locale = voiceLocale()): string {

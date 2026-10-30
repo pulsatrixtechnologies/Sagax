@@ -611,11 +611,11 @@ describe("voice mode with OpenAI and ElevenLabs (2026-10-29)", () => {
   });
 
   it("resolves the current status choice ahead of a stale synced preference without saving it", async () => {
-    const preference = { voice: "ara", speed: 1, language: "auto", tts: "openai", voices: { openai: "cedar" } };
+    const preference = { voice: "ara", speed: 1, language: "auto", tts: "openai", stt: "openai", voices: { openai: "cedar" } };
     const before = structuredClone(preference);
     const { call, xai, openai } = providers({ preference });
     expect((await call({ method: "GET", path: "/api/bots/b-quasar/voice/status" })).body.tts).toBe("openai");
-    expect((await call({ method: "GET", path: "/api/bots/b-quasar/voice/status?tts=auto&stt=auto" })).body.tts).toBe("xai");
+    expect((await call({ method: "GET", path: "/api/bots/b-quasar/voice/status?tts=auto&stt=auto" })).body).toMatchObject({ tts: "xai", stt: "xai" });
     expect((await call({ method: "GET", path: "/api/voice/status?tts=elevenlabs&stt=auto" })).body.tts).toBe("elevenlabs");
     expect(preference).toEqual(before);
     expect((await call({ method: "GET", path: "/api/bots/b-quasar/voice/status" })).body.tts).toBe("openai");
