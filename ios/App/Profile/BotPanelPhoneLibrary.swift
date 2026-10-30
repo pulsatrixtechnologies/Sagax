@@ -2,7 +2,8 @@
 // (`bot-settings/LibraryTab.tsx`): the bot's files only, no sub-tabs. Skills
 // live on the Personas page; the bot's Claude Code plugins open from a link
 // under the files where the pairing forwards them
-// (`BotLibraryView.pluginsLink`, CompanionCore).
+// (`BotLibraryView.pluginsLink`, CompanionCore), and the bot's capabilities
+// (its resolved list, `PhoneBotCapabilities` below) from a link beside them.
 import CompanionCore
 import SwiftUI
 
@@ -16,6 +17,7 @@ struct PhoneBotLibrary: View {
 
     @State private var view: BotLibraryView = .files
     @State private var showingPlugins = false
+    @State private var showingCapabilities = false
 
     private var views: [BotLibraryView] { BotLibraryView.visible(gate: session.surfaceGate) }
 
@@ -28,6 +30,16 @@ struct PhoneBotLibrary: View {
             case .files: AnyView(ThreadFilesView(bot: bot, start: start, onShowInChat: onShowInChat, onShowLink: onShowLink))
             case .skills: AnyView(PhoneLibrarySkills(bot: bot))
             case .plugins: AnyView(PhoneBotPlugins(bot: bot))
+            }
+            if BotCapabilityRules.reachable(gate: session.surfaceGate) {
+                Button { showingCapabilities = true } label: {
+                    Label("Capabilities", systemImage: "square.stack.3d.up")
+                        .font(Theme.Profile.labelFont)
+                        .foregroundStyle(Theme.textSecondary)
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, Theme.Profile.cardMargin)
+                .accessibilityIdentifier("library-open-capabilities")
             }
             if BotLibraryView.pluginsLink(gate: session.surfaceGate) {
                 Button { showingPlugins = true } label: {
@@ -42,6 +54,9 @@ struct PhoneBotLibrary: View {
         }
         .sheet(isPresented: $showingPlugins) {
             NavigationStack { ScrollView { PhoneBotPlugins(bot: bot).padding(.vertical, 16) }.navigationTitle(Text("Plugins")) }
+        }
+        .sheet(isPresented: $showingCapabilities) {
+            NavigationStack { ScrollView { PhoneBotCapabilities(bot: bot).id(bot.id).padding(.vertical, 16) }.navigationTitle(Text("Capabilities")) }
         }
     }
 
@@ -293,5 +308,125 @@ struct PhoneBotPlugins: View {
                 problem = error.localizedDescription
             }
         }
+    }
+}
+
+/// Bot > Capabilities on the iPhone: the bot's resolved list
+/// (`BotCapabilitiesModel`, shared with the iPad panel), the box « What
+/// <bot> receives (engine: X) », then one row per capability (name, form,
+/// scope, state) with its switch where `canToggle`.
+struct PhoneBotCapabilities: View {
+    @Environment(\.themePalette) var themePalette
+    @EnvironmentObject private var session: Session
+    let bot: Bot
+
+    @StateObject private var model: BotCapabilitiesModel
+
+    init(bot: Bot) {
+        self.bot = bot
+        _model = StateObject(wrappedValue: BotCapabilitiesModel(bot: bot))
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            if let list = model.list {
+                let receipt = BotCapabilityReceipt(list)
+                let botName = HumanID.readable(bot.name, or: String(localized: "This bot"))
+                let engine = HumanID.readable(list.engine.label, or: String(localized: "Unknown"))
+                ProfileSectionLabel(text: "What \(botName) receives (engine: \(engine))")
+                ProfileCard {
+                    receiptLine("Skills and commands", receipt.skillsAndCommands)
+                    ProfileDivider(leading: Theme.Profile.textInset)
+                    receiptLine("Agents", receipt.agents)
+                    ProfileDivider(leading: Theme.Profile.textInset)
+                    receiptLine("Servers and tools", receipt.servers)
+                    ProfileDivider(leading: Theme.Profile.textInset)
+                    receiptLine("Not served", receipt.notServed)
+                }
+                if let index = list.promptIndex, index.cuts {
+                    ProfileFooter(text: "The skills index is full: \(index.omitted) skills left out of the prompt.")
+                }
+                ProfileSectionLabel(text: "Capabilities")
+                    .padding(.top, Theme.Profile.cardGap + 4)
+                ProfileCard {
+                    if list.items.isEmpty {
+                        quiet(Text("No capabilities on this bot yet."))
+                    }
+                    ForEach(Array(list.items.enumerated()), id: \.element.id) { index, item in
+                        if index > 0 { ProfileDivider(leading: Theme.Profile.textInset) }
+                        row(item)
+                    }
+                }
+            } else if let problem = model.error {
+                ProfileCard { quiet(Text(verbatim: problem)) }
+            } else {
+                ProgressView().frame(maxWidth: .infinity).padding(30)
+            }
+            if let problem = model.error, model.list != nil {
+                ProfileCard { quiet(Text(verbatim: problem)) }
+                    .padding(.top, 12)
+            }
+        }
+        .task(id: bot.id) {
+            model.client = session.profileClient
+            await model.refresh()
+        }
+        .sheet(item: $model.review) { review in
+            CapabilitySkillReviewSheet(review: review, onCancel: { model.review = nil }, onConfirm: { model.confirm(review) })
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("library-capabilities")
+    }
+
+    private func quiet(_ text: Text) -> some View {
+        text.font(Theme.Profile.labelFont)
+            .foregroundStyle(Theme.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Theme.Profile.textInset)
+            .padding(.vertical, 14)
+    }
+
+    private func receiptLine(_ title: LocalizedStringKey, _ names: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(Theme.Profile.labelFont).foregroundStyle(Theme.textSecondary)
+            (names.isEmpty ? Text("Nothing") : Text(verbatim: names.joined(separator: ", ")))
+                .font(Theme.Font.body)
+                .foregroundStyle(names.isEmpty ? Theme.textTertiary : Theme.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Theme.Profile.textInset)
+        .padding(.vertical, 10)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func row(_ item: BotCapability) -> some View {
+        let name = CapabilityText.name(item)
+        return HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: name).font(Theme.Font.body).foregroundStyle(Theme.textPrimary).lineLimit(1)
+                CapabilityText.detail(item).font(Theme.Profile.labelFont).foregroundStyle(Theme.textSecondary).lineLimit(1)
+                (Text(CapabilityText.state(item.state))
+                 + (CapabilityText.reason(item.reason).map { Text(verbatim: " · ") + Text($0) } ?? Text(verbatim: "")))
+                    .font(Theme.Profile.labelFont)
+                    .foregroundStyle(item.served ? Theme.textPrimary : Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if item.updateAvailable {
+                    Text("Update available").font(Theme.Profile.labelFont).foregroundStyle(Theme.textTertiary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if item.toggle != nil {
+                Toggle("", isOn: Binding(get: { item.enabled }, set: { on in model.set(item, on: on) }))
+                    .labelsHidden()
+                    .tint(Theme.toggleOn)
+                    .disabled(model.busy != nil)
+                    .accessibilityLabel(Text("Use \(name)"))
+            }
+        }
+        .padding(.horizontal, Theme.Profile.textInset)
+        .padding(.vertical, 8)
+        .frame(minHeight: Theme.Profile.routineRow)
+        .accessibilityIdentifier("capability.\(item.form.rawValue)")
     }
 }

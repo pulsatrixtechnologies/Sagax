@@ -14,6 +14,7 @@ import type { SkillsLibrarySkillWire } from "../../../shared/wire";
 import { MarkdownEditor } from "../markdown/MarkdownEditor";
 import type { Crumb } from "../Breadcrumb";
 import { PluginCard, PluginPageHeader } from "./PluginParts";
+import { enginesLine } from "@/lib/capabilities";
 
 export interface SkillPageProps {
   /** absent: a new skill */
@@ -153,6 +154,10 @@ export function SkillPage({ skill, readOnlyReason, onBack, trail, onSaved, onDel
         {skill?.description && <p className="px-1 text-[13px] leading-relaxed text-ink-secondary">{skill.description}</p>}
         {skill && !enabled && <p className="px-1 text-[11.5px] text-ink-secondary">{t("connectApps.skill.reviewHint")}</p>}
         {readOnlyReason && <p role="note" className="rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{readOnlyReason}</p>}
+        {/* what each engine gets of a library skill (lot 1b): the prompt index */}
+        <p className="px-1 text-[12px] text-ink-secondary" data-skill-engines>
+          <span className="font-medium text-ink">{t("capabilities.detail.engines")}</span>{t("capabilities.engines.colon")}{enginesLine("skill", { skills: true, indexOnly: true })}
+        </p>
         {skill && skill.warnings.length > 0 && <ul className="list-disc pl-5 text-[11.5px] text-warning">{skill.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>}
 
         <PluginCard>

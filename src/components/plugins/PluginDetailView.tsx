@@ -85,10 +85,13 @@ export interface PluginDetailProps {
   link?: string | null;
   /** the editor, a skill's text, messages */
   children?: ReactNode;
+  /** a warning under the header (lot 1b: the bot's engine would receive
+   * nothing of it) */
+  notice?: ReactNode;
 }
 
 export function PluginDetailView(props: PluginDetailProps) {
-  const { item, displayName, icon, subtitle, installState, primaryAction, onBack, trail, busy, onUninstall, onUpdate, updating, onEdit, onTest, testing, enabled, accounts, accountAction, accountExtra, tools, details, link, children } = props;
+  const { item, displayName, icon, subtitle, installState, primaryAction, onBack, trail, busy, onUninstall, onUpdate, updating, onEdit, onTest, testing, enabled, accounts, accountAction, accountExtra, tools, details, link, children, notice } = props;
   const name = displayName ?? item.name;
   // the technical name, when people read another one
   const technical = name !== item.name ? item.name : null;
@@ -159,6 +162,8 @@ export function PluginDetailView(props: PluginDetailProps) {
           </div>
           {linkCopied && <p role="status" data-plugin-link-copied className="basis-full text-right text-[11.5px] text-success">{t("connectApps.detail.linkCopied")}</p>}
         </div>
+
+        {notice}
 
         {children}
 

@@ -35,6 +35,8 @@ import { sagaxFolder } from "../shared/human-id.ts";
 import { singleProgramOf } from "../shared/read-only-command.ts";
 import { readShell } from "../shared/custom-rules.ts";
 import { isOutboundTool } from "../shared/outbound.ts";
+import { decodeGrokGatewayName, grokGatewayToolConnector } from "../shared/grok-cloud-connectors.ts";
+import { connectorWriteKind } from "../shared/engine-connectors.ts";
 import { screenAppTarget, type ScreenAppIdentity } from "../shared/computer-app.ts";
 import { standingGrantsAllowed } from "./custom-rules-org.ts";
 import { sensitiveReadPath } from "./sensitive-path.ts";
@@ -393,8 +395,14 @@ const MESSAGE_RESOURCE = /(^|\/)(messages?|mail|emails?|sms|calls?)$/i;
  * change to two or more records at once, then a message that leaves the
  * organization (email, SMS, call). */
 export function destructiveKindOf(call: Pick<RuleCall, "tool" | "input" | "hints">): DestructiveKind | undefined {
-  const described = describeApproval(call.tool, call.input, call.hints);
-  if (described.risk === "destructive") return "delete";
+  const parsed = parseToolId(call.tool);
+  // Grok's gateway escapes action separators (delete_5fmail_5fmessage).
+  // Read that action for risk without changing the tool identity a rule names.
+  const gateway = parsed.server && grokGatewayToolConnector(`${parsed.server}__${parsed.name}`);
+  const action = gateway ? decodeGrokGatewayName(parsed.name.replace(/^(?:user|team|org|workspace)-[^-]+-/, "").replace(/___\d+$/, "")).replace(/-/g, "_") : null;
+  const described = describeApproval(action ? `mcp__${parsed.server}__${action}` : call.tool, call.input, call.hints);
+  const connectorWrite = connectorWriteKind(call.tool);
+  if (described.risk === "destructive" || (connectorWrite && /(^|[_.:-])trash([_.:-]|$)/i.test(action ?? parsed.name))) return "delete";
   const args = parseArgs(call.input);
   // 2026-10-22: describeApproval reads a shell tool only as "execute" and
   // never parses the line, so a native `rm -rf`, `shred`, `find -delete`...
@@ -410,7 +418,7 @@ export function destructiveKindOf(call: Pick<RuleCall, "tool" | "input" | "hints
       : typeof args?.script === "string" ? args.script
         : undefined;
   if (shellLine && readShell(shellLine).actions.has("delete")) return "delete";
-  const writes = described.risk === "write" || described.risk === "execute";
+  const writes = described.risk === "write" || described.risk === "execute" || connectorWrite !== null;
   if (BULK_TOOL.test(parseToolId(call.tool).name)) return "bulk";
   if (args && writes && ID_LIST_KEYS.some((key) => Array.isArray(args[key]) && (args[key] as unknown[]).length >= 2)) return "bulk";
   const bare = call.tool.startsWith("mcp__") ? call.tool : (() => {

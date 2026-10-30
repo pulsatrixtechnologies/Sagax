@@ -494,6 +494,12 @@ describe("botmailRunConfined (v2, S2): a mail-woken run is confined unless its o
   it("does not when the owner turned on full tools for that trigger", () => {
     expect(botmailRunConfined({ triggerSource: "webhook", webhookId: "w1" }, () => trigger({ allowFullTools: true }))).toBe(false);
   });
+  it("honors current Full access from an owner-authorized routine even without the legacy full-tools switch", () => {
+    const run = { triggerSource: "webhook", webhookId: "w1" };
+    expect(botmailRunConfined(run, () => trigger(), true)).toBe(false);
+    expect(botmailRunConfined(run, () => trigger(), false)).toBe(true);
+    expect(botmailRunConfined(run, () => null, true)).toBe(true);
+  });
   it("confines a run whose trigger is gone (fail closed)", () => {
     expect(botmailRunConfined({ triggerSource: "webhook", webhookId: "w1" }, () => null)).toBe(true);
   });

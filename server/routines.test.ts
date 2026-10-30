@@ -3717,6 +3717,15 @@ describe("slice 6: routines in their person's name", () => {
     expect(chosen?.runAs).toBe("pr_carol");
   });
 
+  it("snapshots the configured person on a webhook run as on a scheduled run", () => {
+    const h = harness(start);
+    const routine = h.manager.create(input, undefined, { actorPrincipalId: "pr_alice", runAs: "pr_bob" });
+    const run = h.manager.enqueueWebhook({ webhookId: "hook", webhookName: "Webhook", routineId: routine.id, prompt: "Configured work", botId: routine.botId, runOn: "maus", deliveryId: "snapshot", receivedAt: start });
+    expect(h.manager.listRuns().find((entry) => entry.id === run.id)?.runAs).toBe("pr_bob");
+    h.manager.update(routine.id, { runOn: "maus" }, undefined, { actorPrincipalId: "pr_alice", runAs: "pr_carol" });
+    expect(h.manager.listRuns().find((entry) => entry.id === run.id)?.runAs).toBe("pr_bob");
+  });
+
   it("snapshots runAs on the run and drops malformed values on load", () => {
     const h = harness(start);
     const routine = h.manager.create(input, undefined, { actorPrincipalId: "pr_alice" });

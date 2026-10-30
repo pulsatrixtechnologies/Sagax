@@ -1,6 +1,270 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Turned off where it is kept": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Turned off where it is kept" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Désactivé à la source" } }
+      }
+    },
+    "Perspicax no longer lists this Role": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Perspicax no longer lists this Role" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Perspicax ne liste plus ce Rôle" } }
+      }
+    },
+    "Not installed yet": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Not installed yet" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pas encore installé" } }
+      }
+    },
+    "The bot's owner is not an active member": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The bot's owner is not an active member" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le propriétaire du bot n'est pas un membre actif" } }
+      }
+    },
+    "Held back by Perspicax": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Held back by Perspicax" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Retenu par Perspicax" } }
+      }
+    },
+    "Not assigned to this bot": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Not assigned to this bot" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Non assigné à ce bot" } }
+      }
+    },
+    "The skills library is off": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The skills library is off" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La bibliothèque de skills est désactivée" } }
+      }
+    },
+    "A private address, refused": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A private address, refused" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Adresse privée, refusée" } }
+      }
+    },
+    "Needs an environment": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Needs an environment" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Demande un environnement" } }
+      }
+    },
+    "Needs a sign-in": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Needs a sign-in" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Demande une connexion" } }
+      }
+    },
+    "Needs a token": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Needs a token" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Demande un jeton" } }
+      }
+    },
+    "Needs GitHub": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Needs GitHub" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Demande GitHub" } }
+      }
+    },
+    "Not allowed by the organization": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Not allowed by the organization" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Non permis par l'organisation" } }
+      }
+    },
+    "A command server, never run on an organization's server": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A command server, never run on an organization's server" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Serveur à commande, jamais lancé sur le serveur d'une organisation" } }
+      }
+    },
+    "Left out of this bot's list": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Left out of this bot's list" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Exclu de la liste de ce bot" } }
+      }
+    },
+    "Another server already has this name": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Another server already has this name" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Un autre serveur porte déjà ce nom" } }
+      }
+    },
+    "Review before turning on": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Review before turning on" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Relire avant d'activer" } }
+      }
+    },
+    "Update available": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Update available" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Mise à jour disponible" } }
+      }
+    },
+    "Unverifiable": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Unverifiable" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Non vérifiable" } }
+      }
+    },
+    "Reserved name": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reserved name" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Nom réservé" } }
+      }
+    },
+    "Not served by this engine": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Not served by this engine" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Non servie par ce moteur" } }
+      }
+    },
+    "Not held": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Not held" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Non détenu" } }
+      }
+    },
+    "Imposed by the organization": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Imposed by the organization" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Imposée par l'organisation" } }
+      }
+    },
+    "To connect": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "To connect" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "À connecter" } }
+      }
+    },
+    "Flow": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Flow" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Flow" } }
+      }
+    },
+    "Connector": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Connector" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Connecteur" } }
+      }
+    },
+    "MCP server": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "MCP server" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Serveur MCP" } }
+      }
+    },
+    "Skill": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Skill" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Skill" } }
+      }
+    },
+    "Plugin": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Plugin" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Plugin" } }
+      }
+    },
+    "Engine account": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Engine account" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Compte moteur" } }
+      }
+    },
+    "Installation": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Installation" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Installation" } }
+      }
+    },
+    "Me": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Me" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Moi" } }
+      }
+    },
+    "This bot": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This bot" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ce bot" } }
+      }
+    },
+    "Unnamed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Unnamed" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Sans nom" } }
+      }
+    },
+    "Unknown Role": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Unknown Role" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rôle inconnu" } }
+      }
+    },
+    "The skills index is full: %lld skills left out of the prompt.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The skills index is full: %lld skills left out of the prompt." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "L'index des skills est plein : %lld skills omis du prompt." } }
+      }
+    },
+    "Nothing": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Nothing" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Rien" } }
+      }
+    },
+    "Not served": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Not served" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Non servi" } }
+      }
+    },
+    "Servers and tools": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Servers and tools" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Serveurs et outils" } }
+      }
+    },
+    "Agents": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Agents" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Agents" } }
+      }
+    },
+    "Skills and commands": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Skills and commands" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Skills et commandes" } }
+      }
+    },
+    "What %@ receives (engine: %@)": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "What %@ receives (engine: %@)" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ce que %1$@ reçoit (moteur : %2$@)" } }
+      }
+    },
+    "No capabilities on this bot yet.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No capabilities on this bot yet." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucune capacité sur ce bot pour l'instant." } }
+      }
+    },
+    "Loading capabilities…": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Loading capabilities…" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Chargement des capacités…" } }
+      }
+    },
     "Plugin type": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Plugin type" } },

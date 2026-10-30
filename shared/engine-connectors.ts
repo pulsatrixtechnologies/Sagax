@@ -165,8 +165,9 @@ const any = (tokens: readonly string[], set: ReadonlySet<string>) => tokens.some
 /** What a mail, Teams, calendar or file connector call does outside the
  * app, or null for a read, a draft, or a tool of another kind.
  * `other-write`: a call of an engine's connector server
- * (isEngineConnectorServer) that names no known action and is no read or
- * draft: it keeps its card (fail closed). */
+ * (isEngineConnectorServer) that names no known outward action and is no
+ * read or draft. It is a write, not proof of a send; the bot's approval
+ * level and explicit rules decide it. */
 export function connectorWriteKind(name: string): ConnectorWriteKind | null {
   const tokens = words(name);
   if (!tokens.length) return null;

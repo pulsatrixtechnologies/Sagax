@@ -2231,8 +2231,10 @@ export class RoutineManager {
     if (this.options.botState(input.botId) === "missing") {
       throw Object.assign(new Error("The assigned MAUS no longer exists"), { status: 410 });
     }
+    const owned = input.routineId ? this.routines.find((routine) => routine.id === input.routineId && routine.botId === input.botId) : undefined;
     const run: RoutineRun = {
       id: randomUUID(),
+      ...(owned?.runAs ? { runAs: owned.runAs } : {}),
       routineId: input.routineId ?? input.webhookId,
       routineName: input.webhookName,
       prompt: input.prompt,
