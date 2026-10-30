@@ -1128,6 +1128,7 @@ import { pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { engineServerMcp, perspicaxServerName, personalMcpPrecheck, serverMcpAsPerson, turnPluginDirs, turnPluginPromptDirs } from "./turn-mounts.ts";
 import { resolveBotCapabilities, type CapabilityInputs, type InstallationServerInput } from "./capabilities.ts";
 import { createBotCapabilitiesRoutes, type BotCapabilitiesAnswer } from "./routes/bot-capabilities.ts";
+import type { BotCapabilities } from "../shared/capabilities.ts";
 import { reservedMcpName } from "../shared/mcp-reserved-names.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
 import { createLifecycleHookRoutes } from "./routes/lifecycle-hooks.ts";
@@ -8738,21 +8739,47 @@ function botCapabilitiesFor(auth: RequestAuth, botId: string, engineId: string |
   const bot = store.bot(botId);
   const level = bot ? viewerBotLevel(auth, bot) : null;
   if (!bot || (level === null && !orgAdminCaller(auth))) return { ok: false, status: 404, error: "no such bot", code: "not_found" };
-  const instance = registry.get(engineId ?? bot.modelSelection.instanceId);
-  if (!instance) return { ok: false, status: engineId ? 400 : 404, error: "Unknown engine.", code: "unknown_engine" };
-  const organization = IDENTITY.kind === "perspicax";
-  const principal = organization ? sessionPrincipal(auth)?.trim().toLowerCase() || undefined : undefined;
-  const speaker: TurnSpeaker = principal ? { origin: "person", principalId: principal } : { origin: "operator" };
+  const principal = IDENTITY.kind === "perspicax" ? sessionPrincipal(auth)?.trim().toLowerCase() || undefined : undefined;
   const mayChange = IDENTITY.kind !== "perspicax"
     ? auth.kind !== "session" || auth.scopes.includes("admin")
     : level === "owner" || level === "manage" || orgAdminCaller(auth);
+  return botCapabilitiesAs(bot, engineId, { ...(principal ? { principal } : {}), mayChange, marketplace: marketplaceViewer(auth) });
+}
+/** The Perspicax console's `GET bots/{id}/capabilities` (lot 1d): the same
+ * list for the console person, whose reach the admin router checked. Read
+ * only: the console never switches anything, so `canToggle` says what that
+ * person could change in Sagax. */
+function consoleBotCapabilities(botId: string, viewer: { principalId: string; orgAdmin: boolean }): BotCapabilities | null {
+  const bot = store.bot(botId);
+  if (!bot) return null;
+  const principal = viewer.principalId.trim().toLowerCase();
+  const person = authzViewerFromId(principal);
+  const level = person ? botLevel({ viewer: { ...person, orgAdmin: person.orgAdmin || viewer.orgAdmin }, ...botFacts(bot) }) : null;
+  const answer = botCapabilitiesAs(bot, undefined, {
+    principal,
+    mayChange: viewer.orgAdmin || level === "owner" || level === "manage",
+    marketplace: { principal },
+  });
+  return answer.ok ? answer.capabilities : null;
+}
+function botCapabilitiesAs(
+  bot: NonNullable<ReturnType<typeof store.bot>>,
+  engineId: string | undefined,
+  viewer: { principal?: string; mayChange: boolean; marketplace: MarketplaceViewer },
+): BotCapabilitiesAnswer {
+  const instance = registry.get(engineId ?? bot.modelSelection.instanceId);
+  if (!instance) return { ok: false, status: engineId ? 400 : 404, error: "Unknown engine.", code: "unknown_engine" };
+  const organization = IDENTITY.kind === "perspicax";
+  const principal = organization ? viewer.principal : undefined;
+  const speaker: TurnSpeaker = principal ? { origin: "person", principalId: principal } : { origin: "operator" };
+  const mayChange = viewer.mayChange;
   const owner = effectiveBotOwner(bot);
   const kind = instance.driverKind;
   const library = skillsLibraryEnabled(cfg);
   // what the marketplaces offer, for "update available" (names only)
   const offered = new Map<string, boolean>();
   try {
-    for (const market of botPlugins.listMarketplaces(bot.id, marketplaceViewer(auth))) {
+    for (const market of botPlugins.listMarketplaces(bot.id, viewer.marketplace)) {
       for (const plugin of market.plugins) if (plugin.updateAvailable) offered.set(`${plugin.name}@${market.name}`, true);
     }
   } catch { /* listed without updates */ }
@@ -40060,6 +40087,7 @@ function setBotApprovalModeFromConsole(botId: string, mode: "ask" | "auto", thre
 
 const orgBotsDeps: BotsDeps = {
   bots: () => orgAdminBots(),
+  capabilities: (botId, viewer) => consoleBotCapabilities(botId, viewer),
   avatar: (botId) => {
     const bot = store.bot(botId);
     return bot ? readBotAvatar(bot, ATTACHMENTS_DIR) : null;

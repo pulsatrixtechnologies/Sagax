@@ -6,6 +6,7 @@
 import type { IncomingMessage } from "node:http";
 
 import { BOT_ZIP_MAX_BYTES, type BotZipPreview } from "../shared/bot-zip.ts";
+import type { BotCapabilities } from "../shared/capabilities.ts";
 import type { AdminBot, AdminBotReach, AdminPerson } from "./org-admin-routes.ts";
 import {
   badRequest,
@@ -69,6 +70,11 @@ export interface BotsDeps {
   /** 2026-10-11: the bot's uploaded picture (server/org-admin-look.ts
    * readBotAvatar): null when it has none, `too_large` past the cap. */
   avatar?(botId: string): { bytes: Buffer; type: string; version: string } | "too_large" | null;
+  /** Capacités lot 1d (2026-10-30): the bot's one resolved list of
+   * capabilities (shared/capabilities.ts, the same as
+   * GET /api/bots/:id/capabilities) for the console person; null when the
+   * bot or its engine is gone. Read only. */
+  capabilities?(botId: string, viewer: { principalId: string; orgAdmin: boolean }): BotCapabilities | null;
 }
 
 type Find = { bot: AdminBot; reach: AdminBotReach } | null;
@@ -176,6 +182,22 @@ function single(deps: BotsDeps, path: string, action: ActionName, keys: string[]
   };
 }
 
+/** `GET bots/{id}/capabilities` (Capacités lot 1d): read only, a manager
+ * in reach, an admin, or the owner by the `own-bot` grant. */
+function capabilitiesRoute(deps: BotsDeps, resolve: NonNullable<BotsDeps["capabilities"]>): ConsoleRoute {
+  return {
+    method: "GET",
+    path: "bots/{id}/capabilities",
+    min: "manager",
+    ownerGrant: "own-bot",
+    handle(ctx) {
+      const entry = find(ctx, deps, ctx.params.id!);
+      const list = entry ? resolve(entry.bot.id, { principalId: ctx.viewer.principalId, orgAdmin: ctx.viewer.orgAdmin }) : null;
+      return list ? ok(list) : notFound("No such bot.");
+    },
+  };
+}
+
 export function botsRoutes(deps: BotsDeps): ConsoleRoute[] {
   const actionRoutes = [
     single(deps, "bots/{id}/archive", "archive", [], () => null, "manager", true),
@@ -196,6 +218,7 @@ export function botsRoutes(deps: BotsDeps): ConsoleRoute[] {
         return ok({ bot: { ...entry.bot, ...detail } });
       },
     },
+    ...(deps.capabilities ? [capabilitiesRoute(deps, deps.capabilities)] : []),
     {
       // 2026-10-11: the picture `look.kind: "image"` names, for the gallery.
       method: "GET",
