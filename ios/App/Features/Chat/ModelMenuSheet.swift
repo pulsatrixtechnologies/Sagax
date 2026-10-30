@@ -59,7 +59,7 @@ struct ModelMenuSheet: View {
     private enum Page: Hashable { case root, all, provider(String) }
 
     @State private var instances: [Instance] = []
-    @State private var allowedEngines: [String]?
+    @State private var config: ConfigStatus?
     @State private var simple = false
     @State private var loaded = false
     @State private var page: Page = .root
@@ -84,7 +84,8 @@ struct ModelMenuSheet: View {
         )
         return ModelMenu.sections(
             instances: instances, selection: selection, botModel: profile.modelSelection, botName: profile.name,
-            follows: follows, organization: organization, allowedEngines: allowedEngines, labels: labels,
+            follows: follows, organization: organization, allowedEngines: config?.allowedEngines, disabledModels: config?.disabledModels,
+            myDisabledModels: config?.myDisabledModels, labels: labels,
             engineLabel: { DesktopEngineRail.label($0) }
         )
     }
@@ -130,7 +131,7 @@ struct ModelMenuSheet: View {
             .overlay { if saving { ProgressView() } }
         .task {
             instances = await session.modelInstances()
-            allowedEngines = await session.configStatus()?.allowedEngines
+            config = await session.configStatus()
             let stored = await favorites.load(session)
             simple = ModelMenu.isSimple(stored: stored)
             loaded = true

@@ -740,3 +740,23 @@ describe("the flat model picker", () => {
     expect(open(bot("claude", "claude-opus-5-5")).html).toContain("No automatic backup is configured");
   });
 });
+
+
+describe("the fast model's switches", () => {
+  it("offers only fast models still on for the organization and person", () => {
+    const options = [
+      { id: "ds::off-by-me", label: "Off by me", custom: true, local: true },
+      { id: "ds::off-by-org", label: "Off by org", custom: true, local: true },
+      { id: "ds::ready", label: "Ready fast", custom: true, local: true },
+    ];
+    fixture.instances = [claude({ state: "available", authenticated: true }, [...official, ...options])];
+    fixture.config = { myDisabledModels: ["claude/ds::off-by-me"], disabledModels: ["claude/ds::off-by-org"] };
+    const forBot = { ...bot("claude", "claude-opus-5-5"), modelSelection: { instanceId: "claude", model: "claude-opus-5-5", auto: true as const } };
+    const opened = open(forBot);
+    const fast = opened.nodes.find((node) => node.props["data-model-fast"] !== undefined)!;
+    const keys = nodes(fast.props.children).filter((node) => node.type === "option").map((node) => node.props.value);
+    expect(keys).toContain("claude\u0000ds::ready");
+    expect(keys).not.toContain("claude\u0000ds::off-by-me");
+    expect(keys).not.toContain("claude\u0000ds::off-by-org");
+  });
+});

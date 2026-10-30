@@ -21,7 +21,19 @@ it("keeps a model off across selection, Auto and its fast model", async () => {
     await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: {
       instanceId, model: top, auto: true, fast: { instanceId, model: fast },
     } });
+    const { task: pinned } = await api("POST", `/api/bots/${bot.id}/tasks`, { title: "Own Auto fast model" }, 201);
+    await api("PATCH", `/api/bots/${bot.id}/tasks/${pinned.threadId}`, { modelSelection: {
+      instanceId, model: "claude-sonnet-5-5", auto: true, fast: { instanceId, model: fast },
+    } });
     await api("PUT", "/api/me/models", { disabledModels: [`${instanceId}/${fast}`] });
+    const cleaned = (await api("GET", "/api/bots")).bots.find((entry: any) => entry.id === bot.id);
+    expect(cleaned.modelSelection.fast).toBeUndefined();
+    expect(cleaned.tasks.find((entry: any) => entry.threadId === pinned.threadId).modelSelection.fast).toBeUndefined();
+    // A stale or forged UI cannot save a fast model now switched off.
+    await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: {
+      instanceId, model: top, auto: true, fast: { instanceId, model: fast },
+    } }, 403);
+
     expect((await api("GET", "/api/me/models")).mine).toEqual([`${instanceId}/${fast}`]);
     // Direct selection cannot revive a disabled model.
     await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: { instanceId, model: fast } }, 403);
@@ -51,10 +63,10 @@ it("keeps a model off across selection, Auto and its fast model", async () => {
     ]));
     // The same dispatch diagnostics are available for a pinned bot's backup card.
     await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: { instanceId, model: preview.pick.model } });
-    const pinned = await api("GET", `/api/bots/${bot.id}/auto-model`);
-    expect(pinned.auto).toBe(false);
-    expect(pinned.chain).toEqual(preview.chain);
-    expect(pinned.backups).toEqual([]);
+    const pinnedPreview = await api("GET", `/api/bots/${bot.id}/auto-model`);
+    expect(pinnedPreview.auto).toBe(false);
+    expect(pinnedPreview.chain).toEqual(preview.chain);
+    expect(pinnedPreview.backups).toEqual([]);
     // With this engine's whole catalog off, the bot still changes to Auto.
     const instance = (await api("GET", "/api/instances")).instances.find((entry: any) => entry.instanceId === instanceId);
     const disabledModels = instance.models.options.map((entry: any) => `${instanceId}/${entry.id}`);
