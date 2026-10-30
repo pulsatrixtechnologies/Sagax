@@ -12,6 +12,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { setLocale, t } from "@/lib/i18n";
+import { capabilityFixture } from "@/lib/capabilities.fixture";
 import { buildPluginItems } from "@/lib/plugins-model";
 import { installedEntries, privateSkills } from "@/lib/installed-model";
 import { GROK_CLOUD_CONNECTORS } from "../../../shared/grok-cloud-connectors";
@@ -92,6 +93,19 @@ describe("Capabilities tabs", () => {
     expect(html).not.toContain(">github-github<");
     expect(html).toMatch(/GitHub<\/span><span[^>]*data-installed-brings[^>]*>plugin \(claude-plugins-official\) · 1 connector</);
     expect(html).toMatch(/data-plugins-installed[\s\S]*data-plugins-skills[\s\S]*Private skills[\s\S]*weekly-summary/);
+  });
+
+  it("a bot scope shows the server list once, including personal servers, skills and account connectors", () => {
+    const html = renderToStaticMarkup(createElement(InstalledView, props({ resolved: capabilityFixture(), botName: "Scout" })));
+    expect(html.match(/data-capability="/g)).toHaveLength(8);
+    expect(html).toContain("My Notes");
+    expect(html).toContain("Microsoft 365");
+    expect(html).toContain("vcio-writing");
+    expect(html).not.toContain("data-installed-entry=");
+    expect(html).not.toContain("data-plugins-skills");
+    expect(html).not.toContain("data-capabilities-received=");
+    expect(html).toContain('aria-label="Open GitHub"');
+    expect(html).toContain('aria-label="More for GitHub"');
   });
 
   it("hides every empty section: no private skills, no list, no tools", () => {
