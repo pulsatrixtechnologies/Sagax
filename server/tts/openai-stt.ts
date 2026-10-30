@@ -110,6 +110,7 @@ export function createOpenAiStt(options: OpenAiSttOptions = {}) {
       const url = `${api().replace(/^http/, "ws")}/realtime?intent=transcription`;
       const upsample = createUpsampler();
       const texts = new Map<string, string>();
+      const completedItems = new Set<string>();
       // Commit acknowledgements name items in input order; transcription
       // completions need not arrive in that order. Keep that identity all
       // the way to the page, including probes inside one local utterance.
@@ -177,12 +178,21 @@ export function createOpenAiStt(options: OpenAiSttOptions = {}) {
           grace = setTimeout(becomeReady, READY_GRACE_MS);
           grace.unref?.();
         } else if (type === "input_audio_buffer.committed") {
-          if (typeof frame.item_id === "string" && commits.length) items.set(frame.item_id, commits.shift()!);
+          if (typeof frame.item_id === "string" && commits.length) {
+            const commit = commits.shift()!;
+            items.set(frame.item_id, commit);
+            // Live transcription may start before the client commits.
+            // Keep those deltas by provider item id, then identify their
+            // full cumulative partial as soon as the ack names its owner.
+            const text = texts.get(frame.item_id);
+            if (text) handlers.onTranscript({ text, final: false, speechFinal: false, ...(commit.requestId ? { requestId: commit.requestId } : {}) });
+          }
         } else if (type === "conversation.item.input_audio_transcription.delta") {
           const id = String(frame.item_id ?? "");
-          if (!items.has(id)) return;
+          if (!id || completedItems.has(id)) return;
           const text = (texts.get(id) ?? "") + (typeof frame.delta === "string" ? frame.delta : "");
           texts.set(id, text);
+          if (!items.has(id)) return;
           const requestId = items.get(id)?.requestId;
           handlers.onTranscript({ text, final: false, speechFinal: false, ...(requestId ? { requestId } : {}) });
         } else if (type === "conversation.item.input_audio_transcription.completed") {
@@ -193,6 +203,7 @@ export function createOpenAiStt(options: OpenAiSttOptions = {}) {
           texts.delete(id);
           const requestId = items.get(id)?.requestId;
           items.delete(id);
+          completedItems.add(id);
           handlers.onTranscript({ text: typeof frame.transcript === "string" ? frame.transcript : "", final: true, speechFinal: true, ...(requestId ? { requestId } : {}) });
         } else if (type === "conversation.item.input_audio_transcription.failed") {
           fail("OpenAI could not transcribe the audio. Try again.");

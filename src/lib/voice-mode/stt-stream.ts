@@ -386,6 +386,13 @@ export class LiveTranscriber {
 
   private armFinalTimer(utterance: Utterance): void {
     utterance.timer = setTimeout(() => {
+      // A missing segment may contain a negation or a correction. Neither
+      // its prefix nor a later suffix is a safe substitute for the whole
+      // request, even when some recognized words are already available.
+      if (this.identified && [...utterance.requests.values()].some((part) => !part.final)) {
+        void this.upload(utterance);
+        return;
+      }
       const fallback = utterance.text.trim() || utterance.interim?.trim() || "";
       if (fallback) {
         if (!utterance.text.trim()) utterance.text = fallback;
@@ -450,12 +457,17 @@ export class LiveTranscriber {
       segment.final = frame.final && frame.speechFinal;
       // Each identified segment is cumulative; replace its partial, never
       // append it or deduplicate a repeated phrase in another segment.
-      utterance.text = [...utterance.requests.values()].map((part) => part.text).filter(Boolean).join(" ");
-      this.forcedFlush = segment.final && !utterance.discard;
+      const parts: string[] = [];
+      for (const part of utterance.requests.values()) {
+        if (part.text) parts.push(part.text);
+        if (!part.final) break;
+      }
+      utterance.text = parts.join(" ");
+      const pending = [...utterance.requests.values()].some((part) => !part.final);
+      this.forcedFlush = !pending && segment.final && !utterance.discard;
       if (!utterance.discard && (!this.current || this.current === utterance)) {
         for (const fn of Array.from(this.partialWatchers)) fn(utterance.text);
       }
-      const pending = [...utterance.requests.values()].some((part) => !part.final);
       utterance.probing = pending;
       if (pending || utterance.sent !== utterance.closedAt) return;
       if (utterance.finalized) this.settle(utterance);

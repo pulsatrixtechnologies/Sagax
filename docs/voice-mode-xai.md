@@ -12,7 +12,11 @@ Each page `finalize` carries a `requestId`. For OpenAI, the provider's
 `input_audio_buffer.committed` event associates its `item_id` with that
 request. Partial and final transcripts retain this identity through the
 server. Results can complete out of order: the page updates their own turn
-and assembles probes within a turn in audio order. Results of a discarded,
+and assembles probes within a turn in audio order. Only a contiguous prefix
+is published; a gap or non-final segment at timeout triggers transcription
+of the whole recording, rather than sending an incomplete request. Deltas
+received before commit are kept by item id until the ack names their owner.
+Results of a discarded,
 timed-out, uploaded or reconnected turn cannot consume a newer turn's words.
 xAI and older clients continue using the existing ordered chunk protocol.
 

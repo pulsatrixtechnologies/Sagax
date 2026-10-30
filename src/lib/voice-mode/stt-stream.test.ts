@@ -49,12 +49,13 @@ class Socket {
 
 async function ears(finalTimeoutMs = 300) {
   const socket = new Socket();
+  const uploads: Blob[] = [];
   const transcriber = new LiveTranscriber({
     botId: "b-1",
     language: () => "en",
     threadId: () => "t-1",
     socket: () => socket as unknown as WebSocket,
-    transcribe: async () => "uploaded",
+    transcribe: async (_botId, audio) => { uploads.push(audio); return "uploaded"; },
     finalTimeoutMs,
   });
   expect(await transcriber.connect()).toBe(true);
@@ -62,7 +63,7 @@ async function ears(finalTimeoutMs = 300) {
     transcriber.begin([]);
     transcriber.push(new Float32Array(VAD_FRAME).fill(0.05));
   };
-  return { socket, transcriber, speak };
+  return { socket, transcriber, speak, uploads };
 }
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -109,17 +110,43 @@ describe("LiveTranscriber finalize", () => {
     transcriber.close();
   });
 
-  it("ignores a timed-out identified turn without draining the next turn's result", async () => {
+  it("uploads the whole timed-out identified turn without draining the next turn's result", async () => {
     const { socket, transcriber, speak } = await ears(10);
     speak();
     const first = transcriber.finishHeard();
     socket.transcript("Cherche le billet", false, false, undefined, socket.requestIds[0]);
-    expect((await first).text).toBe("Cherche le billet");
+    expect((await first).text).toBe("uploaded");
     speak();
     const second = transcriber.finishHeard();
     socket.transcript("Annule", true, true, undefined, socket.requestIds[1]);
     socket.transcript("Cherche le billet de mardi", true, true, undefined, socket.requestIds[0]);
     expect((await second).text).toBe("Annule");
+    transcriber.close();
+  });
+
+  it("never publishes or sends a suffix with its earlier segment missing, and recovers the whole audio on timeout", async () => {
+    const { socket, transcriber, speak, uploads } = await ears(10);
+    const partials: string[] = [];
+    transcriber.onPartial((text) => partials.push(text));
+    speak();
+    transcriber.probe(); // the delayed segment contains: Ne fais pas ceci :
+    transcriber.push(new Float32Array(VAD_FRAME).fill(0.05));
+    const finished = transcriber.finishHeard();
+    socket.transcript("envoie le courriel à Julie", true, true, undefined, socket.requestIds[1]);
+    expect(partials.every((text) => !text.includes("envoie"))).toBe(true);
+    expect((await finished).text).toBe("uploaded");
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0]!.size).toBe(44 + 2 * VAD_FRAME * 2);
+    transcriber.close();
+  });
+
+  it("recovers the whole audio if a later segment is missing rather than sending just the earlier prefix", async () => {
+    const { socket, transcriber, speak } = await ears(10);
+    speak();
+    transcriber.probe();
+    socket.transcript("envoie le courriel", true, true, undefined, socket.requestIds[0]);
+    transcriber.push(new Float32Array(VAD_FRAME).fill(0.05)); // ... non, ne l'envoie pas
+    expect((await transcriber.finishHeard()).text).toBe("uploaded");
     transcriber.close();
   });
 

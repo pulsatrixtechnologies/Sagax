@@ -115,6 +115,35 @@ describe("OpenAI speech to text (server/tts/openai-stt.ts)", () => {
     ]);
   });
 
+  it("keeps precommit deltas by item id and publishes their cumulative text only after the owner is acknowledged", async () => {
+    const api = await fakeRealtime((frame, send) => {
+      if (frame.type === "session.update") send({ type: "session.updated" });
+      if (frame.type === "input_audio_buffer.append") send({ type: "conversation.item.input_audio_transcription.delta", item_id: "i1", delta: "Ne fais pas" });
+      if (frame.type === "input_audio_buffer.commit") {
+        send({ type: "input_audio_buffer.committed", item_id: "i1" });
+        send({ type: "conversation.item.input_audio_transcription.delta", item_id: "i1", delta: " ceci" });
+        send({ type: "conversation.item.input_audio_transcription.completed", item_id: "i1", transcript: "Ne fais pas ceci." });
+      }
+    });
+    const events: TranscriptEvent[] = [];
+    let done!: () => void;
+    const finished = new Promise<void>((resolve) => { done = resolve; });
+    const stream = createOpenAiStt({ api }).openTranscription(KEY, {}, {
+      onTranscript: (event) => { events.push(event); if (event.speechFinal) done(); },
+      onError: () => {}, onClose: () => {},
+    });
+    await stream.ready;
+    stream.send(pcm16(1, 2));
+    stream.finalize("page-1");
+    await finished;
+    stream.close();
+    expect(events).toEqual([
+      { text: "Ne fais pas", final: false, speechFinal: false, requestId: "page-1" },
+      { text: "Ne fais pas ceci", final: false, speechFinal: false, requestId: "page-1" },
+      { text: "Ne fais pas ceci.", final: true, speechFinal: true, requestId: "page-1" },
+    ]);
+  });
+
   it("closes a failed transcription so the call can reconnect or upload, without echoing the provider's text", async () => {
     const api = await fakeRealtime((frame, send) => {
       if (frame.type === "session.update") send({ type: "session.updated" });
@@ -144,6 +173,7 @@ describe("OpenAI speech to text (server/tts/openai-stt.ts)", () => {
       if (commits === 2) {
         send({ type: "conversation.item.input_audio_transcription.completed", item_id: "i1", transcript: "Cherche" });
         send({ type: "conversation.item.input_audio_transcription.completed", item_id: "i1", transcript: "stale duplicate" });
+        send({ type: "conversation.item.input_audio_transcription.delta", item_id: "i1", delta: "stale partial" });
         send({ type: "conversation.item.input_audio_transcription.delta", item_id: "unknown", delta: "wrong turn" });
         send({ type: "conversation.item.input_audio_transcription.completed", item_id: "i2", transcript: "Annule" });
       }

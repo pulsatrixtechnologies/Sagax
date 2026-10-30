@@ -222,6 +222,7 @@ generation and the online computers. The former Engines and Keys groups
 were removed in lot 5; their old card ids redirect to Providers. Sign-in and key links (`engines.keys`, `connections`, "Add in
 Providers") open Providers (`CARD_HOME`, `MERGED` in
 `src/lib/settings-sections.ts`).
+
 ## Voice recognition: short answers and committed transcript identity (2026-10-30)
 
 Calls accept names, weekdays, commands, single letters and non-Latin words
@@ -234,7 +235,10 @@ The page tags every listen `finalize` with a bounded `requestId`. OpenAI's
 `input_audio_buffer.committed` maps each provider `item_id` to that request;
 transcript frames keep the id through `voice-listen-session.ts`. The page
 reconciles by request, replacing each segment's partial and assembling probe
-segments in audio order. Late results of retired turns are ignored. xAI and
+segments in audio order, exposing only a contiguous prefix. A timeout with
+an incomplete segment uploads the whole audio, never just a prefix/suffix.
+OpenAI deltas received before commit are held by item id until the ack
+identifies their owner. Late results of retired turns are ignored. xAI and
 older clients retain their ordered untagged chunk protocol. A failed OpenAI
 transcription closes its socket so the existing reconnect/upload path runs.
 Tests: `src/lib/voice-mode/stt-stream.e2e.test.ts`, `server/tts/openai-stt.test.ts`,
