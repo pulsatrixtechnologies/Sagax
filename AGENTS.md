@@ -35,7 +35,7 @@ route's `unhandled`), a one-bot calendar entry coming due
 another bot's post in a room that names the bot (post_to_room), and a
 webhook that posts to the chat (`delivery: "post"`). off: nothing. propose:
 a proposal card in the bot's one conversation (`card.proactiveProposal`, no
-model call), answered on `POST /api/bots/:id/proactive/:proposalId`
+model call), answered on `POST /api/bots/:id/proactive/:proposalId` (server/routes/proactive-proposals.ts)
 `{accept}` (client-scoped, companion-allowed; options[0] accepts,
 `shared/proactive-proposal.ts`), the yes starting the wake at the bot's
 level; proposals in `proactive-proposals.json` (0600, 3 days). read-auto and

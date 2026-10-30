@@ -104,6 +104,7 @@ import {
   type ApprovalMode,
 } from "../shared/approval-mode.ts";
 import { isProactiveMode, proactiveModeFor } from "../shared/proactive-mode.ts";
+import { createProactiveProposalRoutes } from "./routes/proactive-proposals.ts";
 import { ProactiveProposals, ProactiveWaker, proactivePrompt, textNamesBot, proactiveWakePrompt, proposalCardWords, type ProactiveEvent, type ProactiveSource, type ProactiveWakeBatch } from "./proactive-wake.ts";
 import { actorForTurn, botActFrameAllowed, fillPluginBot, type RouteTarget, type TurnFacts } from "../shared/bot-act.ts";
 import { createBotActService, type BotActAnswerer, type BotActResult, type BotActService, type PerformActor } from "./bot-act.ts";
@@ -24780,11 +24781,16 @@ function postProactiveProposal(batch: ProactiveWakeBatch): void {
 
 /** The person's answer to a proposal card: accept runs it, at the bot's own
  * level and rules (their yes is the request), decline closes the card. */
-function answerProactiveProposal(bot: BotRecord, proposalId: string, accept: boolean): { status: number; body: Record<string, unknown> } {
-  const open = proactiveProposals.get(proposalId);
-  if (!open || open.botId !== bot.id) return { status: 404, body: { error: "no such proposal" } };
-  // the caller must be able to write in that conversation (throws 404)
-  routeThreadId(bot, open.threadId);
+function answerProactiveProposal(botId: string, proposalId: string, accept: boolean): { status: number; body: Record<string, unknown> } {
+  const bot = store.bot(botId);
+  const open = bot ? proactiveProposals.get(proposalId) : null;
+  if (!bot || !open || open.botId !== bot.id) return { status: 404, body: { error: "no such proposal" } };
+  // the caller must be able to write in that conversation
+  try {
+    routeThreadId(bot, open.threadId);
+  } catch {
+    return { status: 404, body: { error: "no such proposal" } };
+  }
   const proposal = proactiveProposals.answer(proposalId, accept ? "accepted" : "declined");
   if (!proposal) return { status: 409, body: { error: "this proposal was already answered" } };
   const message = store.messagesFor(proposal.threadId).find((row) => row.id === proposal.messageId);
@@ -24800,6 +24806,8 @@ function answerProactiveProposal(bot: BotRecord, proposalId: string, accept: boo
   }
   return { status: 200, body: { ok: true, accepted: accept } };
 }
+
+ROUTES.push(createProactiveProposalRoutes({ answer: answerProactiveProposal }));
 
 // A Cloud home is personal (server/cloud-owner.ts): every stored session
 // without admin scope is revoked and what it opened or wrote is nobody's;
@@ -50771,18 +50779,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       handoffs.stoppedByPerson(threadId);
       await interruptDirectThread(m[1], threadId);
       return json(res, 200, { ok: true, outcome: "stopped" });
-    }
-    // 2026-10-30: the person's one click on a proactive proposal card
-    m = path.match(/^\/api\/bots\/([\w-]+)\/proactive\/([\w-]+)$/);
-    if (m && method === "POST") {
-      const bot = store.bot(m[1]);
-      if (!bot) return json(res, 404, { error: "no such bot" });
-      const body = await readBody(req);
-      if (!body || typeof body !== "object" || typeof (body as { accept?: unknown }).accept !== "boolean") {
-        return json(res, 400, { error: "accept must be true or false" });
-      }
-      const answer = answerProactiveProposal(bot, m[2], (body as { accept: boolean }).accept);
-      return json(res, answer.status, answer.body);
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/messages(?:\/(guarded))?$/);
     if (m && method === "POST") {
