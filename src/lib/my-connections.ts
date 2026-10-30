@@ -147,23 +147,25 @@ export interface BotPluginsView {
   sharedRemoved?: boolean;
 }
 
-const pluginsPath = (botId: string) => `/api/bots/${encodeURIComponent(botId)}/plugins`;
-export const loadBotPlugins = (botId: string) => api<BotPluginsView>(pluginsPath(botId));
-export const addMarketplace = (botId: string, source: string, options: { ref?: string; credential?: string; visibility?: MarketplaceVisibility } = {}) =>
+export type PluginTarget = string | { scope: "me" };
+export const PERSONAL_PLUGIN_TARGET: PluginTarget = { scope: "me" };
+export const pluginsPath = (target: PluginTarget) => typeof target === "string" ? `/api/bots/${encodeURIComponent(target)}/plugins` : "/api/me/plugins";
+export const loadBotPlugins = (botId: PluginTarget) => api<BotPluginsView>(pluginsPath(botId));
+export const addMarketplace = (botId: PluginTarget, source: string, options: { ref?: string; credential?: string; visibility?: MarketplaceVisibility } = {}) =>
   api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces`, {
     method: "POST", body: JSON.stringify({ source, ...(options.ref ? { ref: options.ref } : {}), ...(options.credential ? { credential: options.credential } : {}), ...(options.visibility ? { visibility: options.visibility } : {}) }), timeoutMs: 180_000,
   });
 /** The credential of the one list this bot picks for a marketplace (null: Automatic). */
-export const chooseMarketplaceCredential = (botId: string, name: string, credential: string | null) =>
+export const chooseMarketplaceCredential = (botId: PluginTarget, name: string, credential: string | null) =>
   api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/credential`, { method: "PUT", body: JSON.stringify({ credential }) });
 /** Refusals of a private repository that a token (or a GitHub connection) fixes. */
 export const MARKETPLACE_ACCESS_CODES = new Set(["private_needs_token", "not_found_or_no_access", "bad_token", "forbidden", "sso_required", "repository_unreadable", "org_not_covered"]);
-export const updateMarketplace = (botId: string, name: string) => api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/update`, { method: "POST", timeoutMs: 180_000 });
-export const removeMarketplace = (botId: string, name: string) => api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}`, { method: "DELETE" });
-export const installPlugin = (botId: string, marketplace: string, plugin: string) =>
+export const updateMarketplace = (botId: PluginTarget, name: string) => api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}/update`, { method: "POST", timeoutMs: 180_000 });
+export const removeMarketplace = (botId: PluginTarget, name: string) => api<BotPluginsView>(`${pluginsPath(botId)}/marketplaces/${encodeURIComponent(name)}`, { method: "DELETE" });
+export const installPlugin = (botId: PluginTarget, marketplace: string, plugin: string) =>
   api<BotPluginsView>(`${pluginsPath(botId)}/install`, { method: "POST", body: JSON.stringify({ marketplace, plugin }), timeoutMs: 180_000 });
-export const setPluginEnabled = (botId: string, key: string, enabled: boolean) =>
+export const setPluginEnabled = (botId: PluginTarget, key: string, enabled: boolean) =>
   api<BotPluginsView>(`${pluginsPath(botId)}/${encodeURIComponent(key)}`, { method: "PATCH", body: JSON.stringify({ enabled }) });
-export const setPluginConfig = (botId: string, key: string, values: Record<string, string | number | boolean>) =>
+export const setPluginConfig = (botId: PluginTarget, key: string, values: Record<string, string | number | boolean>) =>
   api<BotPluginsView>(`${pluginsPath(botId)}/${encodeURIComponent(key)}/config`, { method: "PUT", body: JSON.stringify({ values }) });
-export const uninstallPlugin = (botId: string, key: string) => api<BotPluginsView>(`${pluginsPath(botId)}/${encodeURIComponent(key)}`, { method: "DELETE" });
+export const uninstallPlugin = (botId: PluginTarget, key: string) => api<BotPluginsView>(`${pluginsPath(botId)}/${encodeURIComponent(key)}`, { method: "DELETE" });

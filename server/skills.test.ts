@@ -71,6 +71,21 @@ afterEach(async () => {
   await removeTempDir(scratch);
 });
 
+describe("personal skills replace lower-scope native discovery", () => {
+  it("removes only the managed bot link and index row, then restores them when the personal skill is off", () => {
+    expect(installSkill(bot, "local:test", [{ path: "SKILL.md", content: SKILL("packing-list") }])).not.toHaveProperty("error");
+    expect(setSkillEnabled(bot, "packing-list", true)).not.toHaveProperty("error");
+    const native = join(workspaceDir(bot), ".claude", "skills", "packing-list");
+    expect(skillsSystemPrompt(bot)).toContain("- packing-list:");
+    expect(existsSync(native)).toBe(true);
+    expect(skillsSystemPrompt(bot, undefined, new Set(["packing-list"]))).toBe("");
+    expect(existsSync(native)).toBe(false);
+    expect(listSkills(bot).find((skill) => skill.name === "packing-list")?.enabled).toBe(true);
+    expect(skillsSystemPrompt(bot)).toContain("- packing-list:");
+    expect(existsSync(native)).toBe(true);
+  });
+});
+
 describe("skills prompt index budget", () => {
   function manifestSkills(descriptions: Record<string, string>, disabled: string[] = [], revisions: Record<string, string> = {}) {
     const entries: Record<string, ReturnType<typeof legacyManifestEntry>> = {};

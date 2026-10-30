@@ -80,7 +80,6 @@ async function boot() {
       viewer: (auth) => ({ principal: who(auth), seesAll: who(auth) === ADMIN }),
       mayManageMarketplaces: (auth) => who(auth) === ADMIN,
       mayShareOrgWide: (auth) => who(auth) === ADMIN,
-      ownIntegrationsRefusal: (auth) => who(auth) === "pr_blocked" ? { code: "permission_denied", permission: "apps.ownIntegrations" } : null,
       policy: () => undefined,
     }),
     createBotPluginRoutes<Bot>({
@@ -163,13 +162,13 @@ describe("personal plugins use the signed-in person's encrypted scope", () => {
     expect((await call("pr_alice", "DELETE", "/api/me/plugins/reviewer@acme-tools")).body.plugins).toEqual([]);
   });
 
-  it("keeps the existing personal permission and organization sharing boundary", async () => {
+  it("requires a signed-in person and reserves organization sharing", async () => {
     const { call } = await boot();
     expect((await call("", "GET", "/api/me/plugins")).status).toBe(403);
     expect((await call("pr_alice", "POST", "/api/me/plugins/marketplaces", { source: "acme/tools", visibility: "org" })).status).toBe(403);
-    expect((await call("pr_blocked", "GET", "/api/me/plugins")).body.canChange).toBe(false);
+    expect((await call("pr_blocked", "GET", "/api/me/plugins")).body.canChange).toBe(true);
     const denied = await call("pr_blocked", "POST", "/api/me/plugins/marketplaces", { source: "acme/tools" });
-    expect(denied).toMatchObject({ status: 403, body: { permission: "apps.ownIntegrations" } });
+    expect(denied.status).toBe(201);
   });
 });
 

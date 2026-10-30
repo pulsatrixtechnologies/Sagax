@@ -97,8 +97,8 @@ Perspicax (`docs/design/lexique.md` there):
   person's engine account, a file of the person, the Sagax catalog). The
   Sources tab lists marketplaces.
 - Scope: This bot, Me, Organization (fr Ce bot, Moi, Organisation). Today
-  the toggle still says For <bot> and Everyone; the three scopes come in
-  lot 2 of the migration.
+  the toggle names these three scopes. Me is the default; a bot panel
+  opens This bot. Organization is offered to the installation manager.
 - State: available, installed, on, to connect, update offered, set by the
   organization, offered by the organization, not served by this engine.
 - Never « plugiciel »: a plugin is a plugin in both languages.
@@ -113,6 +113,49 @@ Grok's cloud connectors are listed from Grok's own catalog and say « Non
 vérifiable » (Sagax cannot check them). `plugins.claudeOnly` says what a
 non-Claude engine really gets (skills and commands in the prompt on an
 engine with files, nothing yet on Grok and API engines).
+
+## Capabilities: personal references and complete plugins (lot 2, 2026-10-30)
+
+`PersonCapabilities` (`server/person-connections.ts`, legacy export
+`PersonConnections`) keeps MCP, GitHub, plugin records/config values and
+skill references in `principals/<pid>/capabilities.enc`. Its first read
+migrates `connections.enc` only if the new file is absent. A corrupt new
+file never falls back or overwrites it; an empty new file never revives
+old connections. Keep the existing file/AAD compatibility tests.
+
+- `BotPlugins` uses the same installer and update calculation for bot and
+  Me; `personalPluginStorage` encrypts Me records and namespaces credential
+  picks by person. `/api/me/plugins` and `/api/me/skills-library` derive
+  the person only from the session (solo: the local operator), never from
+  a query/body id. Me and a bot's owner manage their own scope without an
+  admin permission. Sharing a marketplace remains organization impact.
+- `selectPluginScopes` chooses current folders Organization > Me > Bot.
+  `scopedPluginFolders` and `scopedPluginMcp` feed execution and the receipt.
+  Missing copies claim no name. Bot-private installs stay in their owner's
+  environment when another person speaks through a shared bot.
+- MCP declarations are private execution data, stripped from native plugin
+  folders and public lists/packages, then mounted separately. Commands
+  cross `sagax-stdio` into the turn person's environment on org servers;
+  solo uses the actual installed root. The per-frame relay revalidates
+  the current install. Existing namespace, environment, address and MCP
+  policies apply. Keep bin files needed by those sandbox commands.
+- `InstallationPlugins` restores complete sanitized copies from the old
+  marketplace records at startup and after install/update. It serves
+  agents, commands and skills to file engines; newly declared commands
+  use the same sandbox relay. MCP already mapped into config keeps its
+  switches, bot selections and OAuth: the complete copy cannot bypass
+  those settings. Reinstall is Update, rather than an already-installed
+  409; transient concurrent-update conflicts remain meaningful.
+- Skills library defaults on. `PersonalSkills` owns one verified source
+  referenced by all the person's bots. A saved Me skill is reviewed by
+  the person; a changed-on-disk or disabled file is not indexed. The same
+  source supports explicit /name commands. Me names replace lower-scope
+  bot prompt entries and managed native links without changing that
+  bot's stored switch; imposed org skills win. The per-capability index
+  and its consolidated budget follow in lot 3.
+- Validation: `capabilities-scopes.e2e.test.ts` drives the real HTTP routes
+  for two bots and all three plugin scopes; personal-skills, plugin scope,
+  install, receipt, integrity and native-link tests cover isolation.
 
 ## Capabilities: one resolved list per bot (lot 1a, 2026-10-30)
 

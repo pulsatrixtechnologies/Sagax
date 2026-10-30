@@ -92,7 +92,7 @@ function VisibilityBadge({ visibility, onToggle, disabled }: { visibility: Marke
  * everyone's (the "Everyone" scope). */
 export interface MarketplaceCredentialControls {
   /** whose pick it is: the hint says so (default "bot") */
-  scope?: "bot" | "workspace";
+  scope?: "bot" | "me" | "workspace";
   /** pick a credential (null: Automatic), then fetch the marketplace again */
   onChoose: (name: string, credential: string | null) => Promise<boolean>;
 }

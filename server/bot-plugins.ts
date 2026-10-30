@@ -30,12 +30,12 @@
 //     an extra HTTP header through the environment, never the URL, the argv
 //     or a file.
 //   - What runs on the server host is never taken from a plugin: hooks,
-//     MCP and LSP servers and bin/ are removed from the folder Claude loads
+//     MCP and LSP server declarations are removed from the folder Claude loads
 //     with --plugin-dir (they would run on the Sagax host). Hook commands
 //     are kept beside that folder and run only on the bot's computer when
 //     the owner turns lifecycle hooks on (server/lifecycle-hooks.ts). The
 //     plugin's skills, commands, agents and output styles stay. The MCP
-//     servers it declared are listed so the person can add them as their own.
+//     servers it declared mount separately in the person's environment.
 import { execFile } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
@@ -49,7 +49,7 @@ import { SANDBOX_PLUGINS_DIR } from "./sandbox-plugins.ts";
 import { capabilityPluginRecordSchema as pluginRecord, capabilityPluginStateSchema as stateSchema } from "./capability-plugin-state.ts";
 import type { CapabilityPluginValues } from "./capability-plugin-state.ts";
 import { capturePluginHooks, type LifecycleHook } from "./lifecycle-hooks.ts";
-import type { MarketplaceViewer, MarketplaceVisibility, PluginMarketplaces } from "./plugin-marketplaces.ts";
+import { pluginUpdateAvailable, type MarketplaceViewer, type MarketplaceVisibility, type PluginMarketplaces } from "./plugin-marketplaces.ts";
 import { probeGithubRepo, type GithubCredential, type GithubProbe } from "./github-access.ts";
 import { githubGitEnvironment } from "./github-connect.ts";
 import { WORKSPACE_SCOPE as WORKSPACE_TOKEN_KEY } from "./github-credentials.ts";
@@ -675,10 +675,7 @@ export class BotPlugins {
           // the same rule as the workspace scope (pluginUpdateAvailable):
           // another declared version, or the same version with other files
           const offered = installed ? this.options.marketplaces.revisionOf(market.name, entry) : undefined;
-          const update = Boolean(installed) && (
-            (Boolean(installed!.version && entry.version) && installed!.version !== entry.version)
-            || (Boolean(installed!.revision && offered) && installed!.revision !== offered)
-          );
+          const update = Boolean(installed && pluginUpdateAvailable(installed, { version: entry.version, revision: offered }));
           let contents: PluginContents | undefined;
           if (entry.source.kind === "path" && !manifestOnly) {
             try { contents = readPluginContents(insideRoot(repo, entry.source.path)); } catch { contents = undefined; }

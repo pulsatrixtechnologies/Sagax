@@ -59,6 +59,8 @@ import {
   addMarketplace as addBotMarketplace,
   installPlugin as installBotPlugin,
   loadBotPlugins,
+  PERSONAL_PLUGIN_TARGET,
+  type PluginTarget,
   MARKETPLACE_ACCESS_CODES,
   removeMarketplace as removeBotMarketplace,
   setPluginConfig as setBotPluginConfig,
@@ -289,6 +291,7 @@ export function PluginsPanel() {
   const serverMode = useServerMode();
   const perspicaxOrg = usePerspicaxOrg();
   const organization = Boolean(serverMode?.active) || perspicaxOrg !== null;
+  const mayManageOrganization = organization ? perspicaxOrg?.viewerRole === "admin" : ownerOrAdmin === true;
   const [featured, setFeatured] = useState<FeaturedListing[] | null>(null);
   const [dataCenterFor, setDataCenterFor] = useState<{ item: PluginItem; regions: DataCenter[]; defaultUrl: string } | null>(null);
   const [skills, setSkills] = useState<SkillsLibrarySkillWire[] | null>(null);
@@ -306,8 +309,18 @@ export function PluginsPanel() {
   const scopeBot = pluginScopeBot({ pluginsBotId: state.pluginsBotId, selectedId: state.selectedId, bots: state.bots });
   const scopeBotId = scopeBot?.id ?? null;
   const [scopeChoice, setScopeChoice] = useState<PluginScope>(() => initialPluginScope(state.pluginsBotId, scopeBot));
-  const scope: PluginScope = scopeChoice === "bot" && scopeBot ? "bot" : "workspace";
+  const scope: PluginScope = (scopeChoice === "bot" && !scopeBot) || (scopeChoice === "workspace" && !mayManageOrganization) ? "me" : scopeChoice;
   const [botView, setBotView] = useState<BotPluginsView | null>(null);
+  const [personalView, setPersonalView] = useState<BotPluginsView | null>(null);
+  const scopeBotIdRef = useRef(scopeBotId);
+  scopeBotIdRef.current = scopeBotId;
+  const scopedPluginView = scope === "me" ? personalView : botView;
+  const scopedPluginTarget = scope === "me" ? PERSONAL_PLUGIN_TARGET : scopeBotId;
+  const scopedPluginName = scope === "me" ? t("connectApps.scope.me") : scopeBot?.name ?? "";
+  const setScopedPluginView = (view: BotPluginsView, target: PluginTarget | null = scopedPluginTarget) => {
+    if (typeof target !== "string") setPersonalView(view);
+    else if (scopeBotIdRef.current === target) setBotView(view);
+  };
   // the bot's one resolved list (lot 1b): its engine, its organization Flow
   // and Roles for Installed, read again after each change of its plugins
   const botCapabilities = useBotCapabilities(scopeBotId, { revision: botView });
@@ -316,10 +329,13 @@ export function PluginsPanel() {
   const loadFeatured = useCallback(() => api("/api/plugins/search")
     .then((result) => setFeatured(result.featured ?? []))
     .catch(() => setFeatured([])), []);
-  const loadSkills = useCallback(() => api("/api/skills-library")
-    .then((result) => setSkills(result.skills ?? []))
+  const skillsRoute = scope === "me" ? "/api/me/skills-library" : "/api/skills-library";
+  const skillsRouteRef = useRef(skillsRoute);
+  skillsRouteRef.current = skillsRoute;
+  const loadSkills = useCallback(() => api(skillsRoute)
+    .then((result) => { if (skillsRouteRef.current === skillsRoute) setSkills(result.skills ?? []); })
     // the skills library is an option: off, there are no private skills
-    .catch(() => setSkills([])), []);
+    .catch(() => { if (skillsRouteRef.current === skillsRoute) setSkills([]); }), [skillsRoute]);
   const loadMarketplaces = useCallback(() => api("/api/marketplaces")
     .then((result) => {
       setMarketplaces(result.marketplaces ?? []);
@@ -337,11 +353,16 @@ export function PluginsPanel() {
       return;
     }
     try {
-      setBotView(await loadBotPlugins(scopeBotId));
+      const view = await loadBotPlugins(scopeBotId);
+      if (scopeBotIdRef.current === scopeBotId) setBotView(view);
     } catch {
-      setBotView(null);
+      if (scopeBotIdRef.current === scopeBotId) setBotView(null);
     }
   }, [scopeBotId]);
+  const loadPersonalView = useCallback(async () => {
+    try { setPersonalView(await loadBotPlugins(PERSONAL_PLUGIN_TARGET)); }
+    catch (cause) { setPersonalView(null); setPanelError(readableError(cause)); }
+  }, []);
   useEffect(() => {
     void loadFeatured();
     void loadSkills();
@@ -349,7 +370,8 @@ export function PluginsPanel() {
   }, [loadFeatured, loadSkills, loadMarketplaces]);
   useEffect(() => {
     void loadBotView();
-  }, [loadBotView]);
+    void loadPersonalView();
+  }, [loadBotView, loadPersonalView]);
 
   const close = useCallback(() => dispatch({ type: "togglePlugins", open: false }), [dispatch]);
   // A link to one tab of Connect apps: Pages (the published pages, moved
@@ -427,8 +449,8 @@ export function PluginsPanel() {
   // The bot scope reads the same marketplaces through the bot: installed
   // there means on that bot.
   const shownMarketplaces = useMemo<MarketplaceListing[] | null>(
-    () => (scope === "bot" ? (botView ? botScopeMarketplaces(botView) : null) : marketplaces),
-    [scope, botView, marketplaces],
+    () => (scope !== "workspace" ? (scopedPluginView ? botScopeMarketplaces(scopedPluginView) : null) : marketplaces),
+    [scope, scopedPluginView, marketplaces],
   );
   const grokConfigured = grokProviderConfigured(state.instances);
   const items = useMemo(() => buildPluginItems({
@@ -441,7 +463,7 @@ export function PluginsPanel() {
   }), [mcp.servers, featured, skills, shownMarketplaces, mcp.whopServer?.name, mcp.whopConnected, grokConfigured]);
   // For a bot, only marketplace plugins: apps, servers and skills are the
   // workspace's (a bot chooses among them in its own Access).
-  const scopedItems = useMemo(() => (scope === "bot" ? items.filter((item) => item.kind === "plugin") : items), [scope, items]);
+  const scopedItems = useMemo(() => (scope !== "workspace" ? items.filter((item) => item.kind === "plugin" || (scope === "me" && item.kind === "skill")) : items), [scope, items]);
 
   const refreshAll = () => {
     void mcp.load(true);
@@ -449,6 +471,7 @@ export function PluginsPanel() {
     void loadSkills();
     void loadMarketplaces();
     void loadBotView();
+    void loadPersonalView();
   };
   const refreshing = mcp.busy === "load";
 
@@ -506,14 +529,14 @@ export function PluginsPanel() {
   // Add, refresh and remove go through the workspace's routes for its
   // managers, else through the bot's own for a person who may change that
   // bot's plugins: one list either way.
-  const marketRoute = marketplaceRoute({ workspaceManager: workspaceMarkets, scope, botView });
+  const marketRoute = marketplaceRoute({ workspaceManager: workspaceMarkets && mayManageOrganization, scope, botView, personalView });
   const afterBotMarket = async (view: BotPluginsView) => {
-    setBotView(view);
+    setScopedPluginView(view);
     if (workspaceMarkets) await loadMarketplaces();
   };
   const addMarketplace = (source: string, ref: string, visibility: MarketplaceVisibility, credential?: string) => marketAction("add", async () => {
-    if (marketRoute === "bot" && scopeBotId) {
-      await afterBotMarket(await addBotMarketplace(scopeBotId, source, { ...(ref ? { ref } : {}), ...(credential ? { credential } : {}), visibility }));
+    if ((marketRoute === "bot" || marketRoute === "me") && scopedPluginTarget) {
+      await afterBotMarket(await addBotMarketplace(scopedPluginTarget, source, { ...(ref ? { ref } : {}), ...(credential ? { credential } : {}), visibility }));
       return;
     }
     const result = await api("/api/marketplaces", { method: "POST", body: JSON.stringify({ source, ...(ref ? { ref } : {}), ...(credential ? { credential } : {}), visibility }) });
@@ -529,8 +552,8 @@ export function PluginsPanel() {
     void loadBotView();
   });
   const refreshMarketplace = (name: string) => void marketAction(`refresh:${name}`, async () => {
-    if (marketRoute === "bot" && scopeBotId) {
-      await afterBotMarket(await updateBotMarketplace(scopeBotId, name));
+    if ((marketRoute === "bot" || marketRoute === "me") && scopedPluginTarget) {
+      await afterBotMarket(await updateBotMarketplace(scopedPluginTarget, name));
       return;
     }
     const result = await api(`/api/marketplaces/${encodeURIComponent(name)}/refresh`, { method: "POST", body: "{}" });
@@ -538,11 +561,11 @@ export function PluginsPanel() {
     void loadBotView();
   });
   const removeMarketplace = (name: string) => {
-    const fromBot = marketRoute === "bot" && scopeBot;
-    if (!window.confirm(fromBot ? t("connectApps.market.removeFromBotConfirm", { name, bot: scopeBot.name }) : t("connectApps.market.removeConfirm", { name }))) return;
+    const fromBot = (marketRoute === "bot" || marketRoute === "me") && scopedPluginTarget;
+    if (!window.confirm(fromBot ? t("connectApps.market.removeFromBotConfirm", { name, bot: scopedPluginName }) : t("connectApps.market.removeConfirm", { name }))) return;
     void marketAction(`remove:${name}`, async () => {
       if (fromBot) {
-        const view = await removeBotMarketplace(scopeBot.id, name);
+        const view = await removeBotMarketplace(fromBot, name);
         await afterBotMarket(view);
         if (!view.sharedRemoved) setPanelNotice(t("connectApps.market.keptForEveryone", { name }));
       } else {
@@ -565,13 +588,13 @@ export function PluginsPanel() {
   /** Each marketplace picks a credential of the one list on the GitHub
    * plugin's page, or Automatic (2026-10-28): that bot's pick, or the
    * installation's for the workspace's managers; then it is fetched again. */
-  const marketCredentials = marketRoute === "bot" && scopeBotId
-    ? marketplaceCredentialControls<MarketplaceListing>({ route: "bot", botId: scopeBotId, api, run: marketAction, botLoaded: afterBotMarket })
+  const marketCredentials = (marketRoute === "me" || (marketRoute === "bot" && scopeBotId))
+    ? marketplaceCredentialControls<MarketplaceListing>({ route: marketRoute, botId: scopeBotId ?? undefined, api, run: marketAction, botLoaded: afterBotMarket })
     : marketRoute === "workspace"
       ? marketplaceCredentialControls<MarketplaceListing>({ route: "workspace", api, run: marketAction, loaded: (list) => { setMarketplaces(list); void loadBotView(); } })
       : undefined;
-  const marketSummaries = marketRoute === "bot" && botView
-    ? botScopeMarketplaces(botView)
+  const marketSummaries = (marketRoute === "bot" || marketRoute === "me") && scopedPluginView
+    ? botScopeMarketplaces(scopedPluginView)
     : marketRoute === "workspace" ? marketplaces : null;
 
   /** "For <bot>": the whole plugin on that one bot. */
@@ -579,7 +602,7 @@ export function PluginsPanel() {
     setBotBusy(busy);
     setPanelError(null);
     try {
-      setBotView(await work());
+      setScopedPluginView(await work());
     } catch (cause) {
       setPanelError(readableError(cause));
     } finally {
@@ -588,35 +611,37 @@ export function PluginsPanel() {
   };
   const installForBot = (id: string) => {
     const at = id.lastIndexOf("@");
-    if (!scopeBotId || at <= 0) return;
-    void botAction(`install:${id}`, () => installBotPlugin(scopeBotId, id.slice(at + 1), id.slice(0, at)));
+    if (!scopedPluginTarget || at <= 0) return;
+    void botAction(`install:${id}`, () => installBotPlugin(scopedPluginTarget!, id.slice(at + 1), id.slice(0, at)));
   };
   const uninstallForBot = (id: string) => {
-    if (!scopeBot || !window.confirm(t("connectApps.botPlugin.uninstallConfirm", { name: id.slice(0, id.lastIndexOf("@")), bot: scopeBot.name }))) return;
-    void botAction(`remove:${id}`, () => uninstallBotPlugin(scopeBot.id, id));
+    if (!scopedPluginTarget || !window.confirm(scope === "me" ? t("connectApps.mePlugin.uninstallConfirm", { name: id.slice(0, id.lastIndexOf("@")) }) : t("connectApps.botPlugin.uninstallConfirm", { name: id.slice(0, id.lastIndexOf("@")), bot: scopedPluginName }))) return;
+    void botAction(`remove:${id}`, () => uninstallBotPlugin(scopedPluginTarget!, id));
   };
   const toggleForBot = (id: string, enabled: boolean) => {
-    if (!scopeBotId) return;
-    void botAction(`toggle:${id}`, () => setBotPluginEnabled(scopeBotId, id, enabled));
+    if (!scopedPluginTarget) return;
+    void botAction(`toggle:${id}`, () => setBotPluginEnabled(scopedPluginTarget!, id, enabled));
   };
   const botCard = (item: PluginItem): ReactNode => {
-    if (!scopeBot || !botView || item.kind !== "plugin") return null;
-    const plugin = botPluginState(botView, item.id);
+    if (!scopedPluginView || !scopedPluginTarget || item.kind !== "plugin") return null;
+    const plugin = botPluginState(scopedPluginView, item.id);
     if (!plugin) return null;
     const busy = botBusy?.endsWith(`:${item.id}`) ? botBusy.slice(0, botBusy.indexOf(":")) : botBusy ? "other" : null;
     return (
       <BotPluginCard
-        installInHeader={scope === "bot"}
-        botName={scopeBot.name}
-        view={botView}
+        key={`${scope}:${item.key}`}
+        installInHeader={scope !== "workspace"}
+        personal={scope === "me"}
+        botName={scopedPluginName}
+        view={scopedPluginView}
         plugin={plugin}
         busy={busy}
         onInstall={() => installForBot(item.id)}
         onToggle={(enabled) => toggleForBot(item.id, enabled)}
         onUninstall={() => uninstallForBot(item.id)}
         onSaveConfig={async (values) => {
-          if (!scopeBotId) return;
-          setBotView(await setBotPluginConfig(scopeBotId, item.id, values));
+          if (!scopedPluginTarget) return;
+          setScopedPluginView(await setBotPluginConfig(scopedPluginTarget, item.id, values));
         }}
       />
     );
@@ -632,18 +657,18 @@ export function PluginsPanel() {
     const everyone = scope === "workspace"
       ? item.installed
       : marketplaces?.find((market) => market.name === marketplace)?.plugins.find((entry) => entry.name === plugin)?.installed ?? null;
-    const onBot = scopeBot && botView ? botPluginState(botView, item.id) : null;
+    const onBot = scopedPluginTarget && scopedPluginView ? botPluginState(scopedPluginView, item.id) : null;
     const installState: DetailInstallState[] = [
       ...(everyone === null ? [] : [{ id: "everyone" as const, on: everyone, label: t(everyone ? "connectApps.detail.state.everyoneOn" : "connectApps.detail.state.everyoneOff") }]),
-      ...(onBot && scopeBot ? [{ id: "bot" as const, on: Boolean(onBot.installed), label: t(onBot.installed ? "connectApps.detail.state.botOn" : "connectApps.detail.state.botOff", { name: scopeBot.name }) }] : []),
+      ...(onBot ? [{ id: scope === "me" ? "me" as const : "bot" as const, on: Boolean(onBot.installed), label: scope === "me" ? t(onBot.installed ? "connectApps.mePlugin.installed" : "connectApps.mePlugin.notInstalled") : t(onBot.installed ? "connectApps.detail.state.botOn" : "connectApps.detail.state.botOff", { name: scopedPluginName }) }] : []),
     ];
     let primaryAction: ReactNode = null;
-    if (scope === "bot" && scopeBot && onBot && !onBot.installed && botView?.canChange) {
+    if (scope !== "workspace" && onBot && !onBot.installed && scopedPluginView?.canChange) {
       const busy = botBusy === `install:${item.id}`;
       primaryAction = (
         <button type="button" data-plugins-detail-primary="install-bot" disabled={botBusy !== null} onClick={() => installForBot(item.id)} className={cn(cardActionClass("primary"), "gap-1.5")}>
           {busy && <Loader2 size={13} className="animate-spin" aria-hidden="true" />}
-          {busy ? t("plugins.installing") : t("connectApps.botPlugin.install", { name: scopeBot.name })}
+          {busy ? t("plugins.installing") : (scope === "me" ? t("connectApps.mePlugin.install") : t("connectApps.botPlugin.install", { name: scopedPluginName }))}
         </button>
       );
     } else if (scope === "workspace" && item.installed && item.updateAvailable) {
@@ -752,10 +777,10 @@ export function PluginsPanel() {
     if (grokAction !== undefined) return grokAction;
     if (item.key === WHOP_KEY) return <WhopAction mcp={mcp} />;
     if (item.kind === "plugin") {
-      if (scope === "bot") {
+      if (scope !== "workspace") {
         // installed on this bot: Install again updates it in place (its
         // switch and install date stay, server/bot-plugins.ts)
-        if (!botView?.canChange || (item.installed && !item.updateAvailable)) return null;
+        if (!scopedPluginView?.canChange || (item.installed && !item.updateAvailable)) return null;
         return (
           <button type="button" {...(item.installed ? { "data-bot-plugin-update": item.id } : { "data-bot-plugin-add": item.id })} disabled={botBusy !== null} onClick={() => installForBot(item.id)} className={cn(cardActionClass(item.installed ? "secondary" : "quiet"), "min-w-[76px]")}>
             {botBusy === `install:${item.id}` ? <Loader2 size={13} className="mx-auto animate-spin" /> : t(item.installed ? "connectApps.plugin.update" : "connectApps.action.add")}
@@ -808,28 +833,28 @@ export function PluginsPanel() {
   // Bots too (2026-10-29): bots and templates are the same in both scopes
   const botsTab = tab === "bots" && page.page === "main" && search.trim() === "";
   const accountsTab = (tab === "pages" && page.page === "main") || botsTab;
-  const scopeToggle = scopeBot ? (
+  const scopeToggle = (
     <div data-plugins-scope-bar data-plugins-scope-tab={botsTab ? "bots" : accountsTab ? "accounts" : "plugins"}>
-      <ScopeToggle scope={scope} botName={scopeBot.name} onScope={setScopeChoice} disabled={accountsTab} describedBy={accountsTab ? "plugins-scope-note" : undefined} />
+      <ScopeToggle scope={scope} botName={scopeBot?.name} organization={workspaceMarkets && mayManageOrganization} onScope={(next) => { setScopeChoice(next); setPanelError(null); }} disabled={accountsTab} describedBy={accountsTab ? "plugins-scope-note" : undefined} />
     </div>
-  ) : null;
-  const scopeControl = scopeBot ? (
+  );
+  const scopeControl = (
     <div data-plugins-scope-notes>
       <p id="plugins-scope-note" className="mt-2 min-h-[36px] text-[12px] leading-[18px] text-ink-secondary" data-plugins-scope-note={botsTab ? "bots" : accountsTab ? "accounts" : scope}>
-        {botsTab ? t("connectApps.scope.botsNote") : accountsTab ? t("connectApps.scope.accountsNote") : scope === "bot" ? (
+        {botsTab ? t("connectApps.scope.botsNote") : accountsTab ? t("connectApps.scope.accountsNote") : scope === "bot" && scopeBot ? (
           <>
             {t("connectApps.scope.botNote", { name: scopeBot.name })}
             {botView && !botView.canChange && <> {t("plugins.readOnly")}</>}
           </>
-        ) : t("connectApps.scope.workspaceNote")}
+        ) : t(scope === "me" ? "connectApps.scope.meNote" : "connectApps.scope.workspaceNote")}
       </p>
       <div className={cn(accountsTab && "invisible")} aria-hidden={accountsTab || undefined}>
-        {scope === "bot" && botView && botView.marketplaces.length === 0 && (
+        {scope !== "workspace" && scopedPluginView && scopedPluginView.marketplaces.length === 0 && (
           <p className="mt-2 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary" data-plugins-scope-empty>{t("connectApps.scope.noMarketplaces")}</p>
         )}
       </div>
     </div>
-  ) : null;
+  );
 
   // Manage > Installed: one entry per thing (installed-model.ts).
   const entries = useMemo(() => installedEntries(scopedItems, featured ?? []), [scopedItems, featured]);
@@ -871,8 +896,8 @@ export function PluginsPanel() {
   };
   const entryActions = (entry: InstalledEntry): EntryActions => {
     const plugin = entry.members.find((member) => member.kind === "plugin");
-    if (scope === "bot") {
-      if (!plugin || !botView?.canChange) return {};
+    if (scope !== "workspace") {
+      if (!plugin || !scopedPluginView?.canChange) return {};
       return {
         ...(plugin.updateAvailable ? { update: () => installForBot(plugin.id) } : {}),
         remove: () => uninstallForBot(plugin.id),
@@ -924,6 +949,7 @@ export function PluginsPanel() {
   const skillsOn = skills !== null && skillsLibraryOn;
   const pageSkill = page.page === "skill" && page.name ? skills?.find((entry) => entry.name === page.name) : undefined;
   const skillReadOnly = (skill: SkillsLibrarySkillWire): string | undefined => {
+    if (scope === "me") return undefined;
     if (ownerOrAdmin === false && !libraryEditor) return perspicaxOrg !== null ? permissionMissingText("skills.library") : t("connectApps.skill.readOnlyOwner");
     if (skill.version) return t("connectApps.skill.readOnlyOrganization");
     const plugin = marketplaces?.find((market) => market.name === skill.source)?.plugins.find((entry) => entry.installed && entry.skills.includes(skill.name));
@@ -937,7 +963,8 @@ export function PluginsPanel() {
   if (page.page === "skill" && (pageSkill || !page.name)) {
     subpage = (
       <SkillPage
-        key={page.name ?? "new"}
+        key={`${scope}:${page.name ?? "new"}`}
+        basePath={skillsRoute}
         skill={pageSkill}
         readOnlyReason={pageSkill ? skillReadOnly(pageSkill) : undefined}
         onBack={back}
@@ -1135,7 +1162,7 @@ export function PluginsPanel() {
       // what "N connected" counted, on the tabs that list them (2026-10-28):
       // the person's connected entries on Installed, the engine accounts'
       // connectors on Providers (a bot's scope counts its plugins only)
-      counts={connectedCounts({ entries, engineConnected: scope === "bot" ? 0 : claudeConnectors })}
+      counts={connectedCounts({ entries, engineConnected: scope !== "workspace" ? 0 : claudeConnectors })}
       scope={scopeToggle}
       scopeNote={scopeControl}
       search={searchField}
@@ -1158,7 +1185,7 @@ export function PluginsPanel() {
           onAddServer={scope === "workspace" && !mcp.restricted ? mcp.startAdd : undefined}
           onPasteConfig={scope === "workspace" && !mcp.restricted ? mcp.toggleImport : undefined}
           addDisabled={mcp.busy !== null}
-          onNewSkill={scope === "workspace" && skillsOn && (ownerOrAdmin !== false || libraryEditor) ? () => push({ page: "skill" }) : undefined}
+          onNewSkill={scope !== "bot" && skillsOn && (scope === "me" || ownerOrAdmin !== false || libraryEditor) ? () => push({ page: "skill" }) : undefined}
           onDiscover={() => setTab("discover")}
           providers={(
         <AccountsView
@@ -1191,7 +1218,7 @@ export function PluginsPanel() {
       discover={(
         <DiscoverView
           items={discoverItems(scopedItems, state.pluginsFocusApps ?? undefined)}
-          loading={mcp.servers === null || (scope === "bot" && botView === null)}
+          loading={mcp.servers === null || (scope !== "workspace" && scopedPluginView === null)}
           filter={filter}
           onFilter={setFilter}
           type={type}
@@ -1223,7 +1250,7 @@ export function PluginsPanel() {
               onSetVisibility={marketRoute === "workspace" ? setMarketplaceVisibility : undefined}
               canChooseVisibility={marketRoute !== null}
               disabled={marketRoute === null}
-              removeKeepsInstalls={marketRoute === "bot"}
+              removeKeepsInstalls={marketRoute === "bot" || marketRoute === "me"}
               credentials={marketCredentials}
               needsToken={marketCredentials ? marketNeedsToken : null}
               onOpenGithub={githubHere ? openGithub : undefined}
@@ -1511,7 +1538,7 @@ function pluginDetail(item: PluginItem, { items, marketplaces, installing, openI
   ];
   // For a bot the page is that bot's install: the card says what it brings,
   // and its Update installs the marketplace's files again in place.
-  if (scope === "bot") {
+  if (scope !== "workspace") {
     return {
       item,
       subtitle,

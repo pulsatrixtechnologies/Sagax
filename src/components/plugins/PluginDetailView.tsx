@@ -36,7 +36,7 @@ export interface DetailAccount {
 
 /** Where the plugin is installed, one pill each: for everyone, on this bot. */
 export interface DetailInstallState {
-  id: "everyone" | "bot";
+  id: "everyone" | "me" | "bot";
   label: string;
   on: boolean;
 }

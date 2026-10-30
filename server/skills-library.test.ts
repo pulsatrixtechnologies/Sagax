@@ -109,17 +109,18 @@ describe("skills library store", () => {
     expect(events).toContainEqual({ kind: "review-state", name: "triage" });
   });
 
-  it("defaults the feature flag off and switches on only via features.skillsLibrary", () => {
-    expect(config.skillsLibraryEnabled({} as AppConfig)).toBe(false);
-    expect(config.skillsLibraryEnabled({ features: {} } as AppConfig)).toBe(false);
+  it("defaults the library on and respects an explicit opt-out", () => {
+    expect(config.skillsLibraryEnabled({} as AppConfig)).toBe(true);
+    expect(config.skillsLibraryEnabled({ features: {} } as AppConfig)).toBe(true);
     expect(config.skillsLibraryEnabled({ features: { skillsLibrary: true } } as AppConfig)).toBe(true);
+    expect(config.skillsLibraryEnabled({ features: { skillsLibrary: false } } as AppConfig)).toBe(false);
   });
 
   it("parseStoredConfig keeps features.skillsLibrary while stripping genuinely unknown keys", () => {
     const stored = config.parseStoredConfig({ features: { skillsLibrary: true, browser: true } });
     expect(stored).toEqual({ features: { skillsLibrary: true, browser: true } });
     expect(config.skillsLibraryEnabled(stored)).toBe(true);
-    expect(config.skillsLibraryEnabled(config.parseStoredConfig({ features: { browser: true } }))).toBe(false);
+    expect(config.skillsLibraryEnabled(config.parseStoredConfig({ features: { browser: true } }))).toBe(true);
     // an unknown flag still strips as a no-op instead of failing the file
     expect(config.parseStoredConfig({ features: { skillsLibrary: true, teleport: true } })).toEqual({
       features: { skillsLibrary: true },

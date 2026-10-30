@@ -15,6 +15,7 @@ import { PluginConfigForm } from "./PluginConfigForm";
 
 export interface BotPluginCardProps {
   botName: string;
+  personal?: boolean;
   view: BotPluginsView;
   plugin: BotPluginState;
   /** "install", "toggle", "remove" while that runs */
@@ -38,7 +39,7 @@ function Names({ label, names }: { label: string; names: string[] }) {
   );
 }
 
-export function BotPluginCard({ botName, view, plugin, busy, onInstall, onToggle, onUninstall, onSaveConfig, installInHeader = false }: BotPluginCardProps) {
+export function BotPluginCard({ botName, personal = false, view, plugin, busy, onInstall, onToggle, onUninstall, onSaveConfig, installInHeader = false }: BotPluginCardProps) {
   const installed = plugin.installed;
   const change = view.canChange;
   const contents = plugin.contents;
@@ -46,13 +47,13 @@ export function BotPluginCard({ botName, view, plugin, busy, onInstall, onToggle
   return (
     <div data-bot-plugin={plugin.key} data-bot-plugin-installed={installed ? "yes" : "no"}>
       <PluginCard
-        title={t("connectApps.botPlugin.title", { name: botName })}
+        title={personal ? t("connectApps.scope.me") : t("connectApps.botPlugin.title", { name: botName })}
         action={installed && change ? (
           <Switch checked={installed.enabled} disabled={busy !== null} aria-label={t("plugins.enabled", { name: plugin.plugin })} onClick={() => onToggle(!installed.enabled)} />
         ) : undefined}
       >
         <p className="text-[12.5px] leading-relaxed text-ink-secondary">
-          {installed ? t("connectApps.botPlugin.installed", { name: botName }) : t("connectApps.botPlugin.notInstalled", { name: botName })}
+          {personal ? t(installed ? "connectApps.mePlugin.installed" : "connectApps.mePlugin.notInstalled") : installed ? t("connectApps.botPlugin.installed", { name: botName }) : t("connectApps.botPlugin.notInstalled", { name: botName })}
         </p>
         {!view.engine.loadsPlugins && <p className="mt-2 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("plugins.claudeOnly")}</p>}
         {contents ? (
@@ -76,11 +77,11 @@ export function BotPluginCard({ botName, view, plugin, busy, onInstall, onToggle
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             <button type="button" data-bot-plugin-install disabled={busy !== null} onClick={onInstall} className={installed ? "ui-button flex items-center gap-1.5 text-[12px]" : "ui-button ui-button-primary flex items-center gap-1.5 text-[12px]"}>
               {busy === "install" && <Loader2 size={13} className="animate-spin" />}
-              {busy === "install" ? t("plugins.installing") : installed ? t("plugins.update") : t("connectApps.botPlugin.install", { name: botName })}
+              {busy === "install" ? t("plugins.installing") : installed ? t("plugins.update") : personal ? t("connectApps.mePlugin.install") : t("connectApps.botPlugin.install", { name: botName })}
             </button>
             {installed && (
               <button type="button" data-bot-plugin-uninstall disabled={busy !== null} onClick={onUninstall} className="rounded-lg border border-danger/40 px-3 py-1.5 text-[12px] font-medium text-danger hover:bg-danger/10 disabled:opacity-40">
-                {t("connectApps.botPlugin.uninstall", { name: botName })}
+                {personal ? t("connectApps.mePlugin.uninstall") : t("connectApps.botPlugin.uninstall", { name: botName })}
               </button>
             )}
           </div>

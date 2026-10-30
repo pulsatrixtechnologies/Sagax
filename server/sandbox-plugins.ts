@@ -11,7 +11,7 @@
 //     (the caller checks): a plugin can come from a private marketplace the
 //     owner reads, so it never lands in another person's environment.
 //   - Only what the install kept (bot-plugins.ts strips hooks, MCP and LSP
-//     servers, bin/) and no symlink (workspaceManifest refuses them).
+//     servers) and no symlink (workspaceManifest refuses them).
 //   - The folder is replaced whole, a digest marker says what is there, and
 //     an unchanged plugin costs one read of the marker.
 import { execFile } from "node:child_process";

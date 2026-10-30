@@ -362,9 +362,8 @@ const featureConfigSchema = z.object({
    * conversations that share words with the message ride into the turn.
    * Read-only; on unless explicitly switched off — see autoRecallEnabled. */
   autoRecall: z.boolean().optional(),
-  /** Opt-in shared skills library: one store at the data dir that bots
-   * read by assignment instead of per-workspace copies. Off until
-   * explicitly enabled — see skillsLibraryEnabled. */
+  /** Skills referenced by bots instead of per-workspace copies.
+   * Available unless explicitly switched off. */
   skillsLibrary: z.boolean().optional(),
 });
 /** First-run progress. Kept in the workspace config rather than a browser so
@@ -1253,13 +1252,9 @@ export function llmThreadTitlesEnabled(cfg: AppConfig): boolean {
 }
 
 
-/** Opt-in shared skills library (skills lane S1): one store at the data dir
- * that bots reference by assignment instead of per-workspace copies. Off
- * unless enabled by hand in ~/.sagax/config.json
- * (`{"features": {"skillsLibrary": true}}`); while off, every skills
- * surface keeps today's byte-identical per-bot behavior. */
+/** Skills library, available unless explicitly switched off. */
 export function skillsLibraryEnabled(cfg: AppConfig): boolean {
-  return cfg.features?.skillsLibrary === true;
+  return cfg.features?.skillsLibrary !== false;
  }
 
 /** What each engine is launched with, as far as a config write can change

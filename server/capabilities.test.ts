@@ -148,6 +148,23 @@ describe("personal and complete plugin capabilities", () => {
     }
   });
 
+  it("loads a whole organization install before personal and bot copies on each engine", () => {
+    for (const engine of ENGINES) {
+      const input = inputs(engine);
+      input.personalPlugins = [{ ...input.botPlugins[0]!, dir: "/me/alpha" }];
+      input.workspacePlugins.push({ key: "alpha@market", name: "alpha", marketplace: "market", servers: [], skills: [], folder: { dir: "/organization/alpha", contents: { skills: ["a1"], commands: ["c1"], agents: ["g1"] }, declaredMcpServers: ["org-command"] } });
+      input.pluginMcp = [{ scope: "organization", key: "alpha@market", name: "org-command", spec: { command: "node", args: [], env: {} } }];
+      input.pluginEnvironment = true;
+      const list = resolveBotCapabilities(input, { principalId: "p1", mayChange: true });
+      const row = byKey(list, "plugin:installation:alpha@market");
+      expect(row).toMatchObject({ state: "on", brings: { skills: ["a1"], commands: ["c1"], agents: ["g1"], mcpServers: ["org-command"] }, mounts: ["org-command"] });
+      expect(row?.engine.mcp).toBe(engine.kind === "grok" ? "proxied" : "mounted");
+      expect(byKey(list, "plugin:me:alpha@market")).toMatchObject({ state: "off", reason: "name_taken" });
+      expect(byKey(list, "plugin:bot:alpha@market")).toMatchObject({ state: "off", reason: "name_taken" });
+      expect(JSON.stringify(list)).not.toContain("\"command\":\"node\"");
+    }
+  });
+
   it("serves plugin MCP on an API engine and reports only actual unique mounts", () => {
     const input = inputs(ENGINES[2]!);
     input.personalPlugins = [{ ...input.botPlugins[0]!, key: "personal@market", name: "personal", dir: "/me/personal" }];
