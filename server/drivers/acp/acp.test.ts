@@ -1985,7 +1985,7 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   });
 
   it("brings a team account's Outlook and Teams to the person's Grok turn: managed configs on, one server per connector (2026-10-30)", async () => {
-    // GOX, Sagax 0.8.18: Outlook and Teams active on grok.com, and the bot
+    // Organization server, Sagax 0.8.18: Outlook and Teams active on grok.com, and the bot
     // said "Grok sees no connector on this turn". Grok fetches the managed
     // configs only with GROK_MANAGED_MCPS_ENABLED=true; with the gateway
     // variable alone its list held no managed server. The fake CLI answers
