@@ -21,6 +21,7 @@ import { indexMemoryFile, indexedMemoryFiles, recallMemory, removeMemoryFile, ty
 import { redactSecretsInText } from "./redact.ts";
 
 import { DATA_DIR } from "./config.ts";
+import { engineWorksInFiles } from "../shared/capabilities.ts";
 
 export const WORKSPACES_DIR = join(DATA_DIR, "workspaces");
 export const TASK_WORKSPACES_DIR = join(DATA_DIR, "task-workspaces");
@@ -60,7 +61,7 @@ export async function holdBotMemoryPlain(botId: string, holder: string): Promise
 
 /** MCP support does not imply native filesystem tools or a local working directory. */
 export function supportsWorkspaceFiles(driverKind: string): boolean {
-  return !["grok", "openai-compat", "minimax", "mistral", "cerebras", "groq"].includes(driverKind);
+  return engineWorksInFiles(driverKind);
 }
 
 /** Default task files are private to the thread, outside the bot's shared

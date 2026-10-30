@@ -114,6 +114,71 @@ vérifiable » (Sagax cannot check them). `plugins.claudeOnly` says what a
 non-Claude engine really gets (skills and commands in the prompt on an
 engine with files, nothing yet on Grok and API engines).
 
+## Capabilities: one resolved list per bot (lot 1a, 2026-10-30)
+
+One server function says, for ONE bot and ITS engine, everything the bot
+receives on top of its engine, read from today's stores with nothing
+migrated and nothing a turn mounts changed: `resolveBotCapabilities`
+(`server/capabilities.ts`), served by `GET /api/bots/:id/capabilities`
+(`server/routes/bot-capabilities.ts`, member scope `orgDirectory`, the
+handler checks `viewerBotLevel`; `?engine=<instanceId>` previews another
+engine) and by the main bot's `sagax_settings` get `bot.capabilities`
+(read only). Every screen reads this list (Capabilities > Installed in the
+bot's scope, Bot > Capabilities, the iPhone, the Perspicax console's bot
+sheet). Keep these rules, covered by `server/capabilities.test.ts`,
+`shared/capabilities.test.ts` and `server/routes/bot-capabilities.test.ts`:
+
+- The contract is `shared/capabilities.ts` (`Capability`, `BotCapabilities`):
+  form (plugin, skill, mcp, connector, role, flow), source, scope (bot, me,
+  organization, installation, account), state (on, off, to_connect,
+  imposed, not_held, not_served, reserved, unverifiable), `reason`, what the
+  engine receives (`engine`) and the MCP names it mounts (`mounts`). The
+  desktop, iOS and the console read these field names: add fields, never
+  rename one without saying so in the PR. Names are readable
+  (`shared/readable-name.ts`, moved from `src/lib/installed-model.ts`);
+  `key` is stable and never shown; no id in a name.
+- One engine matrix, `engineReceipt` (shared/capabilities.ts), for the
+  resolver and the texts: Claude loads plugins whole (`--plugin-dir`:
+  native) and is the only engine the organization's Flow reaches (C-3);
+  other engines with files read plugin skills, commands and agents from
+  the turn prompt (server/plugin-turn.ts); engines without files
+  (`ENGINES_WITHOUT_FILES`, which `supportsWorkspaceFiles` now reads) get
+  nothing of a plugin, a skill or Flow; MCP is `mounted` by an engine with
+  files, `proxied` by Sagax for one without, `none` without `customMcp`.
+- An installed plugin record is historical, not proof of ownership. Fold
+  an installation MCP server or library skill into a plugin only when its
+  current `source` matches the marketplace and exactly one record claims
+  that name. A replacement or an ambiguous claim keeps its own row, with
+  one mount. Read library provenance even while the library is off. Flow
+  name priority follows the actual bot folders passed to Claude, never an
+  enabled record whose copy is missing.
+- The list and the turn use the same functions (`server/turn-mounts.ts`):
+  `engineServerMcp` and `serverMcpAsPerson` (this installation's servers,
+  `engineMcpServers` / `mcpServersAsPerson`), `personalMcpPrecheck` (the
+  person's own servers, `mountPersonalMcp`), `perspicaxServerName`,
+  `turnPluginDirs` and `turnPluginPromptDirs` (`pluginDirsFor`,
+  `pluginSkillsForTurn`). The test "a turn mounts exactly what the list
+  says" checks, for Claude, Codex and Grok, that the MCP names and plugin
+  folders a turn gets equal the list's capabilities that are on (or
+  imposed) and received. Change one, change both through these functions.
+- The viewer stands in for the speaker of a turn: their own MCP servers,
+  their GitHub connection, the Roles they hold (`not_held` otherwise, C-5).
+- What used to be silent is a row with a reason: a personal server whose
+  name another server of the turn has (`name_taken`, C-18), an
+  installation server a command on an organization server (`host_command`),
+  refused by the policy, left out of the bot's own list, waiting for
+  GitHub; a plugin "Everyone" whose library skills reach no bot
+  (`library_off`, `not_assigned`, C-2); the organization's Flow held back
+  (`guard_off`). An installation server that needs a sign-in is still
+  mounted (state on, `connect.reason: sign_in`); a personal one is not
+  (`to_connect`). A plugin "Everyone" folds its servers into its row.
+- `promptIndex` (#1748): the skills index's bytes and count, its caps
+  (`INDEX_MAX_BYTES`, `INDEX_MAX_SKILLS`) and what it left out, from
+  `skillsPromptIndex` (server/skills.ts), the same computation as the
+  prompt without touching links or the log.
+- Grok's account connectors are a static catalog: `unverifiable`, never
+  "connected".
+
 ## Proactive bots, wired for real (2026-10-30)
 
 A bot's proactive mode (`proactiveMode`, Edit bot > Permissions > Proactive,
@@ -6246,13 +6311,20 @@ connectors and My MCP servers only.
   `src/components/plugins/ConnectAppsView.test.ts`. Captures:
   `scripts/capture-github-plugin.mjs`, `docs/screenshots/github-plugin/`.
 
-## Reserved MCP server names (2026-10-17)
+## Reserved MCP server names (2026-10-17, one rule since 2026-10-30)
 
-`server/mcp-registry.ts` refuses `mcp`, any name with `__`, the built-in
-names and the families `sagax-`/`sagax_`, `perspicax_`, `claude_ai_`,
-`openmausbot_` (#695). A server an older build saved under such a name is
-never mounted, whatever a bot's own list says, and is never switched on
-again under that name. It is not silent:
+One rule, `reservedMcpName` (`shared/mcp-reserved-names.ts`), for this
+installation's servers (`server/mcp-registry.ts`), a person's own servers
+(`addPersonalMcpServer`, `personalMcpPrecheck`) and the turn's Connectors
+record (`server/turn-connectors.ts`): `mcp`, any name with `__`, the
+built-in names and the families `sagax`, `perspicax`, `openmausbot`,
+`claude_ai`, `claude-ai-`/`claude-ai_` and `mcp`, with or without a
+separator (#695; since 2026-10-30 the strictest of the three former rules,
+the one a person's servers had: `mcp-github`, `mcpx` or `sagaxy` on this
+installation are now reserved too). An imported name in a reserved family
+takes the name without it (`mcp.example.com` is `example-com`). A server an
+older build saved under such a name is never mounted, whatever a bot's own
+list says, and is never switched on again under that name. It is not silent:
 
 - the start and the first mount log `MCP server "<name>" is not mounted:
   its name is reserved by Sagax...` once per name (`warnReservedMcpServers`);
@@ -6265,10 +6337,9 @@ again under that name. It is not silent:
   entry under it, saves it off, forgets the sign-ins of both names, and
   moves the bots that listed it (their account choice for it is dropped).
   Policy and the organization host-command refusal apply to the new name.
-- Not covered: a personal connection (`server/person-connections.ts`)
-  saved before #695 under a name with `__` (its other reserved families
-  were already refused at creation) is still mounted, neither skipped nor
-  flagged; `foreignToolSpelling` keeps it from passing for a built-in.
+- A personal connection (`server/person-connections.ts`) saved before #695
+  under a name with `__` is no longer mounted (since 2026-10-30,
+  `personalMcpPrecheck`) and the capabilities list shows it `reserved`.
 - Tests: `server/mcp-registry.test.ts`, `server/config.test.ts`
   (customMcpServers), `server/routes/mcp-server-rename.test.ts`,
   `src/components/McpServersPanel.reserved.test.ts`,
