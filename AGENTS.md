@@ -52,10 +52,12 @@ chain of bots stops at `PROACTIVE_MAX_HOPS` (3), events within 30 s make one
 wake and a wake is at most every 2 min and 12 an hour
 (`PROACTIVE_WAKE_BUDGET`), one Events line per wake (`runtime.notice`, the
 labels and the reason, never the content). Every turn's system prompt has a
-"Proactive" section (`proactivePrompt`). Tests: `server/proactive-wake.test.ts`,
+"Proactive" section (`proactivePrompt`). iOS draws the proposal card until
+it is answered (`FlatQuestionCardView`, `ProactiveProposalRules`) and sets
+the mode in Permissions (phone and iPad panel, `ProactiveMode`). Tests: `server/proactive-wake.test.ts`,
 `server/proactive-wake.e2e.test.ts` (`SAGAX_PROACTIVE_GATHER_MS`),
 `server/bot-inbound-mail.test.ts`, `src/components/OptionCard.test.ts`,
-`shared/proactive-proposal.test.ts`.
+`shared/proactive-proposal.test.ts`, `ProactiveModeTests.swift`.
 
 ## A reply shows as it is written (2026-10-29)
 

@@ -327,6 +327,24 @@ struct BotPermissionsSection: View {
             }
         }
         .task(id: bot.id) { viewerId = PrimaryBotRules.viewerId(config: await session.configStatus()) }
+        // 2026-10-30: Proactive, as on the desktop (PermissionsSection.tsx)
+        Section {
+            Picker("Proactive", selection: Binding(get: { ProactiveMode.of(current.proactiveMode) }, set: { mode in
+                guard mode != ProactiveMode.of(current.proactiveMode) else { return }
+                send(BotPanelPatch(proactiveMode: mode.rawValue))
+            })) {
+                ForEach(ProactiveMode.allCases, id: \.self) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .disabled(!edits("proactiveMode"))
+            .accessibilityIdentifier("permissions-proactive")
+        } footer: {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(ProactiveMode.of(current.proactiveMode).hint)
+                Text("How this bot acts on its own on an email, a calendar entry, a failed run, another bot's post or a webhook.")
+            }
+        }
         .alert("Give this bot Full access?", isPresented: $confirmingFull) {
             Button("Cancel", role: .cancel) {}
             Button("Full access", role: .destructive) { send(.approval(.full)) }

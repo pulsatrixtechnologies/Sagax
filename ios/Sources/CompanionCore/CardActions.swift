@@ -440,7 +440,8 @@ public enum ApprovalOutcome: Hashable, Sendable {
 public enum OptionCardRules {
     /// A first-run quiz, not a live ask (those carry a request id).
     public static func isOnboardingCard(_ message: Message) -> Bool {
-        message.kind == .options && message.card != nil && message.card?.requestId == nil
+        // a proactive proposal stays until answered, like a live ask
+        message.kind == .options && message.card != nil && message.card?.requestId == nil && message.card?.proactiveProposal == nil
     }
 
     /// Hidden once picked, dismissed, or talked past (a later user text).

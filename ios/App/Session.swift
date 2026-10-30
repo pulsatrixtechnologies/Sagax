@@ -2144,6 +2144,13 @@ final class Session: ObservableObject {
     }
 
     func answer(chat: Chat, card: OptionCard, choice: String, rememberingPermission: Bool = true) async {
+        // 2026-10-30: a proactive proposal answers on its own route
+        if let proposal = card.proactiveProposal {
+            guard case let .bot(bot) = chat else { return }
+            let accept = ProactiveProposalRules.accepts(card, answer: choice)
+            await perform { try await $0.answerProactiveProposal(botId: bot.id, proposalId: proposal.id, accept: accept) }
+            return
+        }
         guard let requestId = card.requestId else { return }
         if rememberingPermission, card.shouldRememberPermission(for: choice), case let .bot(bot) = chat {
             await alwaysAllow(bot: bot, card: card)
