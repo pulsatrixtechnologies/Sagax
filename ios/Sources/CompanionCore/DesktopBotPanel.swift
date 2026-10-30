@@ -221,10 +221,13 @@ public struct BotPanelPatch: Encodable, Hashable, Sendable {
     public var cwd: String?
     /// Works on: Browser turns the bot's own browser switch on with it.
     public var browser: Bool?
+    /// Proactive (`ProactiveMode` raw value).
+    public var proactiveMode: String?
 
     public init(chiefOfStaff: Bool? = nil, approvePeerComms: Bool? = nil, approvalMode: String? = nil,
                 confirmFullAccess: Bool? = nil, applyToAllThreads: Bool? = nil, computer: String? = nil,
-                cloudBackend: String? = nil, cwd: String? = nil, browser: Bool? = nil) {
+                cloudBackend: String? = nil, cwd: String? = nil, browser: Bool? = nil, proactiveMode: String? = nil) {
+        self.proactiveMode = proactiveMode
         self.browser = browser
         self.chiefOfStaff = chiefOfStaff
         self.approvePeerComms = approvePeerComms

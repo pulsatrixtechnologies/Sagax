@@ -109,6 +109,9 @@ public struct OptionCard: Codable, Hashable, Sendable {
     public var title: String
     public var subtitle: String
     public var options: [String]
+    /// 2026-10-30: a proactive proposal (`ProactiveProposalRules`): answered
+    /// on its own route, never as a typed message. Nil on every other card.
+    public var proactiveProposal: ProactiveProposalRef? = nil
     public var answered: String?
     public var dismissed: Bool?
     /// Present when this card is a live provider ask — the thing that makes
@@ -963,6 +966,8 @@ public struct Bot: Codable, Hashable, Identifiable, Sendable {
     /// 2026-10-28: the bot's own level as its owner chose it, never a
     /// conversation's (`WireBot.approvalSetting`). Nil on older servers.
     public var approvalSetting: String? = nil
+    /// The bot's proactive mode (`ProactiveMode`); nil reads as the default.
+    public var proactiveMode: String? = nil
     /// The level the open conversation really runs at, with why, when it is
     /// not `approvalSetting` (`WireBot.approvalApplied`).
     public var approvalApplied: AppliedApprovalLevel? = nil

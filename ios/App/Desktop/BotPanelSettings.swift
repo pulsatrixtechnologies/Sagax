@@ -205,6 +205,7 @@ struct BotPanelPermissions: View {
     private var canEdit: Bool { session.surfaceGate.allows(.botAccessEdit, bot: bot) }
     private func edits(_ field: String) -> Bool { canEdit && session.canEditBotField(bot, field) }
     private var level: ApprovalLevel { ApprovalLevel.of(approvalMode: bot.approvalSettingMode, autoApprove: bot.autoApprove) }
+    private var proactive: ProactiveMode { ProactiveMode.of(bot.proactiveMode) }
     private var sectionName: String {
         let name = bot.section?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return name.isEmpty ? String(localized: "Unassigned") : name
@@ -288,6 +289,47 @@ struct BotPanelPermissions: View {
                 .buttonStyle(.plain)
                 .padding(.top, 12)
                 .accessibilityIdentifier("desktop-panel-approval-grants")
+            }
+            // 2026-10-30: Proactive, as on the desktop (PermissionsSection.tsx)
+            PanelCard {
+                Text("Proactive").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
+                Text("How this bot acts on its own on an email, a calendar entry, a failed run, another bot's post or a webhook.")
+                    .panelText(13, 19.5)
+                    .foregroundStyle(theme.inkSecondary)
+                    .padding(.top, 2)
+                Menu {
+                    ForEach(ProactiveMode.allCases, id: \.self) { mode in
+                        Button {
+                            guard mode != proactive else { return }
+                            Task { _ = await sendPanelPatch(BotPanelPatch(proactiveMode: mode.rawValue), bot: bot, session: session) }
+                        } label: {
+                            if mode == proactive { Label(mode.label, systemImage: "checkmark") } else { Text(mode.label) }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 10) {
+                        Text(proactive.label)
+                            .font(theme.font(13))
+                            .foregroundStyle(theme.ink)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(theme.inkSecondary)
+                    }
+                    .padding(.horizontal, 14)
+                    .frame(height: 40)
+                    .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline40, lineWidth: 1))
+                    .contentShape(Rectangle())
+                }
+                .disabled(!edits("proactiveMode"))
+                .padding(.top, 12)
+                .accessibilityLabel(Text("Proactive"))
+                .accessibilityIdentifier("desktop-panel-proactive")
+                Text(proactive.hint)
+                    .panelText(13, 19.5)
+                    .foregroundStyle(theme.inkSecondary)
+                    .padding(.top, 6)
             }
             if session.surfaceGate.allows(.botOutbound, bot: bot) {
                 AnyView(BotPanelOutbound(bot: bot))

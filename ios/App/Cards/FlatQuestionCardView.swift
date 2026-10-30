@@ -23,7 +23,9 @@ struct FlatQuestionCardView: View {
     /// no request, keeps `CardView`), no tool, no proposal (the same rule as
     /// `isPersistentQuestionCard` in shared/ask-question.ts).
     static func draws(_ card: OptionCard) -> Bool {
-        card.requestId != nil && card.tool == nil && card.questions.isEmpty && card.skillRequest == nil && card.routineRequest == nil
+        // a proactive proposal (2026-10-30): its two choices, no Other row
+        if ProactiveProposalRules.isProposal(card) { return true }
+        return card.requestId != nil && card.tool == nil && card.questions.isEmpty && card.skillRequest == nil && card.routineRequest == nil
             && card.profileRequest == nil && card.modelRequest == nil && card.teamSetupRequest == nil
             && card.tighteningRequest == nil && card.held == nil && card.adminApproval != true
     }
@@ -35,7 +37,8 @@ struct FlatQuestionCardView: View {
     var body: some View {
         if let card = message.card, !hidden {
             let colors = QuestionSheetColors(desktop: desktop)
-            let settled = (card.requestId != nil && card.answered != nil) || sent != nil
+            let proposal = ProactiveProposalRules.isProposal(card)
+            let settled = ((card.requestId != nil || proposal) && card.answered != nil) || sent != nil
             let skipped = QuestionIgnore.isSkip(card.answeredText) || QuestionIgnore.isSkip(sent)
             let closed = skipped || (card.answered != nil && card.answeredText == nil && (card.answered == "deny" || card.answered == "unavailable"))
             let given = settled && !closed ? (card.answeredText ?? sent ?? (card.answered == "answer" || card.answered == "allow" ? "" : card.answered ?? "")) : ""
@@ -57,7 +60,7 @@ struct FlatQuestionCardView: View {
                             settled: settled, disabled: answering
                         ) { answer(card, option) }
                     }
-                    if !settled {
+                    if !settled && !proposal {
                         QuestionSheetRow(
                             colors: colors, index: card.options.count, label: String(localized: "Other answer"),
                             on: other, disabled: answering
@@ -67,7 +70,7 @@ struct FlatQuestionCardView: View {
                         }
                     }
                 }
-                if !settled && (other || card.options.isEmpty) {
+                if !settled && !proposal && (other || card.options.isEmpty) {
                     QuestionSheetField(
                         colors: colors,
                         placeholder: "Type your own answer",

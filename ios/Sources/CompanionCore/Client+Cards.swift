@@ -58,4 +58,10 @@ extension CompanionClient {
             "POST", "/api/bots/\(botId)/secret-cards/\(messageId)/dismiss", body: ["threadId": threadId]
         ))
     }
+
+    /// 2026-10-30: the person's answer to a proactive proposal card
+    /// (`ProactiveProposalRules`): yes starts the bot's wake, no closes it.
+    public func answerProactiveProposal(botId: String, proposalId: String, accept: Bool) async throws {
+        try await send(try makeRequest("POST", "/api/bots/\(botId)/proactive/\(proposalId)", body: ["accept": accept]))
+    }
 }

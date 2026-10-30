@@ -1,6 +1,69 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Proactive": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Proactive" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Proactif" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Proativo" } }
+      }
+    },
+    "Propose only": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Propose only" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Proposer seulement" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Somente propor" } }
+      }
+    },
+    "Read on its own, card to act": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Read on its own, card to act" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Lire seul, carte pour agir" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Ler sozinho, cartão para agir" } }
+      }
+    },
+    "Follow approval rules": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Follow approval rules" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Suivre les règles d'approbation" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Seguir as regras de aprovação" } }
+      }
+    },
+    "No proactive behavior. Routines still run on their schedule or when a trigger fires.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No proactive behavior. Routines still run on their schedule or when a trigger fires." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Aucun comportement proactif. Les routines s'exécutent quand même selon leur horaire ou quand un déclencheur se produit." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Nenhum comportamento proativo. As rotinas ainda rodam no horário ou quando um gatilho dispara." } }
+      }
+    },
+    "It may look (read-only) and propose an action on a card. It runs nothing until you say yes.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "It may look (read-only) and propose an action on a card. It runs nothing until you say yes." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Il peut observer (lecture seule) et proposer une action sur une carte. Il n'exécute rien tant que vous n'avez pas dit oui." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Ele pode observar (somente leitura) e propor uma ação em um cartão. Não executa nada até você dizer sim." } }
+      }
+    },
+    "It may read, summarize, classify and prepare drafts on its own, and shows a card for any write or send.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "It may read, summarize, classify and prepare drafts on its own, and shows a card for any write or send." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Il peut lire, résumer, classer et préparer des brouillons de lui-même, et affiche une carte pour toute écriture ou tout envoi." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Ele pode ler, resumir, classificar e preparar rascunhos sozinho, e mostra um cartão para qualquer escrita ou envio." } }
+      }
+    },
+    "A proactive action follows this bot's approval level and rules, exactly like a normal action.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "A proactive action follows this bot's approval level and rules, exactly like a normal action." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Une action proactive suit le niveau d'approbation et les règles de ce bot, exactement comme une action normale." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Uma ação proativa segue o nível de aprovação e as regras deste bot, exatamente como uma ação normal." } }
+      }
+    },
+    "How this bot acts on its own on an email, a calendar entry, a failed run, another bot's post or a webhook.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "How this bot acts on its own on an email, a calendar entry, a failed run, another bot's post or a webhook." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Comment ce bot agit de lui-même sur un courriel, une entrée d'agenda, une exécution en échec, la publication d'un autre bot ou un webhook." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Como este bot age sozinho diante de um e-mail, um compromisso da agenda, uma execução com falha, a publicação de outro bot ou um webhook." } }
+      }
+    },
     "Not saved": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Not saved" } },
