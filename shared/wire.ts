@@ -1217,11 +1217,8 @@ export interface LiveSettings {
    * (our own voice call engine is the call path); off, every /api/live route
    * answers 404 and no OpenAI session can start. */
   enabled: boolean;
-  /** A key is there: the Live calls key, or the OpenAI key it falls back to. */
+  /** The OpenAI provider has a key. */
   configured: boolean;
-  /** An older install's key saved for Live calls only, which wins over the
-   * OpenAI key until it is removed. Absent otherwise. */
-  separateKey?: boolean;
   voice: string;
   readTypedReplies: boolean;
   idleMinutes: number;

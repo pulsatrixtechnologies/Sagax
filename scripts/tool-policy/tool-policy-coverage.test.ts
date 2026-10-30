@@ -4,7 +4,7 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { routeInventory } from "./route-inventory.ts";
-import { classifyRoute, policyFor, policyKey, toolPolicyRows, UNKNOWN_ROUTE_POLICY } from "../../server/tool-policy.ts";
+import { classifyRoute, personalProviderRoute, policyFor, policyKey, toolPolicyRows, UNKNOWN_ROUTE_POLICY } from "../../server/tool-policy.ts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const inventory = routeInventory(root);
@@ -33,7 +33,7 @@ describe("tool policy coverage", () => {
   it("declares a tier, readOnly and a scope on every row; admin is never on by default", () => {
     const bad = rows.filter((r) => !["read", "write", "admin"].includes(r.tier) || typeof r.readOnly !== "boolean"
       || !/^[a-z0-9-]+:(read|write|admin)$/.test(r.scope) || (r.tier === "admin" && r.defaultEnabled)
-      || ((r.destructive || r.billing) && r.tier !== "admin") || (r.readOnly && r.method !== "GET"));
+      || ((r.destructive || r.billing) && r.tier !== "admin" && !personalProviderRoute(r.route)) || (r.readOnly && r.method !== "GET"));
     expect(bad.map(policyKey)).toEqual([]);
   });
 
@@ -85,4 +85,8 @@ describe("tool policy coverage", () => {
     expect(policyFor("GET", "/api/bots")).toMatchObject({ matched: true, tier: "read" });
     expect(policyFor("DELETE", "/api/bots/abc")).toMatchObject({ matched: true, tier: "admin" });
   });
+});
+
+it.each(["/api/me/providers/keys/openai", "/api/me/providers/servers/lab", "/api/me/voice-keys/fish"])("keeps personal provider deletion available to its person: %s", (path) => {
+  expect(classifyRoute("DELETE", path)).toMatchObject({ tier: "write", scope: "me:write", defaultEnabled: true, destructive: true });
 });

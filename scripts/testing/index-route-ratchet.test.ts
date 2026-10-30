@@ -21,7 +21,8 @@ const EXACT: Record<string, number> = {
   // The file already had 188 of these guards (two over the previous pin of 186) before that move.
   // 185: +1 POST /api/internal/run-with-engine (#1477), kept in index.ts.
   // 186: +1 POST /api/internal/page-comments (#1553), an internal route on the turn's capability, kept in index.ts.
-  'path === "/': 186,
+  // 183: the three legacy TTS routes now use the unified voice module.
+  'path === "/': 183,
   // 90: the package preview path moved with the organization library routes.
   // 91: the thread file pin and the bot history routes moved to server/routes (#1099), after the
   // library pin (#1112) and the history owner rule (#1107) had taken it over 93.

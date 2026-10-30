@@ -284,10 +284,10 @@ describe("Settings > Models and voice", () => {
     const advanced = part(voicePage, 'data-settings-card="voice.advanced"');
     expect(advanced).toContain('data-live-key="none"');
     expect(advanced).not.toContain("Change key");
-    fixture.config = baseConfig({ live: { enabled: true, configured: true, separateKey: true, voice: "", readTypedReplies: true, idleMinutes: 5 } });
+    fixture.config = baseConfig({ live: { enabled: true, configured: true, voice: "", readTypedReplies: true, idleMinutes: 5 } });
     const older = part(await page("voice"), 'data-settings-card="voice.advanced"');
-    expect(older).toContain('data-live-key="separate"');
-    expect(older).toContain("Remove key");
+    expect(older).toContain('data-live-key="openai"');
+    expect(older).not.toContain("Remove key");
   });
 
   it("chooses the voice engine only; Grok voice uses the xAI row; Live calls under a folded Advanced", async () => {

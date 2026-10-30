@@ -81,8 +81,8 @@ import {
   decodeProviderVoices,
   cleanProviderVoices,
   effectiveVoiceChoice,
+  isProviderVoiceId,
   providerOrder,
-  PROVIDER_VOICE_ID,
   VOICE_PROVIDER_LABELS,
   VOICE_STT_PROVIDERS,
   VOICE_TTS_PROVIDERS,
@@ -117,6 +117,7 @@ const ROUTE = /^\/api\/bots\/([\w-]+)\/voice\/(status|voices|prepare|speak|trans
 type Action = "status" | "voices" | "prepare" | "speak" | "transcribe" | "stream" | "listen" | "speech" | "call";
 /** The same answers for no bot: GET /api/voice/status, GET /api/voice/voices, POST /api/voice/speak. */
 const OWN_ROUTE = /^\/api\/voice\/(status|voices|speak)$/;
+const LEGACY_ROUTE = /^\/api\/tts\/(prepare|voices|speak)$/;
 const CALL_ID = /^[A-Za-z0-9_-]{8,80}$/;
 /** A turn's end warms the connection to xAI's speech at most this often. */
 export const LISTEN_WARM_EVERY_MS = 2_000;
@@ -151,7 +152,7 @@ export type VoiceKey =
   | { ok: true; key: string; via: VoiceModeVia; payerPrincipalId?: string }
   | { ok: false; cause: VoiceModeRefusalCause };
 
-export type VoiceUsageModel = "grok-tts" | "grok-stt" | "openai-tts" | "openai-stt" | "elevenlabs-tts";
+export type VoiceUsageModel = "grok-tts" | "grok-stt" | "openai-tts" | "openai-stt" | "elevenlabs-tts" | "fish-tts" | "system-tts" | "chatterbox-tts";
 
 export interface VoiceUsage {
   target: VoiceTarget;
@@ -169,6 +170,7 @@ export interface VoiceUsage {
 export function usageModel(provider: VoiceProviderId, role: "tts" | "stt"): VoiceUsageModel {
   if (provider === "openai") return role === "tts" ? "openai-tts" : "openai-stt";
   if (provider === "elevenlabs") return "elevenlabs-tts";
+  if (provider === "fish" || provider === "system" || provider === "chatterbox") return `${provider}-tts`;
   return role === "tts" ? "grok-tts" : "grok-stt";
 }
 
@@ -198,7 +200,7 @@ export interface VoiceModeDeps {
    * they may not use, like every other bot route). */
   target(auth: RequestAuth, botId: string, threadId: string | undefined): VoiceTarget | { status: number; error: string };
   /** The organization's (or solo server's) xAI key: Settings > Models and voice. */
-  serverKey(): string | undefined;
+  serverKey(): string | undefined | Promise<string | undefined>;
   /** The speaker's own keys listed in Perspicax (names only). */
   hasOwnKey(sub: string): boolean;
   /** Organization server: the speaker's own xAI voice key saved in Sagax
@@ -230,11 +232,16 @@ export interface VoiceModeDeps {
   /** OpenAI and ElevenLabs (2026-10-29): another voice, other ears. */
   openai?: VoiceProviderAdapter;
   elevenlabs?: VoiceProviderAdapter;
+  fish?: VoiceProviderAdapter;
+  system?: VoiceProviderAdapter;
+  chatterbox?: VoiceProviderAdapter;
   /** The keys of OpenAI or ElevenLabs that may serve this person, in order
    * (their own voice key, their Perspicax key, the organization's or the
    * server's), each with its `provider`. Never a key to anyone but the
    * caller of the provider. */
-  providerKeys?(provider: "openai" | "elevenlabs", speaker: VoiceSpeaker): Promise<VoiceKeyCandidate[]> | VoiceKeyCandidate[];
+  providerKeys?(provider: Exclude<VoiceTtsProvider, "xai">, speaker: VoiceSpeaker): Promise<VoiceKeyCandidate[]> | VoiceKeyCandidate[];
+  /** The installed TTS choice for clients still using /api/tts/*. */
+  legacyChoice?(speaker: VoiceSpeaker): { provider: VoiceTtsProvider; voice?: string };
   /** The person's synced voice preference (`omb.voiceMode.v1`): a client
    * that does not say which provider (the iPhone) gets the person's own
    * choice for this bot. */
@@ -275,7 +282,7 @@ type KeyDeps = Pick<VoiceModeDeps, "organization" | "serverKey" | "hasOwnKey" | 
  * voice key, their Perspicax key, the organization's), or why none does.
  * Never returns a key to anyone but the caller of xAI. */
 export async function resolveVoiceKeys(deps: KeyDeps, speaker: VoiceSpeaker): Promise<VoiceKeys> {
-  const serverKey = deps.serverKey()?.trim();
+  const serverKey = (await deps.serverKey())?.trim();
   if (!deps.organization) return serverKey ? { ok: true, keys: [{ key: serverKey, via: "server", source: "server", last4: keyLast4(serverKey) }] } : { ok: false, cause: "no_credentials" };
   if (speaker.disabled) return { ok: false, cause: "payer_disabled" };
   const keys: VoiceKeyCandidate[] = [];
@@ -423,7 +430,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
 
   /** The adapter of one provider, when this server has it. */
   const adapterOf = (provider: VoiceProviderId): VoiceProviderAdapter | undefined =>
-    provider === "xai" ? deps.xai : provider === "openai" ? deps.openai : deps.elevenlabs;
+    deps[provider];
 
   /** Fallen back to another provider: a line in the thread's Events lens,
    * at most once a minute per thread and switch (each sentence of a call
@@ -694,7 +701,8 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
   return async ({ req, res, url, path, method, auth, json, readBody }) => {
     // Settings > Voice (2026-10-29): the person's providers, a provider's
     // voices and "Test the voice", for no bot in particular
-    const own = OWN_ROUTE.exec(path);
+    const legacy = LEGACY_ROUTE.exec(path);
+    const own = OWN_ROUTE.exec(path) ?? legacy;
     const match = own ? [path, "", own[1]] : ROUTE.exec(path);
     if (!match) return PASS;
     const [, botId, action] = match as unknown as [string, string, Action];
@@ -708,6 +716,20 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     const jsonBody = action === "prepare" || action === "speak" || action === "stream" || action === "call";
     const body = jsonBody ? await readBody(req).catch(() => null) : null;
     if (jsonBody && (!body || typeof body !== "object")) return json(res, 400, { error: "a JSON body is required" });
+    // The installed TTS choice remains the default for an older client,
+    // while key resolution, fallback and synthesis use this one path.
+    if (legacy) {
+      const installed = deps.legacyChoice?.(speaker);
+      if (installed) {
+        if (!url.searchParams.has("tts")) url.searchParams.set("tts", installed.provider);
+        if (action === "voices" && !url.searchParams.has("provider")) url.searchParams.set("provider", installed.provider);
+        if (body) {
+          const record = body as Record<string, unknown>;
+          record.tts ??= installed.provider;
+          record.voice ??= record.voiceId ?? installed.voice;
+        }
+      }
+    }
     const rawThread = action === "transcribe" || action === "listen" || action === "speech" ? url.searchParams.get("threadId") ?? undefined : (body as Record<string, unknown> | null)?.threadId;
     if (rawThread !== undefined && rawThread !== null && (typeof rawThread !== "string" || !THREAD_ID.test(rawThread))) return json(res, 400, { error: "threadId must be a task id" });
     const target: VoiceTarget | { status: number; error: string } = own
@@ -751,7 +773,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     const byProvider = new Map<VoiceProviderId, VoiceKeyCandidate[]>();
     if (resolved.ok) byProvider.set("xai", resolved.keys);
     if (resolved.ok || resolved.cause !== "payer_disabled") {
-      for (const provider of ["openai", "elevenlabs"] as const) {
+      for (const provider of VOICE_TTS_PROVIDERS.filter((id): id is Exclude<VoiceTtsProvider, "xai"> => id !== "xai")) {
         if (!adapterOf(provider) || !deps.providerKeys) continue;
         let found: VoiceKeyCandidate[] = [];
         try { found = await deps.providerKeys(provider, speaker); } catch { found = []; }
@@ -809,6 +831,9 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
     }
     const roleOf = action === "transcribe" || action === "listen" ? "stt" : "tts";
     const keys = roleOf === "stt" ? sttKeys : ttsKeys;
+    if (legacy && action === "prepare") {
+      return json(res, 200, { ready: keys.length > 0 && !speaker.disabled, utterances: deps.utterances(String((body as Record<string, unknown>).text ?? "")) });
+    }
     // a voice alone (read aloud, the voice test) needs no ears
     if (!keys.length || (refusedCause && (action === "listen" || action === "transcribe" || !ttsKeys.length))) {
       return json(res, 403, refusalBody(refusedCause ?? "no_credentials", keysUrl, target, speaker, admin));
@@ -1008,8 +1033,9 @@ export function requestedChoice(action: string, url: URL, body: Record<string, u
   const voice = read("voice");
   let badVoice = false;
   if (voice !== undefined && voice !== null && voice !== "") {
-    if (typeof voice !== "string" || !PROVIDER_VOICE_ID.test(voice)) badVoice = true;
-    else voices[tts && tts !== "auto" ? tts : "xai"] = voice;
+    const provider = tts && tts !== "auto" ? tts : saved.tts !== "auto" ? saved.tts : "xai";
+    if (typeof voice !== "string" || !isProviderVoiceId(provider, voice)) badVoice = true;
+    else voices[provider] = voice;
   } else if (voice === "" && (!tts || tts === "auto" || tts === "xai")) {
     // "" is the provider's default voice (xAI's Not set)
     delete voices.xai;

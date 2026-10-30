@@ -69,7 +69,7 @@ standalone fake cannot be scripted from the shell, so nothing is asked on it:
 node --experimental-strip-types server/testing/fake-openai-live.ts
 # terminal 2: the renderer fixture, pointed at it (the key only ever reaches
 # the fake)
-SAGAX_OPENAI_LIVE_URL=http://127.0.0.1:FAKE_PORT SAGAX_OPENAI_LIVE_KEY=sk-fake \
+SAGAX_OPENAI_LIVE_URL=http://127.0.0.1:FAKE_PORT SAGAX_OPENAI_API_KEY=sk-fake \
   node --experimental-strip-types scripts/control-omb.ts ui launch
 # terminal 3, with the url, botId and ui handle it prints
 pnpm control:omb messages --bot BOT_ID --url http://127.0.0.1:PORT
@@ -109,7 +109,7 @@ no `title`, because nothing was asked; and the snapshot's transcript has
 - Only one call runs at a time: while one is open, another start answers `409`.
   End a call a failed run left open, or restart the fixture.
 - `SAGAX_OPENAI_LIVE_URL` crosses into a fixture only when it is a loopback
-  `http://127.0.0.1:PORT`, and `SAGAX_OPENAI_LIVE_KEY` only with it.
+  `http://127.0.0.1:PORT`, and `SAGAX_OPENAI_API_KEY` only with it.
 
 ## Boundaries
 

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import type { VoiceKeyInfo, VoiceModeRefusalCause, VoiceModeSettings, VoiceModeStatus, VoiceProviderFailure } from "../../../shared/voice-mode";
-import { encodeProviderVoices, isVoiceTtsProvider, type VoiceProviderId, type VoiceTtsProvider } from "../../../shared/voice-providers";
+import { encodeProviderVoices, isVoiceTtsProvider, VOICE_TTS_PROVIDERS, type VoiceProviderId, type VoiceTtsProvider } from "../../../shared/voice-providers";
 import { readVoiceModeSettings, voiceSettingsForBot } from "./settings";
 
 /** What a voice request says about who speaks (2026-10-29): the providers
@@ -59,7 +59,7 @@ export class VoiceModeRefused extends Error {
 export type { VoiceProviderFailure };
 const PROVIDER_FAILURES = new Set<VoiceProviderFailure>(["key", "quota", "busy", "down", "voice", "other"]);
 const KEY_SOURCES = new Set<VoiceKeyInfo["source"]>(["voice-key", "perspicax-key", "org-key", "server"]);
-const PROVIDERS = new Set<VoiceProviderId>(["xai", "openai", "elevenlabs"]);
+const PROVIDERS = new Set<VoiceProviderId>(VOICE_TTS_PROVIDERS);
 
 /** One key xAI refused on the way (server/voice-keys.ts). */
 export interface VoiceKeyRefusal extends VoiceKeyInfo {

@@ -204,6 +204,8 @@ export type VoiceModeRefusalCause = "no_credentials" | "payer_disabled" | "persp
 /** The id a person sheet's `sagax_server_engines` uses for voice mode on the
  * organization's xAI key (2026-10-16). */
 export const VOICE_SERVER_ENGINE = "xaiVoice";
+export const ELEVENLABS_VOICE_SERVER_ENGINE = "elevenlabsVoice";
+export const FISH_VOICE_SERVER_ENGINE = "fishVoice";
 
 /** Who pays for the voice: the person's own xAI key (in Perspicax), the
  * organization's key (Settings > Connections), or, on a solo server, the

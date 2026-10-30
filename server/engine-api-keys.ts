@@ -1,24 +1,10 @@
-// Access keys pasted on a provider card.
-//
-// Config-backed keys (OpenAI, Mistral, …) stay in config.json on a solo
-// server, which already redacts them. On an organization server that file is
-// the organization's key, so a paste there is refused: one person must not
-// rewrite a key everyone falls back on.
-//
-// File-backed keys (Cursor, Droid, Gemini, MiniMax, Hermes) are sealed with
-// the mcp-oauth vault key (AES-256-GCM, AAD `sagax engine-api-keys v1`),
-// mode 0600. Solo: `<data>/engine-api-keys.enc`. Organization: one file per
-// person, `principals/<id>/engine-api-keys.enc`. A request with no person is
-// refused. The plaintext never goes into a log, a bot prompt, a backup or
-// an answer.
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { lstatSync, mkdirSync, readFileSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
-
-import { writeFileAtomic } from "./atomic.ts";
+// Provider-card access keys. File-backed driver variables are views of the
+// common provider store; model and voice consumers share the same key.
+// Organization requests are routed to the person's Perspicax account.
+import { FILE_PROVIDER_ENV, PROVIDER_KEYS_FILE, ProviderKeysStore, type ProviderKeyScope } from "./provider-keys.ts";
 import { resolveVaultKey, type VaultKeySource } from "./mcp-oauth.ts";
 
-export const ENGINE_API_KEYS_FILE = "engine-api-keys.enc";
+export const ENGINE_API_KEYS_FILE = PROVIDER_KEYS_FILE;
 
 /** Hermes provider id → the variable that provider reads. The only place
  * those names are chosen; a save never invents a variable of its own. */
@@ -30,7 +16,6 @@ export const HERMES_PROVIDER_ENV = {
 
 export type HermesProvider = keyof typeof HERMES_PROVIDER_ENV;
 
-const AAD = Buffer.from("sagax engine-api-keys v1");
 const PRINCIPAL = /^[a-z0-9][a-z0-9_-]{0,80}$/;
 
 const FILE_DRIVERS: Record<string, { env: string } | { hermes: true }> = {
@@ -128,103 +113,29 @@ function allowedEnv(driver: string, envName: string): boolean {
   return envName === file.env;
 }
 
-function storePath(dataDir: string, scope: EngineKeyScope): string {
-  if (scope.organization) {
-    const id = scope.principalId?.trim().toLowerCase() ?? "";
-    if (!PRINCIPAL.test(id)) {
-      throw new EngineKeyError("A provider key on an organization server belongs to one person.", 403, "engine_key_no_person");
-    }
-    return join(dataDir, "principals", id, ENGINE_API_KEYS_FILE);
-  }
-  return join(dataDir, ENGINE_API_KEYS_FILE);
-}
-
-function refuseSymlink(path: string): void {
-  try {
-    if (lstatSync(path).isSymbolicLink()) {
-      throw new EngineKeyError("The access key could not be saved. Try again.", 503, "store_unavailable");
-    }
-  } catch (error) {
-    if (error instanceof EngineKeyError) throw error;
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw new EngineKeyError("The access key could not be saved. Try again.", 503, "store_unavailable");
-    }
-  }
-}
-
 function sourceFor(dataDir: string, source?: EngineKeySource): EngineKeySource {
   return source ?? (() => resolveVaultKey(dataDir));
 }
 
-function vaultKey(source: EngineKeySource): Buffer {
-  const got = source();
-  if (got.kind !== "key") {
-    throw new EngineKeyError("The access key could not be saved. Try again.", 503, "store_unavailable");
-  }
-  return got.key;
+function providerScope(scope: EngineKeyScope): ProviderKeyScope {
+  if (!scope.organization) return {};
+  const id = scope.principalId?.trim().toLowerCase() ?? "";
+  if (!PRINCIPAL.test(id)) throw new EngineKeyError("A provider key on an organization server belongs to one person.", 403, "engine_key_no_person");
+  return { principalId: id };
 }
 
-function parseStore(value: unknown): Store {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-  const out: Store = {};
-  for (const [driver, row] of Object.entries(value as Record<string, unknown>)) {
-    if (!FILE_DRIVERS[driver] || !row || typeof row !== "object" || Array.isArray(row)) continue;
-    const kept: Record<string, string> = {};
-    for (const [env, key] of Object.entries(row)) {
-      if (typeof key === "string" && key && allowedEnv(driver, env)) kept[env] = key;
-    }
-    if (Object.keys(kept).length) out[driver] = kept;
-  }
-  return out;
-}
-
-function openStore(raw: string, key: Buffer): Store {
-  const envelope = JSON.parse(raw) as { v?: unknown; iv?: unknown; tag?: unknown; data?: unknown };
-  if (envelope.v !== 1 || typeof envelope.iv !== "string" || typeof envelope.tag !== "string" || typeof envelope.data !== "string") {
-    throw new Error("format");
-  }
-  const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(envelope.iv, "base64"));
-  decipher.setAAD(AAD);
-  decipher.setAuthTag(Buffer.from(envelope.tag, "base64"));
-  const plain = Buffer.concat([decipher.update(Buffer.from(envelope.data, "base64")), decipher.final()]).toString("utf8");
-  const parsed = JSON.parse(plain) as { version?: unknown; keys?: unknown };
-  if (parsed.version !== 1) throw new Error("format");
-  return parseStore(parsed.keys);
-}
-
-function sealStore(store: Store, key: Buffer): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  cipher.setAAD(AAD);
-  const data = Buffer.concat([cipher.update(JSON.stringify({ version: 1, keys: store }), "utf8"), cipher.final()]);
-  return JSON.stringify({ v: 1, iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), data: data.toString("base64") });
-}
-
-/** Read a store. `inject` returns an empty store when the file is missing
- * or cannot be opened, so a turn still starts. `strict` refuses to guess. */
 function readStore(dataDir: string, scope: EngineKeyScope, source: EngineKeySource, mode: "inject" | "strict"): Store {
-  if (scope.organization && !scope.principalId?.trim()) {
-    if (mode === "inject") return {};
-    throw new EngineKeyError("A provider key on an organization server belongs to one person.", 403, "engine_key_no_person");
-  }
-  let path: string;
   try {
-    path = storePath(dataDir, scope);
-    refuseSymlink(path);
-  } catch (error) {
-    if (mode === "inject") return {};
-    throw error;
-  }
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return {};
-    if (mode === "inject") return {};
-    throw new EngineKeyError("The access key could not be saved. Try again.", 503, "store_unavailable");
-  }
-  try {
-    return openStore(raw, vaultKey(source));
+    const where = providerScope(scope);
+    const store = new ProviderKeysStore(dataDir, source);
+    const keys = { ...(scope.organization ? store.legacy(where) : {}), ...store.keys(where) };
+    const result: Store = {};
+    for (const [driver, mapping] of Object.entries(FILE_PROVIDER_ENV)) {
+      const row: Record<string, string> = {};
+      for (const [env, provider] of Object.entries(mapping)) if (keys[provider]) row[env] = keys[provider];
+      if (Object.keys(row).length) result[driver] = row;
+    }
+    return result;
   } catch (error) {
     if (mode === "inject") return {};
     if (error instanceof EngineKeyError) throw error;
@@ -233,14 +144,15 @@ function readStore(dataDir: string, scope: EngineKeyScope, source: EngineKeySour
 }
 
 function writeStore(dataDir: string, scope: EngineKeyScope, store: Store, source: EngineKeySource): void {
-  const path = storePath(dataDir, scope);
-  refuseSymlink(path);
-  if (!Object.keys(store).length) {
-    rmSync(path, { force: true });
-    return;
+  const patch: Record<string, string | null> = {};
+  for (const [driver, mapping] of Object.entries(FILE_PROVIDER_ENV)) {
+    for (const [env, provider] of Object.entries(mapping)) patch[provider] = store[driver]?.[env] ?? null;
   }
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  writeFileAtomic(path, `${sealStore(store, vaultKey(source))}\n`, { mode: 0o600 });
+  try { new ProviderKeysStore(dataDir, source).patch(providerScope(scope), patch); }
+  catch (error) {
+    if (error instanceof EngineKeyError) throw error;
+    throw new EngineKeyError("The access key could not be saved. Try again.", 503, "store_unavailable");
+  }
 }
 
 /** Whether this person has any file-backed key for the driver. Never the

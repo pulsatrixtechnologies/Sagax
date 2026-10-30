@@ -65,15 +65,23 @@ export function ownerScopedRoute(route: string): boolean {
   return OWNER_SCOPED.some((pattern) => pattern.test(rest));
 }
 
+/** These handlers derive the account owner from the authenticated person,
+ * never a caller-provided person id. Their own keys/endpoints need no admin. */
+export function personalProviderRoute(route: string): boolean {
+  return /^\^?\/api\/me\/(?:providers|voice-keys)(?:\/|\$|$)/.test(plain(route));
+}
+
 /** The default classification of a route (generate.ts): GET reads; a DELETE,
  * a deletion verb, org/admin/billing/credentials are admin; everything else,
  * an unguarded method included, writes. A deletion of something one person
- * owns stays admin for everyone else and is `ownerScoped` for its owner. */
+ * owns stays admin for everyone else and is `ownerScoped` for its owner.
+ * Personal provider handlers bind every operation to the signed-in person,
+ * so those reads/writes, including DELETE, need no administrator. */
 export function classifyRoute(method: PolicyMethod, route: string): Omit<ToolPolicy, "method" | "kind" | "route"> {
   const text = plain(route);
   const destructive = method === "DELETE" || DESTRUCTIVE.test(text);
   const billing = BILLING.test(text);
-  const admin = destructive || billing || ADMIN_AREA.test(text) || ADMIN_PART.test(text);
+  const admin = !personalProviderRoute(route) && (destructive || billing || ADMIN_AREA.test(text) || ADMIN_PART.test(text));
   const tier: ToolTier = admin ? "admin" : method === "GET" ? "read" : "write";
   const area = (/^\^?\/api\/(?:\(\?:)?([a-z][a-z0-9-]*)/.exec(text)?.[1] ?? "other");
   const ownerScoped = tier === "admin" && destructive && ownerScopedRoute(route);

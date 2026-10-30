@@ -129,6 +129,15 @@ const DRIVER_PROVIDERS: Readonly<Record<string, readonly ModelProvider[]>> = {
   grokAgent: ["xai"],
   geminiAgent: ["google"],
   kimiAgent: ["moonshot"],
+  grok: ["xai"],
+  mistral: ["mistral"],
+  cerebras: ["cerebras"],
+  groq: ["groq"],
+  opencodeGo: ["opencode"],
+  cursorAgent: ["cursor"],
+  droidAgent: ["factory"],
+  minimax: ["minimax"],
+  hermesAgent: ["openrouter", "glm", "zai"],
   // pi is BYOK across providers: any key the person keeps serves it, and the
   // model they pick decides which one a turn uses.
   piAgent: ["anthropic", "openai", "xai", "google", "moonshot"],
@@ -139,6 +148,11 @@ export function providersOfDriver(driver: string): readonly ModelProvider[] {
   return DRIVER_PROVIDERS[driver] ?? [];
 }
 
+export function providersOfInstance(instanceId: string, driver: string): readonly ModelProvider[] {
+  if (driver === "openai-compat") return [instanceId === "openai" || instanceId === "openrouter" ? instanceId : `compat:${instanceId}`];
+  return providersOfDriver(driver);
+}
+
 /** The model provider behind a driver, when a person's key can serve it
  * (the first one for a multi-provider engine). */
 export function providerOfDriver(driver: string): ModelProvider | null {
@@ -147,13 +161,27 @@ export function providerOfDriver(driver: string): ModelProvider | null {
 
 /** The variable each provider's key reaches an engine as. Codex is apart: its
  * key rides SAGAX_OWNER_OPENAI_API_KEY through the pulsa_owner provider. */
-export const PROVIDER_KEY_ENV: Readonly<Record<ModelProvider, string>> = {
+export const PROVIDER_KEY_ENV: Readonly<Record<Exclude<ModelProvider, `compat:${string}`>, string>> = {
   anthropic: "ANTHROPIC_API_KEY",
   openai: "OPENAI_API_KEY",
   xai: "XAI_API_KEY",
   google: "GEMINI_API_KEY",
   moonshot: "MOONSHOT_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+  mistral: "MISTRAL_API_KEY",
+  cerebras: "CEREBRAS_API_KEY",
+  opencode: "OPENCODE_API_KEY",
+  cursor: "CURSOR_API_KEY",
+  factory: "FACTORY_API_KEY",
+  minimax: "MINIMAX_API_KEY",
+  glm: "GLM_API_KEY",
+  zai: "ZAI_API_KEY",
+  groq: "SAGAX_GROQ_API_KEY",
 };
+
+function keyEnvironment(provider: ModelProvider): string {
+  return provider.startsWith("compat:") ? "SAGAX_COMPAT_SERVER_API_KEY" : PROVIDER_KEY_ENV[provider as Exclude<ModelProvider, `compat:${string}`>];
+}
 
 export type SubscriptionDriver = "claudeAgent" | "codex" | "grokAgent" | "kimiAgent";
 
@@ -184,7 +212,7 @@ export interface EngineCredentialInput {
   owner: { principalId: string; sub?: string; disabled?: boolean };
   /** `keyOnly`: an API-key engine (`access: "api"`), which runs on a key
    * only, never on a person's subscription (#1533). */
-  instance: { instanceId: string; driver: string; installed: boolean; keyOnly?: boolean };
+  instance: { instanceId: string; driver: string; installed: boolean; keyOnly?: boolean; keyProvider?: ModelProvider; personalOwner?: string };
   /** A person other than the owner, by principal id (undefined: unknown). */
   person?: (principalId: string) => PersonFacts | undefined;
   /** The person signed in to this driver with their own subscription (D10). */
@@ -253,6 +281,7 @@ export function resolveEngineAccess(input: EngineCredentialInput, skip: { key?: 
   // A disabled person's credentials serve nobody, and their turn (their
   // routines included) does not fall back on the organization either (S4-14).
   if (facts?.disabled) return { ok: false, reason: "no_access", cause: "payer_disabled", ...who };
+  if (input.instance.personalOwner && key(input.instance.personalOwner) !== key(payer.principalId)) return { ok: false, reason: "no_access", cause: "no_credentials", ...who };
   const driver = input.instance.driver;
   const signedIn = Boolean(payer.principalId) && !input.instance.keyOnly && subscriptionDriver(driver) && input.subscriptionSignedIn(payer.principalId, driver);
   // An expired sign-in is skipped: the payer's key or the organization's
@@ -261,14 +290,18 @@ export function resolveEngineAccess(input: EngineCredentialInput, skip: { key?: 
   if (signedIn && !expired) {
     return { ok: true, via: "subscription", ...who };
   }
-  const provider = facts?.sub ? providersOfDriver(driver).find((candidate) => input.hasKey(facts.sub!, candidate)) : undefined;
+  const providers = input.instance.keyProvider ? [input.instance.keyProvider] : providersOfInstance(input.instance.instanceId, driver);
+  const provider = facts?.sub ? providers.find((candidate) => input.hasKey(facts.sub!, candidate)) : undefined;
   if (!skip.key && provider && facts?.sub) {
     return { ok: true, via: isOwner ? "owner-key" : "speaker-key", ...who, provider };
   }
-  if (payer.principalId && input.hasLocalKey?.(payer.principalId, driver)) {
+  // An endpoint owned by this payer can also serve without authentication
+  // (a local model server). Never substitute an org key or another file.
+  if (input.instance.personalOwner) return { ok: true, via: isOwner ? "owner-key" : "speaker-key", ...who };
+  if (!input.instance.personalOwner && payer.principalId && input.hasLocalKey?.(payer.principalId, driver)) {
     return { ok: true, via: isOwner ? "owner-key" : "speaker-key", ...who, localKey: true };
   }
-  if (input.keyBacked) {
+  if (input.keyBacked && !input.instance.personalOwner) {
     // The organization's key serves only the people it was given to. A turn
     // nobody is known to speak for is judged as the bot's owner's.
     const judged = payer.principalId || input.owner.principalId;
@@ -331,7 +364,7 @@ export async function materializeEngineAccess(input: EngineCredentialInput, plan
     if (result.ok && homeDriver(driver)) {
       // An empty home of the payer's for the engine: their key, never the
       // server's own login (a Grok cached token outranks a key).
-      const environment: Record<string, string> = { [PROVIDER_KEY_ENV[plan.provider]]: result.key };
+      const environment: Record<string, string> = { [keyEnvironment(plan.provider)]: result.key };
       const fingerprints = [result.fingerprint || "key"];
       if (driver === "piAgent") {
         // pi reaches every provider the payer keeps a key for; the picked
@@ -340,7 +373,7 @@ export async function materializeEngineAccess(input: EngineCredentialInput, plan
           if (other === plan.provider || !input.hasKey(sub, other)) continue;
           const more = await deps.resolveKey(sub, other);
           if (!more.ok) continue;
-          environment[PROVIDER_KEY_ENV[other]] = more.key;
+          environment[keyEnvironment(other)] = more.key;
           fingerprints.push(more.fingerprint || "key");
         }
       }
@@ -358,6 +391,13 @@ export async function materializeEngineAccess(input: EngineCredentialInput, plan
     if (result.ok) {
       const identity = `${plan.via}:${payer}:${result.fingerprint || "key"}`;
       if (plan.provider === "anthropic") return { ok: true, plan, access: { via: plan.via, identity, environment: { ANTHROPIC_API_KEY: result.key } } };
+      if (driver !== "codex") return {
+        ok: true, plan,
+        access: { via: plan.via, identity, environment: {
+          [keyEnvironment(plan.provider)]: result.key,
+          SAGAX_PERSONAL_PROVIDER_KEY: result.key,
+        } },
+      };
       return {
         ok: true,
         plan,
@@ -389,5 +429,6 @@ export async function materializeEngineAccess(input: EngineCredentialInput, plan
     const home = homeDriver(driver) ? { engineHome: join(deps.dataDir, "org", `${driver}-key`) } : {};
     return { ok: true, plan, access: { via: "org-key", identity: "org-key", ...home } };
   }
+  if (keyVia(plan.via) && input.instance.personalOwner) return { ok: true, plan, access: { via: plan.via, identity: `${plan.via}:${payer}:endpoint`, environment: {} } };
   return { ok: true, plan, access: { via: "server", identity: "server" } };
 }

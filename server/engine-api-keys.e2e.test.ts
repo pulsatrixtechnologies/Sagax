@@ -34,7 +34,7 @@ it("seals a pasted access key and leaves the Hermes dotenv unread", async () => 
     expect(JSON.parse(read.text)).toEqual({ configured: true });
     expect(read.text).not.toContain(WITNESS);
 
-    const enc = readFileSync(join(fixture.info.dataDir, "engine-api-keys.enc"));
+    const enc = readFileSync(join(fixture.info.dataDir, "provider-keys.enc"));
     expect(enc.includes(Buffer.from(WITNESS))).toBe(false);
     expect(enc.includes(Buffer.from("CURSOR_API_KEY"))).toBe(false);
 
@@ -48,7 +48,7 @@ it("seals a pasted access key and leaves the Hermes dotenv unread", async () => 
     expect(glm.status, glm.text).toBe(200);
     expect(glm.text).not.toContain(GLM);
     expect(existsSync(userEnv)).toBe(false);
-    const sealed = readFileSync(join(fixture.info.dataDir, "engine-api-keys.enc"));
+    const sealed = readFileSync(join(fixture.info.dataDir, "provider-keys.enc"));
     expect(sealed.includes(Buffer.from(GLM))).toBe(false);
     expect(sealed.includes(Buffer.from(WITNESS))).toBe(false);
 
