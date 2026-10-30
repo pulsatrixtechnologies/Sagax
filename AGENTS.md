@@ -114,6 +114,64 @@ vérifiable » (Sagax cannot check them). `plugins.claudeOnly` says what a
 non-Claude engine really gets (skills and commands in the prompt on an
 engine with files, nothing yet on Grok and API engines).
 
+## Capabilities: one resolved list per bot (lot 1a, 2026-10-30)
+
+One server function says, for ONE bot and ITS engine, everything the bot
+receives on top of its engine, read from today's stores with nothing
+migrated and nothing a turn mounts changed: `resolveBotCapabilities`
+(`server/capabilities.ts`), served by `GET /api/bots/:id/capabilities`
+(`server/routes/bot-capabilities.ts`, member scope `orgDirectory`, the
+handler checks `viewerBotLevel`; `?engine=<instanceId>` previews another
+engine) and by the main bot's `sagax_settings` get `bot.capabilities`
+(read only). Every screen reads this list (Capabilities > Installed in the
+bot's scope, Bot > Capabilities, the iPhone, the Perspicax console's bot
+sheet). Keep these rules, covered by `server/capabilities.test.ts`,
+`shared/capabilities.test.ts` and `server/routes/bot-capabilities.test.ts`:
+
+- The contract is `shared/capabilities.ts` (`Capability`, `BotCapabilities`):
+  form (plugin, skill, mcp, connector, role, flow), source, scope (bot, me,
+  organization, installation, account), state (on, off, to_connect,
+  imposed, not_held, not_served, reserved, unverifiable), `reason`, what the
+  engine receives (`engine`) and the MCP names it mounts (`mounts`). The
+  desktop, iOS and the console read these field names: add fields, never
+  rename one without saying so in the PR. Names are readable
+  (`shared/readable-name.ts`, moved from `src/lib/installed-model.ts`);
+  `key` is stable and never shown; no id in a name.
+- One engine matrix, `engineReceipt` (shared/capabilities.ts), for the
+  resolver and the texts: Claude loads plugins whole (`--plugin-dir`:
+  native) and is the only engine the organization's Flow reaches (C-3);
+  other engines with files read plugin skills, commands and agents from
+  the turn prompt (server/plugin-turn.ts); engines without files
+  (`ENGINES_WITHOUT_FILES`, which `supportsWorkspaceFiles` now reads) get
+  nothing of a plugin, a skill or Flow; MCP is `mounted` by an engine with
+  files, `proxied` by Sagax for one without, `none` without `customMcp`.
+- The list and the turn use the same functions (`server/turn-mounts.ts`):
+  `engineServerMcp` and `serverMcpAsPerson` (this installation's servers,
+  `engineMcpServers` / `mcpServersAsPerson`), `personalMcpPrecheck` (the
+  person's own servers, `mountPersonalMcp`), `perspicaxServerName`,
+  `turnPluginDirs` and `turnPluginPromptDirs` (`pluginDirsFor`,
+  `pluginSkillsForTurn`). The test "a turn mounts exactly what the list
+  says" checks, for Claude, Codex and Grok, that the MCP names and plugin
+  folders a turn gets equal the list's capabilities that are on (or
+  imposed) and received. Change one, change both through these functions.
+- The viewer stands in for the speaker of a turn: their own MCP servers,
+  their GitHub connection, the Roles they hold (`not_held` otherwise, C-5).
+- What used to be silent is a row with a reason: a personal server whose
+  name another server of the turn has (`name_taken`, C-18), an
+  installation server a command on an organization server (`host_command`),
+  refused by the policy, left out of the bot's own list, waiting for
+  GitHub; a plugin "Everyone" whose library skills reach no bot
+  (`library_off`, `not_assigned`, C-2); the organization's Flow held back
+  (`guard_off`). An installation server that needs a sign-in is still
+  mounted (state on, `connect.reason: sign_in`); a personal one is not
+  (`to_connect`). A plugin "Everyone" folds its servers into its row.
+- `promptIndex` (#1748): the skills index's bytes and count, its caps
+  (`INDEX_MAX_BYTES`, `INDEX_MAX_SKILLS`) and what it left out, from
+  `skillsPromptIndex` (server/skills.ts), the same computation as the
+  prompt without touching links or the log.
+- Grok's account connectors are a static catalog: `unverifiable`, never
+  "connected".
+
 ## Proactive bots, wired for real (2026-10-30)
 
 A bot's proactive mode (`proactiveMode`, Edit bot > Permissions > Proactive,
@@ -6245,64 +6303,6 @@ connectors and My MCP servers only.
   `src/components/PluginsPanel.gestures.test.ts`,
   `src/components/plugins/ConnectAppsView.test.ts`. Captures:
   `scripts/capture-github-plugin.mjs`, `docs/screenshots/github-plugin/`.
-
-## Capabilities: one resolved list per bot (lot 1a, 2026-10-30)
-
-One server function says, for ONE bot and ITS engine, everything the bot
-receives on top of its engine, read from today's stores with nothing
-migrated and nothing a turn mounts changed: `resolveBotCapabilities`
-(`server/capabilities.ts`), served by `GET /api/bots/:id/capabilities`
-(`server/routes/bot-capabilities.ts`, member scope `orgDirectory`, the
-handler checks `viewerBotLevel`; `?engine=<instanceId>` previews another
-engine) and by the main bot's `sagax_settings` get `bot.capabilities`
-(read only). Every screen reads this list (Connect apps > Installed in the
-bot's scope, Bot > Capabilities, the iPhone, the Perspicax console's bot
-sheet). Keep these rules, covered by `server/capabilities.test.ts`,
-`shared/capabilities.test.ts` and `server/routes/bot-capabilities.test.ts`:
-
-- The contract is `shared/capabilities.ts` (`Capability`, `BotCapabilities`):
-  form (plugin, skill, mcp, connector, role, flow), source, scope (bot, me,
-  organization, installation, account), state (on, off, to_connect,
-  imposed, not_held, not_served, reserved, unverifiable), `reason`, what the
-  engine receives (`engine`) and the MCP names it mounts (`mounts`). The
-  desktop, iOS and the console read these field names: add fields, never
-  rename one without saying so in the PR. Names are readable
-  (`shared/readable-name.ts`, moved from `src/lib/installed-model.ts`);
-  `key` is stable and never shown; no id in a name.
-- One engine matrix, `engineReceipt` (shared/capabilities.ts), for the
-  resolver and the texts: Claude loads plugins whole (`--plugin-dir`:
-  native) and is the only engine the organization's Flow reaches (C-3);
-  other engines with files read plugin skills, commands and agents from
-  the turn prompt (server/plugin-turn.ts); engines without files
-  (`ENGINES_WITHOUT_FILES`, which `supportsWorkspaceFiles` now reads) get
-  nothing of a plugin, a skill or Flow; MCP is `mounted` by an engine with
-  files, `proxied` by Sagax for one without, `none` without `customMcp`.
-- The list and the turn use the same functions (`server/turn-mounts.ts`):
-  `engineServerMcp` and `serverMcpAsPerson` (this installation's servers,
-  `engineMcpServers` / `mcpServersAsPerson`), `personalMcpPrecheck` (the
-  person's own servers, `mountPersonalMcp`), `perspicaxServerName`,
-  `turnPluginDirs` and `turnPluginPromptDirs` (`pluginDirsFor`,
-  `pluginSkillsForTurn`). The test "a turn mounts exactly what the list
-  says" checks, for Claude, Codex and Grok, that the MCP names and plugin
-  folders a turn gets equal the list's capabilities that are on (or
-  imposed) and received. Change one, change both through these functions.
-- The viewer stands in for the speaker of a turn: their own MCP servers,
-  their GitHub connection, the Roles they hold (`not_held` otherwise, C-5).
-- What used to be silent is a row with a reason: a personal server whose
-  name another server of the turn has (`name_taken`, C-18), an
-  installation server a command on an organization server (`host_command`),
-  refused by the policy, left out of the bot's own list, waiting for
-  GitHub; a plugin "Everyone" whose library skills reach no bot
-  (`library_off`, `not_assigned`, C-2); the organization's Flow held back
-  (`guard_off`). An installation server that needs a sign-in is still
-  mounted (state on, `connect.reason: sign_in`); a personal one is not
-  (`to_connect`). A plugin "Everyone" folds its servers into its row.
-- `promptIndex` (#1748): the skills index's bytes and count, its caps
-  (`INDEX_MAX_BYTES`, `INDEX_MAX_SKILLS`) and what it left out, from
-  `skillsPromptIndex` (server/skills.ts), the same computation as the
-  prompt without touching links or the log.
-- Grok's account connectors are a static catalog: `unverifiable`, never
-  "connected".
 
 ## Reserved MCP server names (2026-10-17, one rule since 2026-10-30)
 

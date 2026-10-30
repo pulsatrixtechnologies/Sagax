@@ -5,7 +5,7 @@
 // bot's engine actually receives of it.
 //
 // The server resolves the list of one bot for one engine
-// (server/capabilities.ts, GET /api/bots/:id/capabilities); Connect apps >
+// (server/capabilities.ts, GET /api/bots/:id/capabilities); Capabilities >
 // Installed, Bot > Capabilities, the iPhone and the Perspicax console read
 // that list. The field names below are the contract those screens read:
 // add fields freely, never rename one without saying so in the PR.

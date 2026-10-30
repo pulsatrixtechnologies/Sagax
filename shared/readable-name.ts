@@ -1,4 +1,4 @@
-// A server, plugin or skill name as people say it, shared by Connect apps
+// A server, plugin or skill name as people say it, shared by the Capabilities page
 // (src/lib/installed-model.ts) and the capabilities list
 // (server/capabilities.ts): "github-github" is "GitHub".
 
