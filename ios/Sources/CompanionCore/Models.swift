@@ -1772,6 +1772,9 @@ public struct ConfigStatus: Codable, Sendable {
     /// Organization server: the engines its admin allows in Perspicax
     /// (#261); nil or empty means every engine.
     public var allowedEngines: [String]? = nil
+    /// Stable <instance>/<model> ids, off at organization then person level.
+    public var disabledModels: [String]? = nil
+    public var myDisabledModels: [String]? = nil
 
     /// `jevRoomRoutingOn`: an Auto room with Jev off answers like a lead room.
     public var jevRoomRoutingOn: Bool {

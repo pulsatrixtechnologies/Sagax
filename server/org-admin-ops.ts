@@ -3,6 +3,7 @@
 // the skills library, with a Test per line; the server log tail and the
 // incidents; the organization's policies. Never a key, a token, an env
 // value or a header value: providers and names only.
+import { MAX_DISABLED_MODELS, cleanDisabledModels, parseModelKey } from "../shared/offered-models.ts";
 import type { AdminPerson } from "./org-admin-routes.ts";
 import { compileRule, type CustomRule } from "../shared/custom-rules.ts";
 import { isOrgRuleBehavior, registeredCustomRuleStore, type CustomRuleStore, type OrgRulePatch } from "./custom-rules-store.ts";
@@ -43,6 +44,10 @@ export interface Policies {
   /** 2026-10-30: members may run an engine outside the list on their own
    * subscription or key. False by default. */
   ownAccountsOutsideList: boolean;
+  /** 2026-10-30 (lot 2): the models turned off for everyone, `<engine>/<model>`. */
+  disabledModels: string[];
+  /** Each engine's models, to switch them one by one (Perspicax). */
+  engineModels: Record<string, Array<{ id: string; label: string }>>;
   defaults: { engine: string | null; model: string | null; approvalMode: string | null };
 }
 
@@ -89,6 +94,8 @@ export interface SettingsChanges {
   pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
   allowedEngines?: string[] | null;
   ownAccountsOutsideList?: boolean;
+  /** 2026-10-30 (lot 2): the whole list of models off, `<engine>/<model>`. */
+  disabledModels?: string[];
   defaults?: { engine?: string | null; model?: string | null; approvalMode?: string | null };
   interimAttachDays?: number;
 }
@@ -113,7 +120,7 @@ export async function timed(check: () => Promise<TestResult | null>): Promise<{ 
 }
 
 function settingsChanges(body: Record<string, unknown>): SettingsChanges | string {
-  const extra = onlyKeys(body, ["allowFullAccess", "memberEnvironmentAutonomy", "memberAutoApproval", "allowVaultExport", "pluginMarketplaces", "allowedEngines", "ownAccountsOutsideList", "defaults", "interimAttachDays"]);
+  const extra = onlyKeys(body, ["allowFullAccess", "memberEnvironmentAutonomy", "memberAutoApproval", "allowVaultExport", "pluginMarketplaces", "allowedEngines", "ownAccountsOutsideList", "disabledModels", "defaults", "interimAttachDays"]);
   if (extra) return extra;
   if (!Object.keys(body).length) return "Send at least one setting.";
   const out: SettingsChanges = {};
@@ -144,6 +151,11 @@ function settingsChanges(body: Record<string, unknown>): SettingsChanges | strin
     const value = body.allowedEngines;
     if (value !== null && (!Array.isArray(value) || value.length > 100 || value.some((entry) => typeof entry !== "string" || !/^[A-Za-z0-9_.:-]{1,80}$/.test(entry)))) return "allowedEngines is null (every engine) or a list of engine instance ids.";
     out.allowedEngines = value === null ? null : [...new Set(value as string[])];
+  }
+  if (body.disabledModels !== undefined) {
+    const value = body.disabledModels;
+    if (!Array.isArray(value) || value.length > MAX_DISABLED_MODELS || value.some((entry) => typeof entry !== "string" || !parseModelKey(entry))) return "disabledModels is a list of <engine>/<model> ids.";
+    out.disabledModels = cleanDisabledModels(value);
   }
   if (body.ownAccountsOutsideList !== undefined) {
     if (typeof body.ownAccountsOutsideList !== "boolean") return "ownAccountsOutsideList is true or false.";

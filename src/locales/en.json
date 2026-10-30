@@ -12189,5 +12189,13 @@
   "providers.legacy.body": "Engines and Keys as they were. The same settings as on Providers.",
   "providers.moved.title": "Accounts, keys and servers",
   "providers.moved.body": "They are on Providers now, in one list.",
-  "providers.moved.open": "Open Providers"
+  "providers.moved.open": "Open Providers",
+  "modelSwitches.title": "Active models",
+  "modelSwitches.help": "One switch per model. A model you turn off leaves your bots' model list and Auto's choices at once; a bot on it moves to Auto. What the organization turns off in Perspicax is off for everyone, admins included, and shows here greyed with the reason.",
+  "modelSwitches.count": "{on} of {total} on",
+  "modelSwitches.toggle": "Models of {name}",
+  "modelSwitches.switch": "{name} on",
+  "modelSwitches.search": "Find a model",
+  "modelSwitches.adminOff": "Turned off by the admin",
+  "modelSwitches.orgBand": "Organization: a model the admin turned off in Perspicax is greyed here, for everyone. Your own switches apply to your bots, Auto and voice."
 }

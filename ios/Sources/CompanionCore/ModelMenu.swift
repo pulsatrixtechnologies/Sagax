@@ -176,14 +176,18 @@ public enum ModelMenu {
         follows: Bool?,
         organization: Bool,
         allowedEngines: [String]?,
+        disabledModels: [String]? = nil,
+        myDisabledModels: [String]? = nil,
         labels: ModelMenuLabels,
         engineLabel: (Instance) -> String
     ) -> [ModelMenuSection] {
+        let disabled = Set((disabledModels ?? []) + (myDisabledModels ?? []))
+        let modelOn: (String, String) -> Bool = { !disabled.contains("\($0)/\($1)") }
         let autoOn = selection.auto == true
         let botInstance = instances.first { $0.instanceId == botModel.instanceId }
         let botOption = botInstance?.models.options.first { $0.id == botModel.model }
         var top = [ModelMenuRow(key: "auto", kind: .auto, label: labels.auto, detail: labels.autoHint, current: autoOn)]
-        if let follows {
+        if let follows, botModel.auto == true || modelOn(botModel.instanceId, botModel.model) {
             top.append(ModelMenuRow(
                 key: "follow", kind: .follow, label: labels.useBotModel(botName),
                 detail: botOption?.label ?? botModel.model, current: follows,
@@ -211,6 +215,7 @@ public enum ModelMenu {
             let wanted = ownCurrent ? (currentModel.isEmpty ? instance.models.default : currentModel) : nil
             var rows: [ModelMenuRow] = []
             for option in groups.cloud + groups.local {
+                guard modelOn(instance.instanceId, option.id) else { continue }
                 let isCurrent = option.id == wanted
                 let usable = modelUsable(instance, modelId: option.id, organization: organization)
                 guard isCurrent || usable else { continue }
