@@ -20,7 +20,7 @@ spec:
         (has(object.spec.initContainers) ? object.spec.initContainers : []) +
         (has(object.spec.ephemeralContainers) ? object.spec.ephemeralContainers : [])
     - name: allowed
-      expression: {{ .Values.admission.allowedImages | toJson | quote }}
+      expression: {{ include "sandboxes.allowedImages" . | quote }}
   validations:
     - expression: |
         variables.images.all(c,
@@ -228,6 +228,6 @@ spec:
                   - key: {{ `"{{ element.image }}"` | quote }}
                     operator: AnyNotIn
                     value:
-                      {{- toYaml .Values.admission.allowedImages | nindent 22 }}
+                      {{- include "sandboxes.allowedImages" . | fromJsonArray | toYaml | nindent 22 }}
             message: "Image is not a signed Pulsatrix image and is not on the operational allowlist."
 {{- end }}

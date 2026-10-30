@@ -44,14 +44,16 @@ app.kubernetes.io/part-of: sagax
 {{- end -}}
 {{- end -}}
 
+{{- /* Images the chart itself runs (reserve and warm node pause, kubectl, prepull)
+   are always admitted: a values file that replaces admission.allowedImages
+   (--reuse-values keeps old lists) cannot lock the chart out of its own pods. */}}
+{{- define "sandboxes.allowedImages" -}}
+{{- $l := concat .Values.admission.allowedImages (list .Values.warmNode.pauseImage .Values.warmNode.kubectlImage) (.Values.warmNode.prepullImages | default list) -}}
+{{- $l | uniq | toJson -}}
+{{- end -}}
+
 {{- define "sandboxes.images.assert" -}}
-{{- if not (has .Values.warmNode.pauseImage .Values.admission.allowedImages) -}}
-{{- fail "warmNode.pauseImage must be listed in admission.allowedImages" -}}
-{{- end -}}
-{{- if not (has .Values.warmNode.kubectlImage .Values.admission.allowedImages) -}}
-{{- fail "warmNode.kubectlImage must be listed in admission.allowedImages" -}}
-{{- end -}}
-{{- range .Values.admission.allowedImages -}}
+{{- range (include "sandboxes.allowedImages" . | fromJsonArray) -}}
 {{- if not (contains "@sha256:" .) -}}
 {{- fail (printf "operational image %s must be pinned by digest" .) -}}
 {{- end -}}
