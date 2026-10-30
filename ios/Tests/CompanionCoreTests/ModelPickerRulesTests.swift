@@ -80,7 +80,7 @@ final class ModelPickerRulesTests: XCTestCase {
         XCTAssertEqual(config.allowedEngines, ["codex"])
     }
 
-    func testThreadsOnTheirOwnModel() throws {
+    func testThreadModelFollowerWireFlags() throws {
         let tasks = try JSONDecoder().decode([BotTask].self, from: Data(#"""
         [{"threadId":"a","title":"A","createdAt":1,"followsBotModel":true},
          {"threadId":"b","title":"B","createdAt":1,"followsBotModel":false,"modelSelection":{"instanceId":"codex","model":"m2"}},
@@ -88,6 +88,5 @@ final class ModelPickerRulesTests: XCTestCase {
          {"threadId":"d","title":"D","createdAt":1}]
         """#.utf8))
         XCTAssertEqual(tasks.map(\.followsBotModel), [true, false, false, nil])
-        XCTAssertEqual(ModelPickerRules.threadsOnOwnModel(botModel: ModelSelection(instanceId: "codex", model: "m1"), tasks: tasks), 1)
     }
 }

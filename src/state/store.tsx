@@ -3084,7 +3084,8 @@ function reduce(state: AppState, action: Action): AppState {
         return updateBot(picked, action.botId, (bot) => ({ ...bot, tasks: bot.tasks?.map((task) => task.threadId !== action.threadId ? task
           : { ...task, followsBotModel: Boolean(action.updateBotDefault) || sameModelSelection(action.selection, bot.modelSelection) }) }));
       }
-      return reconcileModelVariantSessions(updateBot(state, action.botId, (b) => ({ ...b, modelSelection: action.selection })));
+      return reconcileModelVariantSessions(updateBot(state, action.botId, (b) => ({ ...b, modelSelection: action.selection,
+        tasks: b.tasks?.map((task) => ({ ...task, modelSelection: action.selection, followsBotModel: true })) })));
     case "updateTask": {
       const patch = taskPatchFields(action.patch);
       return reconcileModelVariantSessions(updateBot(state, action.botId, (bot) => ({
@@ -3409,6 +3410,9 @@ function reduce(state: AppState, action: Action): AppState {
       }
       return updateBot(next, action.botId, (b) => {
         const updated: Bot = { ...b, ...botPatch };
+        if (botPatch.modelSelection) updated.tasks = updated.tasks?.map((task) => ({
+          ...task, modelSelection: botPatch.modelSelection!, followsBotModel: true,
+        }));
         // #1169: a new bot level reaches every thread; none keeps its own
         if (followMode && updated.tasks) {
           updated.tasks = updated.tasks.map(({ approvalMode: _mode, autoApprove: _auto, approvalOwn: _own, ...task }) => task);

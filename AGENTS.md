@@ -28,12 +28,13 @@ More specific `AGENTS.md` files override this note within their directories.
 
 Lot 4 of "Providers, models and voice". The window and composer list active,
 ready models by provider, without connection cards or nested provider menus.
-A single Providers link opens Settings. The window names the bot-wide scope,
-previews the model/provider/payer on hover or keyboard navigation and shows
+A single Providers link opens Settings. The change is silent, with no scope notice, counter, extra CTA or notification.
+The window previews the model/provider/payer on hover or keyboard navigation and shows
 actual configured recovery choices. A model picked in a thread with
 `updateBotDefault: true` updates the bot and clears every thread's old model
 override atomically (`switchTaskModel`, matching renderer reducer). Each
-thread keeps its permissions. Low-level thread-only calls still work.
+thread keeps its permissions. Bot PATCH, reviewed defaults and native iOS picks
+use the same rule. Low-level thread-only calls still work.
 
 `GET /api/bots/:id/auto-model` also answers for a pinned bot: `auto` says
 whether it is on, `chain` is the dispatch chain, `excluded` names candidate

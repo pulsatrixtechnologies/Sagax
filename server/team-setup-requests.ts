@@ -403,7 +403,7 @@ export class TeamSetupRequestService {
       }
     }
     if (!request.deletion) {
-      lines.push("\nDefault models apply to groups and new threads. Every existing thread keeps its current model and permissions.");
+      lines.push("\nThe new model applies across this bot's conversations. Existing permissions stay unchanged.");
       // Informed consent: creation locks the new bot down, and the owner
       // signs off on that whole state, not just the two facts named before.
       if (request.operations.some((operation) => operation.action === "create")) {

@@ -251,12 +251,6 @@ struct DesktopModelPicker: View {
                 }
                 .padding(.trailing, 40)
 
-                // one mode (#261): no "Only this thread" any more
-                Text("This thread and the bot's model. Groups and new threads use the bot's model; a thread on its own model keeps it.")
-                    .font(theme.font(11))
-                    .foregroundStyle(theme.inkSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 20)
                 if follows != nil { followBotRow.padding(.top, 10) }
                 if notAllowed(rail) {
                     Text("Not allowed by your organization")
@@ -303,13 +297,12 @@ struct DesktopModelPicker: View {
     /// "Use <bot>'s model": the thread back on the bot's model, checked
     /// while it follows it (`FollowBotModelRow`).
     private var followBotRow: some View {
-        let own = ModelPickerRules.threadsOnOwnModel(botModel: profile.modelSelection, tasks: profile.tasks ?? [])
         return VStack(alignment: .leading, spacing: 4) {
             Button {
                 guard follows == false else { return }
                 saving = true
                 Task {
-                    _ = await session.updateModel(profile.modelSelection, for: bot, updateBotDefault: false)
+                    _ = await session.updateModel(profile.modelSelection, for: bot, updateBotDefault: true)
                     saving = false
                     close()
                 }
@@ -334,12 +327,6 @@ struct DesktopModelPicker: View {
             .buttonStyle(.plain)
             .disabled(saving || bot.busy == true)
             .accessibilityIdentifier("desktop-model-follow-bot")
-            if own > 0 {
-                Text(own == 1 ? String(localized: "1 thread uses its own model.") : String(localized: "\(own) threads use their own model."))
-                    .font(theme.font(11))
-                    .foregroundStyle(theme.inkSecondary)
-                    .padding(.horizontal, 10)
-            }
         }
     }
 

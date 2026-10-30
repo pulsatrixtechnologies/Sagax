@@ -1324,7 +1324,7 @@ describe("Store", () => {
     expect("cwd" in (store.bot("plain-bot") ?? {})).toBe(false);
   });
 
-  it("stores variants independently; conversations without one of their own follow the bot", () => {
+  it("keeps thread variants until the next bot-default model change", () => {
     const store = new Store(selection);
     const bot = store.createBot();
     const first = bot.threadId;
@@ -1335,7 +1335,7 @@ describe("Store", () => {
     store.patchBot(bot.id, { modelSelection: { ...chosen, variant: "minimal" } });
     const future = store.createTask(bot.id, "Future")!;
     const reloaded = new Store(selection);
-    expect(reloaded.projectBotForTask(bot.id, first)!.modelSelection).toEqual(chosen);
+    expect(reloaded.projectBotForTask(bot.id, first)!.modelSelection).toEqual({ ...chosen, variant: "minimal" });
     expect(reloaded.projectBotForTask(bot.id, second.threadId)!.modelSelection).toEqual({ ...chosen, variant: "minimal" });
     expect(reloaded.projectBotForTask(bot.id, future.threadId)!.modelSelection).toEqual({ ...chosen, variant: "minimal" });
   });
@@ -1361,15 +1361,14 @@ describe("Store", () => {
     const second = store.createTask(bot.id, "Second")!;
     const pinned = { instanceId: "claude", model: "claude-opus-4-5" };
     store.switchTaskModel(bot.id, first, pinned, false);
-    // A person's pick stays; a thread with no model of its own follows the
-    // bot onto the new one.
+    // Every old conversation follows the new default silently.
     const next = { instanceId: "codex", model: "gpt-5-codex" };
     expect(store.applyModelDefault(bot.id, next)?.modelSelection).toEqual(next);
-    expect(store.projectBotForTask(bot.id, first)!.modelSelection).toEqual(pinned);
+    expect(store.projectBotForTask(bot.id, first)!.modelSelection).toEqual(next);
     expect(store.projectBotForTask(bot.id, second.threadId)!.modelSelection).toEqual(next);
     const reloaded = new Store(selection);
     expect(reloaded.bot(bot.id)!.modelSelection).toEqual(next);
-    expect(reloaded.projectBotForTask(bot.id, first)!.modelSelection).toEqual(pinned);
+    expect(reloaded.projectBotForTask(bot.id, first)!.modelSelection).toEqual(next);
     expect(reloaded.projectBotForTask(bot.id, second.threadId)!.modelSelection).toEqual(next);
   });
 
