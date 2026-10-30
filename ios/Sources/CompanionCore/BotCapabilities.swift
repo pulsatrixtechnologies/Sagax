@@ -7,8 +7,9 @@ import Foundation
 // console and this app read the same list.
 //
 // Decoding is tolerant: a field or a value this build does not know never
-// breaks the list (an unknown form, scope or state reads as `.other`, a row
-// that does not decode is dropped). `key` and `botId` are never shown.
+// breaks the list (an unknown form, scope or state reads as `.other`, an
+// unknown receipt stays `.unknown` and grants no received part, a row that
+// does not decode is dropped). `key` and `botId` are never shown.
 // The switches call the routes the app already uses: a plugin of the bot
 // (`PATCH /api/bots/:id/plugins/:key`), a server of this installation (the
 // bot's own list, `PATCH /api/bots/:id {mcpServers}`), a Perspicax Role
@@ -68,7 +69,7 @@ public struct BotCapability: Decodable, Hashable, Identifiable, Sendable {
     public enum State: String, Hashable, Sendable {
         case on, off, toConnect = "to_connect", imposed, notHeld = "not_held", notServed = "not_served", reserved, unverifiable, other
     }
-    public enum Receipt: String, Hashable, Sendable { case native, prompt, mounted, proxied, none }
+    public enum Receipt: String, Hashable, Sendable { case native, prompt, mounted, proxied, none, unknown }
 
     /// What the bot's engine receives of this capability (`EngineReceipt`).
     public struct EngineReceipt: Decodable, Hashable, Sendable {
@@ -86,17 +87,19 @@ public struct BotCapability: Decodable, Hashable, Identifiable, Sendable {
         private enum CodingKeys: String, CodingKey { case skills, commands, agents, mcp, tools, nothing }
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
-            // an unknown receipt reads as received: the server knows better
+            // Keep future values unknown. This app cannot claim which
+            // instructions or tools that mode actually supplies.
             func part(_ key: CodingKeys) -> Receipt? {
                 guard let raw = try? c.decode(String.self, forKey: key) else { return nil }
-                return Receipt(rawValue: raw) ?? .native
+                return Receipt(rawValue: raw) ?? .unknown
             }
             skills = part(.skills); commands = part(.commands); agents = part(.agents); mcp = part(.mcp); tools = part(.tools)
-            let received = [skills, commands, agents, mcp, tools].contains { $0 != nil && $0 != Receipt.none }
-            nothing = (try? c.decode(Bool.self, forKey: .nothing)) ?? !received
+            let received = [skills, commands, agents, mcp, tools].contains { Self.received($0) }
+            nothing = ((try? c.decode(Bool.self, forKey: .nothing)) ?? false) || !received
         }
 
-        func gets(_ part: Receipt?) -> Bool { part != nil && part != Receipt.none }
+        private static func received(_ part: Receipt?) -> Bool { part != nil && part != Receipt.none && part != .unknown }
+        func gets(_ part: Receipt?) -> Bool { Self.received(part) }
         /// Skills or commands reach the engine.
         public var skillsOrCommands: Bool { gets(skills) || gets(commands) }
         public var agentsReceived: Bool { gets(agents) }
@@ -163,7 +166,7 @@ public struct BotCapability: Decodable, Hashable, Identifiable, Sendable {
         canToggle = (try? c.decode(Bool.self, forKey: .canToggle)) ?? false
         updateAvailable = (try? c.decode(Bool.self, forKey: .updateAvailable)) ?? false
         brings = try? c.decode(Brings.self, forKey: .brings)
-        engine = (try? c.decode(EngineReceipt.self, forKey: .engine)) ?? EngineReceipt(nothing: false)
+        engine = (try? c.decode(EngineReceipt.self, forKey: .engine)) ?? EngineReceipt(nothing: true)
         connectReason = (try? c.decode(Connect.self, forKey: .connect))?.reason
         reason = try? c.decode(String.self, forKey: .reason)
         installedBy = try? c.decode(String.self, forKey: .installedBy)

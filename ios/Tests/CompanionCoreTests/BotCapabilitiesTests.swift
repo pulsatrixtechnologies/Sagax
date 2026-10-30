@@ -62,8 +62,8 @@ final class BotCapabilitiesTests: XCTestCase {
         XCTAssertEqual(future.scope, .other)
         XCTAssertEqual(future.state, .other)
         XCTAssertFalse(future.canToggle)
-        XCTAssertEqual(future.engine.skills, .native)
-        XCTAssertFalse(future.engine.nothing)
+        XCTAssertEqual(future.engine.skills, .unknown)
+        XCTAssertTrue(future.engine.nothing)
     }
 
     func testAMissingOrEmptyBodyIsAnEmptyList() throws {
@@ -71,6 +71,18 @@ final class BotCapabilitiesTests: XCTestCase {
         XCTAssertTrue(empty.items.isEmpty)
         XCTAssertNil(empty.promptIndex)
         XCTAssertTrue(BotCapabilityReceipt(empty).isEmpty)
+    }
+
+    func testUnknownReceiptsNeverInventAReceivedCapability() throws {
+        let json = #"{"engine":{"kind":"future","label":"Future"},"items":[{"key":"plugin:bot:future","form":"plugin","name":"Future","state":"on","engine":{"skills":"teleported","nothing":false}},{"key":"plugin:bot:mixed","form":"plugin","name":"Mixed","state":"on","engine":{"skills":"teleported","mcp":"mounted","nothing":false}},{"key":"plugin:bot:missing","form":"plugin","name":"Missing","state":"on"}]}"#
+        let list = try JSONDecoder().decode(BotCapabilityList.self, from: Data(json.utf8))
+        XCTAssertEqual(list.items[0].engine.skills, .unknown)
+        XCTAssertFalse(list.items[0].served)
+        XCTAssertTrue(list.items[1].served)
+        XCTAssertFalse(list.items[2].served)
+        let receipt = BotCapabilityReceipt(list)
+        XCTAssertEqual(receipt.skillsAndCommands, [])
+        XCTAssertEqual(receipt.servers, ["Mixed"])
     }
 
     func testSwitchesFollowTheKey() throws {
