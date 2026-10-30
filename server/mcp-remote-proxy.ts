@@ -63,7 +63,7 @@ function fail(message: string): never {
  * starts, while a revoked sign-in or a wrong key needs the person. Our own
  * words, nothing remote. */
 const CREDENTIALS_REFUSED = "This MCP server refused its credentials (HTTP 401). If it uses a sign-in, send the message again: "
-  + "Sagax refreshes sign-ins when a message starts. If it still fails, open Plugins → MCP servers and sign in to it again, "
+  + "Sagax refreshes sign-ins when a message starts. If it still fails, open Capabilities > Installed and sign in to it again, "
   + "or check its header values.";
 
 /** A refusal of our own: its words carry nothing remote, so they are relayed. */
@@ -157,7 +157,7 @@ function remoteStatusText(status: number | undefined, retryAfterMs?: number): st
     return "This MCP server refused the request (HTTP 403). Its sign-in may be missing a permission (scope) it needs, "
       + "or the service may not be turned on for that account or project.";
   }
-  if (status === 404) return "This MCP server's address was not found (HTTP 404). Check its URL in Plugins → MCP servers.";
+  if (status === 404) return "This MCP server's address was not found (HTTP 404). Check its URL in Capabilities > Installed.";
   if (status === 429) return rateLimitGaveUpText(serverLabel(), retryAfterMs);
   if (status !== undefined && status >= 500) return `This MCP server had a problem on its side (HTTP ${status}). Try again later.`;
   return status === undefined ? "Remote MCP request failed" : `Remote MCP request failed (HTTP ${status})`;

@@ -1,4 +1,4 @@
-// the GitHub plugin's page in Connect apps: the one list of credentials
+// the GitHub plugin's page in Capabilities: the one list of credentials
 // (server/github-credentials.ts), 2026-10-28.
 //
 //   GET  /api/me/github/credentials

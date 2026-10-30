@@ -712,13 +712,6 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/pages\/[\w-]+\/(?:share|place)$/ },
   { methods: ["PATCH"], path: /^\/api\/bots\/[\w-]+\/cards\/[\w-]+$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/secret-cards\/[\w-]+\/(?:resume|dismiss)$/ },
-  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/status$/ },
-  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/(?:resume|dismiss)$/ },
-  // Connect the app a card asks for (iOS parity S2). It signs an account into
-  // the server's own connected apps, so the handler lets through only the
-  // bot's owner on a personal server or this computer's own person
-  // (clientSessionIsComputerOwner), never on an organization server.
-  { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/connector-cards\/[\w-]+\/authorize$/ },
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/always-allow$/ }, // must match a pending card
   // 2026-10-14: a person's own approval rules; the handlers keep them to
   // the person (and the bot's owner).
@@ -892,7 +885,7 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/me\/mcp\/servers$/, feature: "orgDirectory" },
   { methods: ["PATCH", "DELETE"], path: /^\/api\/me\/mcp\/servers\/[a-z][a-z0-9_-]{0,31}$/, feature: "orgDirectory" },
   { methods: ["POST"], path: /^\/api\/me\/mcp\/servers\/[a-z][a-z0-9_-]{0,31}\/oauth\/(?:start|disconnect)$/, feature: "orgDirectory" },
-  // A bot's skills (Library) and Claude Code plugins (Connect apps, that
+  // A bot's skills (Library) and Claude Code plugins (Capabilities, that
   // bot's scope): the handlers let a
   // person who may use the bot read them and its owner or a manager change them.
   { methods: ["GET", "POST"], path: /^\/api\/bots\/[\w-]+\/skills$/, feature: "orgDirectory" },
@@ -1061,7 +1054,6 @@ export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path
   { methods: ["PUT"], path: /^\/api\/tts\/provider$/, permission: "server.settings" },
   { methods: ["PUT"], path: /^\/api\/harness-connectors\/settings$/, permission: "server.settings" },
   { methods: ["POST"], path: /^\/api\/decider\/test$/, permission: "server.settings" },
-  { methods: ["GET", "POST", "PUT", "DELETE"], path: /^\/api\/connectors(?:\/[\w.-]{1,128}(?:\/[\w.-]{1,128}){0,3})?$/, permission: "server.settings" },
   { methods: ["GET", "POST"], path: /^\/api\/bot-defaults(?:\/(?:skills\/preview|avatar))?$/, permission: "server.settings" },
   // (the custom domain stays an admin's: pairing and invite links use it)
   { methods: ["PATCH"], path: /^\/api\/live\/settings$/, permission: "server.settings" },

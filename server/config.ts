@@ -351,7 +351,7 @@ const featureConfigSchema = z.object({
    * no Settings toggle — see sharedComputersEnabled. */
   sharedComputers: z.boolean().optional(),
   /** Claude bots also load the MCP servers and connectors from this
-   * machine's own Claude Code setup (Plugins → MCP servers switch). Off by
+   * machine's own Claude Code setup (Capabilities > Installed switch). Off by
    * default: each extra tool costs tokens on every model call. */
   claudeUserMcp: z.boolean().optional(),
   /** LLM-generated titles for new bot threads. Off until explicitly
@@ -1234,7 +1234,7 @@ export function sharedComputersEnabled(cfg: AppConfig): boolean {
 
 /** Claude bots also see the MCP servers of this machine's own Claude Code
  * setup, the way Codex bots already read ~/.codex/config.toml. The switch
- * is under Plugins → MCP servers; the Claude driver then omits
+ * is under Capabilities > Installed; the Claude driver then omits
  * --strict-mcp-config while keeping skills, hooks and the personal
  * CLAUDE.md out. 2026-10-27 (#1098): unset, it is on for a solo server (the
  * person's own computer and Claude Code setup) and off on an organization's

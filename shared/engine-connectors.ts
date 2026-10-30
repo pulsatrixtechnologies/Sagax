@@ -6,7 +6,7 @@
 // Entra app of its own for any of this.
 //
 // Two pure readings:
-//   - what each engine's connectors reach (Connect apps, the engine cards,
+//   - what each engine's connectors reach (Capabilities, the engine cards,
 //     the turn's prompt), never whether a person signed in to them: that
 //     stays on claude.ai and grok.com;
 //   - which connector calls act outside the app (a mail sent, a Teams post,

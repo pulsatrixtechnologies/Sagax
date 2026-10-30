@@ -226,7 +226,7 @@ struct ConnectAppsPage: View {
     var body: some View {
         NavigationStack(path: $path) {
             ConnectAppsMain(model: model, bots: bots, botsShown: botsShown, initialTab: initialTab, openBot: openBot) { path.append($0) }
-                .navigationTitle(String(localized: "Connect apps"))
+                .navigationTitle(String(localized: "Capabilities"))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -252,7 +252,7 @@ struct ConnectAppsPage: View {
         .onValueChange(of: scenePhase) { phase in
             if phase == .active { Task { await model.load(session) } }
         }
-        .alert(String(localized: "Connect apps"), isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
+        .alert(String(localized: "Capabilities"), isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
             Button(String(localized: "OK"), role: .cancel) {}
         } message: {
             Text(verbatim: model.message ?? "")
@@ -449,7 +449,7 @@ struct ConnectAppsMain: View {
         ThemedList {
             Section {
                 connectedLink
-                Picker(String(localized: "Connect apps"), selection: $tab) {
+                Picker(String(localized: "Capabilities"), selection: $tab) {
                     ForEach(shownTabs, id: \.self) { Text(verbatim: $0.title).tag($0) }
                 }
                 .pickerStyle(.segmented)

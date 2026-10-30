@@ -533,7 +533,7 @@ struct WizardToolsStep: View {
                 WizardCard(title: String(localized: "Apps")) {
                     Text(suggestions.apps.isEmpty ? String(localized: "Connect the apps this bot will work with.") : String(localized: "This role usually uses: \(suggestions.apps.joined(separator: ", ")).")
                     ).font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
-                    Text("Connect them from Connect apps, on this device or on your computer.").font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
+                    Text("Connect them from Capabilities, on this device or on your computer.").font(Theme.Font.preview).foregroundStyle(Theme.textSecondary)
                 }
                 .accessibilityIdentifier("wizard-tool-apps")
             }

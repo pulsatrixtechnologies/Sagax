@@ -82,6 +82,38 @@ OpenAI model, chat completions otherwise. A list that fails sets
 Foundry / Azure OpenAI" key row (`azureFoundry`, the same connection) and
 the key test lists deployments. Tests: `server/drivers/openai-compat-azure.test.ts`.
 
+## Capabilities: one word for what a bot receives (2026-10-30)
+
+The owner chose one notion for everything a bot receives on top of its
+engine: a **capability** (fr « capacité »): a plugin, a skill, an MCP server,
+a connector of an engine account, a Perspicax Role, Pulsatrix Flow. The page
+that was Connect apps / Connecter des applications / Connected apps / Apps is
+**Capabilities** (fr « Capacités ») everywhere: sidebar pill, palette, title,
+iOS, server errors, the bot's prompt lines, sagax_help and the docs site
+(`apps/docs/content/docs/connected-apps/`, path kept). Words, shared with
+Perspicax (`docs/design/lexique.md` there):
+
+- Source: where a capability comes from (a Git marketplace, Perspicax, the
+  person's engine account, a file of the person, the Sagax catalog). The
+  Sources tab lists marketplaces.
+- Scope: This bot, Me, Organization (fr Ce bot, Moi, Organisation). Today
+  the toggle still says For <bot> and Everyone; the three scopes come in
+  lot 2 of the migration.
+- State: available, installed, on, to connect, update offered, set by the
+  organization, offered by the organization, not served by this engine.
+- Never « plugiciel »: a plugin is a plugin in both languages.
+
+Rules kept by `src/locales/words.test.ts` ("names the Capabilities page and
+no retired tab"): no English string says Connect apps, Connected apps,
+Plugins →, Manage > Advanced, > Manage or Managed on Grok; no French string
+says Connecter des applications, Applications connectées, plugiciel, Gérer >
+Avancé or Géré dans Grok. A text that sends the person somewhere names a tab
+that exists: Capabilities > Discover, Installed, Providers, Pages, Sources.
+Grok's cloud connectors are listed from Grok's own catalog and say « Non
+vérifiable » (Sagax cannot check them). `plugins.claudeOnly` says what a
+non-Claude engine really gets (skills and commands in the prompt on an
+engine with files, nothing yet on Grok and API engines).
+
 ## Proactive bots, wired for real (2026-10-30)
 
 A bot's proactive mode (`proactiveMode`, Edit bot > Permissions > Proactive,
@@ -6356,8 +6388,7 @@ took 13 tool calls and ended in "I can't". Now one call posts a card.
   connectors first. A bot on the Grok engine, on the person's own xAI account:
   https://grok.com/connectors (xAI documents no per-connector link). A Claude
   bot on the person's own subscription: https://claude.ai/customize/connectors.
-  Else Sagax's Connect apps card (the existing
-  `/api/internal/connectors/request`). An engine account that is someone
+  Else Sagax's Capabilities page (Installed). An engine account that is someone
   else's (#943 `accountConnectorsForTurn` "foreign") is refused. Only a
   person's own turn (`connectorSetupSpeaker`: person or operator, never a
   routine or a peer).
@@ -8455,11 +8486,7 @@ the person asked for are not views.
   for previews (`src/lib/receipts.ts`). Every read and live frame keeps only
   the routines the viewer can see (`routineSeenBy`); a line with none of
   theirs is not sent, and the fallback text never names a routine.
-- The Connect apps pill shows under the last message only when the latest
-  turn needed an app that is not connected (`src/lib/connect-apps-signal.ts`):
-  a connected-app call refused for a missing connection, or a connection
-  card that failed or was set aside. Never while the turn runs, never on an
-  empty conversation. It opens Connect apps with those apps first
+- The Capabilities page opens with the apps a conversation needs first
   (`pluginsFocusApps`, section "needed").
 
 ## Bots parity 2F: template update, avatar drop and paste, reset, bot link (2026-10-21)

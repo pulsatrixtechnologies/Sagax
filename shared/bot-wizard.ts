@@ -229,7 +229,7 @@ export interface WizardKit {
   rules: string[];
   routines: string[];
   tools: WizardTool[];
-  /** Connected-app slugs the role usually wants (Connect apps opens on them). */
+  /** Connected-app slugs the role usually wants (Capabilities opens on them). */
   apps: string[];
 }
 

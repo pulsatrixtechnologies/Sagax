@@ -101,9 +101,9 @@ const openBody = z.object({
 }).strict();
 
 const REFUSALS = {
-  foreign: "No card was posted: this bot's engine runs on an account that is not the person's own, and the person has no Grok or Claude sign-in of their own here. Do not offer this card again. Say in one sentence that they can sign in to their own Grok or Claude account in Connect apps > Providers.",
+  foreign: "No card was posted: this bot's engine runs on an account that is not the person's own, and the person has no Grok or Claude sign-in of their own here. Do not offer this card again. Say in one sentence that they can sign in to their own Grok or Claude account in Capabilities > Providers.",
   not_on_engine: "No card was posted: that connector is not one of Grok's cloud connectors and the person has no Claude sign-in of their own here. Do not offer this card again; say so in one sentence.",
-  no_route: "No card was posted: the person has no Grok or Claude sign-in of their own on this server, so there is no account of theirs to connect it to. Do not offer this card again. Say in one sentence that they can sign in to their own Grok or Claude account in Connect apps > Providers, then ask again.",
+  no_route: "No card was posted: the person has no Grok or Claude sign-in of their own on this server, so there is no account of theirs to connect it to. Do not offer this card again. Say in one sentence that they can sign in to their own Grok or Claude account in Capabilities > Providers, then ask again.",
 } as const;
 
 /** Grok's own catalog, read after the card on a turn of the card's person,

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Connect Apps, the whole panel (PluginsPanel) driven the way the owner
+// Capabilities, the whole panel (PluginsPanel) driven the way the owner
 // used it (2026-10-28): it opens on Discover, the first tab; the header has
 // no "N connected" button and the count sits on Installed; the scope stays
 // put on every tab; a click on the GitHub row (not its "...") opens its page
@@ -142,7 +142,7 @@ const open = async () => {
   await settle();
 };
 
-describe("Connect Apps, driven like the owner did", () => {
+describe("Capabilities, driven like the owner did", () => {
   it("Bots is a tab right after Discover; Discover has no Browse Bots button, for every bot", async () => {
     paneProps = null;
     await open();
@@ -319,7 +319,7 @@ describe("Connect Apps, driven like the owner did", () => {
     const row = [...host.querySelectorAll<HTMLElement>("[data-installed-entry] button[aria-label]")].find((button) => button.textContent?.includes("GitHub"))!;
     await click(row);
     expect($("[data-plugins-subpage]")).not.toBeNull();
-    expect($("#plugins-title")?.textContent).toBe("Connect Apps");
+    expect($("#plugins-title")?.textContent).toBe("Capabilities");
     expect($("[data-plugins-scope-bar]")).not.toBeNull();
     expect(tabs()).toEqual(["discover", "bots", "installed*", "pages", "sources"]);
     expect($('[data-plugins-tab="installed"]')?.getAttribute("aria-current")).toBe("page");

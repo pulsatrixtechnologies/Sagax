@@ -1,6 +1,6 @@
 // The cloud connectors a Grok account brings (grok.com/connectors).
 // Sagax does not sign the person in and does not store a token. The names
-// are what Connect apps and Providers show, so Exchange, X and Microsoft
+// are what Capabilities and Providers show, so Exchange, X and Microsoft
 // Teams are visible beside the servers Sagax itself mounts. A turn still
 // asks before a call (server/drivers/acp/grok.ts).
 

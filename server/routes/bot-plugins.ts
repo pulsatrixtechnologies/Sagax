@@ -1,4 +1,4 @@
-// A bot's Claude Code plugins (Connect apps, scope "For this bot",
+// A bot's Claude Code plugins (Capabilities, scope "For this bot",
 // server/bot-plugins.ts). The marketplaces are the installation's one list.
 //
 //   GET    /api/bots/:id/plugins

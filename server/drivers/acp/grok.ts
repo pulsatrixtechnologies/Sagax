@@ -133,7 +133,7 @@ export function grokHome(env: Record<string, string | undefined> = process.env):
  * managed MCP gateway (`managed_gateway:` connectors, Grok's
  * `managed_mcps.gateway_tools_enabled`). Forcing the gateway tools off on
  * every turn left a person's own Grok turn without the very connectors
- * Connect apps lists ("no Teams connector on the Grok account"). They now
+ * Capabilities lists ("no Teams connector on the Grok account"). They now
  * follow the managed configs: on for the person's own sign-in on an
  * organization turn without a tool selection, off everywhere else. A
  * gateway call is a use_tool call to a server Sagax did not mount, so it

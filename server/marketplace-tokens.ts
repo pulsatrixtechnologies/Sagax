@@ -1,7 +1,7 @@
 // LEGACY since 2026-10-28: read once at start and moved into the one
 // credential list (server/github-credentials.ts), then the file is removed.
 //
-// A token per bot and plugin marketplace (Connect apps, "For this bot",
+// A token per bot and plugin marketplace (Capabilities, "For this bot",
 // Manage > Marketplaces): how a bot reads a private repository when nobody's
 // GitHub connection can, and how it reads one on another git host (GitLab,
 // Gitea, a company server). The marketplace itself is in the installation's
@@ -14,7 +14,7 @@
 // never in a log. Keyed by bot and marketplace source (owner/repo or the
 // https address), so it survives an Update and goes with Remove.
 //
-// The "Everyone" scope of Connect apps keeps one token per marketplace for
+// The "Everyone" scope of Capabilities keeps one token per marketplace for
 // the whole installation under the key `workspace` (WORKSPACE_TOKEN_KEY):
 // set by an admin only, audited, never shown back. It reads the marketplace
 // for everyone; a bot's own token still comes first in its scope.
@@ -31,7 +31,7 @@ const AAD = Buffer.from("sagax marketplace-tokens v1");
 const TOKEN = /^[\x21-\x7e]{8,4096}$/;
 const BOT_ID = /^[\w-]{1,80}$/;
 const MAX_TOKENS = 500;
-/** The key of the installation's own tokens ("Everyone" in Connect apps),
+/** The key of the installation's own tokens ("Everyone" in Capabilities),
  * in place of a bot id. */
 export const WORKSPACE_TOKEN_KEY = "workspace";
 

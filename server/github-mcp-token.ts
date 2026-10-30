@@ -7,7 +7,7 @@
 // Sagax never expanded that placeholder, so the server went out with the
 // literal text and the Installed row said Connected for an account nobody
 // had connected. Now the placeholder is the person's GitHub connection
-// (the GitHub plugin's page in Connect apps): at each turn it is replaced with the
+// (the GitHub plugin's page in Capabilities): at each turn it is replaced with the
 // token of the person the turn runs for, never written to config.json and
 // never listed; the listing says whether that person has one.
 import type { McpServerSpec } from "./contracts.ts";
@@ -50,7 +50,7 @@ export function withGithubToken<T extends Record<string, McpServerSpec>>(servers
 // member's turn with that one sign-in, so a member's bot acted on GitHub as
 // the admin. Now, on an organization server, every GitHub server of a turn
 // carries the GitHub connection of the person the turn runs for (the GitHub
-// plugin's page in Connect apps), whatever sign-in or header it was saved with;
+// plugin's page in Capabilities), whatever sign-in or header it was saved with;
 // a person without a connection gets no GitHub server at all, and the bot
 // tells them to connect GitHub.
 
@@ -109,5 +109,5 @@ export function githubServersAsPerson<T extends Record<string, McpServerSpec>>(s
  * the bot says the person has no GitHub connection, never borrows one. */
 export function githubWithheldPrompt(withheld: readonly string[]): string {
   if (!withheld.length) return "";
-  return ` GitHub: the person you work for has no GitHub connection of their own, so ${withheld.map((name) => `"${name}"`).join(", ")} is not available in this conversation. For anything on GitHub, tell them to click "Connect GitHub" on the GitHub plugin's page (Connect apps > Sources > GitHub connection); never use anyone else's GitHub access.`;
+  return ` GitHub: the person you work for has no GitHub connection of their own, so ${withheld.map((name) => `"${name}"`).join(", ")} is not available in this conversation. For anything on GitHub, tell them to click "Connect GitHub" on the GitHub plugin's page (Capabilities > Sources > GitHub connection); never use anyone else's GitHub access.`;
 }

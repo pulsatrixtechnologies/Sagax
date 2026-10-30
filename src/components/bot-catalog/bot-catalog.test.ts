@@ -212,26 +212,26 @@ describe("the home pane", () => {
     expect(all).toContain("data-catalog-back");
   });
 
-  it("opened alone keeps its title without a breadcrumb; inside Connect apps it shows Connect apps > Browse Bots (2026-10-16)", () => {
+  it("opened alone keeps its title without a breadcrumb; inside Capabilities it shows Capabilities > Browse Bots (2026-10-16)", () => {
     const alone = view();
     expect(alone).not.toContain("data-breadcrumb");
     expect(alone).toMatch(/id="bot-catalog-title"[^>]*>Browse Bots</);
-    const inside = view({ trail: [{ label: "Connect apps", onSelect: () => {} }] });
-    expect(inside).toMatch(/data-breadcrumb[\s\S]*?aria-label="Back"[\s\S]*?>Connect apps<[\s\S]*?aria-current="page"[^>]*>Browse Bots</);
+    const inside = view({ trail: [{ label: "Capabilities", onSelect: () => {} }] });
+    expect(inside).toMatch(/data-breadcrumb[\s\S]*?aria-label="Back"[\s\S]*?>Capabilities<[\s\S]*?aria-current="page"[^>]*>Browse Bots</);
     expect(inside).toMatch(/id="bot-catalog-title"[^>]*>Browse Bots</);
-    // View all inside: Connect apps > Browse Bots > the section
-    const all = view({ trail: [{ label: "Connect apps", onSelect: () => {} }], expanded: "templates" });
-    expect(all).toMatch(/>Connect apps<[\s\S]*?>Browse Bots<[\s\S]*?aria-current="page"[^>]*>Templates</);
+    // View all inside: Capabilities > Browse Bots > the section
+    const all = view({ trail: [{ label: "Capabilities", onSelect: () => {} }], expanded: "templates" });
+    expect(all).toMatch(/>Capabilities<[\s\S]*?>Browse Bots<[\s\S]*?aria-current="page"[^>]*>Templates</);
   });
 
-  it("inside Connect apps it is a page of Discover: a back row, no second big title, the search then the chips (2026-10-28)", () => {
+  it("inside Capabilities it is a page of Discover: a back row, no second big title, the search then the chips (2026-10-28)", () => {
     const inside = view({ trail: [{ label: "Discover", onSelect: () => {} }] });
     expect(inside).toContain("data-plugins-page-bar");
     expect(inside).not.toContain(`class="${CATEGORY_MODAL.title}"`);
     expect(inside).toMatch(/<h2 id="bot-catalog-title" class="sr-only">Browse Bots<\/h2>/);
     // the subtitle stays, as a line under the back row
     expect(inside).toContain("data-catalog-subtitle");
-    // the search first, then the chips, as Connect apps' Discover
+    // the search first, then the chips, as Capabilities' Discover
     expect(inside.indexOf("data-catalog-search")).toBeLessThan(inside.indexOf("data-catalog-chips"));
     expect(inside).toContain(`class="${CATEGORY_MODAL.chips}`);
     // opened alone: unchanged, the title, the chips, then the search
@@ -268,13 +268,13 @@ describe("the detail pane", () => {
     expect(html).not.toContain("<textarea");
   });
 
-  it("opened from Connect apps, the detail's breadcrumb goes back to Connect apps and to Browse Bots (2026-10-26)", () => {
+  it("opened from Capabilities, the detail's breadcrumb goes back to Capabilities and to Browse Bots (2026-10-26)", () => {
     const onSelect = vi.fn();
     const html = renderToStaticMarkup(createElement(BotCatalogDetailView, {
       item: pixel, content: null, tab: "soul", onTab: () => {}, onBack: () => {}, actions: null,
-      trail: [{ label: "Connect Apps", onSelect }],
+      trail: [{ label: "Capabilities", onSelect }],
     }));
-    expect(html).toMatch(/data-breadcrumb[\s\S]*?>Connect Apps<[\s\S]*?>Browse Bots<[\s\S]*?aria-current="page"[^>]*>Pixel</);
+    expect(html).toMatch(/data-breadcrumb[\s\S]*?>Capabilities<[\s\S]*?>Browse Bots<[\s\S]*?aria-current="page"[^>]*>Pixel</);
     expect(html).toContain("data-catalog-back");
     const alone = renderToStaticMarkup(createElement(BotCatalogDetailView, { item: pixel, content: null, tab: "soul", onTab: () => {}, onBack: () => {}, actions: null }));
     expect(alone).not.toContain("data-breadcrumb");
@@ -437,7 +437,7 @@ describe("the Templates section (the old Templates library)", () => {
   });
 
   it("says what an import added", () => {
-    expect(teamImportedText({ name: "Sales desk", members: 3, connections: 1 })).toBe("3 bots added · existing bots and chats kept · Connections to finish in Plugins → MCP servers: 1");
+    expect(teamImportedText({ name: "Sales desk", members: 3, connections: 1 })).toBe("3 bots added · existing bots and chats kept · Connections to finish in Capabilities > Installed: 1");
     expect(teamImportedText({ name: "Presets", members: 0, presets: 2 })).toBe("Preset bots added to New bot: 2");
   });
 });

@@ -432,7 +432,7 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     expect((await api("PATCH", "/api/org/settings", alice, { pluginMarketplaces: { mode: "any" } })).status).toBe(200);
   }, 120_000);
 
-  it("OC-5b: Connect apps > Organization sources and access saves through the live route, never echoes a token, and refuses a member", async () => {
+  it("OC-5b: Capabilities > Organization sources and access saves through the live route, never echoes a token, and refuses a member", async () => {
     const clientId = await api("PATCH", "/api/org/settings", alice, { githubClientId: " Ov23liExampleClient " });
     expect(clientId.status, clientId.text).toBe(200);
     expect(clientId.body.settings.github).toMatchObject({ clientId: "Ov23liExampleClient" });

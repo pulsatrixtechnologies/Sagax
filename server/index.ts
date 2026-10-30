@@ -8104,7 +8104,7 @@ function pluginMarketplacePolicy(): MarketplacePolicy | undefined {
 const legacyOrgGithubTokens = new OrgGithubTokens(DATA_DIR, vaultKeySource);
 const orgBotSecrets = new OrgBotSecrets(DATA_DIR, vaultKeySource);
 const legacyMarketplaceTokens = new MarketplaceTokens(DATA_DIR, vaultKeySource);
-/** One list of GitHub credentials (Connect apps > Sources > GitHub,
+/** One list of GitHub credentials (Capabilities > Sources > GitHub,
  * server/github-credentials.ts): each person's own, the organization's, and
  * the credential each marketplace picks. */
 const githubCredentials = new GithubCredentials(DATA_DIR, vaultKeySource);
@@ -8191,10 +8191,10 @@ const marketplaceCredentials = {
   forgetBot: (scope: string) => githubCredentials.forgetScope(scope),
 };
 // The installation's one marketplace list (server/plugin-marketplaces.ts):
-// Connect apps installs a plugin from it for everyone (MCP servers and
+// Capabilities installs a plugin from it for everyone (MCP servers and
 // skills) or for one bot (the whole plugin, server/bot-plugins.ts). Added
 // for everyone, it reads with the installation's token for it (an admin's,
-// Connect apps > Everyone), then the person's GitHub connection, then the
+// Capabilities > Everyone), then the person's GitHub connection, then the
 // organization's GitHub tokens; added or fetched again from a bot, with that
 // bot's token for it first (BotPlugins.cloneEnvironment).
 const pluginMarketplaces = new PluginMarketplaces({
@@ -8650,7 +8650,7 @@ async function addPersonalMcpServer(principalId: string, body: unknown): Promise
     await manager.probe(name, personalRemoteSpec(server), AbortSignal.timeout(10_000)).catch(() => undefined);
   }
 }
-// Connect apps > Sources > GitHub: the one list of credentials. A person's
+// Capabilities > Sources > GitHub: the one list of credentials. A person's
 // own with no admin; the organization's with an organization admin.
 ROUTES.push(createGithubCredentialRoutes({
   store: githubCredentials,
@@ -29538,7 +29538,7 @@ function configStatus() {
       // shell and the Settings UI read it so they offer nothing this server
       // would refuse.
       sharedComputers: sharedComputersEnabled(cfg),
-      // Plugins → MCP servers switch: Claude bots also see this machine's
+      // Capabilities > Installed switch: Claude bots also see this machine's
       // own Claude Code MCP servers
       claudeUserMcp: claudeUserMcpEnabled(cfg, IDENTITY.kind === "perspicax"),
       autoRecall: autoRecallEnabled(cfg),
@@ -46420,7 +46420,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const speaker = turnSpeaker.principalId || (IDENTITY.kind !== "perspicax" ? localPrincipalId() : "");
         if (!speaker) return json(res, 403, { error: "GitHub is connected by a signed-in person." });
         const principalId = speaker.trim().toLowerCase();
-        // The same door as Connect apps (ownIntegrationsRefusal): a person
+        // The same door as Capabilities (ownIntegrationsRefusal): a person
         // without `apps.ownIntegrations` does not bind a GitHub account here either.
         if (IDENTITY.kind === "perspicax" && !principalCan(principalId, "apps.ownIntegrations")) return json(res, 200, { state: "admin_only" });
         const current = personGithub(principalId);

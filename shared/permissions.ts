@@ -57,7 +57,7 @@ export const PERMISSION_GROUPS: readonly PermissionGroup[] = [
   { id: "bots", label: { en: "Bots", fr: "Bots" } },
   { id: "sharing", label: { en: "Sharing", fr: "Partage" } },
   { id: "engines", label: { en: "Engines", fr: "Moteurs" } },
-  { id: "apps", label: { en: "Connect apps and plugins", fr: "Applications et plugiciels" } },
+  { id: "apps", label: { en: "Capabilities", fr: "Capacités" } },
   { id: "skills", label: { en: "Skills", fr: "Compétences" } },
   { id: "folders", label: { en: "Working folders", fr: "Dossiers de travail" } },
   { id: "routines", label: { en: "Routines", fr: "Routines" } },
