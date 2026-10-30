@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { builtInBrowserEnabled, dataWindowEnabled, decisionModelEnabled, llmThreadTitlesEnabled, routinesInConversationEnabled, sharedComputersEnabled, showToolCallsEnabled, skillAuthoringEnabled } from "./feature-flags";
+import { builtInBrowserEnabled, dataWindowEnabled, decisionModelEnabled, llmThreadTitlesEnabled, routinesInConversationEnabled, sharedComputersEnabled, showToolCallsEnabled, skillAuthoringEnabled, skillsLibraryEnabled } from "./feature-flags";
 
 describe("experimental feature flags", () => {
+  it("offers linked skills unless explicitly switched off", () => {
+    expect(skillsLibraryEnabled(null)).toBe(true);
+    expect(skillsLibraryEnabled({ features: {} })).toBe(true);
+    expect(skillsLibraryEnabled({ features: { skillsLibrary: false } })).toBe(false);
+  });
   it("keeps skill authoring on by default, before and after the config arrives", () => {
     expect(skillAuthoringEnabled(null)).toBe(true);
     expect(skillAuthoringEnabled({})).toBe(true);

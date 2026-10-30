@@ -17,6 +17,7 @@ import { PluginCard, PluginPageHeader } from "./PluginParts";
 import { enginesLine } from "@/lib/capabilities";
 
 export interface SkillPageProps {
+  basePath?: "/api/skills-library" | "/api/me/skills-library";
   /** absent: a new skill */
   skill?: SkillsLibrarySkillWire;
   /** why it cannot be changed here (a plugin or the organization brought
@@ -32,7 +33,7 @@ export interface SkillPageProps {
 
 const fieldClass = "w-full rounded-lg border border-border bg-ink/[0.03] px-2.5 py-1.5 text-[13px] leading-[18px] text-ink placeholder:text-ink-secondary focus:border-border-strong focus:outline-none disabled:opacity-60";
 
-export function SkillPage({ skill, readOnlyReason, onBack, trail, onSaved, onDeleted }: SkillPageProps) {
+export function SkillPage({ skill, readOnlyReason, onBack, trail, onSaved, onDeleted, basePath = "/api/skills-library" }: SkillPageProps) {
   const creating = !skill;
   const [loaded, setLoaded] = useState(creating);
   const [name, setName] = useState(skill?.name ?? "");
@@ -47,7 +48,7 @@ export function SkillPage({ skill, readOnlyReason, onBack, trail, onSaved, onDel
     if (!skill) return;
     let cancelled = false;
     setLoaded(false);
-    api(`/api/skills-library/${encodeURIComponent(skill.name)}`)
+    api(`${basePath}/${encodeURIComponent(skill.name)}`)
       .then((result) => {
         if (cancelled) return;
         const parsed = parseSkillMd(typeof result.text === "string" ? result.text : "");
@@ -63,7 +64,7 @@ export function SkillPage({ skill, readOnlyReason, onBack, trail, onSaved, onDel
     return () => {
       cancelled = true;
     };
-  }, [skill]);
+  }, [skill, basePath]);
   useEffect(() => setEnabled(skill?.enabled ?? false), [skill?.enabled]);
 
   const readOnly = Boolean(readOnlyReason);
@@ -76,9 +77,9 @@ export function SkillPage({ skill, readOnlyReason, onBack, trail, onSaved, onDel
     setSaved(false);
     try {
       if (creating) {
-        await api("/api/skills-library", { method: "POST", body: JSON.stringify({ text: composeSkillMd(null, { name: name.trim(), description, body: instructions }) }) });
+        await api(basePath, { method: "POST", body: JSON.stringify({ text: composeSkillMd(null, { name: name.trim(), description, body: instructions }) }) });
       } else {
-        await api(`/api/skills-library/${encodeURIComponent(skill.name)}`, {
+        await api(`${basePath}/${encodeURIComponent(skill.name)}`, {
           method: "PUT",
           body: JSON.stringify({ name: name.trim(), description: description.trim(), instructions }),
         });
@@ -97,7 +98,7 @@ export function SkillPage({ skill, readOnlyReason, onBack, trail, onSaved, onDel
     setBusy("delete");
     setError(null);
     try {
-      await api(`/api/skills-library/${encodeURIComponent(skill.name)}`, { method: "DELETE" });
+      await api(`${basePath}/${encodeURIComponent(skill.name)}`, { method: "DELETE" });
       await onDeleted();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -111,7 +112,7 @@ export function SkillPage({ skill, readOnlyReason, onBack, trail, onSaved, onDel
     setBusy("toggle");
     setError(null);
     try {
-      await api(`/api/skills-library/${encodeURIComponent(skill.name)}`, { method: "PATCH", body: JSON.stringify({ enabled: !enabled }) });
+      await api(`${basePath}/${encodeURIComponent(skill.name)}`, { method: "PATCH", body: JSON.stringify({ enabled: !enabled }) });
       setEnabled(!enabled);
       await onSaved(skill.name);
     } catch (cause) {

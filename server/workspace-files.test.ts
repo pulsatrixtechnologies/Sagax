@@ -2,7 +2,7 @@
 // its own budget and right after the soul in the prompt, the docs/ index
 // and tools confined to the workspace, and the Files list's last-used
 // record. A bot with neither RULES.md nor docs/ keeps its prompt as it was.
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -222,12 +222,31 @@ describe("docs/", () => {
     const plugins = [{ name: "pulsatrix-flow", dir: pluginDir }];
     expect(readWorkspaceText(BOT, "plugins/pulsatrix-flow/skills/flow/scripts/px_flow.py", 0, plugins)).toMatchObject({ path: "plugins/pulsatrix-flow/skills/flow/scripts/px_flow.py", text: "print('dry run')\n" });
     expect(readWorkspaceText(BOT, "plugins/pulsatrix-flow/.claude-plugin/plugin.json", 0, plugins).text).toBe("{}");
+    expect(readWorkspaceText(BOT, "/workspace/sagax-plugins/pulsatrix-flow/skills/flow/scripts/px_flow.py", 0, plugins).text).toBe("print('dry run')\n");
     for (const path of ["plugins/pulsatrix-flow/../../etc/passwd", "plugins/other/skills/x.md", "plugins/pulsatrix-flow/missing.md"]) {
       expect(() => readWorkspaceText(BOT, path, 0, plugins), path).toThrow();
     }
     // without the plugin list, nothing outside the workspace is read
     expect(() => readWorkspaceText(BOT, "plugins/pulsatrix-flow/skills/flow/scripts/px_flow.py")).toThrow();
     rmSync(pluginDir, { recursive: true, force: true });
+  });
+
+  it("reads only the active person's library and plugin mounts, including their sandbox aliases", () => {
+    const root = mkdtempSync(join(tmpdir(), "ws-person-skills-"));
+    mkdirSync(join(root, "skills", "ship"), { recursive: true });
+    writeFileSync(join(root, "skills", "ship", "SKILL.md"), "Verify the package.");
+    // A stale folder in the bot workspace cannot bypass the selected mounts.
+    write("plugins/private-owner/skills/ship/SKILL.md", "Owner's private instructions.");
+    write("capability-skills/me/skills/ship/SKILL.md", "Previous person's instructions.");
+    try {
+      expect(readWorkspaceText(BOT, "/workspace/sagax-capability-skills/me/skills/ship/SKILL.md", 0, [], root).text).toBe("Verify the package.");
+      for (const path of ["plugins/private-owner/skills/ship/SKILL.md", "/workspace/sagax-plugins/private-owner/skills/ship/SKILL.md", "/workspace/sagax-capability-skills/me/skills/ship/SKILL.md", "capability-skills/me/skills/ship/SKILL.md"]) {
+        expect(() => readWorkspaceText(BOT, path), path).toThrow(/no such file/);
+      }
+      for (const path of ["/workspace/sagax-capability-skills/other/skills/ship/SKILL.md", "/workspace/sagax-capability-skills/me/../other/SKILL.md", "/workspace/sagax-plugins/../private-owner/SKILL.md"]) {
+        expect(() => readWorkspaceText(BOT, path, 0, [], root), path).toThrow();
+      }
+    } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
   it("workspace_read stays inside the workspace: traversal, absolute, hidden and links refused", () => {

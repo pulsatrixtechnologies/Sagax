@@ -240,6 +240,8 @@ describe("workspace backup data boundary", () => {
   it("counts what to reconnect by category, a person once and an engine sign-in once per engine home", () => {
     expect(secretCategory("principals/pr_ana/claude/.credentials.json")).toBe("engines");
     expect(secretCategory("principals/pr_ana/connections.enc")).toBe("connections");
+    expect(secretCategory("principals/pr_ana/capabilities.enc")).toBe("connections");
+    expect(savedSignInPath("principals/pr_ana/capabilities.enc")).toBe(true);
     expect(secretCategory("principals/pr_ana/credential-vault.enc")).toBe("credentialVault");
     expect(secretCategory("org-github-tokens.enc")).toBe("github");
     expect(secretCategory("push-devices/pr_ana.json")).toBe("phones");

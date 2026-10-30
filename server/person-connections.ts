@@ -1,6 +1,6 @@
-// A person's own connections on an organization server: the MCP servers they
-// added for themselves and their GitHub account. One encrypted file per
-// person (DATA_DIR/principals/<pid>/connections.enc, AES-256-GCM with the
+// A person's own capabilities: plugins, library references, MCP servers and
+// their GitHub account. One encrypted file per person
+// (DATA_DIR/principals/<pid>/capabilities.enc, AES-256-GCM with the
 // server's vault key, the one mcp-oauth.enc uses), never shared with another
 // person, never listed with a secret (a token or an env value only reads as
 // configured). OAuth sign-ins of their remote servers live in their own
@@ -13,18 +13,21 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import type { LookupAddress } from "node:dns";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { capabilityPluginStateSchema, capabilityPluginValuesSchema, type CapabilityPluginState, type CapabilityPluginValues } from "./capability-plugin-state.ts";
 import { isPublicDomainAddress } from "./custom-domain.ts";
 import { isReservedMcpEnvEntry, mcpServerNameError } from "./mcp-registry.ts";
 import type { VaultKeySource } from "./vault-key-source.ts";
 
 export const MAX_PERSONAL_MCP_SERVERS = 20;
-const AAD = Buffer.from("sagax person-connections v1");
-const FILE = "connections.enc";
+const AAD = Buffer.from("sagax person-capabilities v2");
+const LEGACY_AAD = Buffer.from("sagax person-connections v1");
+const FILE = "capabilities.enc";
+const LEGACY_FILE = "connections.enc";
 const PRINCIPAL_ID = /^[A-Za-z0-9_.:-]{1,120}$/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const HEADER_NAME = /^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}$/;
@@ -69,17 +72,27 @@ const githubSchema = z.object({
   connectedAt: z.number(),
 }).strict();
 
-const documentSchema = z.object({
+const legacyDocumentSchema = z.object({
   version: z.literal(1),
   mcpServers: z.record(z.string(), serverSchema),
   github: githubSchema.optional(),
+}).strict();
+
+const documentSchema = z.object({
+  version: z.literal(2),
+  mcpServers: z.record(z.string(), serverSchema),
+  github: githubSchema.optional(),
+  plugins: capabilityPluginStateSchema,
+  pluginValues: capabilityPluginValuesSchema,
+  assignedSkills: z.array(z.string()),
 }).strict();
 
 export type PersonalRemoteMcpServer = z.infer<typeof remoteSchema>;
 export type PersonalStdioMcpServer = z.infer<typeof stdioSchema>;
 export type PersonalMcpServer = z.infer<typeof serverSchema>;
 export type GithubConnection = z.infer<typeof githubSchema>;
-type ConnectionsDocument = z.infer<typeof documentSchema>;
+export type PersonCapabilitiesDocument = z.infer<typeof documentSchema>;
+const emptyDocument = (): PersonCapabilitiesDocument => ({ version: 2, mcpServers: {}, plugins: { version: 2, plugins: {} }, pluginValues: {}, assignedSkills: [] });
 
 /** What the person's own screen sees: names of secrets, never values. */
 export type PersonalMcpListing =
@@ -263,7 +276,7 @@ export function personalAuthHeaders(server: PersonalRemoteMcpServer, github: Git
 export class PersonConnections {
   private readonly dataDir: string;
   private readonly keySource: () => VaultKeySource;
-  private readonly cache = new Map<string, ConnectionsDocument>();
+  private readonly cache = new Map<string, PersonCapabilitiesDocument>();
 
   constructor(dataDir: string, keySource: () => VaultKeySource) {
     this.dataDir = dataDir;
@@ -280,25 +293,40 @@ export class PersonConnections {
     return source.key;
   }
 
-  read(principalId: string): ConnectionsDocument {
+  read(principalId: string): PersonCapabilitiesDocument {
     const cached = this.cache.get(principalId);
     if (cached) return structuredClone(cached);
     const file = this.file(principalId);
     let raw: string;
+    let legacy = false;
     try {
       raw = readFileSync(file, "utf8");
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { version: 1, mcpServers: {} };
-      throw new PersonConnectionsError("Your connections could not be read.", "store_unavailable", 503);
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw new PersonConnectionsError("Your capabilities could not be read.", "store_unavailable", 503);
+      try {
+        raw = readFileSync(join(principalDir(this.dataDir, principalId), LEGACY_FILE), "utf8");
+        legacy = true;
+      } catch (oldError) {
+        if ((oldError as NodeJS.ErrnoException).code === "ENOENT") return emptyDocument();
+        throw new PersonConnectionsError("Your saved connections could not be read.", "store_unavailable", 503);
+      }
     }
     try {
       const envelope = JSON.parse(raw) as { v?: unknown; iv?: unknown; tag?: unknown; data?: unknown };
       if (envelope.v !== 1 || typeof envelope.iv !== "string" || typeof envelope.tag !== "string" || typeof envelope.data !== "string") throw new Error("format");
       const decipher = createDecipheriv("aes-256-gcm", this.key(), Buffer.from(envelope.iv, "base64"));
-      decipher.setAAD(AAD);
+      decipher.setAAD(legacy ? LEGACY_AAD : AAD);
       decipher.setAuthTag(Buffer.from(envelope.tag, "base64"));
       const plain = Buffer.concat([decipher.update(Buffer.from(envelope.data, "base64")), decipher.final()]).toString("utf8");
-      const document = documentSchema.parse(JSON.parse(plain));
+      const document = legacy
+        ? (() => {
+          const old = legacyDocumentSchema.parse(JSON.parse(plain));
+          return { ...emptyDocument(), mcpServers: old.mcpServers, ...(old.github ? { github: old.github } : {}) };
+        })()
+        : documentSchema.parse(JSON.parse(plain));
+      // First successful legacy read writes the new store atomically. Keep
+      // the original for recovery; the new file always takes precedence.
+      if (legacy) this.write(principalId, document);
       this.cache.set(principalId, document);
       return structuredClone(document);
     } catch (error) {
@@ -307,14 +335,11 @@ export class PersonConnections {
     }
   }
 
-  private write(principalId: string, document: ConnectionsDocument): void {
+  private write(principalId: string, document: PersonCapabilitiesDocument): void {
     const parsed = documentSchema.parse(document);
     const file = this.file(principalId);
-    if (!Object.keys(parsed.mcpServers).length && !parsed.github) {
-      rmSync(file, { force: true });
-      this.cache.set(principalId, parsed);
-      return;
-    }
+    // Keep even an empty document: deleting it would resurrect an older
+    // connections.enc at the next read after the person removed everything.
     const iv = randomBytes(12);
     const cipher = createCipheriv("aes-256-gcm", this.key(), iv);
     cipher.setAAD(AAD);
@@ -370,4 +395,38 @@ export class PersonConnections {
     else delete document.github;
     this.write(principalId, document);
   }
+
+  pluginState(principalId: string): CapabilityPluginState {
+    return this.read(principalId).plugins;
+  }
+
+  setPluginState(principalId: string, state: CapabilityPluginState): void {
+    const document = this.read(principalId);
+    document.plugins = capabilityPluginStateSchema.parse(state);
+    this.write(principalId, document);
+  }
+
+  pluginValues(principalId: string): CapabilityPluginValues {
+    return this.read(principalId).pluginValues;
+  }
+
+  setPluginValues(principalId: string, values: CapabilityPluginValues): void {
+    const document = this.read(principalId);
+    document.pluginValues = capabilityPluginValuesSchema.parse(values);
+    this.write(principalId, document);
+  }
+
+  assignedSkills(principalId: string): string[] {
+    return this.read(principalId).assignedSkills;
+  }
+
+  setAssignedSkills(principalId: string, names: readonly string[]): void {
+    const document = this.read(principalId);
+    document.assignedSkills = [...new Set(names)].sort();
+    this.write(principalId, document);
+  }
 }
+
+/** Existing connection routes keep their class name while reading the one
+ * personal capabilities store. */
+export { PersonConnections as PersonCapabilities };

@@ -113,9 +113,7 @@ export function llmThreadTitlesEnabled(config: FeatureFlagConfig | null | undefi
   return config?.features?.llmThreadTitles === true;
 }
 
-/** The Skills surface (a shared library of SKILL.md files every bot can be
- * assigned from) is off until the server's config.json switches it on —
- * mirroring the server's skillsLibraryEnabled. */
+/** The skills library is available unless explicitly switched off. */
 export function skillsLibraryEnabled(config: FeatureFlagConfig | null | undefined): boolean {
-  return config?.features?.skillsLibrary === true;
+  return config?.features?.skillsLibrary !== false;
 }

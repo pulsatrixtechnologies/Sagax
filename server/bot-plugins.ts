@@ -30,20 +30,26 @@
 //     an extra HTTP header through the environment, never the URL, the argv
 //     or a file.
 //   - What runs on the server host is never taken from a plugin: hooks,
-//     MCP and LSP servers and bin/ are removed from the folder Claude loads
+//     MCP and LSP server declarations are removed from the folder Claude loads
 //     with --plugin-dir (they would run on the Sagax host). Hook commands
 //     are kept beside that folder and run only on the bot's computer when
 //     the owner turns lifecycle hooks on (server/lifecycle-hooks.ts). The
 //     plugin's skills, commands, agents and output styles stay. The MCP
-//     servers it declared are listed so the person can add them as their own.
+//     servers it declared mount separately in the person's environment.
 import { execFile } from "node:child_process";
 import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
+import type { McpServerSpec } from "./contracts.ts";
+import { parseStoredMcpServer } from "./mcp-registry.ts";
+import { readPluginMcpServers } from "./plugin-mcp.ts";
+import { SANDBOX_PLUGINS_DIR } from "./sandbox-plugins.ts";
+import { capabilityPluginRecordSchema as pluginRecord, capabilityPluginStateSchema as stateSchema } from "./capability-plugin-state.ts";
+import type { CapabilityPluginValues } from "./capability-plugin-state.ts";
 import { capturePluginHooks, type LifecycleHook } from "./lifecycle-hooks.ts";
-import type { MarketplaceViewer, MarketplaceVisibility, PluginMarketplaces } from "./plugin-marketplaces.ts";
+import { pluginUpdateAvailable, type MarketplaceViewer, type MarketplaceVisibility, type PluginMarketplaces } from "./plugin-marketplaces.ts";
 import { probeGithubRepo, type GithubCredential, type GithubProbe } from "./github-access.ts";
 import { githubGitEnvironment } from "./github-connect.ts";
 import { WORKSPACE_SCOPE as WORKSPACE_TOKEN_KEY } from "./github-credentials.ts";
@@ -62,7 +68,7 @@ const MAX_RESTORED_MARKETPLACES = 10;
 const MANIFEST_URL = /^https:\/\/\S+\.json(?:\?\S*)?$/i;
 const GIT_TIMEOUT_MS = 120_000;
 /** What a plugin may not bring onto the server host. */
-const STRIPPED_PATHS = ["hooks", ".mcp.json", ".lsp.json", "bin", "monitors"] as const;
+const STRIPPED_PATHS = ["hooks", ".mcp.json", ".lsp.json", "monitors"] as const;
 const STRIPPED_MANIFEST_KEYS = ["hooks", "mcpServers", "lspServers", "monitors"] as const;
 
 export class BotPluginError extends Error {
@@ -158,38 +164,11 @@ const marketplaceRecord = z.object({
   updatedAt: z.number(),
 }).strict();
 
-const pluginRecord = z.object({
-  name: z.string(),
-  marketplace: z.string(),
-  description: z.string().optional(),
-  version: z.string().optional(),
-  /** what was installed (plugin-marketplaces.ts pluginRevision), to tell an
-   * update without a version change */
-  revision: z.string().optional(),
-  enabled: z.boolean(),
-  installedAt: z.number(),
-  installedBy: z.string().optional(),
-  updatedAt: z.number(),
-  /** What was taken out at install (hooks, .mcp.json, ...). */
-  removed: z.array(z.string()),
-  /** MCP servers the plugin declared (names only). */
-  declaredMcpServers: z.array(z.string()),
-  /** Hook commands kept off the server host. Absent when the plugin had none. */
-  lifecycleHooks: z.number().int().min(0).max(100).optional(),
-}).strict();
-
 /** Before the one marketplace list: each bot kept its own marketplaces. */
 const legacyStateSchema = z.object({
   version: z.literal(1),
   marketplaces: z.record(z.string(), marketplaceRecord),
   plugins: z.record(z.string(), pluginRecord),
-}).strict();
-
-const stateSchema = z.object({
-  version: z.literal(2),
-  plugins: z.record(z.string(), pluginRecord),
-  /** Owner switch. Off until they turn it on. Hooks never run on the server. */
-  lifecycleHooksEnabled: z.boolean().optional(),
 }).strict();
 
 export type PluginState = z.infer<typeof stateSchema>;
@@ -199,7 +178,12 @@ export type LegacyPluginState = z.infer<typeof legacyStateSchema>;
 export type MarketplaceRecord = z.infer<typeof marketplaceRecord>;
 /** A plugin's declared fields and this bot's values (server/plugin-config.ts). */
 export interface PluginConfigView { fields: PluginConfigField[]; values: Record<string, PluginConfigValue> }
-export type InstalledBotPlugin = z.infer<typeof pluginRecord> & { key: string; config?: PluginConfigView };
+export type InstalledBotPlugin = Omit<z.infer<typeof pluginRecord>, "mcpServers"> & { key: string; config?: PluginConfigView };
+
+function listedPlugin(record: z.infer<typeof pluginRecord>): Omit<z.infer<typeof pluginRecord>, "mcpServers"> {
+  const { mcpServers: _execution, ...listed } = record;
+  return listed;
+}
 
 /** What a plugin brings to a bot, by name (read from its folder). */
 export interface PluginContents {
@@ -386,7 +370,7 @@ function measure(dir: string): { bytes: number; files: number } {
 
 /** Copy one plugin without links, then take out what would run on the
  * server host. Returns what was removed and the MCP servers it declared. */
-export function copySanitizedPlugin(from: string, to: string, marketplaceEntry?: Record<string, unknown>): { removed: string[]; declaredMcpServers: string[]; hooks: LifecycleHook[]; hookFiles: Record<string, string> } {
+export function copySanitizedPlugin(from: string, to: string, marketplaceEntry?: Record<string, unknown>, executionRoot = to): { removed: string[]; declaredMcpServers: string[]; mcpServers: Record<string, McpServerSpec>; hooks: LifecycleHook[]; hookFiles: Record<string, string> } {
   if (!existsSync(from) || !statSync(from).isDirectory()) throw new BotPluginError("The plugin's folder is missing from its repository.", "invalid_plugin", 422);
   const captured = capturePluginHooks(from);
   rmSync(to, { recursive: true, force: true });
@@ -401,6 +385,20 @@ export function copySanitizedPlugin(from: string, to: string, marketplaceEntry?:
   });
   const removed: string[] = [];
   const declared = new Set<string>();
+  const declarations = readPluginMcpServers(to, executionRoot, marketplaceEntry);
+  const mcpServers: Record<string, McpServerSpec> = {};
+  for (const { name, entry } of declarations.servers) {
+    declared.add(name);
+    // Validate the execution shape here; the common namespace check at
+    // mount decides whether the plugin's declared name is usable.
+    const parsed = parseStoredMcpServer("plugin", entry);
+    if (!parsed.ok) { removed.push(`MCP server ${name} (${parsed.error})`); continue; }
+    const server = parsed.server;
+    mcpServers[name] = "url" in server
+      ? { type: server.type, url: server.url, headers: server.headers }
+      : { command: server.command, args: server.args, env: server.env };
+  }
+  removed.push(...declarations.skipped);
   const readJson = (file: string): Record<string, unknown> | null => {
     try { const value = JSON.parse(readFileSync(file, "utf8")) as unknown; return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null; } catch { return null; }
   };
@@ -428,7 +426,7 @@ export function copySanitizedPlugin(from: string, to: string, marketplaceEntry?:
     mkdirSync(join(to, ".claude-plugin"), { recursive: true });
     writeFileAtomic(manifestPath, JSON.stringify(manifest, null, 2));
   }
-  return { removed, declaredMcpServers: [...declared].filter((name) => NAME.test(name)).slice(0, 50), hooks: captured.hooks, hookFiles: captured.files };
+  return { removed, declaredMcpServers: [...declared].filter((name) => NAME.test(name)), mcpServers, hooks: captured.hooks, hookFiles: captured.files };
 }
 
 // ── git ──────────────────────────────────────────────────────────────────
@@ -470,6 +468,19 @@ export const runGit: GitRunner = (args, options) => new Promise((resolvePromise,
 
 export interface BotPluginsOptions {
   dataDir: string;
+  /** Another capability scope uses the same installs and update logic,
+   * with its own validated ids, folder and state store (personal state is
+   * encrypted in capabilities.enc). Nothing writes state.json there. */
+  storage?: {
+    root(id: string): string;
+    ids(): string[];
+    read(id: string): PluginState;
+    write(id: string, state: PluginState): void;
+    values(id: string): CapabilityPluginValues;
+    writeValues(id: string, values: CapabilityPluginValues): void;
+    /** Prevent a person id from sharing a bot's credential selection. */
+    credentialScope(id: string): string;
+  };
   /** The installation's one marketplace list. */
   marketplaces: PluginMarketplaces;
   git?: GitRunner;
@@ -536,23 +547,45 @@ export class BotPlugins {
   private readonly locks = new Map<string, Promise<unknown>>();
 
   constructor(options: BotPluginsOptions) {
-    this.options = options;
+    this.options = options.storage && options.tokens
+      ? { ...options, tokens: scopedPluginTokens(options.tokens, (id) => id === WORKSPACE_TOKEN_KEY ? id : options.storage!.credentialScope(id)) }
+      : options;
     this.git = options.git ?? runGit;
     this.now = options.now ?? Date.now;
   }
 
   private root(botId: string): string {
+    if (this.options.storage) return this.options.storage.root(botId);
     if (!BOT_ID.test(botId)) throw new BotPluginError("invalid bot", "invalid_bot");
     return join(this.options.dataDir, "bot-plugins", botId);
   }
 
   private read(botId: string): PluginState {
+    if (this.options.storage) return stateSchema.parse(this.options.storage.read(botId));
     return readStateFile(join(this.root(botId), "state.json")) ?? { version: 2, plugins: {} };
   }
 
   private write(botId: string, state: PluginState): void {
+    if (this.options.storage) {
+      this.options.storage.write(botId, stateSchema.parse(state));
+      return;
+    }
     mkdirSync(this.root(botId), { recursive: true, mode: 0o700 });
     writeFileAtomic(join(this.root(botId), "state.json"), JSON.stringify(stateSchema.parse(state), null, 2));
+  }
+
+  private validId(id: string): boolean {
+    if (!this.options.storage) return BOT_ID.test(id);
+    try { this.root(id); return true; } catch { return false; }
+  }
+
+  private values(id: string): CapabilityPluginValues {
+    return this.options.storage?.values(id) ?? readConfigValues(this.configFile(id));
+  }
+
+  private writeValues(id: string, values: CapabilityPluginValues): void {
+    if (this.options.storage) this.options.storage.writeValues(id, values);
+    else writeConfigValues(this.configFile(id), values);
   }
 
   private withLock<T>(botId: string, work: () => Promise<T>): Promise<T> {
@@ -642,10 +675,7 @@ export class BotPlugins {
           // the same rule as the workspace scope (pluginUpdateAvailable):
           // another declared version, or the same version with other files
           const offered = installed ? this.options.marketplaces.revisionOf(market.name, entry) : undefined;
-          const update = Boolean(installed) && (
-            (Boolean(installed!.version && entry.version) && installed!.version !== entry.version)
-            || (Boolean(installed!.revision && offered) && installed!.revision !== offered)
-          );
+          const update = Boolean(installed && pluginUpdateAvailable(installed, { version: entry.version, revision: offered }));
           let contents: PluginContents | undefined;
           if (entry.source.kind === "path" && !manifestOnly) {
             try { contents = readPluginContents(insideRoot(repo, entry.source.path)); } catch { contents = undefined; }
@@ -680,10 +710,10 @@ export class BotPlugins {
   }
 
   listPlugins(botId: string): InstalledBotPlugin[] {
-    const values = readConfigValues(this.configFile(botId));
+    const values = this.values(botId);
     return Object.entries(this.read(botId).plugins).map(([key, record]) => {
       const fields = readPluginConfigFields(this.pluginDir(botId, record.marketplace, record.name));
-      return { key, ...record, ...(fields.length ? { config: { fields, values: values[key] ?? {} } } : {}) };
+      return { key, ...listedPlugin(record), ...(fields.length ? { config: { fields, values: values[key] ?? {} } } : {}) };
     }).sort((a, b) => a.key.localeCompare(b.key));
   }
 
@@ -702,11 +732,11 @@ export class BotPlugins {
       if (!fields.length) throw new BotPluginError("This plugin declares no configuration.", "no_config", 400);
       const checked = checkPluginConfig(fields, input);
       if (!checked.ok) throw new BotPluginError(checked.error, checked.code, 400);
-      const all = readConfigValues(this.configFile(botId));
+      const all = this.values(botId);
       all[key] = checked.values;
-      writeConfigValues(this.configFile(botId), all);
+      this.writeValues(botId, all);
       applyPluginConfig(dir, fields, checked.values);
-      return { key, ...record, config: { fields, values: checked.values } };
+      return { key, ...listedPlugin(record), config: { fields, values: checked.values } };
     });
   }
 
@@ -822,9 +852,10 @@ export class BotPlugins {
         } catch { return undefined; }
       })();
       const target = this.pluginDir(botId, input.marketplace, input.plugin);
-      let result: { removed: string[]; declaredMcpServers: string[]; hooks: LifecycleHook[]; hookFiles: Record<string, string> };
+      let result: ReturnType<typeof copySanitizedPlugin>;
+      const executionRoot = `${SANDBOX_PLUGINS_DIR}/${input.plugin}`;
       if (entry.source.kind === "path") {
-        result = copySanitizedPlugin(insideRoot(marketRoot, entry.source.path), target, rawEntry);
+        result = copySanitizedPlugin(insideRoot(marketRoot, entry.source.path), target, rawEntry, executionRoot);
       } else {
         // #1098: a private marketplace (its author's own) for a bot is not
         // held to the organization's list; a shared one is
@@ -832,14 +863,14 @@ export class BotPlugins {
         const checkout = join(this.root(botId), "plugins", ".checkout");
         await this.clone(entry.source.git, checkout, await this.cloneEnvironment(botId, entry.source.git, actor, { marketplaceSource: market.source }));
         try {
-          result = copySanitizedPlugin(entry.source.path ? insideRoot(checkout, entry.source.path) : checkout, target, rawEntry);
+          result = copySanitizedPlugin(entry.source.path ? insideRoot(checkout, entry.source.path) : checkout, target, rawEntry, executionRoot);
         } finally {
           rmSync(checkout, { recursive: true, force: true });
         }
       }
       // the copy is fresh: this bot's values (or the defaults) go in again
       const fields = readPluginConfigFields(target);
-      if (fields.length) applyPluginConfig(target, fields, readConfigValues(this.configFile(botId))[key] ?? {});
+      if (fields.length) applyPluginConfig(target, fields, this.values(botId)[key] ?? {});
       const now = this.now();
       const previous = state.plugins[key];
       const revision = this.options.marketplaces.revisionOf(input.marketplace, entry);
@@ -854,11 +885,12 @@ export class BotPlugins {
         updatedAt: now,
         removed: result.removed,
         declaredMcpServers: result.declaredMcpServers,
+        mcpServers: result.mcpServers,
         ...(result.hooks.length ? { lifecycleHooks: result.hooks.length } : {}),
       };
       this.writeHookBundle(botId, key, result.hooks, result.hookFiles);
       this.write(botId, state);
-      return { key, ...state.plugins[key]! };
+      return { key, ...listedPlugin(state.plugins[key]!) };
     });
   }
 
@@ -899,7 +931,7 @@ export class BotPlugins {
   /** Enabled plugins' hook commands, and the files that belong with them.
    * Empty when the owner has not turned hooks on. */
   hooksOf(botId: string): LifecycleHook[] {
-    if (!BOT_ID.test(botId)) return [];
+    if (!this.validId(botId)) return [];
     const state = this.read(botId);
     const out: LifecycleHook[] = [];
     for (const [key, record] of Object.entries(state.plugins)) {
@@ -914,7 +946,7 @@ export class BotPlugins {
 
   /** Script files kept beside the plugins, for the computer to stage. */
   hookFiles(botId: string): Record<string, string> {
-    if (!BOT_ID.test(botId)) return {};
+    if (!this.validId(botId)) return {};
     const root = join(this.root(botId), "computer-hooks");
     const out: Record<string, string> = {};
     const walk = (dir: string, prefix: string) => {
@@ -938,7 +970,7 @@ export class BotPlugins {
   }
 
   lifecycleHooksEnabled(botId: string): boolean {
-    if (!BOT_ID.test(botId)) return false;
+    if (!this.validId(botId)) return false;
     return this.read(botId).lifecycleHooksEnabled === true;
   }
 
@@ -952,7 +984,7 @@ export class BotPlugins {
     if (!record) throw new BotPluginError("No plugin with that name on this bot.", "not_found", 404);
     state.plugins[key] = { ...record, enabled };
     this.write(botId, state);
-    return { key, ...state.plugins[key]! };
+    return { key, ...listedPlugin(state.plugins[key]!) };
   }
 
   uninstall(botId: string, key: string): Promise<void> {
@@ -964,10 +996,10 @@ export class BotPlugins {
       rmSync(this.hookDir(botId, key), { recursive: true, force: true });
       delete state.plugins[key];
       this.write(botId, state);
-      const values = readConfigValues(this.configFile(botId));
+      const values = this.values(botId);
       if (values[key]) {
         delete values[key];
-        writeConfigValues(this.configFile(botId), values);
+        this.writeValues(botId, values);
       }
     });
   }
@@ -981,7 +1013,7 @@ export class BotPlugins {
 
   /** Enabled plugin folders. Claude loads them with `--plugin-dir`. */
   pluginDirs(botId: string): string[] {
-    if (!BOT_ID.test(botId)) return [];
+    if (!this.validId(botId)) return [];
     return this.listPlugins(botId)
       .filter((plugin) => plugin.enabled)
       .map((plugin) => this.pluginDir(botId, plugin.marketplace, plugin.name))
@@ -992,7 +1024,7 @@ export class BotPlugins {
    * `plugins/<name>/...` (workspace_read) and what is copied into its
    * owner's cloud computer. A name two marketplaces share is listed once. */
   enabledPlugins(botId: string): Array<{ name: string; dir: string }> {
-    if (!BOT_ID.test(botId)) return [];
+    if (!this.validId(botId)) return [];
     const out: Array<{ name: string; dir: string }> = [];
     for (const plugin of this.listPlugins(botId)) {
       if (!plugin.enabled || out.some((row) => row.name === plugin.name)) continue;
@@ -1002,11 +1034,27 @@ export class BotPlugins {
     return out;
   }
 
+  /** Internal only: execution specs never enter a listing or a route
+   * response. Each caller mounts them in the turn person's environment. */
+  mcpServers(botId: string): Array<{ key: string; plugin: string; name: string; spec: McpServerSpec }> {
+    const state = this.read(botId);
+    return Object.entries(state.plugins).flatMap(([key, plugin]) => {
+      if (!plugin.enabled || !existsSync(this.pluginDir(botId, plugin.marketplace, plugin.name))) return [];
+      return Object.entries(plugin.mcpServers ?? {}).flatMap(([name, spec]) => {
+        // A restored package is untrusted too. Apply the same environment
+        // and header checks as an install before exposing an execution spec.
+        const parsed = parseStoredMcpServer("plugin", spec);
+        if (!parsed.ok) return [];
+        return [{ key, plugin: plugin.name, name, spec }];
+      });
+    });
+  }
+
   /** The bots with at least one plugin from this marketplace. */
   botsUsing(marketplace: string): string[] {
     const base = join(this.options.dataDir, "bot-plugins");
     let bots: string[];
-    try { bots = readdirSync(base, { withFileTypes: true }).filter((entry) => entry.isDirectory() && BOT_ID.test(entry.name)).map((entry) => entry.name); } catch { return []; }
+    try { bots = this.options.storage?.ids() ?? readdirSync(base, { withFileTypes: true }).filter((entry) => entry.isDirectory() && BOT_ID.test(entry.name)).map((entry) => entry.name); } catch { return []; }
     return bots.filter((botId) => Object.values(this.read(botId).plugins).some((plugin) => plugin.marketplace === marketplace)).sort();
   }
 
@@ -1040,7 +1088,13 @@ export class BotPlugins {
         addedAt: record.addedAt, ...(record.addedBy ? { addedBy: record.addedBy } : {}), updatedAt: record.updatedAt,
       };
     }
-    return structuredClone({ version: 1 as const, marketplaces, plugins: state.plugins });
+    const plugins = Object.fromEntries(Object.entries(state.plugins).map(([key, plugin]) => [key, {
+      ...plugin,
+      ...(plugin.mcpServers ? { mcpServers: Object.fromEntries(Object.entries(plugin.mcpServers).map(([name, spec]) => [name,
+        "url" in spec ? { ...spec, headers: {} } : { ...spec, env: {} },
+      ])) } : {}),
+    }]));
+    return structuredClone({ version: 1 as const, marketplaces, plugins });
   }
 
   /** Restore a bot package's state on a new bot whose plugin files (and the
@@ -1073,7 +1127,7 @@ export class BotPlugins {
       if (!known || !existsSync(this.pluginDir(botId, record.marketplace, record.name))) continue;
       state.plugins[key] = record;
     }
-    const moved = moveBotIntoOneList(root, state, this.options.marketplaces);
+    const moved = moveBotIntoOneList(root, state, this.options.marketplaces, this.options.storage ? (next) => this.write(botId, next) : undefined);
     return { marketplaces: [...new Set(moved.names.values())].sort(), plugins: Object.keys(moved.plugins).sort() };
   }
 
@@ -1154,10 +1208,30 @@ export class BotPlugins {
 
   /** Forget everything of a deleted bot. */
   forgetBot(botId: string): void {
-    if (!BOT_ID.test(botId)) return;
+    if (!this.validId(botId)) return;
     try { this.options.tokens?.forgetBot(botId); } catch { /* the folder still goes */ }
+    if (this.options.storage) {
+      this.write(botId, { version: 2, plugins: {} });
+      this.writeValues(botId, {});
+    }
     rmSync(this.root(botId), { recursive: true, force: true });
   }
+}
+
+/** Credential picks follow the capability scope too; a person's id and a
+ * bot id are allowed to have the same spelling without sharing a pick. */
+function scopedPluginTokens(tokens: NonNullable<BotPluginsOptions["tokens"]>, scope: (id: string) => string): NonNullable<BotPluginsOptions["tokens"]> {
+  return {
+    ...tokens,
+    get: (id, source) => tokens.get(scope(id), source),
+    ...(tokens.chosen ? { chosen: (id: string, source: string) => tokens.chosen!(scope(id), source) } : {}),
+    ...(tokens.choose ? { choose: (id: string, source: string, credential: string | null) => tokens.choose!(scope(id), source, credential) } : {}),
+    ...(tokens.noteUsed ? { noteUsed: (id: string, source: string, used: Parameters<NonNullable<typeof tokens.noteUsed>>[2]) => tokens.noteUsed!(scope(id), source, used) } : {}),
+    ...(tokens.describe ? { describe: (id: string, source: string, viewer: string | undefined) => tokens.describe!(scope(id), source, viewer) } : {}),
+    remove: (id, source) => tokens.remove(scope(id), source),
+    sourcesFor: (id) => tokens.sourcesFor(scope(id)),
+    forgetBot: (id) => tokens.forgetBot(scope(id)),
+  };
 }
 
 // ── migration: one marketplace list ──────────────────────────────────────
@@ -1175,7 +1249,7 @@ export interface BotMarketplaceMigration {
  * bot package restored on a new bot): each is adopted (the same source is
  * reused, a clash gets a suffix), every install moves with its marketplace's
  * name, and the state is written in the current format. */
-function moveBotIntoOneList(root: string, legacy: LegacyPluginState, shared: PluginMarketplaces): { names: Map<string, string>; plugins: PluginState["plugins"]; renamed: string[] } {
+function moveBotIntoOneList(root: string, legacy: LegacyPluginState, shared: PluginMarketplaces, save?: (state: PluginState) => void): { names: Map<string, string>; plugins: PluginState["plugins"]; renamed: string[] } {
   const names = new Map<string, string>();
   const renamed: string[] = [];
   for (const [name, record] of Object.entries(legacy.marketplaces).sort(([a], [b]) => a.localeCompare(b))) {
@@ -1198,7 +1272,9 @@ function moveBotIntoOneList(root: string, legacy: LegacyPluginState, shared: Plu
     plugins[`${plugin.name}@${market}`] = { ...plugin, marketplace: market };
   }
   mkdirSync(root, { recursive: true });
-  writeFileAtomic(join(root, "state.json"), JSON.stringify(stateSchema.parse({ version: 2, plugins }), null, 2));
+  const current = stateSchema.parse({ version: 2, plugins });
+  if (save) save(current);
+  else writeFileAtomic(join(root, "state.json"), JSON.stringify(current, null, 2));
   rmSync(join(root, "marketplaces"), { recursive: true, force: true });
   for (const [old, now] of names) {
     if (old === now) continue;

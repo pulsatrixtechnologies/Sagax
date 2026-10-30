@@ -488,6 +488,23 @@ describe("resolveRequestAuth", () => {
     expect(gate("POST", "/api/cli-test")).toMatchObject({ auth: null, permission: "host.shell" });
   });
 
+  it("opens Me plugin and skill routes to a member with no organization permission", () => {
+    const org = { orgDirectory: true };
+    for (const [method, path] of [
+      ["GET", "/api/me/plugins"], ["POST", "/api/me/plugins/install"],
+      ["PUT", "/api/me/plugins/docs%40market/config"],
+      ["PATCH", "/api/me/plugins/docs%40market"], ["DELETE", "/api/me/plugins/docs%40market"],
+      ["POST", "/api/me/plugins/marketplaces"],
+      ["PUT", "/api/me/plugins/marketplaces/market/credential"],
+      ["GET", "/api/me/skills-library"], ["POST", "/api/me/skills-library"],
+      ["PUT", "/api/me/skills-library/writing"], ["PATCH", "/api/me/skills-library/writing"],
+      ["DELETE", "/api/me/skills-library/writing"],
+    ]) {
+      expect(requiredScope(method!, path!, org), `${method} ${path}`).toBe("client");
+      expect(routePermission(method!, path!, org)).toBeNull();
+    }
+  });
+
   it("maps admin-scope routes to permissions only with the organization directory", () => {
     const org = { orgDirectory: true };
     expect(routePermission("GET", "/api/usage", org)).toBe("usage.view");

@@ -115,6 +115,9 @@ in Providers, without an admin (`GET /api/me/providers`,
 `server/routes/provider-accounts.ts`). Metadata alone returns. Organization
 accounts are stored in Perspicax using the Link and subject tokens; solo
 accounts use the server's existing provider config or `provider-keys.enc`.
+Directory metadata reads reuse an existing routine delegation only; they
+never start issuance while the person has no session, which would delay the
+delegation from their next sign-in through an unnecessary retry backoff.
 `ProviderAccounts` serializes imports per person and retires legacy encrypted
 files only after every remote import is acknowledged. Imports preserve an
 existing remote key. A deleted key cannot be reimported from an old file.
@@ -267,8 +270,8 @@ Perspicax (`docs/design/lexique.md` there):
   person's engine account, a file of the person, the Sagax catalog). The
   Sources tab lists marketplaces.
 - Scope: This bot, Me, Organization (fr Ce bot, Moi, Organisation). Today
-  the toggle still says For <bot> and Everyone; the three scopes come in
-  lot 2 of the migration.
+  the toggle names these three scopes. Me is the default; a bot panel
+  opens This bot. Organization is offered to the installation manager.
 - State: available, installed, on, to connect, update offered, set by the
   organization, offered by the organization, not served by this engine.
 - Never « plugiciel »: a plugin is a plugin in both languages.
@@ -283,6 +286,56 @@ Grok's cloud connectors are listed from Grok's own catalog and say « Non
 vérifiable » (Sagax cannot check them). `plugins.claudeOnly` says what a
 non-Claude engine really gets (skills and commands in the prompt on an
 engine with files, nothing yet on Grok and API engines).
+
+## Capabilities: personal references and complete plugins (lot 2, 2026-10-30)
+
+`PersonCapabilities` (`server/person-connections.ts`, legacy export
+`PersonConnections`) keeps MCP, GitHub, plugin records/config values and
+skill references in `principals/<pid>/capabilities.enc`. Its first read
+migrates `connections.enc` only if the new file is absent. A corrupt new
+file never falls back or overwrites it; an empty new file never revives
+old connections. Keep the existing file/AAD compatibility tests.
+
+- `BotPlugins` uses the same installer and update calculation for bot and
+  Me; `personalPluginStorage` encrypts Me records and namespaces credential
+  picks by person. `/api/me/plugins` and `/api/me/skills-library` derive
+  the person only from the session (solo: the local operator), never from
+  a query/body id. Me and a bot's owner manage their own scope without an
+  admin permission. Sharing a marketplace remains organization impact.
+  Skill commands resolve the actual local operator in solo mode and the
+  active speaker in organization mode, without an owner fallback.
+- `selectPluginScopes` chooses current folders Organization > Me > Bot.
+  `scopedPluginFolders` and `scopedPluginMcp` feed execution and the receipt.
+  Missing copies claim no name. Bot-private installs stay in their owner's
+  environment when another person speaks through a shared bot.
+  `workspace_read` resolves these same folders for the active turn's speaker,
+  including Me skills. Organization prompts publish the copied sandbox paths
+  (`/workspace/sagax-plugins/<name>` and `/workspace/sagax-capability-skills/me`);
+  only these exact mounts have absolute aliases in `workspace_read`. An
+  unselected mount cannot fall back to a stale workspace copy.
+- MCP declarations are private execution data, stripped from native plugin
+  folders and public lists/packages, then mounted separately. Commands
+  cross `sagax-stdio` into the turn person's environment on org servers;
+  solo uses the actual installed root. The per-frame relay revalidates
+  the current install. Existing namespace, environment, address and MCP
+  policies apply. Keep bin files needed by those sandbox commands.
+- `InstallationPlugins` restores complete sanitized copies from the old
+  marketplace records at startup and after install/update. It serves
+  agents, commands and skills to file engines; newly declared commands
+  use the same sandbox relay. MCP already mapped into config keeps its
+  switches, bot selections and OAuth: the complete copy cannot bypass
+  those settings. Reinstall is Update, rather than an already-installed
+  409; transient concurrent-update conflicts remain meaningful.
+- Skills library defaults on. `PersonalSkills` owns one verified source
+  referenced by all the person's bots. A saved Me skill is reviewed by
+  the person; a changed-on-disk or disabled file is not indexed. The same
+  source supports explicit /name commands. Me names replace lower-scope
+  bot prompt entries and managed native links without changing that
+  bot's stored switch; imposed org skills win. The per-capability index
+  and its consolidated budget follow in lot 3.
+- Validation: `capabilities-scopes.e2e.test.ts` drives the real HTTP routes
+  for two bots and all three plugin scopes; personal-skills, plugin scope,
+  install, receipt, integrity and native-link tests cover isolation.
 
 ## Capabilities: one resolved list per bot (lot 1a, 2026-10-30)
 
@@ -351,6 +404,27 @@ sheet). Keep these rules, covered by `server/capabilities.test.ts`,
   prompt without touching links or the log.
 - Grok's account connectors are a static catalog: `unverifiable`, never
   "connected".
+
+## Personal capability storage (lot 2, 2026-10-30)
+
+`PersonCapabilities` (`server/person-connections.ts`, also exported under
+the existing `PersonConnections` name) owns one encrypted
+`principals/<pid>/capabilities.enc`: MCP servers, GitHub, installed plugin
+state, plugin configuration and assigned library skills. Existing connection
+routes use that same store. The first successful read of `connections.enc`
+writes version 2 atomically and keeps the encrypted original for recovery.
+An existing new file always wins, including an empty document; a corrupt
+new file is never replaced from the legacy copy. A store that cannot be
+decrypted is never overwritten.
+
+Plugin records share `server/capability-plugin-state.ts`. `BotPlugins` takes
+an optional scoped storage adapter; `personalPluginStorage`
+(`server/person-plugins.ts`) keeps its state and values encrypted and its
+source files under that person's `capability-plugins/`. It writes no
+plaintext `state.json` or `config.json`. Credential selections use a
+`person:` namespace so a person and a bot with the same id cannot share a
+selection. Forgetting that scope removes plugins and their values while
+preserving the person's other capabilities and GitHub connection.
 
 ## Proactive bots, wired for real (2026-10-30)
 
@@ -6244,9 +6318,10 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   `organizationHidesSection`): `/api/me/connections`, `/api/me/github/*`,
   `/api/me/mcp/servers/*` (`server/routes/person-connections.ts`), the
   session's person only, member scope (CLIENT_ALLOW, `orgDirectory`).
-- One encrypted file per person (`principals/<pid>/connections.enc`,
+- One encrypted file per person (`principals/<pid>/capabilities.enc`,
   AES-256-GCM with the mcp-oauth vault key; `server/person-connections.ts`)
-  holds their own MCP servers and GitHub token; their OAuth sign-ins live in
+  holds their own MCP servers, GitHub token, plugin state and skill
+  references (`connections.enc` migrates at first read); OAuth sign-ins live in
   their own `principals/<pid>/mcp-oauth.enc` (one `McpOAuthManager` per
   person, `ownsState` routes `/api/mcp-oauth/callback` to it). No answer
   carries a token.

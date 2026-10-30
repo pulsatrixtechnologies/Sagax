@@ -834,6 +834,8 @@ import {
   deleteLibrarySkill,
 } from "./skill-library.ts";
 import { composeSkillMd } from "../shared/skill-md.ts";
+import { InstallationPlugins } from "./installation-plugins.ts";
+import { PersonalSkills, createPersonalSkillRoutes } from "./personal-skills.ts";
 import type { SkillsLibrarySkillWire } from "../shared/wire.ts";
 import { runSkillsLibraryBootSweep } from "./skills-library-migration.ts";
 import { installedPlaybookInstructions } from "./installed-playbooks.ts";
@@ -1135,12 +1137,14 @@ import { ACCOUNT_REAUTH_PATH, AccountReauth, perspicaxDeletion } from "./account
 import { createRegistrySearch } from "./plugin-registry.ts";
 import { BotPluginError, BotPlugins, marketplaceAllowed, migrateBotMarketplaces, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, readPluginContents, type MarketplacePolicy, type PluginContents } from "./bot-plugins.ts";
 import { pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
-import { engineServerMcp, perspicaxServerName, personalMcpPrecheck, serverMcpAsPerson, turnPluginDirs, turnPluginPromptDirs } from "./turn-mounts.ts";
+import { engineServerMcp, perspicaxServerName, personalMcpPrecheck, serverMcpAsPerson, turnPluginPromptDirs } from "./turn-mounts.ts";
 import { resolveBotCapabilities, type CapabilityInputs, type InstallationServerInput } from "./capabilities.ts";
 import { createBotCapabilitiesRoutes, type BotCapabilitiesAnswer } from "./routes/bot-capabilities.ts";
 import type { BotCapabilities } from "../shared/capabilities.ts";
 import { reservedMcpName } from "../shared/mcp-reserved-names.ts";
-import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
+import { createBotPluginRoutes, createPersonalPluginRoutes } from "./routes/bot-plugins.ts";
+import { personalPluginStorage } from "./person-plugins.ts";
+import { pluginMcpPrecheck, pluginSpecOnComputer, selectPluginScopes, type PluginScope } from "./capability-plugin-mounts.ts";
 import { createLifecycleHookRoutes } from "./routes/lifecycle-hooks.ts";
 import { createMessagesRoutes } from "./routes/messages.ts";
 import { handleMessagesMcp } from "./imessage-mcp.ts";
@@ -1152,7 +1156,7 @@ import { fileInsideRoots } from "./imessage-db.ts";
 import { chooseHookTarget, commandWithFiles, dispatchLifecycleHooks, lifecycleEvent, type HookRun, type HookTarget } from "./lifecycle-hooks.ts";
 import { spawnPcHook } from "./lifecycle-hook-exec.ts";
 import { GithubConnect, githubGitEnvironment, githubSandboxArgv, githubTokenKind } from "./github-connect.ts";
-import { syncPluginsToSandbox } from "./sandbox-plugins.ts";
+import { SANDBOX_PLUGINS_DIR, syncPluginsToSandbox } from "./sandbox-plugins.ts";
 import { OrgGithubTokens } from "./org-github-tokens.ts";
 import { GithubCredentials, LOCAL_OWNER, ORG_OWNER } from "./github-credentials.ts";
 import { OrgBotSecrets } from "./org-bot-secrets.ts";
@@ -4127,6 +4131,9 @@ type InternalCapability = {
   /** A "personal-mcp" capability: which of that person's own MCP servers
    * (a command in their server environment) it relays to. */
   personalMcpServer?: string;
+  /** A complete plugin's command, resolved against its current selected
+   * install on every request. No execution spec rides the bearer. */
+  pluginMcp?: { scope: "organization" | "person" | "bot"; key: string; name: string };
   /** A "desktop" capability: whose own computer it reaches (desktop bridge). */
   desktopPrincipalId?: string;
   skillAuthoring: boolean;
@@ -7681,6 +7688,7 @@ function vaultKeySource(): VaultKeySource {
   return mcpOAuthKey;
 }
 const personConnections = new PersonConnections(DATA_DIR, vaultKeySource);
+const personalSkills = new PersonalSkills(DATA_DIR, personConnections);
 // The credential vault (server/credential-vault.ts): each person's logins,
 // API keys and notes, encrypted with a key derived from the same vault key
 // (the OS keychain on a desktop, a 0600 key file on a server). Bots fill a
@@ -8102,18 +8110,27 @@ async function syncGithubForTurn(principalId: string, generation: string, botId?
  * computer (server/sandbox-plugins.ts), so a plugin's scripts run there.
  * Never in another person's environment: a plugin may come from a private
  * marketplace only its owner reads. Best effort. */
-const pluginSyncedGenerations = new Set<string>();
+const pluginSyncedGenerations = new Map<string, Promise<void>>();
 async function syncPluginsForTurn(principalId: string, generation: string, botId: string): Promise<void> {
   if (!userSandbox) return;
   const key = `${principalId}\n${generation}\n${botId}`;
-  if (pluginSyncedGenerations.has(key)) return;
-  pluginSyncedGenerations.add(key);
-  if (pluginSyncedGenerations.size > 2_000) pluginSyncedGenerations.delete(pluginSyncedGenerations.values().next().value!);
+  const current = pluginSyncedGenerations.get(key);
+  if (current) return current;
+  const copying = syncPluginFoldersForTurn(principalId, botId);
+  pluginSyncedGenerations.set(key, copying);
+  if (pluginSyncedGenerations.size > 2_000) pluginSyncedGenerations.delete(pluginSyncedGenerations.keys().next().value!);
+  return copying;
+}
+async function syncPluginFoldersForTurn(principalId: string, botId: string): Promise<void> {
   const bot = store.bot(botId);
-  if (!bot || effectiveBotOwner(bot).trim().toLowerCase() !== principalId.trim().toLowerCase()) return;
-  const plugins = botPlugins.enabledPlugins(botId);
-  if (!plugins.length) return;
+  if (!bot || !userSandbox) return;
+  // A private bot install stays with its owner. Organization and personal
+  // installs are selected for the person whose environment receives them.
+  const plugins = scopedPluginFolders(bot, principalId).filter((plugin) => plugin.scope !== "bot" || samePerson(effectiveBotOwner(bot), principalId));
+  const skills = skillsLibraryEnabled(cfg) && personalSkills.enabled(principalId).length ? [{ name: "me", dir: personalSkills.root(principalId) }] : [];
+  if (!plugins.length && !skills.length) return;
   try {
+    if (skills.length) await syncPluginsToSandbox(skills, { exec: (input) => userSandbox!.exec(principalId, input, botId) }, "/workspace/sagax-capability-skills");
     const result = await syncPluginsToSandbox(plugins, { exec: (input) => userSandbox!.exec(principalId, input, botId) });
     if (result.skipped.length) console.warn(`[plugins] not copied to the server environment: ${result.skipped.map((row) => `${row.name} (${row.reason})`).join(", ")}`);
   } catch (error) {
@@ -8242,7 +8259,7 @@ const pluginMarketplaces = new PluginMarketplaces({
   dataDir: DATA_DIR,
   gitEnvironment: (actor) => githubGitEnvironment(githubCredentialsFor(actor)[0]?.token),
   policy: pluginMarketplacePolicy,
-  inUse: (name) => botPlugins.botsUsing(name),
+  inUse: (name) => [...botPlugins.botsUsing(name), ...personalPlugins.botsUsing(name).map((id) => `person:${id}`)],
 });
 const botPlugins = new BotPlugins({
   dataDir: DATA_DIR,
@@ -8252,6 +8269,17 @@ const botPlugins = new BotPlugins({
   tokens: marketplaceCredentials,
   policy: pluginMarketplacePolicy,
 });
+const personalPlugins = new BotPlugins({
+  dataDir: DATA_DIR,
+  marketplaces: pluginMarketplaces,
+  storage: personalPluginStorage(DATA_DIR, personConnections),
+  gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
+  credentials: ({ actor, source }) => githubCredentialsFor(actor, source.github?.owner),
+  tokens: marketplaceCredentials,
+  policy: pluginMarketplacePolicy,
+});
+const installationPlugins = new InstallationPlugins(DATA_DIR, pluginMarketplaces);
+installationPlugins.restore();
 // Pulsatrix Flow for every member of the organization
 // (server/org-flow-plugins.ts): Perspicax declares its private marketplace in
 // the directory; Claude Code installs it here with a member's marketplace
@@ -8361,10 +8389,11 @@ async function personalHostRefusalCached(url: string): Promise<boolean> {
   return refused;
 }
 /** A person's own command, relayed to their server environment for one turn. */
-function personalStdioIntegration(botId: string, threadId: string, generation: string, principalId: string, server: string) {
+function personalStdioIntegration(botId: string, threadId: string, generation: string, principalId: string, server: string, pluginMcp?: InternalCapability["pluginMcp"]) {
   const token = mintInternalCapability({
     botId, threadId, generation, depth: 0, kind: "personal-mcp", skillAuthoring: false, createdBots: 0, openedThreads: 0,
     sandboxPrincipalId: principalId, personalMcpServer: server,
+    ...(pluginMcp ? { pluginMcp } : {}),
   });
   return {
     command: process.execPath,
@@ -8409,6 +8438,35 @@ async function mountPersonalMcp(
       headers = signed.headers;
     }
     integrations.custom = { ...integrations.custom, [name]: { type: server.type, url: server.url, headers } };
+  }
+}
+
+/** A complete plugin's MCP servers use the same selected plugin folders
+ * and namespace as the receipt. Commands on an organization server always
+ * cross the per-turn relay into this person's environment. */
+async function mountPluginMcp(
+  integrations: NonNullable<SendTurnInput["integrations"]>,
+  input: { botId: string; threadId: string; generation: string; customMcp: boolean; principal: string | null },
+): Promise<void> {
+  if (!input.customMcp) return;
+  const bot = store.bot(input.botId);
+  if (!bot) return;
+  const person = IDENTITY.kind === "perspicax" ? input.principal?.trim().toLowerCase() : localPrincipalId();
+  if (!person) return;
+  for (const server of scopedPluginMcp(bot, person)) {
+    const refused = pluginMcpPrecheck(server.name, server.spec, {
+      taken: (name) => Object.hasOwn(integrations.custom ?? {}, name),
+      organization: IDENTITY.kind === "perspicax", hasEnvironment: Boolean(userSandbox),
+    });
+    if (refused) continue;
+    if (!Object.hasOwn(managedPolicy.filterMcp({ [server.name]: server.spec }), server.name)) continue;
+    let spec = server.spec;
+    if ("url" in spec) {
+      if (IDENTITY.kind === "perspicax" && await personalHostRefusalCached(spec.url)) continue;
+    } else if (IDENTITY.kind === "perspicax") {
+      spec = personalStdioIntegration(input.botId, input.threadId, input.generation, person, server.name, { scope: server.scope, key: server.key, name: server.name });
+    } else spec = pluginSpecOnComputer(spec, { name: server.plugin, dir: server.dir });
+    integrations.custom = { ...integrations.custom, [server.name]: spec };
   }
 }
 // Published pages (routes/published-pages.ts): a person's own pages, managed
@@ -8758,21 +8816,59 @@ function botLoadsPlugins(bot: { modelSelection: { instanceId: string } }): boole
   // enabled skills and commands in the turn prompt.
   return kind !== undefined && supportsWorkspaceFiles(kind);
 }
+function scopedPluginFolders(bot: { id: string; ownerUserId?: unknown }, principal = effectiveBotOwner(bot)): Array<{ name: string; dir: string; scope: PluginScope }> {
+  const person = IDENTITY.kind === "perspicax" ? principal.trim().toLowerCase() : localPrincipalId();
+  return selectPluginScopes({
+    organization: [...orgFlowPlugins.dirsFor(person, []).map((dir) => ({ name: basename(dir), dir })), ...installationPlugins.enabledPlugins()],
+    person: person ? personalPlugins.enabledPlugins(person) : [],
+    bot: IDENTITY.kind !== "perspicax" || samePerson(effectiveBotOwner(bot), person) ? botPlugins.enabledPlugins(bot.id) : [],
+  });
+}
+type ScopedPluginMcp = { scope: PluginScope; key: string; plugin: string; name: string; spec: McpServerSpec; dir: string };
+function scopedPluginMcp(bot: { id: string; ownerUserId?: unknown }, principal: string): ScopedPluginMcp[] {
+  const selected = scopedPluginFolders(bot, principal);
+  const candidates = [
+    ...installationPlugins.mcpServers().map((server) => ({ ...server, scope: "organization" as const })),
+    ...personalPlugins.mcpServers(principal).map((server) => ({ ...server, scope: "person" as const })),
+    ...(IDENTITY.kind !== "perspicax" || samePerson(effectiveBotOwner(bot), principal) ? botPlugins.mcpServers(bot.id).map((server) => ({ ...server, scope: "bot" as const })) : []),
+  ];
+  return candidates.flatMap<ScopedPluginMcp>((server) => {
+    const folder = selected.find((plugin) => plugin.scope === server.scope && plugin.name === server.plugin);
+    if (!folder) return [];
+    if (server.scope === "organization") return server.dir === folder.dir ? [{ ...server, dir: folder.dir }] : [];
+    // Two marketplaces may use the same plugin name. Only the install
+    // whose exact current folder was selected owns its declared servers.
+    const source = server.scope === "person" ? personalPlugins : botPlugins;
+    const install = source.listPlugins(server.scope === "person" ? principal : bot.id).find((plugin) => plugin.key === server.key);
+    if (!install || source.installedFolder(server.scope === "person" ? principal : bot.id, install).dir !== folder.dir) return [];
+    return [{ ...server, dir: folder.dir }];
+  });
+}
 /** Enabled plugin folders for a Claude turn (`--plugin-dir`). Empty for every other engine. */
-function pluginDirsFor(bot: { id: string; ownerUserId?: unknown }, instance: { driverKind: string }): { pluginDirs?: string[] } {
-  const owner = effectiveBotOwner(bot);
-  // The bot's own, then the organization's Flow plugins (an admin's choice
-  // in Perspicax), never twice: server/turn-mounts.ts, shared with the
-  // capabilities resolver.
-  const dirs = turnPluginDirs({ driverKind: instance.driverKind, botDirs: botPlugins.pluginDirs(bot.id), orgDirs: (own) => orgFlowPlugins.dirsFor(owner, own) });
+function pluginDirsFor(bot: { id: string; ownerUserId?: unknown }, instance: { driverKind: string }, principal?: string): { pluginDirs?: string[] } {
+  const dirs = instance.driverKind === "claudeAgent" ? scopedPluginFolders(bot, principal).map((plugin) => plugin.dir) : [];
   return dirs.length ? { pluginDirs: dirs } : {};
 }
+function personalSkillInputs(bot: { id: string; ownerUserId?: unknown }, principal?: string) {
+  if (!skillsLibraryEnabled(cfg)) return [];
+  const person = IDENTITY.kind === "perspicax" ? principal ?? effectiveBotOwner(bot) : localPrincipalId();
+  if (!person) return [];
+  const organizationNames = new Set(listBotSkills(store.bot(bot.id)!).filter((skill) => skill.enabled && skill.source.startsWith("org:")).map((skill) => skill.name));
+  return personalSkills.list(person).map((skill) => ({ ...skill, shadowed: organizationNames.has(skill.name) }));
+}
+function scopedSkillsPrompt(bot: BotRecord, principal?: string): string {
+  const names = new Set(personalSkillInputs(bot, principal).filter((skill) => skill.enabled && !skill.shadowed).map((skill) => skill.name));
+  return skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined, names);
+}
 /** The same enabled skills and commands, for a workspace engine that is not Claude. Claude uses --plugin-dir instead. */
-function pluginSkillsForTurn(bot: { id: string; ownerUserId?: unknown }, instance: { driverKind: string } | undefined): string {
+function pluginSkillsForTurn(bot: { id: string; ownerUserId?: unknown }, instance: { driverKind: string } | undefined, principal?: string): string {
   if (!instance) return "";
-  const dirs = turnPluginPromptDirs(instance.driverKind, botPlugins.pluginDirs(bot.id));
-  if (!dirs.length) return "";
-  return pluginTurnPrompt({ driverKind: instance.driverKind, files: pluginTurnFiles(dirs) });
+  const folders = scopedPluginFolders(bot, principal).filter((plugin) => plugin.scope !== "organization" || installationPlugins.enabledPlugins().some((copy) => copy.dir === plugin.dir));
+  const dirs = turnPluginPromptDirs(instance.driverKind, folders.map((plugin) => plugin.dir));
+  const person = IDENTITY.kind === "perspicax" ? principal ?? effectiveBotOwner(bot) : localPrincipalId();
+  const personal = supportsWorkspaceFiles(instance.driverKind) && skillsLibraryEnabled(cfg) && person ? personalSkills.prompt(person, IDENTITY.kind === "perspicax", new Set(personalSkillInputs(bot, principal).filter((skill) => skill.shadowed).map((skill) => skill.name))) : "";
+  const shownPaths = IDENTITY.kind === "perspicax" ? new Map(folders.map((plugin) => [plugin.dir, `${SANDBOX_PLUGINS_DIR}/${plugin.name}`])) : undefined;
+  return personal + (dirs.length ? pluginTurnPrompt({ driverKind: instance.driverKind, files: pluginTurnFiles(dirs, shownPaths ? (dir) => shownPaths.get(dir)! : undefined) }) : "");
 }
 // ── a bot's capabilities: one resolved list (server/capabilities.ts) ──
 /** Everything a bot receives on top of its engine, for the person looking
@@ -8877,14 +8973,25 @@ function botCapabilitiesAs(
         ...(offered.get(plugin.key) ? { updateAvailable: true } : {}),
       };
     }),
-    botPluginDirs: botPlugins.pluginDirs(bot.id),
+    botPluginDirs: scopedPluginFolders(bot, principal ?? owner).filter((plugin) => plugin.scope === "bot").map((plugin) => plugin.dir),
+    personalSkills: library && (principal || !organization) ? personalSkillInputs(bot, principal) : [],
+    personalPlugins: (principal || !organization ? personalPlugins.listPlugins(principal ?? localPrincipalId()) : []).map((plugin) => {
+      const folder = personalPlugins.installedFolder(principal ?? localPrincipalId(), plugin);
+      let contents: PluginContents = { skills: [], commands: [], agents: [] };
+      try { if (folder.present) contents = readPluginContents(folder.dir); } catch { /* listed without its contents */ }
+      return { ...plugin, dir: folder.dir, present: folder.present, contents };
+    }),
+    pluginMcp: principal || !organization ? scopedPluginMcp(bot, principal ?? localPrincipalId()) : [],
+    pluginEnvironment: Boolean(userSandbox),
+    pluginHostRefused: (url) => personalHostChecks.get(url)?.refused,
     workspacePlugins: pluginMarketplaces.installed().map((plugin) => ({
       key: plugin.key, name: plugin.name, marketplace: plugin.marketplace, servers: plugin.servers, skills: plugin.skills,
       ...(plugin.version ? { version: plugin.version } : {}),
       ...(workspaceOffered.get(plugin.key) ? { updateAvailable: true } : {}),
+      ...(installationPlugins.folder(plugin.key) ? { folder: installationPlugins.folder(plugin.key)! } : {}),
     })),
     orgFlow: {
-      dirsFor: (own) => orgFlowPlugins.dirsFor(owner, own),
+      dirsFor: (own) => orgFlowPlugins.dirsFor(principal ?? owner, own),
       ...(declaration ? { declared: declaration.plugins } : {}),
       guarded: orgFlowGuarded(declaration),
       member: Boolean(owner) && orgMemberActive(owner),
@@ -8984,6 +9091,24 @@ ROUTES.push(createBotWizardRoutes({
     return gate.ok && gate.instance.generateText ? gate.instance.generateText.bind(gate.instance) : null;
   },
 }));
+ROUTES.push(createPersonalSkillRoutes({
+  skills: personalSkills,
+  enabled: () => skillsLibraryEnabled(cfg),
+  person: (auth) => IDENTITY.kind === "perspicax" ? sessionPrincipal(auth) : localPrincipalId(),
+  bots: (person) => store.bots.filter((bot) => IDENTITY.kind !== "perspicax" || samePerson(effectiveBotOwner(bot), person)).map((bot) => ({ id: bot.id, name: bot.name })),
+}));
+ROUTES.push(createPersonalPluginRoutes({
+  plugins: personalPlugins,
+  person: (auth) => IDENTITY.kind === "perspicax" ? sessionPrincipal(auth) : localPrincipalId(),
+  actor: (auth) => IDENTITY.kind === "perspicax" ? sessionPrincipal(auth) ?? undefined : localPrincipalId(),
+  viewer: marketplaceViewer,
+  mayShareOrgWide: mayShareMarketplaceOrgWide,
+  mayManageMarketplaces,
+  policy: pluginMarketplacePolicy,
+  changed: (person, action, detail, auth) => {
+    orgAudit({ category: "security", action: `person.${action}`, target: { kind: "person", id: person.id }, changed: ["plugins"], after: detail, actor: orgAuditActor(auth) });
+  },
+}));
 ROUTES.push(createBotPluginRoutes<BotRecord>({
   plugins: botPlugins,
   bot: (id) => store.bot(id) ?? undefined,
@@ -8999,7 +9124,6 @@ ROUTES.push(createBotPluginRoutes<BotRecord>({
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
   viewer: marketplaceViewer,
   mayShareOrgWide: mayShareMarketplaceOrgWide,
-  ownIntegrationsRefusal,
   mayManageMarketplaces: (auth) => mayManageMarketplaces(auth),
   policy: pluginMarketplacePolicy,
   engineLoadsPlugins: botLoadsPlugins,
@@ -9238,7 +9362,7 @@ function previewSystemPrompt(bot: BotRecord) {
     { id: "rules", label: "Rules (RULES.md)", text: rulesSystemPrompt(bot.id, { writes: agentsMounted }) },
     { id: "memory", label: "Memory", text: memoryPromptFor(bot, { managedWrites: agentsMounted, fileTools: Boolean(privateWorkspace) }) },
     { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: agentsMounted ? "agents" : privateWorkspace ? "files" : "none" }) },
-    { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? bot.assignedSkills : undefined) + pluginSkillsForTurn(bot, instance) : "" },
+    { id: "skills", label: "Skills index", text: privateWorkspace ? scopedSkillsPrompt(bot) + pluginSkillsForTurn(bot, instance) : "" },
   ], instance?.driverKind === "claudeAgent" ? CLAUDE_REUSE_VOLATILE_SECTIONS : undefined);
   const totalBytes = built.sections.reduce((n, s) => n + s.bytes, 0);
   return {
@@ -22480,7 +22604,12 @@ async function startTurn(
         bot.id,
         providerText,
         skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined,
-        { inline: skillCommandInline({ workspaceFiles: supportsWorkspaceFiles(instance.driverKind), organization: IDENTITY.kind === "perspicax" }) },
+        { inline: skillCommandInline({ workspaceFiles: supportsWorkspaceFiles(instance.driverKind), organization: IDENTITY.kind === "perspicax" }),
+          overrides: (() => {
+            const person = IDENTITY.kind === "perspicax" ? orgSpeakerPrincipal(bot, speaker) : localPrincipalId();
+            return skillsLibraryEnabled(cfg) && person ? personalSkills.commands(person, new Set(personalSkillInputs(bot, person).filter((skill) => skill.shadowed).map((skill) => skill.name))) : [];
+          })(),
+        },
       );
       const setupText = peerToolsMounted ? expandSetupTurnText(skillCommandText) : skillCommandText;
       const userTurnText = promptWithReply(
@@ -22733,6 +22862,10 @@ async function startTurn(
         decision: turnPlace, staging: placedText.staging, auto: turnAuto,
       });
       await mountPersonalMcp(integrations, {
+        botId: bot.id, threadId, generation: dispatchClaimId,
+        customMcp: instance.adapter.capabilities.customMcp === true, principal: turnPlace.principal,
+      });
+      await mountPluginMcp(integrations, {
         botId: bot.id, threadId, generation: dispatchClaimId,
         customMcp: instance.adapter.capabilities.customMcp === true, principal: turnPlace.principal,
       });
@@ -23436,7 +23569,7 @@ async function startTurn(
         { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: integrations.agents ? "agents" : worksInWorkspace ? "files" : "none" }) },
         // liveBot was captured before awaited setup work; an assignment PUT
         // in that window must still reach this turn's prompt.
-        { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined) + pluginSkillsForTurn(bot, instance) : "" },
+        { id: "skills", label: "Skills index", text: privateWorkspace ? scopedSkillsPrompt(bot, orgSpeakerPrincipal(bot, speaker)) + pluginSkillsForTurn(bot, instance, orgSpeakerPrincipal(bot, speaker)) : "" },
         { id: "skill-instructions", label: "Skill instructions", text: skillInstructions },
         { id: "playbooks", label: "Playbooks", text: packagePlaybooks },
         { id: "webhook", label: "Webhook provenance", text: opts?.automationSource === "webhook" ? WEBHOOK_PROMPT : "" },
@@ -23623,7 +23756,7 @@ async function startTurn(
         mcpFromUserConfig: claudeUserMcpEnabled(cfg, IDENTITY.kind === "perspicax") && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(bot, instance, speaker, turnAccess?.via),
         grokCloudConnectors: grokCloudConnectorsForTurn(accountConnectorInput(bot, instance, speaker, turnAccess?.via)),
-        ...pluginDirsFor(bot, instance),
+        ...pluginDirsFor(bot, instance, orgSpeakerPrincipal(bot, speaker)),
         mcpCallTimeoutMs: mcpCallTimeoutMinutes(cfg) * 60_000,
         cwd,
       });
@@ -26984,6 +27117,10 @@ async function runGroupMemberTurn(
     botId: readyBot.id, threadId, generation: internalGeneration,
     customMcp: instance.adapter.capabilities.customMcp === true, principal: roomPlace.principal,
   });
+  await mountPluginMcp(integrations, {
+    botId: readyBot.id, threadId, generation: internalGeneration,
+    customMcp: instance.adapter.capabilities.customMcp === true, principal: roomPlace.principal,
+  });
   if (!roomSetupIsCurrent()) return false;
   // A lazily claimed desktop (the VPS, the member's Boat) shows in the room
   // from the moment its first computer call claims it.
@@ -27265,7 +27402,7 @@ async function runGroupMemberTurn(
     })() },
     // readyBot was captured before awaited setup work; an assignment PUT in
     // that window must still reach this turn's prompt.
-    { id: "skills", label: "Skills index", text: workspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined) + pluginSkillsForTurn(bot, instance) : "" },
+    { id: "skills", label: "Skills index", text: workspace ? scopedSkillsPrompt(bot, roomPrincipal ?? undefined) + pluginSkillsForTurn(bot, instance, roomPrincipal ?? undefined) : "" },
     { id: "skill-instructions", label: "Skill instructions", text: renderSkillInstructions(selectedSkills, { includeRoot: Boolean(workspace) }) },
     { id: "playbooks", label: "Playbooks", text: installedPlaybookInstructions(text, bot.playbooks) },
   ], roomStable || instance.driverKind === "claudeAgent"
@@ -27455,7 +27592,7 @@ async function runGroupMemberTurn(
         mcpFromUserConfig: claudeUserMcpEnabled(cfg, IDENTITY.kind === "perspicax") && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(readyBot, instance, roomSpeaker, roomTurnAccess?.via),
         grokCloudConnectors: grokCloudConnectorsForTurn(accountConnectorInput(readyBot, instance, roomSpeaker, roomTurnAccess?.via)),
-        ...pluginDirsFor(readyBot, instance),
+        ...pluginDirsFor(readyBot, instance, roomPrincipal ?? undefined),
         mcpCallTimeoutMs: mcpCallTimeoutMinutes(cfg) * 60_000,
         ...(instance.instanceId === roomTurnSelection(readyBot).instanceId
           ? memberTurnSelection(roomTurnSelection(readyBot))
@@ -30910,8 +31047,8 @@ function turnConnectorsFor(bot: BotRecord, instance: Parameters<typeof withholdH
       personalServers = Object.entries(personConnections.servers(person)).filter(([, server]) => server.enabled).map(([name]) => name);
     } catch { /* unreadable: none listed */ }
   }
-  const plugins = (pluginDirsFor(bot, instance).pluginDirs ?? []).map((dir) => basename(dir));
-  if (!plugins.length && pluginSkillsForTurn(bot, instance)) plugins.push(...botPlugins.enabledPlugins(bot.id).map((plugin) => plugin.name));
+  const plugins = (pluginDirsFor(bot, instance, person).pluginDirs ?? []).map((dir) => basename(dir));
+  if (!plugins.length && pluginSkillsForTurn(bot, instance, person)) plugins.push(...scopedPluginFolders(bot, person).filter((plugin) => plugin.scope !== "organization").map((plugin) => plugin.name));
   return turnConnectorsRecord({
     at: Date.now(),
     mounted: Object.keys(integrations.custom ?? {}),
@@ -32426,7 +32563,7 @@ ROUTES.push(createBotRulesRoutes({
 /** Who may read (change false) or change a bot's skills: on an
  * organization server, a person who may use the bot reads them and its
  * owner, a manager or an organization admin changes them (#65 rights),
- * with the permission `apps.ownIntegrations`. */
+ * with their existing bot ownership. */
 function botSkillsRefusal(auth: RequestAuth, botId: string, change: boolean): { status: number; body: Record<string, unknown> } | null {
   const target = store.bot(botId);
   if (!target) return { status: 404, body: { error: "no such bot" } };
@@ -32434,8 +32571,6 @@ function botSkillsRefusal(auth: RequestAuth, botId: string, change: boolean): { 
   const level = viewerBotLevel(auth, target);
   if (level === null && !orgAdminCaller(auth)) return { status: 404, body: { error: "no such bot" } };
   if (change && level !== "owner" && level !== "manage" && !orgAdminCaller(auth)) return { status: 403, body: { error: "Only the bot's owner, or someone who manages it, can change its skills.", code: "skills_owner_only" } };
-  const integrationsRefusal = change ? ownIntegrationsRefusal(auth) : null;
-  if (integrationsRefusal) return { status: 403, body: integrationsRefusal };
   return null;
 }
 // Skills > Upload (server/routes/bot-skill-upload.ts): SKILL.md files and
@@ -33165,7 +33300,7 @@ const pluginRegistry = createRegistrySearch();
 // the bots' plugins above); Add maps a plugin onto MCP servers (source: the
 // marketplace) and library skills.
 function mayManageMarketplaces(auth: RequestAuth): boolean {
-  return computerOwner(auth) || (IDENTITY.kind === "perspicax" && callerCan(auth, "apps.marketplaces"));
+  return computerOwner(auth) || (IDENTITY.kind === "perspicax" && orgAdminCaller(auth));
 }
 /** Who is asking about marketplaces. On a solo server, or at the
  * organization server's own console (loopback), the operator manages every
@@ -33204,7 +33339,7 @@ function addMarketplaceServers(
     }
     const remote = "url" in server.entry;
     if (IDENTITY.kind === "perspicax" && !remote) {
-      skipped.push(`MCP server ${server.name} (a command would run on the Sagax server)`);
+      // Complete installation plugins mount this command in each person's environment.
       continue;
     }
     // A remote server is on at once (one that needs a sign-in is never
@@ -33245,50 +33380,9 @@ function updatedMarketplaceServer(name: string, existing: StoredMcpServer, entry
   }
   return parsed.server;
 }
-ROUTES.push(createMarketplaceRoutes({
-  store: pluginMarketplaces,
-  mayManage: mayManageMarketplaces,
-  // the installation's token per marketplace (Everyone scope): an admin's
-  workspace: botPlugins,
-  actor: (auth) => sessionPrincipal(auth) ?? undefined,
-  viewer: marketplaceViewer,
-  mayShareOrgWide: mayShareMarketplaceOrgWide,
-  install: async (marketplace, plugin, { auth }) => {
-    if (pluginMarketplaces.installed().some((entry) => entry.key === `${plugin}@${marketplace}`)) {
-      return { status: 409, body: { error: "This plugin is already installed. Uninstall it first to install it again.", code: "already_installed" } };
-    }
-    const { plan, version, revision } = await pluginMarketplaces.prepare(marketplace, plugin, sessionPrincipal(auth) ?? undefined, marketplaceViewer(auth));
-    const skipped = [...plan.skipped];
-    if (plan.servers.length && mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
-    const serverNames: Record<string, string> = {};
-    if (plan.servers.length) {
-      mcpConfigBusy = true;
-      try {
-        const current = { ...cfg.mcpServers };
-        Object.assign(serverNames, addMarketplaceServers(current, plan.servers, marketplace, plugin, skipped));
-        if (Object.keys(serverNames).length) persistMcpServers(current);
-      } finally {
-        mcpConfigBusy = false;
-      }
-    }
-    const addedServers = Object.values(serverNames);
-    for (const name of addedServers) await mcpOAuth.forget(name).catch(() => undefined);
-    if (addedServers.length) await probeMcpOAuth(addedServers);
-    const addedSkills: string[] = [];
-    for (const skill of plan.skills) {
-      const installed = installLibrarySkill({
-        name: skill.name, instructions: skill.text, source: marketplace,
-        warnings: scanSkillText(skill.text), reviewState: "disabled",
-      });
-      if ("error" in installed) skipped.push(`skill ${skill.name} (${installed.error})`);
-      else addedSkills.push(skill.name);
-    }
-    const record = pluginMarketplaces.recordInstall(marketplace, plugin, {
-      ...(version ? { version } : {}), ...(revision ? { revision } : {}), servers: addedServers, serverNames, skills: addedSkills,
-    });
-    return { status: 200, body: { plugin: record, skipped, servers: mcpServerResponse(mcpViewer(auth)).servers } };
-  },
-  update: async (marketplace, plugin, { auth }) => {
+/** Install again and Update use one operation, preserving switches and names. */
+async function updateInstallationPlugin(marketplace: string, plugin: string, { auth }: { auth: RequestAuth }) {
+
     const installed = pluginMarketplaces.installed().find((entry) => entry.key === `${plugin}@${marketplace}`);
     if (!installed) return { status: 404, body: { error: "That plugin is not installed.", code: "not_installed" } };
     if (mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
@@ -33354,13 +33448,58 @@ ROUTES.push(createMarketplaceRoutes({
       ...(version ? { version } : {}), ...(revision ? { revision } : {}),
       servers: Object.values(serverNames), serverNames, skills,
     });
+    installationPlugins.refresh(record);
+    return { status: 200, body: { plugin: record, skipped, servers: mcpServerResponse(mcpViewer(auth)).servers } };
+}
+ROUTES.push(createMarketplaceRoutes({
+  store: pluginMarketplaces,
+  mayManage: mayManageMarketplaces,
+  // the installation's token per marketplace (Everyone scope): an admin's
+  workspace: botPlugins,
+  actor: (auth) => sessionPrincipal(auth) ?? undefined,
+  viewer: marketplaceViewer,
+  mayShareOrgWide: mayShareMarketplaceOrgWide,
+  install: async (marketplace, plugin, { auth }) => {
+    if (pluginMarketplaces.installed().some((entry) => entry.key === `${plugin}@${marketplace}`)) return updateInstallationPlugin(marketplace, plugin, { auth });
+    const { plan, version, revision } = await pluginMarketplaces.prepare(marketplace, plugin, sessionPrincipal(auth) ?? undefined, marketplaceViewer(auth));
+    const skipped = [...plan.skipped];
+    if (plan.servers.length && mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
+    const serverNames: Record<string, string> = {};
+    if (plan.servers.length) {
+      mcpConfigBusy = true;
+      try {
+        const current = { ...cfg.mcpServers };
+        Object.assign(serverNames, addMarketplaceServers(current, plan.servers, marketplace, plugin, skipped));
+        if (Object.keys(serverNames).length) persistMcpServers(current);
+      } finally {
+        mcpConfigBusy = false;
+      }
+    }
+    const addedServers = Object.values(serverNames);
+    for (const name of addedServers) await mcpOAuth.forget(name).catch(() => undefined);
+    if (addedServers.length) await probeMcpOAuth(addedServers);
+    const addedSkills: string[] = [];
+    for (const skill of plan.skills) {
+      const installed = installLibrarySkill({
+        name: skill.name, instructions: skill.text, source: marketplace,
+        warnings: scanSkillText(skill.text), reviewState: "disabled",
+      });
+      if ("error" in installed) skipped.push(`skill ${skill.name} (${installed.error})`);
+      else addedSkills.push(skill.name);
+    }
+    const record = pluginMarketplaces.recordInstall(marketplace, plugin, {
+      ...(version ? { version } : {}), ...(revision ? { revision } : {}), servers: addedServers, serverNames, skills: addedSkills,
+    });
+    installationPlugins.refresh(record);
     return { status: 200, body: { plugin: record, skipped, servers: mcpServerResponse(mcpViewer(auth)).servers } };
   },
+  update: updateInstallationPlugin,
   audit: (auth, row) => appendAdminAction(DATA_DIR, {
     category: "mcp", ...row, actor: IDENTITY.kind === "perspicax" ? orgAuditActor(auth) : decisionActorFor(auth),
   }),
   uninstall: async (marketplace, plugin) => {
     const record = pluginMarketplaces.recordUninstall(marketplace, plugin);
+    installationPlugins.remove(record.key);
     if (record.servers.length) {
       if (mcpConfigBusy) return { status: 409, body: { error: "MCP servers are already being updated." } };
       mcpConfigBusy = true;
@@ -33618,7 +33757,9 @@ async function perspicaxLinkSubjectToken(sub: string): Promise<string | null> {
     const live = await idpSessions.subjectToken({ iss: IDENTITY.issuer, sub });
     if (live.ok) return live.token;
   }
-  if (routineConsents) {
+  // Directory metadata reads must not start a no-session issuance backoff
+  // before this person signs in. Only reuse an existing delegation here.
+  if (routineConsents?.status(person.id).state === "active") {
     const delegated = await routineConsents.subjectToken(person.id);
     if (delegated.ok) return delegated.token;
   }
@@ -39639,7 +39780,7 @@ function harnessCommandSource(bot: BotRecord, threadId: string | undefined, opti
         ...(cwd ? { cwd } : {}),
         ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg, IDENTITY.kind === "perspicax") && !managedPolicy.restrictsMcp(),
-        ...pluginDirsFor(bot, instance),
+        ...pluginDirsFor(bot, instance, options.speaker ? orgSpeakerPrincipal(bot, options.speaker) : undefined),
       }),
       ...account,
     },
@@ -43869,7 +44010,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         try {
           // Its own files, skill revisions and installed plugins (2026-10-19):
           // on an organization server this is the bot's only file read.
-          const read = readWorkspaceText(internalSender.id, url.searchParams.get("path") ?? "", Number(url.searchParams.get("offset") ?? 0), botPlugins.enabledPlugins(internalSender.id));
+          const person = IDENTITY.kind === "perspicax" ? turnSpeakerPrincipals.get(internalCapability.threadId) ?? "" : localPrincipalId();
+          const read = readWorkspaceText(internalSender.id, url.searchParams.get("path") ?? "", Number(url.searchParams.get("offset") ?? 0),
+            scopedPluginFolders(internalSender, person), skillsLibraryEnabled(cfg) && person ? personalSkills.root(person) : undefined);
           markWorkspaceUse(internalSender.id, [read.path]);
           return json(res, 200, read);
         } catch (error) {
@@ -44081,9 +44224,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (personalHeld) return json(res, 200, answerError(personalHeld));
         }
         let server: PersonalMcpServer | undefined;
-        try { server = personConnections.servers(person)[name]; } catch { server = undefined; }
+        if (internalCapability.pluginMcp) {
+          const plugin = internalCapability.pluginMcp;
+          const bot = store.bot(internalCapability.botId);
+          const current = bot ? scopedPluginMcp(bot, person).find((entry) => entry.scope === plugin.scope && entry.key === plugin.key && entry.name === plugin.name) : undefined;
+          if (current && !("url" in current.spec)) server = { kind: "stdio", ...current.spec, runsIn: "environment", enabled: true, addedAt: 0 };
+        } else {
+          try { server = personConnections.servers(person)[name]; } catch { server = undefined; }
+        }
         if (!server || server.kind !== "stdio" || !server.enabled) return json(res, 200, answerError("This MCP server was removed or turned off in Settings > Mes connexions."));
         try {
+          if (internalCapability.pluginMcp) await syncPluginsForTurn(person, internalCapability.generation, internalCapability.botId);
           if (frame?.method === "tools/call") await syncGithubForTurn(person, internalCapability.generation, internalCapability.botId);
           const answer = await stdioRelay.relay({
             principalId: person, botId: internalCapability.botId, threadId: internalCapability.threadId, server: name,

@@ -1,18 +1,16 @@
-// Connect apps: install for everyone (the workspace) or for one bot. Shown
-// when a bot is in reach (src/lib/plugin-scope.ts); the bot scope lists the
-// marketplace plugins and installs each whole on that bot. On Providers
-// (the person's own accounts, which serve all of their bots) it stays in its
-// place turned off, so the title and the tabs never move between tabs.
+// Complete capabilities in This bot, Me and Organization. The parent
+// offers Organization only to its administrator or local owner.
 import type { ReactNode } from "react";
-import { Bot, Users } from "lucide-react";
+import { Bot, User, Users } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { PluginScope } from "@/lib/plugin-scope";
 
-export function ScopeToggle({ scope, botName, onScope, disabled = false, describedBy }: {
+export function ScopeToggle({ scope, botName, onScope, disabled = false, describedBy, organization = true }: {
   scope: PluginScope;
-  botName: string;
+  botName?: string;
+  organization?: boolean;
   onScope: (scope: PluginScope) => void;
   /** shown but not in use on this tab (Providers) */
   disabled?: boolean;
@@ -48,8 +46,9 @@ export function ScopeToggle({ scope, botName, onScope, disabled = false, describ
       data-plugins-scope-disabled={disabled ? "" : undefined}
       className="flex w-fit max-w-full items-center gap-0.5 rounded-full border border-border p-0.5"
     >
-      {option("workspace", t("connectApps.scope.workspace"), <Users size={13} aria-hidden="true" />)}
-      {option("bot", t("connectApps.scope.bot", { name: botName }), <Bot size={13} aria-hidden="true" />)}
+      {botName && option("bot", t("connectApps.scope.bot", { name: botName }), <Bot size={13} aria-hidden="true" />)}
+      {option("me", t("connectApps.scope.me"), <User size={13} aria-hidden="true" />)}
+      {organization && option("workspace", t("connectApps.scope.workspace"), <Users size={13} aria-hidden="true" />)}
     </div>
   );
 }

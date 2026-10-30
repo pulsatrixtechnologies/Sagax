@@ -665,7 +665,7 @@ export function secretCategory(path: string): WorkspaceBackupReconnectCategory |
   if (engineCredentialPath(path)) return "engines";
   const name = folded.split("/").pop()!;
   if (/^engine-api-keys\.(?:enc|json)(?:$|\.)|^workspace-credentials\.json$/.test(name)) return "providerKeys";
-  if (/^connections\.enc(?:$|\.)/.test(name)) return "connections";
+  if (/^(?:connections|capabilities)\.enc(?:$|\.)/.test(name)) return "connections";
   if (/^credential-vault\.enc(?:$|\.)/.test(name)) return "credentialVault";
   if (/^mcp-oauth\.(?:enc|json)(?:$|\.)/.test(name)) return "mcp";
   if (/^(?:org-github-tokens|org-bot-secrets|marketplace-tokens)\.enc(?:$|\.)/.test(name)) return "github";

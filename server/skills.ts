@@ -474,7 +474,7 @@ function removeNativeLinksForUnsafeSkillsRoot(
  * because directory symlinks there need privileges junctions do not. */
 export function syncSkillLinks(
   botId: string,
-  options: { beforeRemove?: (link: string) => void } = {},
+  options: { beforeRemove?: (link: string) => void; excludeNames?: ReadonlySet<string> } = {},
 ): void {
   const root = workspaceDir(botId);
   const previouslyManaged = readManagedLinks(botId);
@@ -487,7 +487,7 @@ export function syncSkillLinks(
   }
   const manifest = readManifest(botId);
   const enabled = Object.entries(manifest).filter(
-    ([name, entry]) => entry.enabled && skillContentMatches(botId, name, entry),
+    ([name, entry]) => entry.enabled && !options.excludeNames?.has(name) && skillContentMatches(botId, name, entry),
   );
   const desired = new Map(enabled.map(([name, entry]) => [name, skillTarget(root, name, entry)]));
   const managed = new Set<string>();
@@ -1412,15 +1412,15 @@ export function undoSkillWrite(
  * index lines only — the same progressive-disclosure shape the spec asks
  * agents for. Bodies never ride the prompt; the bot reads the file when a
  * task matches. */
-export function skillsSystemPrompt(botId: string, assignedLibrary?: readonly string[]): string {
-  return composeSkillsSystemPrompt(botId, assignedLibrary);
+export function skillsSystemPrompt(botId: string, assignedLibrary?: readonly string[], excludeNames?: ReadonlySet<string>): string {
+  return composeSkillsSystemPrompt(botId, assignedLibrary, excludeNames);
 }
 
-function composeSkillsSystemPrompt(botId: string, assignedLibrary: readonly string[] | undefined): string {
+function composeSkillsSystemPrompt(botId: string, assignedLibrary: readonly string[] | undefined, excludeNames?: ReadonlySet<string>): string {
   // Reconcile links on every turn. If the workspace copy changed since its
   // review, integrity filtering below removes it from native discovery too.
-  syncSkillLinks(botId);
-  const index = skillsIndexFor(botId, assignedLibrary);
+  syncSkillLinks(botId, { excludeNames });
+  const index = skillsIndexFor(botId, assignedLibrary, excludeNames);
   if (!index.enabled.length) {
     loggedIndexOmissions.delete(botId);
     return "";
@@ -1443,8 +1443,8 @@ const indexCapReason = (included: number) => included === INDEX_MAX_SKILLS ? `${
 /** The skills index exactly as the prompt carries it, without touching the
  * native links or the log: the turn (skillsSystemPrompt) and the
  * capabilities resolver (server/capabilities.ts promptIndex, #1748) read it. */
-function skillsIndexFor(botId: string, assignedLibrary: readonly string[] | undefined): { enabled: SkillListing[]; lines: string[]; omitted: SkillListing[]; text: string } {
-  const enabled = resolveBotSkills(botId, assignedLibrary).filter((skill) => skill.enabled);
+function skillsIndexFor(botId: string, assignedLibrary: readonly string[] | undefined, excludeNames?: ReadonlySet<string>): { enabled: SkillListing[]; lines: string[]; omitted: SkillListing[]; text: string } {
+  const enabled = resolveBotSkills(botId, assignedLibrary).filter((skill) => skill.enabled && !excludeNames?.has(skill.name));
   if (!enabled.length) return { enabled, lines: [], omitted: [], text: "" };
   const root = workspaceDir(botId);
   const manifest = readManifest(botId);
@@ -1470,8 +1470,8 @@ function skillsIndexFor(botId: string, assignedLibrary: readonly string[] | unde
 
 /** The size of a bot's skills index in the prompt and what its caps left
  * out (#1748), for the capabilities list. Reads only. */
-export function skillsPromptIndex(botId: string, assignedLibrary?: readonly string[]): { bytes: number; maxBytes: number; skills: number; maxSkills: number; omitted: number } {
-  const index = skillsIndexFor(botId, assignedLibrary);
+export function skillsPromptIndex(botId: string, assignedLibrary?: readonly string[], excludeNames?: ReadonlySet<string>): { bytes: number; maxBytes: number; skills: number; maxSkills: number; omitted: number } {
+  const index = skillsIndexFor(botId, assignedLibrary, excludeNames);
   return { bytes: Buffer.byteLength(index.text, "utf8"), maxBytes: INDEX_MAX_BYTES, skills: index.lines.length, maxSkills: INDEX_MAX_SKILLS, omitted: index.omitted.length };
 }
 
@@ -1511,24 +1511,24 @@ export function expandSkillCommandTurnText(
   botId: string,
   text: string,
   assignedLibrary?: readonly string[],
-  options: { inline?: boolean } = {},
+  options: { inline?: boolean; overrides?: readonly { name: string; file: string; text: string }[] } = {},
 ): string {
   if (!text.trimStart().startsWith("/")) return text;
-  const names = resolveBotSkills(botId, assignedLibrary).filter((skill) => skill.enabled).map((skill) => skill.name);
+  const names = [...(options.overrides ?? []).map((skill) => skill.name), ...resolveBotSkills(botId, assignedLibrary).filter((skill) => skill.enabled).map((skill) => skill.name)];
   const command = parseSkillCommand(text, names);
   if (!command) return text;
   const request = command.request
     ? ` Where the skill says {input}, use the request.\n\nRequest: ${command.request}`
     : " There is no further request, so run it as the skill describes.";
   if (options.inline) {
-    const raw = enabledSkillText(botId, command.name, assignedLibrary);
+    const raw = options.overrides?.find((skill) => skill.name === command.name)?.text ?? enabledSkillText(botId, command.name, assignedLibrary);
     if (raw === null) return text;
     const parsed = parseSkillMd(raw);
     const body = ("error" in parsed ? raw : parsed.body).trim();
     const lead = `The user ran your ${command.name} skill with /${command.name}. Follow its instructions below for this turn.`;
     return `${lead}${request}\n\nSkill instructions (${command.name}):\n<skill>\n${body}\n</skill>`;
   }
-  const file = enabledSkillFile(botId, command.name, assignedLibrary);
+  const file = options.overrides?.find((skill) => skill.name === command.name)?.file ?? enabledSkillFile(botId, command.name, assignedLibrary);
   if (!file) return text;
   const lead = `The user ran your ${command.name} skill with /${command.name}. Read ${JSON.stringify(file)} with your file tools and follow it for this turn.`;
   return `${lead}${request}`;

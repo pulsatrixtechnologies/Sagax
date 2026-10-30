@@ -16,6 +16,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/lib/i18n";
 
 let harness: unknown;
+let owner = true;
+vi.mock("@/lib/use-owner-or-admin", () => ({ useOwnerOrAdmin: () => owner }));
 const API: Record<string, unknown> = {
   "/api/mcp/servers": { servers: [
     { name: "twilio-docs", type: "http", url: "https://mcp.twilio.com/docs", enabled: true, source: "twilio", headerKeys: [], auth: "none" },
@@ -55,6 +57,12 @@ const API: Record<string, unknown> = {
   "/api/bot-presets": { presets: [] },
   "/api/pages": { pages: [{ id: "pg1", title: "Weekly KPIs", status: "published", access: "private", expiresAt: null, currentVersion: 1, botId: "bot-a", threadId: "t1", createdAt: 1, updatedAt: 2, expired: false, versions: [{ n: 1, kind: "html", title: "Weekly KPIs", createdAt: 1, state: "published", bytes: 10, botId: "bot-a" }] }] },
 };
+
+API["/api/me/plugins"] = { marketplaces: [{ name: "my-tools", source: "example/my-tools", addedAt: 1, updatedAt: 1,
+  plugins: [{ name: "personal-review", description: "Reviews my work", installed: true, external: false, contents: { agents: [], commands: [], skills: [] } }],
+}], plugins: [{ key: "personal-review@my-tools", name: "personal-review", marketplace: "my-tools", enabled: true, removed: [], declaredMcpServers: [] }],
+  policy: { mode: "any" }, engine: { loadsPlugins: true }, canChange: true };
+API["/api/me/skills-library"] = { skills: [{ name: "my-writing", description: "Write my notes", source: "local-import", enabled: true, tags: [], warnings: [], assignedBots: [] }] };
 
 const dispatch = vi.fn();
 const state = {
@@ -125,6 +133,7 @@ beforeEach(async () => {
   // any raw request (no server here) answers 404 at once
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "test" }), { status: 404, headers: { "content-type": "application/json" } })));
   setLocale("en");
+  owner = true;
   harness = { manageUrl: "https://claude.ai/customize/connectors", claude: { available: true, connectors: [{ name: "Gmail", status: "connected" }, { name: "Canva", status: "needs_auth" }] }, codex: { available: false } };
   dispatch.mockClear();
   host = document.createElement("div");
@@ -137,12 +146,28 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-const open = async () => {
+const open = async (personal = false) => {
   await act(async () => { root.render(createElement(PluginsPanel)); });
   await settle();
+  if (!personal) await click($('[data-plugins-scope-option="workspace"]'));
 };
 
 describe("Capabilities, driven like the owner did", () => {
+  it("opens on Me without an organization permission and keeps its installs separate", async () => {
+    owner = false;
+    await open(true);
+    expect($('[data-plugins-scope-option="workspace"]')).toBeNull();
+    expect($('[data-plugins-scope-option="me"]')?.getAttribute("aria-checked")).toBe("true");
+    await click($('[data-plugins-tab="installed"]'));
+    expect(host.textContent).toContain("Personal Review");
+    expect(host.textContent).toContain("my-writing");
+    expect(host.textContent).not.toContain("Twilio Docs");
+    expect($('[data-plugins-new-skill]')).toBeTruthy();
+    await click($('[data-plugins-scope-option="bot"]'));
+    expect(host.textContent).not.toContain("Personal Review");
+    await click($('[data-plugins-scope-option="me"]'));
+    expect(host.textContent).toContain("Personal Review");
+  });
   it("Bots is a tab right after Discover; Discover has no Browse Bots button, for every bot", async () => {
     paneProps = null;
     await open();

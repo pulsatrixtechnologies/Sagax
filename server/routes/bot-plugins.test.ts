@@ -12,7 +12,9 @@ import { BotPluginError, BotPlugins, type GitRunner } from "../bot-plugins.ts";
 import { json, readBody } from "../harness/http.ts";
 import { PluginMarketplaces } from "../plugin-marketplaces.ts";
 import type { RequestAuth } from "../request-auth.ts";
-import { createBotPluginRoutes } from "./bot-plugins.ts";
+import { createBotPluginRoutes, createPersonalPluginRoutes } from "./bot-plugins.ts";
+import { PersonCapabilities } from "../person-connections.ts";
+import { personalPluginStorage } from "../person-plugins.ts";
 import { createMarketplaceRoutes } from "./marketplaces.ts";
 import { dispatchRoutes } from "./table.ts";
 
@@ -65,10 +67,21 @@ const ADMIN = "pr_admin";
 async function boot() {
   repo = marketplaceRepo();
   const dataDir = temp();
-  const shared = new PluginMarketplaces({ dataDir, git, gitEnvironment: () => ({}), policy: () => undefined, inUse: (name) => plugins.botsUsing(name) });
+  const shared = new PluginMarketplaces({ dataDir, git, gitEnvironment: () => ({}), policy: () => undefined, inUse: (name) => [...plugins.botsUsing(name), ...personal.botsUsing(name)] });
   const plugins: BotPlugins = new BotPlugins({ dataDir, marketplaces: shared, git, gitEnvironment: () => ({}), policy: () => undefined });
+  const capabilities = new PersonCapabilities(dataDir, () => ({ kind: "key", key: Buffer.alloc(32, 7) }));
+  const personal = new BotPlugins({ dataDir, marketplaces: shared, git, gitEnvironment: () => ({}), policy: () => undefined, storage: personalPluginStorage(dataDir, capabilities) });
   const who = (auth: RequestAuth): string => (auth.kind === "session" ? auth.session.principalId ?? "" : "");
   const routes = [
+    createPersonalPluginRoutes({
+      plugins: personal,
+      person: (auth) => who(auth) || null,
+      actor: (auth) => who(auth) || undefined,
+      viewer: (auth) => ({ principal: who(auth), seesAll: who(auth) === ADMIN }),
+      mayManageMarketplaces: (auth) => who(auth) === ADMIN,
+      mayShareOrgWide: (auth) => who(auth) === ADMIN,
+      policy: () => undefined,
+    }),
     createBotPluginRoutes<Bot>({
       plugins,
       bot: (id) => BOTS.find((bot) => bot.id === id),
@@ -132,6 +145,30 @@ describe("org-wide sharing is admins only, on the bot route too", () => {
     const added = await call(ADMIN, "POST", "/api/bots/alice-bot/plugins/marketplaces", { source: "acme/tools", visibility: "org" });
     expect(added.status).toBe(201);
     expect(shared.record("acme-tools")?.visibility).toBe("org");
+  });
+});
+
+describe("personal plugins use the signed-in person's encrypted scope", () => {
+  it("lets a member install and update their own plugins without selecting another person's store", async () => {
+    const { call } = await boot();
+    expect((await call("pr_alice", "POST", "/api/me/plugins/marketplaces", { source: "acme/tools" })).status).toBe(201);
+    expect((await call("pr_alice", "POST", "/api/me/plugins/install", { marketplace: "acme-tools", plugin: "reviewer", principalId: "pr_bob" })).status).toBe(201);
+    expect((await call("pr_bob", "GET", "/api/me/plugins")).body.plugins).toEqual([]);
+    expect((await call("pr_alice", "GET", "/api/bots/alice-bot/plugins")).body.plugins).toEqual([]);
+    expect((await call("pr_alice", "PUT", "/api/me/plugins/reviewer@acme-tools/config", { values: { team: "Personal" } })).status).toBe(200);
+    expect((await call("pr_alice", "PATCH", "/api/me/plugins/reviewer@acme-tools", { enabled: false })).status).toBe(200);
+    const updated = await call("pr_alice", "POST", "/api/me/plugins/install", { marketplace: "acme-tools", plugin: "reviewer" });
+    expect(updated.body.plugins[0]).toMatchObject({ enabled: false, config: { values: { team: "Personal" } } });
+    expect((await call("pr_alice", "DELETE", "/api/me/plugins/reviewer@acme-tools")).body.plugins).toEqual([]);
+  });
+
+  it("requires a signed-in person and reserves organization sharing", async () => {
+    const { call } = await boot();
+    expect((await call("", "GET", "/api/me/plugins")).status).toBe(403);
+    expect((await call("pr_alice", "POST", "/api/me/plugins/marketplaces", { source: "acme/tools", visibility: "org" })).status).toBe(403);
+    expect((await call("pr_blocked", "GET", "/api/me/plugins")).body.canChange).toBe(true);
+    const denied = await call("pr_blocked", "POST", "/api/me/plugins/marketplaces", { source: "acme/tools" });
+    expect(denied.status).toBe(201);
   });
 });
 
