@@ -11,7 +11,8 @@ import type { AppSettingsSection } from "@/state/settings-section";
  * saved section keeps working: it opens the page that holds the card, and
  * openSettings opens the card. */
 const MERGED: Partial<Record<AppSettingsSection, { section: AppSettingsSection; cardId: string }>> = {
-  connections: { section: "engines", cardId: "engines.keys" },
+  // 2026-10-30: keys are on Providers
+  connections: { section: "providers", cardId: "providers.list" },
   decisionModel: { section: "engines", cardId: "engines.decisionModel" },
   privacy: { section: "notifications", cardId: "notifications.privacy" },
   memory: { section: "organization", cardId: "organization.memory" },
@@ -46,6 +47,15 @@ export const CARD_HOME: Readonly<Record<string, AppSettingsSection>> = {
   "voice.microphone": "voice",
   "connections.audio": "voice",
   "connections.voiceKeys": "voice",
+  // 2026-10-30 (Providers, lot 1): the engines' sign-ins and every key are on Providers
+  "engines.keys": "providers",
+  "engines.setup": "providers",
+  "engines.moreProviders": "providers",
+  // what stays on Models: image generation, web search, online computers, Decision model
+  "connections.image": "engines",
+  "connections.integrations": "engines",
+  "connections.webSearch": "engines",
+  "engines.decisionModel": "engines",
 };
 
 /** Sections hidden from the app since 2026-10-14 (managing several

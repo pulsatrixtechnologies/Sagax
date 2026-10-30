@@ -3,7 +3,9 @@
  * SettingsModal draws them on a stand-in /api (a solo person with saved
  * approval rules, a security key, tool access, vault items, voice and model
  * settings). Fictional data only, neutral names. Not shipped in the app.
- * ?section=account|security|credentials|engines|voice &skin=<id> &lang=<code>
+ * ?section=account|security|credentials|providers|engines|voice &skin=<id> &lang=<code>
+ * &providers=1: several engines, keys, a named server and a local server
+ * &org=1: an organization server, the viewer an admin (with providers=1)
  * scripts/capture-settings-pages.mjs shoots each page in light and dark. */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
@@ -48,12 +50,35 @@ const API: Record<string, unknown> = {
     live: { enabled: true, configured: false, voice: "", readTypedReplies: true, idleMinutes: 5 },
     imageGen: { configured: false },
     anthropic: { configured: true },
+    ...(params.get("org") ? { viewer: { role: "admin", operator: false, principalId: "p-1", email: "alex@example.com", name: "Alex Example", canCreateBots: true }, allowedEngines: ["claude", "codex", "grok", "compat-azure"] } : {}),
+    ...(params.get("providers") ? { openai: { configured: true }, openaiCompatServers: [{ instanceId: "compat-azure", name: "Azure Foundry", url: "https://example-resource.openai.azure.com/openai/v1", configured: true }] } : {}),
     features: {},
     onboarding: { completedAt: NOW - 30 * DAY, launchMode: "solo" },
   },
   "/api/instances": { instances: [
     { instanceId: "claude", displayName: "Claude", driverKind: "claudeAgent", cliDefault: "claude", access: "subscription", snapshot: { state: "available", authenticated: true }, models: { default: "sonnet", options: [] } },
+    // ?providers=1 (2026-10-30): a fuller set for Providers and Models
+    ...(params.get("providers") ? [
+      { instanceId: "codex", displayName: "Codex", driverKind: "codex", cliDefault: "codex", access: "subscription", snapshot: { state: "available", authenticated: false }, models: { default: "", options: [] } },
+      { instanceId: "grok", displayName: "Grok", driverKind: "grokAgent", cliDefault: "grok", access: "subscription", snapshot: { state: "available", authenticated: true }, models: { default: "", options: [] } },
+      { instanceId: "openai-api", displayName: "OpenAI (API key)", driverKind: "codex", access: "api", snapshot: { state: "available", authenticated: true }, models: { default: "", options: [] } },
+      { instanceId: "mistral", displayName: "Mistral", driverKind: "mistral", access: "api", snapshot: { state: "available", authenticated: false }, models: { default: "", options: [] } },
+      { instanceId: "compat-azure", displayName: "Azure Foundry", driverKind: "openaiCompat", access: "custom", snapshot: { state: "available", authenticated: true }, models: { default: "gpt-4.1", options: [{ id: "gpt-4.1", label: "gpt-4.1", custom: true }, { id: "gpt-4.1-mini", label: "gpt-4.1-mini", custom: true }, { id: "o4-mini", label: "o4-mini", custom: true }, { id: "gpt-4o", label: "gpt-4o", custom: true }] } },
+    ] : []),
   ] },
+  "/api/me/cloud-agent-providers": { providers: [] },
+  // &org=1: an organization server, the viewer an admin with their own sign-ins
+  ...(params.get("org") ? {
+    "/api/org": { org: { name: "Example Org", identity: { kind: "perspicax", issuer: "https://perspicax.example.com" } }, link: { state: "ok" }, viewerRole: "admin", settings: {} },
+    "/api/me/engines": { engines: [
+      { instanceId: "claude", driver: "claudeAgent", displayName: "Claude", installed: true, subscription: { supported: true, signedIn: true, expired: true }, myKey: false, orgKey: true, myTurns: "org-key" },
+      { instanceId: "codex", driver: "codex", displayName: "Codex", installed: true, subscription: { supported: true, signedIn: false }, myKey: true, keyWhere: "perspicax", orgKey: false, myTurns: "key" },
+      { instanceId: "grok", driver: "grokAgent", displayName: "Grok", installed: true, subscription: { supported: true, signedIn: true }, myKey: false, orgKey: false, myTurns: "subscription" },
+      { instanceId: "compat-azure", driver: "openaiCompat", displayName: "Azure Foundry", installed: true, subscription: { supported: false, signedIn: false }, myKey: false, orgKey: true, myTurns: "org-key" },
+    ] },
+    "/api/me/voice-keys": { elevenlabs: { configured: true, last4: "9f3a" }, fish: { configured: false, last4: null }, xai: { configured: false, last4: null }, openai: { configured: false, last4: null } },
+  } : {}),
+  "/api/me/local-models": params.get("providers") ? { expose: true, share: false, connected: true, endpoints: [{ id: "omlx", baseUrl: "http://127.0.0.1:8000/v1", label: "Local server" }], published: [{ id: "omlx", label: "Local server", models: ["local-large", "local-fast"] }], probes: [] } : undefined,
   "/api/bots": { bots: BOTS.map((name, index) => ({ id: `bot-${index}`, name, instanceId: "claude", model: "default", threads: [], messages: [] })), groups: [], sections: [] },
   "/api/approval-rules": { rules },
   "/api/security-keys": { keys: [{ id: "key-1", name: "Desk key", createdAt: NOW - 40 * DAY, lastUsedAt: NOW - 2 * DAY, rpId: "localhost", deviceType: "singleDevice" }], classes: ["money"], rpId: "localhost" },

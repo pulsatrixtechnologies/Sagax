@@ -173,7 +173,9 @@ describe("collapsed card summaries", () => {
     expect(cardsMatching("ab")).toEqual([]);
     expect(cardsMatching("jev")).toEqual(["engines.decisionModel"]);
     expect(cardsMatching("about")).toEqual(["general.aboutMe"]);
-    expect(cardsMatching("openrouter")).toEqual(["engines.moreProviders"]);
+    // 2026-10-30: the keys are on Providers, where nothing folds them
+    expect(cardsMatching("openrouter")).toEqual([]);
+    expect(cardsMatching("kimi")).toEqual(["providers.toConnect"]);
     expect(cardsMatching("live call")).toEqual(["voice.advanced"]);
     expect(cardsMatching("avatar")).toEqual(["connections.image"]);
   });

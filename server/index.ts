@@ -37944,6 +37944,9 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
           ...(notAvailable ? { notAvailable } : {}),
           subscription: { supported, signedIn, ...(expired ? { expired: true } : {}) },
           myKey,
+          // 2026-10-30 (Providers, lot 1): where the person's own key lives,
+          // in the order engine-credentials.ts reads them (Perspicax first)
+          ...(myKey ? { keyWhere: "perspicax" } : localKey ? { keyWhere: "server" } : {}),
           orgKey,
           ...(orgKeySet && !orgKey ? { orgKeyNotGiven: true } : {}),
           ...(orgNotAllowed ? { orgNotAllowed: true } : {}),

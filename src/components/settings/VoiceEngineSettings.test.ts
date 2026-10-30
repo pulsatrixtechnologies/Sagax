@@ -31,7 +31,7 @@ describe("VoiceEngineSettings", () => {
     expect(html).toContain('data-voice-key-saved="false"');
     expect(html).toContain("ElevenLabs key missing");
     expect(html).toContain('data-add-in-keys="elevenlabs"');
-    expect(html).toContain("Add in Keys");
+    expect(html).toContain("Add in Providers");
     // no second way to add a key: no "Add a key" button, no field, no dialog
     expect(html).not.toContain("Add a key");
     expect(html).not.toContain("Replace or remove");

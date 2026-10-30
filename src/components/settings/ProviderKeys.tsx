@@ -149,7 +149,7 @@ export function KeyInKeys({ row, saved, included = false, optional = false, miss
   missing?: string;
   link?: boolean;
 }) {
-  const { state, dispatch } = useStore();
+  const { dispatch } = useStore();
   const name = keyRowName(row);
   const ready = saved || included;
   return (
@@ -165,12 +165,10 @@ export function KeyInKeys({ row, saved, included = false, optional = false, miss
           type="button"
           data-add-in-keys={row}
           onClick={() => {
-            // Voice is a page of its own since 2026-10-28: the Keys list is on
-            // Models, so the link opens Models first, then shows the row.
-            if (typeof document !== "undefined" && !document.querySelector("[data-keys-section]")) {
-              dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
-            }
-            revealKeyRow(row, state.config);
+            // 2026-10-30: keys are on Providers; the link opens it with the
+            // key's own dialog (the dialog waits for the page to mount)
+            dispatch({ type: "toggleAppSettings", open: true, section: "providers" });
+            openProviderKeyDialog(row);
           }}
           className="inline-flex shrink-0 items-center gap-1 rounded-md text-[12.5px] font-medium text-accent-text hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70"
         >

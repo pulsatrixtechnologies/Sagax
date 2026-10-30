@@ -862,7 +862,7 @@ export const Transcript = memo(function Transcript({
               <AccessCard
                 access={m.access}
                 viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
-                onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "engines" })}
+                onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "providers" })}
               />
             </div>
           ) : m.kind === "goal.run" ? (
@@ -1546,7 +1546,7 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
           <AccessCard
             access={m.access}
             viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
-            onSignIn={() => { close(); dispatch({ type: "toggleAppSettings", open: true, section: "engines" }); }}
+            onSignIn={() => { close(); dispatch({ type: "toggleAppSettings", open: true, section: "providers" }); }}
           />
         );
         const runRef = m.routineRun?.runId ? m.routineRun : undefined;

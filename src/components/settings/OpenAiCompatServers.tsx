@@ -23,7 +23,7 @@ export interface CompatServerRow {
 const FIELD = "w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[12.5px] text-ink placeholder:text-ink-secondary focus:outline-none";
 
 /** The add or edit form. `server` set: edit (an empty key keeps the saved one). */
-function ServerForm({ server, onDone }: { server?: CompatServerRow; onDone: () => void }) {
+export function ServerForm({ server, onDone }: { server?: CompatServerRow; onDone: () => void }) {
   const { refreshInstances } = useStore();
   const [name, setName] = useState(server?.name ?? "");
   const [url, setUrl] = useState(server?.url ?? "");

@@ -19,7 +19,6 @@ import { DEVICE_SIGN_IN_COPY, deviceSignInProvider } from "./DeviceSignIn";
 import { AntigravityFreeSpace } from "./AntigravityFreeSpace";
 import { ManageMyKeysLink } from "./settings/MyEngines";
 import { EngineConnect, paysWithText } from "./EngineConnect";
-import { HarnessConnectorsSection } from "./HarnessConnectorsSection";
 import { EngineConnectorsLine } from "./plugins/EngineCapabilities";
 import { reloadMyEngines, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
 import { myTurnsReady } from "../../shared/org-engine-readiness";
@@ -27,7 +26,7 @@ import { canEditConfig, canManageKeys, viewerCan, viewerIsOrgMember } from "@/li
 import { viewerIsOrgAdmin } from "@/lib/group-owner";
 import { boatComputerEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
-import { DescribedRow, FIELD, FoldRow, HelpTip, PILL, PillSelect, SettingsGroup } from "./SettingsPrimitives";
+import { DescribedRow, FIELD, FoldRow, HelpTip, PILL, PillSelect, SettingsGroup, requestSettingsCard, useSettingsCardOpen } from "./SettingsPrimitives";
 import { KeyList, ProviderKeyDialog } from "./settings/ProviderKeys";
 import { OpenAiCompatServers } from "./settings/OpenAiCompatServers";
 import { CloudAgentProvidersSettings, useCloudAgentProviders } from "./settings/CloudAgentProvidersSettings";
@@ -40,6 +39,7 @@ import { ImageGenerationSettings } from "./settings/ImageGenerationSettings";
 import { LiveCallInstallationSettings } from "./LiveCallSettings";
 import { ApiKeyRow, VpsConnection } from "./ApiKeys";
 import { useOfferedInstances } from "@/lib/offered-instances";
+import { useViewAsMember } from "@/lib/view-as-member";
 
 interface ProbeResult {
   ok: boolean;
@@ -235,7 +235,7 @@ export function personalEngineLine(mine: MyEngine): { ready: boolean; line: stri
  * this engine. The card then shows one line on what pays for their turns and
  * their own Connect or Disconnect (EngineConnect), never the server's account
  * (which serves no one's turns there: server/engine-credentials.ts). */
-function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: InstanceInfo; mine?: MyEngine; member?: boolean; issuer?: string }) {
+export function EngineRow({ instance, mine, member = false, issuer = "", bare = false }: { instance: InstanceInfo; mine?: MyEngine; member?: boolean; issuer?: string; bare?: boolean }) {
   const { refreshInstances } = useStore();
   const [open, setOpen] = useState(false);
   const cliMotion = useMenuMotion(open);
@@ -297,20 +297,20 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
   // never runs a turn there (409 host_tools); its card says why.
   const hostToolsNote = (member || mine !== undefined) && orgRefusesEngine(instance) && <OrgHostToolsNote instance={instance} className="mb-3 text-[12px]" />;
   if (member && mine) return (
-    <EngineCard instance={instance} personal={personalEngineLine(mine)}>
+    <EngineCard instance={instance} personal={personalEngineLine(mine)} bare={bare}>
       {policyNote}
       {hostToolsNote}
       <div data-member-engine={instance.instanceId}><EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} statusLine={false} /></div>
     </EngineCard>
   );
-  if (instance.readOnly) return <EngineCard instance={instance}>
+  if (instance.readOnly) return <EngineCard instance={instance} bare={bare}>
     {policyNote}
     <p className="text-[13px] leading-relaxed text-ink-secondary">{t("organization.managedEngine")}</p>
     {!engineReady(instance) && <p className="mt-2 text-[12px] text-ink-secondary">{t("organization.engineUnavailable")}</p>}
   </EngineCard>;
 
   return (
-    <EngineCard instance={instance} personal={mine && personalEngineLine(mine)}>
+    <EngineCard instance={instance} personal={mine && personalEngineLine(mine)} bare={bare}>
       {policyNote}
       {hostToolsNote}
       {mine && <EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} className="mb-3" statusLine={false} />}
@@ -431,10 +431,13 @@ export function keysShown(input: { member: boolean; remote: boolean; organizatio
  * Keys list, and the installation's own settings (the voice engine, image
  * generation, online computers). Shared by both pages (2026-10-28), so the
  * split changes no right. */
-function useModelsVoiceAccess() {
+export function useModelsVoiceAccess() {
   const { state } = useStore();
-  const member = viewerIsOrgMember(state.config) && !viewerCan(state.config, "engines.manage");
   const org = usePerspicaxOrg();
+  // 2026-10-30: an admin's "View as a member" (Settings > Providers) draws
+  // these pages as a member reads them; it changes no right
+  const asMember = useViewAsMember() && org !== null;
+  const member = asMember || (viewerIsOrgMember(state.config) && !viewerCan(state.config, "engines.manage"));
   const remote = typeof window !== "undefined" && window.ogb?.remoteClient?.active === true;
   const keys = keysShown({ member, remote, organization: org !== null || viewerIsOrgMember(state.config), config: state.config });
   // The voice engine, image generation and online computers write the
@@ -477,19 +480,27 @@ export function EnginesSettings() {
   const shown = org ? orgEngineRows(rows, myEngines).filter((instance) => !member || mineOf(instance)) : rows;
   // 2026-10-30: an expired sign-in is never Ready; it counts under Needs setup
   const isReady = (instance: InstanceInfo) => { const mine = mineOf(instance); return mine ? myTurnsReady(mine) : engineReady(instance); };
+  const [legacyOpen] = useSettingsCardOpen(LEGACY_CARD, false);
 
   return (
     <div className="flex min-w-0 flex-col gap-6 pb-2" data-models-voice="" data-models-page="">
-      <EnginesSection
-        engines={shown}
-        isReady={isReady}
-        refresh={!member}
-        renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} member={member} issuer={org?.org.identity.issuer} />}
-        connectors={true}
-        empty={Boolean(member && org && myEngines !== null && shown.length === 0)}
-        memberIssuer={member && org ? org.org.identity.issuer : undefined}
-      />
-      {keys && <KeysSection issuer={org?.org.identity.issuer} />}
+      {/* 2026-10-30 (Providers, lot 1): accounts, keys and servers are on
+          Providers; the former Engines and Keys groups stay here, folded
+          under "Former view", until the Models page replaces them. */}
+      <ProvidersMovedNotice />
+      {legacyOpen && (
+        <>
+          <EnginesSection
+            engines={shown}
+            isReady={isReady}
+            refresh={!member}
+            renderEngine={(instance) => <EngineRow instance={instance} mine={mineOf(instance)} member={member} issuer={org?.org.identity.issuer} />}
+            empty={Boolean(member && org && myEngines !== null && shown.length === 0)}
+            memberIssuer={member && org ? org.org.identity.issuer : undefined}
+          />
+          {keys && <KeysSection issuer={org?.org.identity.issuer} />}
+        </>
+      )}
       {/* the person's own web search provider and key: theirs, no admin right */}
       <WebSearchSettings />
       {installation && (
@@ -540,6 +551,49 @@ export function VoiceSettingsPage() {
   );
 }
 
+/** The card id of the former Engines and Keys groups on Models. */
+export const LEGACY_CARD = "engines.legacy";
+
+/** Top of Models while Providers is new (lot 1): Auto, where accounts and
+ * keys went, and the switch to the former view. */
+function ProvidersMovedNotice() {
+  const { dispatch } = useStore();
+  const [legacyOpen, toggleLegacy] = useSettingsCardOpen(LEGACY_CARD, false);
+  return (
+    <div data-settings-card={LEGACY_CARD} data-open={legacyOpen ? "true" : "false"}>
+      <SettingsGroup title={t("engines.title")} groupId="engines-moved">
+        {/* Auto (docs/plans/2026-10-08-auto-model.md): one row, the detail behind its info button. */}
+        <div data-auto-model-explainer="">
+          <DescribedRow
+            label={t("model.auto.settings.title")}
+            description={t("model.auto.settings.shortLine")}
+            help={t("model.auto.settings.body")}
+            icon={<Sparkles size={14} />}
+            rowId="auto"
+          />
+        </div>
+        <DescribedRow label={t("providers.moved.title")} description={t("providers.moved.body")} rowId="providers-moved">
+          <button type="button" data-open-providers="" className={PILL}
+            onClick={() => dispatch({ type: "toggleAppSettings", open: true, section: "providers" })}>
+            {t("providers.moved.open")}
+          </button>
+        </DescribedRow>
+        <DescribedRow label={t("providers.legacy.title")} description={t("providers.legacy.body")} rowId="providers-legacy">
+          <button type="button" data-legacy-toggle="" aria-expanded={legacyOpen} className={PILL} onClick={toggleLegacy}>
+            {legacyOpen ? t("providers.legacy.hide") : t("providers.legacy.show")}
+          </button>
+        </DescribedRow>
+      </SettingsGroup>
+    </div>
+  );
+}
+
+/** Opens the former Engines and Keys groups on Models ("Former view"). */
+export function openLegacyEngines(dispatch: ReturnType<typeof useStore>["dispatch"]): void {
+  dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
+  requestSettingsCard(LEGACY_CARD);
+}
+
 /** Every key in one group: the main providers, then More providers, folded
  * with its count, with the rare ones not saved yet and the cloud coding
  * agents' keys (in the main list once one is saved). "Manage my keys in
@@ -574,14 +628,12 @@ function KeysSection({ issuer }: { issuer?: string }) {
  * the ones to set up folded under "Needs setup" with their count, open by
  * default only while none is ready. A row that changes group remounts (its
  * sign-in or CLI draft is done by then: it changed state). */
-function EnginesSection({ engines, isReady, refresh, renderEngine, connectors, empty, memberIssuer }: {
+function EnginesSection({ engines, isReady, refresh, renderEngine, empty, memberIssuer }: {
   engines: InstanceInfo[];
   isReady: (instance: InstanceInfo) => boolean;
   /** Check again: whoever manages the server's engines. */
   refresh: boolean;
   renderEngine: (instance: InstanceInfo) => ReactNode;
-  /** The read-only claude.ai connectors of the person's own Claude account. */
-  connectors: boolean;
   /** An organization member with no engine on this server. */
   empty: boolean;
   /** An organization member: what their sign-ins do, behind the heading's
@@ -605,19 +657,8 @@ function EnginesSection({ engines, isReady, refresh, renderEngine, connectors, e
           </>
         )}
       >
-        {/* Auto (docs/plans/2026-10-08-auto-model.md): one row, the detail behind its info button. */}
-        <div data-auto-model-explainer="">
-          <DescribedRow
-            label={t("model.auto.settings.title")}
-            description={t("model.auto.settings.shortLine")}
-            help={t("model.auto.settings.body")}
-            icon={<Sparkles size={14} />}
-            rowId="auto"
-          />
-        </div>
-        {/* The claude.ai connectors of the person's own Claude account, next
-            to the Claude sign-in that brings them. */}
-        {connectors && <div className="px-3.5 py-1 empty:hidden"><HarnessConnectorsSection placement="settings" /></div>}
+        {/* Auto sits above (ProvidersMovedNotice); the claude.ai connectors
+            are in the Claude row of Providers since 2026-10-30. */}
         {ready.length > 0 && (
           <div className="flex flex-col" data-engines-ready="">
             {ready.map((instance) => <div key={instance.instanceId} className="contents">{renderEngine(instance)}</div>)}

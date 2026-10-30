@@ -25,7 +25,6 @@ import { forgetVoiceprint } from "@/lib/voice-mode/speaker-id";
 import type { VoiceModeRefusalCause } from "../../../shared/voice-mode";
 import { VOICE_PROVIDER_LABELS } from "../../../shared/voice-providers";
 import { BotAvatar } from "../Avatar";
-import { requestSettingsCard } from "../SettingsPrimitives";
 import { openProviderKeyDialog } from "../settings/ProviderKeys";
 import { REVEAL_MOTION_MS, REVEAL_SHELL_CLASS, reducedMotion, useReveal } from "../MenuMotion";
 import type { CallMetrics } from "./LiveCall";
@@ -536,8 +535,7 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
                       type="button"
                       data-voice-action="open-connections"
                       onClick={() => {
-                        requestSettingsCard("engines.keys");
-                        dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
+                        dispatch({ type: "toggleAppSettings", open: true, section: "providers" });
                         // Grok voice runs on the xAI key (2026-10-14): open its row.
                         openProviderKeyDialog("xai");
                       }}
