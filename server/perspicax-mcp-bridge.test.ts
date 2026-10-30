@@ -104,6 +104,36 @@ describe("Perspicax MCP bridge", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
+  it("restores one Codex mount prefix before it reads the turn capability", async () => {
+    const received: Array<{ url: string; authorization?: string }> = [];
+    const harness = await listen((request, response) => {
+      request.resume();
+      request.on("end", () => {
+        received.push({ url: request.url ?? "", authorization: request.headers.authorization });
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }));
+      });
+    });
+    const stem = "SAGAX_MCP_ENV_PROFILE__";
+    const lines = start({
+      SAGAX_PROXY_ENV_PREFIX: stem,
+      [`${stem}SAGAX_HARNESS_URL`]: harness,
+      [`${stem}SAGAX_PERSPICAX_TOKEN`]: "prefixed-capability",
+      [`${stem}SAGAX_PERSPICAX_PROFILE`]: "P9",
+      [`${stem}SAGAX_BOT_ID`]: "bot9",
+      [`${stem}SAGAX_THREAD_ID`]: "th9",
+      SAGAX_MCP_ENV_OTHER__SAGAX_PERSPICAX_TOKEN: "other-capability",
+      SAGAX_PERSPICAX_TOKEN: "plain-capability",
+      SAGAX_PERSPICAX_PROFILE: "plain",
+    });
+    child!.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })}\n`);
+    await nextJson(lines);
+    expect(received).toEqual([{
+      url: "/api/internal/perspicax/mcp?profile=P9&botId=bot9&fromThreadId=th9",
+      authorization: "Bearer prefixed-capability",
+    }]);
+  });
+
   it("answers Perspicax is unavailable when the harness refuses or cannot be reached", async () => {
     const harness = await listen((request, response) => {
       request.resume();
