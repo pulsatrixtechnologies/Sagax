@@ -457,6 +457,7 @@ import {
   parseMcpServerMutation,
   parseMcpServersImport,
   parseStoredMcpServer,
+  reservedMcpServerName,
   reservedMcpServers,
   type StoredMcpServer,
   type StoredRemoteMcpServer,
@@ -674,6 +675,7 @@ import {
   setSkillEnabled,
   skillPackageStamps,
   skillsSystemPrompt,
+  skillsPromptIndex,
   expandSkillCommandTurnText,
   skillCommandInline,
   stageSkillWrite,
@@ -1003,7 +1005,7 @@ import { isLoginDriver, LOGIN_MARKER, loginCliFor, loginSlotOf, PrincipalEngineL
 import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels, sectionShareGrants } from "./section-channels.ts";
 import { createBotGrantRoutes, visibleGrants, wireGrants } from "./bot-grants.ts";
 import { createBotPerspicaxRoutes } from "./bot-perspicax.ts";
-import { OrgFlowPlugins } from "./org-flow-plugins.ts";
+import { OrgFlowPlugins, guarded as orgFlowGuarded } from "./org-flow-plugins.ts";
 import { applyIdentityMigration, principalIdFor, rewritePeopleForAttach } from "./identity-migration.ts";
 import { ThreadStarters } from "./thread-starters.ts";
 import {
@@ -1121,9 +1123,11 @@ import { PluginMarketplaces, marketplaceServerName, planServerUpdate, updatedSer
 import { createAccountRoutes, type PerspicaxDeletion } from "./routes/account.ts";
 import { ACCOUNT_REAUTH_PATH, AccountReauth, perspicaxDeletion } from "./account-reauth.ts";
 import { createRegistrySearch } from "./plugin-registry.ts";
-import { BotPluginError, BotPlugins, marketplaceAllowed, migrateBotMarketplaces, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
+import { BotPluginError, BotPlugins, marketplaceAllowed, migrateBotMarketplaces, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, readPluginContents, type MarketplacePolicy, type PluginContents } from "./bot-plugins.ts";
 import { pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
 import { engineServerMcp, perspicaxServerName, personalMcpPrecheck, serverMcpAsPerson, turnPluginDirs, turnPluginPromptDirs } from "./turn-mounts.ts";
+import { resolveBotCapabilities, type CapabilityInputs, type InstallationServerInput } from "./capabilities.ts";
+import { createBotCapabilitiesRoutes, type BotCapabilitiesAnswer } from "./routes/bot-capabilities.ts";
 import { reservedMcpName } from "../shared/mcp-reserved-names.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
 import { createLifecycleHookRoutes } from "./routes/lifecycle-hooks.ts";
@@ -8725,6 +8729,123 @@ function pluginSkillsForTurn(bot: { id: string; ownerUserId?: unknown }, instanc
   if (!dirs.length) return "";
   return pluginTurnPrompt({ driverKind: instance.driverKind, files: pluginTurnFiles(dirs) });
 }
+// ── a bot's capabilities: one resolved list (server/capabilities.ts) ──
+/** Everything a bot receives on top of its engine, for the person looking
+ * (their own servers, GitHub and Roles stand in for the speaker of a turn),
+ * on its engine or on `engineId` (a preview). Reads only: nothing is
+ * installed, refreshed or mounted. */
+function botCapabilitiesFor(auth: RequestAuth, botId: string, engineId: string | undefined): BotCapabilitiesAnswer {
+  const bot = store.bot(botId);
+  const level = bot ? viewerBotLevel(auth, bot) : null;
+  if (!bot || (level === null && !orgAdminCaller(auth))) return { ok: false, status: 404, error: "no such bot", code: "not_found" };
+  const instance = registry.get(engineId ?? bot.modelSelection.instanceId);
+  if (!instance) return { ok: false, status: engineId ? 400 : 404, error: "Unknown engine.", code: "unknown_engine" };
+  const organization = IDENTITY.kind === "perspicax";
+  const principal = organization ? sessionPrincipal(auth)?.trim().toLowerCase() || undefined : undefined;
+  const speaker: TurnSpeaker = principal ? { origin: "person", principalId: principal } : { origin: "operator" };
+  const mayChange = IDENTITY.kind !== "perspicax"
+    ? auth.kind !== "session" || auth.scopes.includes("admin")
+    : level === "owner" || level === "manage" || orgAdminCaller(auth);
+  const owner = effectiveBotOwner(bot);
+  const kind = instance.driverKind;
+  const library = skillsLibraryEnabled(cfg);
+  // what the marketplaces offer, for "update available" (names only)
+  const offered = new Map<string, boolean>();
+  try {
+    for (const market of botPlugins.listMarketplaces(bot.id, marketplaceViewer(auth))) {
+      for (const plugin of market.plugins) if (plugin.updateAvailable) offered.set(`${plugin.name}@${market.name}`, true);
+    }
+  } catch { /* listed without updates */ }
+  const workspaceOffered = new Map<string, boolean>();
+  try {
+    for (const market of pluginMarketplaces.list({ seesAll: true })) {
+      for (const plugin of market.plugins) if (plugin.updateAvailable) workspaceOffered.set(`${plugin.name}@${market.name}`, true);
+    }
+  } catch { /* listed without updates */ }
+  const installationServers: InstallationServerInput[] = Object.entries(cfg.mcpServers ?? {}).map(([name, raw]) => {
+    const parsed = parseStoredMcpServer(name, raw);
+    if (!parsed.ok) return { name, valid: reservedMcpServerName(name), enabled: false, remote: false };
+    return {
+      name, valid: true, enabled: parsed.server.enabled, remote: isRemoteMcpServer(parsed.server),
+      ...(isRemoteMcpServer(parsed.server) ? { url: parsed.server.url } : {}),
+      ...(parsed.server.source ? { source: parsed.server.source } : {}),
+    };
+  });
+  const remote = remoteMcpServers();
+  const declaration = organization ? perspicaxDirectory?.flowPlugins() : undefined;
+  const sub = principal ? perspicaxSubOf(principal) : null;
+  const account = accountConnectorInput(bot, instance, speaker);
+  const claudeRides = claudeAiConnectorsForTurn(account);
+  let personal: CapabilityInputs["personal"];
+  if (organization && principal) {
+    let servers: Record<string, PersonalMcpServer> = {};
+    try { servers = personConnections.servers(principal); } catch { /* unreadable: none listed */ }
+    personal = {
+      servers,
+      github: personGithub(principal),
+      hasEnvironment: Boolean(userSandbox),
+      hostRefused: (url) => personalHostChecks.get(url)?.refused,
+      signedIn: (name, server) => server.kind === "remote" && personOAuth(principal).status(name, personalRemoteSpec(server))?.auth === "connected",
+    };
+  }
+  const inputs: CapabilityInputs = {
+    organization,
+    bot: { id: bot.id, name: bot.name, ...(bot.mcpServers ? { mcpServers: bot.mcpServers } : {}), perspicaxProfiles: [...(bot.perspicax?.profiles ?? [])], ...(bot.assignedSkills ? { assignedSkills: bot.assignedSkills } : {}) },
+    engine: { instanceId: instance.instanceId, kind, label: instance.displayName ?? kind, customMcp: instance.adapter.capabilities.customMcp === true },
+    botPlugins: botPlugins.listPlugins(bot.id).map((plugin) => {
+      const folder = botPlugins.installedFolder(bot.id, plugin);
+      let contents: PluginContents = { skills: [], commands: [], agents: [] };
+      try { if (folder.present) contents = readPluginContents(folder.dir); } catch { /* listed without its contents */ }
+      const by = plugin.installedBy ? pageThreadName(plugin.installedBy) : "";
+      return {
+        key: plugin.key, name: plugin.name, marketplace: plugin.marketplace, enabled: plugin.enabled, declaredMcpServers: plugin.declaredMcpServers,
+        dir: folder.dir, present: folder.present, contents,
+        ...(plugin.description ? { description: plugin.description } : {}),
+        ...(plugin.version ? { version: plugin.version } : {}),
+        ...(by ? { installedBy: by } : {}),
+        ...(offered.get(plugin.key) ? { updateAvailable: true } : {}),
+      };
+    }),
+    botPluginDirs: botPlugins.pluginDirs(bot.id),
+    workspacePlugins: pluginMarketplaces.installed().map((plugin) => ({
+      key: plugin.key, name: plugin.name, marketplace: plugin.marketplace, servers: plugin.servers, skills: plugin.skills,
+      ...(plugin.version ? { version: plugin.version } : {}),
+      ...(workspaceOffered.get(plugin.key) ? { updateAvailable: true } : {}),
+    })),
+    orgFlow: {
+      dirsFor: (own) => orgFlowPlugins.dirsFor(owner, own),
+      ...(declaration ? { declared: declaration.plugins } : {}),
+      guarded: orgFlowGuarded(declaration),
+      member: Boolean(owner) && orgMemberActive(owner),
+      dirOf: (name) => orgFlowPlugins.loadedDir(name),
+    },
+    installationServers,
+    configured: customMcpServers(cfg, bot.mcpServers),
+    filterPolicy: (servers) => managedPolicy.filterMcp(servers),
+    githubToken: githubAccountToken(orgSpeakerPrincipal(bot, speaker)),
+    serverAuth: (name) => {
+      const spec = remote[name];
+      return spec ? mcpOAuth.status(name, spec, bot.mcpAccounts?.[name])?.auth : undefined;
+    },
+    ...(personal ? { personal } : {}),
+    skills: library
+      ? listBotSkillsWithOrigin(bot.id, bot.assignedSkills).skills.map((skill) => ({ name: skill.name, description: skill.description, enabled: skill.enabled, origin: skill.origin, source: skill.source }))
+      : listSkills(bot.id).map((skill) => ({ name: skill.name, description: skill.description, enabled: skill.enabled, origin: "private" as const, source: skill.source })),
+    skillsLibrary: library,
+    ...(supportsWorkspaceFiles(kind) ? { promptIndex: skillsPromptIndex(bot.id, library ? bot.assignedSkills : undefined) } : {}),
+    roles: {
+      catalog: organization ? (perspicaxDirectory?.profileCatalog() ?? []) : [],
+      held: sub && perspicaxDirectory ? perspicaxDirectory.profilesOf(sub) : null,
+    },
+    claudeAi: claudeRides ? { rides: true, ...((): { connectors?: Array<{ name: string; status: string }> } => {
+      const connectors = claudeAiConnectorRows(account);
+      return connectors ? { connectors } : {};
+    })() } : { rides: false },
+    grokCloud: grokCloudOnTurn(account, instance, bot),
+  };
+  return { ok: true, capabilities: resolveBotCapabilities(inputs, { ...(principal ? { principalId: principal } : {}), mayChange }) };
+}
+ROUTES.push(createBotCapabilitiesRoutes({ resolve: botCapabilitiesFor }));
 // "Create a Team Bot from this conversation" (routes/team-bot-from-thread.ts):
 // the draft by the conversation's bot model, and the opt-in memory carry-over.
 // The bot itself goes through POST /api/bots and is shared with the team by
@@ -30663,12 +30784,7 @@ function turnConnectorsFor(bot: BotRecord, instance: Parameters<typeof withholdH
   integrations: NonNullable<SendTurnInput["integrations"]>, principal: string | null, customMcp: boolean) {
   const account = accountConnectorInput(bot, instance, speaker);
   const claudeAi = claudeAiConnectorsForTurn(account);
-  let claudeConnectors: Array<{ name: string; status: string }> | undefined;
-  if (claudeAi) {
-    const owner = claudeAccountForPrincipal(connectorPrincipalFor(account));
-    const inventory = "unavailable" in owner ? undefined : claudeAiInventory.peek(owner.key, { cli: owner.cli, env: owner.env });
-    if (inventory && inventory.auth === "subscription") claudeConnectors = inventory.connectors;
-  }
+  const claudeConnectors = claudeAi ? claudeAiConnectorRows(account) : undefined;
   const remote = remoteMcpServers();
   const serverServers = Object.keys(engineMcpServers(bot)).map((name) => {
     const spec = remote[name];
@@ -30694,6 +30810,13 @@ function turnConnectorsFor(bot: BotRecord, instance: Parameters<typeof withholdH
     ...(claudeConnectors ? { claudeConnectors } : {}),
     grokCloud: grokCloudOnTurn(account, instance, bot),
   });
+}
+/** The claude.ai connectors of the turn's account, when its inventory was
+ * read (a subscription); undefined when not yet. */
+function claudeAiConnectorRows(account: ClaudeAiTurnInput): Array<{ name: string; status: string }> | undefined {
+  const owner = claudeAccountForPrincipal(connectorPrincipalFor(account));
+  const inventory = "unavailable" in owner ? undefined : claudeAiInventory.peek(owner.key, { cli: owner.cli, env: owner.env });
+  return inventory && inventory.auth === "subscription" ? inventory.connectors : undefined;
 }
 /** Whether a turn loads the grok.com connectors of its own xAI account
  * (harness-connectors.ts grokCloudConnectorsForTurn, no tool selection): on
