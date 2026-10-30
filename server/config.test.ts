@@ -1502,11 +1502,12 @@ describe("onboarding engine key migration", () => {
     mkdirSync(DATA_DIR, { recursive: true });
     rmSync(path, { force: true });
     rmSync(join(DATA_DIR, "onboarding-engine-keys.enc"), { force: true });
+    rmSync(join(DATA_DIR, "provider-keys.enc"), { force: true });
     rmSync(join(DATA_DIR, "mcp-oauth.key"), { force: true });
     delete process.env.SAGAX_IDENTITY;
   });
   afterEach(() => {
-    for (const name of ["config.json", "onboarding-engine-keys.enc", "mcp-oauth.key"]) rmSync(join(DATA_DIR, name), { force: true });
+    for (const name of ["config.json", "onboarding-engine-keys.enc", "provider-keys.enc", "mcp-oauth.key"]) rmSync(join(DATA_DIR, name), { force: true });
     delete process.env.SAGAX_IDENTITY;
     vi.restoreAllMocks();
   });
@@ -1524,8 +1525,8 @@ describe("onboarding engine key migration", () => {
     expect(readDisk().instances["api-0a1b2c3d"].config).toEqual({ url: "https://x.test/v1", model: "m" });
     expect(readFileSync(path, "utf8")).not.toContain(SECRET);
     // …the sealed store does, and the running driver gets it back…
-    expect(readFileSync(join(DATA_DIR, "onboarding-engine-keys.enc"), "utf8")).not.toContain(SECRET);
-    if (process.platform !== "win32") expect(statSync(join(DATA_DIR, "onboarding-engine-keys.enc")).mode & 0o777).toBe(0o600);
+    expect(readFileSync(join(DATA_DIR, "provider-keys.enc"), "utf8")).not.toContain(SECRET);
+    if (process.platform !== "win32") expect(statSync(join(DATA_DIR, "provider-keys.enc")).mode & 0o777).toBe(0o600);
     const live = instanceConfigs(loadConfig())["api-0a1b2c3d"]!.config as { key?: string };
     expect(live.key).toBe(SECRET);
     // …the log says what moved, never the value…
@@ -2298,16 +2299,15 @@ describe("live settings", () => {
     expect(liveSettingsFor({} as AppConfig, { SAGAX_LIVE_CALLS: "1" }).enabled).toBe(true);
   });
   it("reports saved values and never the key", () => {
-    const settings = liveSettingsFor({ live: { key: "sk-test", voice: "sol", readTypedReplies: false, idleMinutes: 12 } } as AppConfig, {});
-    expect(settings).toEqual({ enabled: false, configured: true, separateKey: true, voice: "sol", readTypedReplies: false, idleMinutes: 12 });
+    const settings = liveSettingsFor({ openai: { key: "sk-test" }, live: { voice: "sol", readTypedReplies: false, idleMinutes: 12 } } as AppConfig, {});
+    expect(settings).toEqual({ enabled: false, configured: true, voice: "sol", readTypedReplies: false, idleMinutes: 12 });
     expect(JSON.stringify(settings)).not.toContain("sk-test");
   });
   it("uses the OpenAI key when no separate Live calls key is saved (one OpenAI key, 2026-10-14)", () => {
     const shared = { openai: { key: "sk-openai" } } as AppConfig;
     expect(liveSettingsFor(shared, {})).toEqual({ enabled: false, configured: true, voice: "", readTypedReplies: true, idleMinutes: 5 });
     expect(liveCallKey(shared)).toBe("sk-openai");
-    // an older install's separate key still wins until it is removed
-    expect(liveCallKey({ openai: { key: "sk-openai" }, live: { key: " sk-live " } } as AppConfig)).toBe("sk-live");
+    expect(liveCallKey(parseStoredConfig({ openai: { key: "sk-openai" }, live: { key: "sk-live" } }))).toBe("sk-openai");
     expect(liveCallKey({} as AppConfig)).toBe("");
   });
   it("accepts idle minutes from 1 to 60 only", () => {
@@ -2320,34 +2320,47 @@ describe("live settings", () => {
     expect(reloaded({ live: { idleMinutes: 3 } })).toEqual([]);
   });
 
-  describe("saving settings from PATCH /api/live/settings", () => {
+  describe("migration to the OpenAI provider", () => {
     const path = join(DATA_DIR, "config.json");
-    let envKey: string | undefined;
     beforeEach(() => {
-      envKey = process.env.SAGAX_OPENAI_LIVE_KEY;
-      delete process.env.SAGAX_OPENAI_LIVE_KEY;
+      vi.stubEnv("SAGAX_OPENAI_API_KEY", undefined);
       mkdirSync(DATA_DIR, { recursive: true });
       rmSync(path, { force: true });
     });
     afterEach(() => {
-      if (envKey === undefined) delete process.env.SAGAX_OPENAI_LIVE_KEY;
-      else process.env.SAGAX_OPENAI_LIVE_KEY = envKey;
+      vi.unstubAllEnvs();
       rmSync(path, { force: true });
     });
 
-    it("keeps the Live key when only settings change", () => {
-      saveConfig({ live: { key: "sk-keep" } });
+    it("moves a legacy Live-only key on read and durably on the next save", () => {
+      writeFileSync(path, JSON.stringify({ live: { key: "sk-legacy-live", voice: "ash" } }));
+      expect(liveCallKey(loadConfig())).toBe("sk-legacy-live");
+      expect(loadConfig().live).not.toHaveProperty("key");
       saveConfig({ live: { idleMinutes: 9 } });
-      expect(loadConfig().live).toMatchObject({ key: "sk-keep", idleMinutes: 9 });
+      const stored = JSON.parse(readFileSync(path, "utf8"));
+      expect(stored.openai.key).toBe("sk-legacy-live");
+      expect(stored.live).toEqual({ voice: "ash", idleMinutes: 9 });
+      saveConfig({ live: { readTypedReplies: false } });
+      expect(liveCallKey(loadConfig())).toBe("sk-legacy-live");
     });
 
-    it("keeps a key from the desktop credential store, which reaches the harness as env", () => {
-      // the desktop leaves an empty tombstone in the file and hands the key over as env
-      saveConfig({ live: { key: "" } });
-      process.env.SAGAX_OPENAI_LIVE_KEY = "sk-from-keychain";
-      saveConfig({ live: { readTypedReplies: false, voice: "cedar" } });
-      expect(loadConfig().live).toEqual({ key: "sk-from-keychain", readTypedReplies: false, voice: "cedar" });
-      expect(JSON.parse(readFileSync(path, "utf8")).live).toEqual({ key: "", readTypedReplies: false, voice: "cedar" });
+    it("keeps an existing OpenAI provider key and retires the duplicate", () => {
+      writeFileSync(path, JSON.stringify({ openai: { key: "sk-provider" }, live: { key: "sk-legacy-live" } }));
+      saveConfig({ live: { idleMinutes: 7 } });
+      expect(liveCallKey(loadConfig())).toBe("sk-provider");
+      expect(JSON.parse(readFileSync(path, "utf8")).live).toEqual({ idleMinutes: 7 });
+    });
+
+    it("keeps the provider credential supplied by the desktop environment", () => {
+      vi.stubEnv("SAGAX_OPENAI_API_KEY", "sk-from-keychain");
+      writeFileSync(path, JSON.stringify({ live: { key: "sk-legacy-live" } }));
+      saveConfig({ live: { voice: "cedar" } });
+      expect(liveCallKey(loadConfig())).toBe("sk-from-keychain");
+      expect(JSON.parse(readFileSync(path, "utf8")).live).toEqual({ voice: "cedar" });
+    });
+
+    it("discards the retired Live-only key in a new patch", () => {
+      expect(parseConfigPatch({ live: { key: "sk-new" } }).live).toEqual({});
     });
   });
 });

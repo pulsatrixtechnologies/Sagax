@@ -1329,11 +1329,6 @@ add({
 });
 config("models.ttsServer", "models", "tts.baseUrl", "string", "Custom voice server address (the voice engine's own server)", "Settings > Voice > Voice engine", secretWhenKeyed);
 config("models.ttsModel", "models", "tts.model", "string", "Custom voice server model", "Settings > Voice > Voice engine");
-add({
-  key: "models.liveKeyRemove", family: "credentials", target: "none", value: "boolean", label: "Remove the OpenAI Live key (value true)", where: "Settings > Voice > Live calls",
-  write: (_ids, v) => v === true ? { method: "PATCH", path: "/api/config", body: { live: { key: "" } } } : "value is true.",
-  classes: (_v, ctx) => ctx.organization ? ["delete", "org"] : ["delete"],
-});
 config("server.vpsAlias", "server", "vps.sshAlias", "string", "VPS computer SSH alias", "Settings > Models > Integrations > VPS");
 // tests the screen offers: one real call, nothing saved
 add({

@@ -199,6 +199,21 @@ describe("configuration", () => {
     expect(seen).toHaveLength(0);
   });
 
+  it("requires each person's ElevenLabs or Fish grant before touching the org key", async () => {
+    seen.length = 0;
+    const { speak, listVoices, voiceReady, XaiVoiceNotGiven } = await voice();
+    for (const provider of ["elevenlabs", "fish"] as const) {
+      const config = cfg({ provider, key: "test-org-eleven-key", fishKey: "test-org-fish-key", voice: "v-1" });
+      const refused = provider === "fish" ? { fishKeyGiven: false } : { elevenlabsKeyGiven: false };
+      const allowed = provider === "fish" ? { fishKeyGiven: true } : { elevenlabsKeyGiven: true };
+      expect(voiceReady(config, "v-1", refused)).toBe(false);
+      expect(voiceReady(config, "v-1", allowed)).toBe(true);
+      expect(() => speak(config, "Hi", undefined, undefined, refused)).toThrow(XaiVoiceNotGiven);
+      await expect(listVoices(config, undefined, refused)).rejects.toBeInstanceOf(XaiVoiceNotGiven);
+    }
+    expect(seen).toHaveLength(0);
+  });
+
   it("lists no voices without a key, rather than calling out", async () => {
     seen.length = 0;
     const { listVoices } = await voice();

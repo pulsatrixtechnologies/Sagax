@@ -170,7 +170,7 @@ export function PaysWithLine({ engine, className = "text-[12px]" }: { engine: My
   );
 }
 
-export function EngineConnect({ engine, issuer, onChanged, className, statusLine = true, disconnect: showDisconnect = true }: {
+export function EngineConnect({ engine, issuer, onChanged, className, statusLine = true, disconnect: showDisconnect = true, keysManaged = false }: {
   engine: MyEngine;
   issuer: string;
   /** Reload the person's engines after a sign-in or sign-out. */
@@ -182,13 +182,15 @@ export function EngineConnect({ engine, issuer, onChanged, className, statusLine
   /** Connected and Disconnect; the model window puts Disconnect on the
    * provider's row instead (2026-10-15). */
   disconnect?: boolean;
+  /** The containing Providers page already manages personal keys inline. */
+  keysManaged?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const loginBase = `/api/me/engines/${encodeURIComponent(engine.instanceId)}/login`;
   const name = connectName(engine);
   const { supported, signedIn, expired } = engine.subscription;
-  const keysApply = !engineUnavailable(engine) && !signedIn && keyProviderDriver(engine.driver);
+  const keysApply = !keysManaged && !engineUnavailable(engine) && !signedIn && keyProviderDriver(engine.driver);
 
   const disconnect = async () => {
     setBusy(true);

@@ -41,6 +41,12 @@ const bob: TurnSpeaker = { origin: "person", principalId: BOB };
 const routine: TurnSpeaker = { origin: "owner-routine" };
 
 describe("resolveEngineAccess: the person who speaks pays", () => {
+  it("never sends another person's key to a private endpoint with the same provider id", () => {
+    const instance = { instanceId: "personal-lab", driver: "openai-compat", installed: true, keyOnly: true, keyProvider: "compat:lab" as const, personalOwner: OWNER };
+    expect(resolveEngineAccess(input({ instance, keys: ["SUB-OWNER/compat:lab"], keyBacked: true }))).toMatchObject({ ok: true, via: "owner-key", provider: "compat:lab" });
+    expect(resolveEngineAccess(input({ instance, speaker: bob, keys: ["SUB-BOB/compat:lab"], keyBacked: true, hasLocalKey: () => true }))).toMatchObject({ ok: false, cause: "no_credentials" });
+    expect(resolveEngineAccess(input({ instance, keyBacked: true, hasLocalKey: () => true }))).toEqual({ ok: true, via: "owner-key", payer: "owner", payerPrincipalId: OWNER });
+  });
   it("solo mode: the server's configuration, always", () => {
     expect(resolveEngineAccess(input({ identity: "solo", instance: { ...CLAUDE, installed: false } }))).toEqual({ ok: true, via: "server", payer: "organization" });
   });
@@ -151,7 +157,7 @@ describe("the bot's routines run on the owner's credentials", () => {
     expect(providerOfDriver("geminiAgent")).toBe("google");
     expect(providerOfDriver("kimiAgent")).toBe("moonshot");
     expect(providersOfDriver("piAgent")).toEqual(["anthropic", "openai", "xai", "google", "moonshot"]);
-    expect(providerOfDriver("cursorAgent")).toBeNull();
+    expect(providerOfDriver("cursorAgent")).toBe("cursor");
     expect(["claudeAgent", "codex", "grokAgent", "kimiAgent", "geminiAgent", "piAgent"].filter(subscriptionDriver)).toEqual(["claudeAgent", "codex", "grokAgent", "kimiAgent"]);
   });
 });
@@ -173,6 +179,12 @@ describe("materializeEngineAccess", () => {
     };
   };
   const BOB_PID = BOB.toLowerCase();
+  it.each([["mistral", "mistral"], ["cursorAgent", "cursor"], ["droidAgent", "factory"], ["hermesAgent", "glm"], ["groq", "groq"]] as const)("%s reads its person's %s key from Perspicax", async (driver, provider) => {
+    const request = input({ speaker: bob, instance: { instanceId: driver, driver, installed: true, keyOnly: true }, keys: [`SUB-BOB/${provider}`] });
+    const materialized = await materializeEngineAccess(request, resolveEngineAccess(request), deps({ ok: true, key: "lab-personal-key", fingerprint: "person-a" }));
+    expect(materialized).toMatchObject({ ok: true, access: { via: "speaker-key", environment: { SAGAX_PERSONAL_PROVIDER_KEY: "lab-personal-key" } } });
+    if (materialized.ok) expect(materialized.access.codexHome).toBeUndefined();
+  });
 
   it("puts the speaker's own Anthropic key in the turn environment, read with the speaker's subject", async () => {
     const inp = input({ speaker: bob, keys: ["SUB-BOB/anthropic", "SUB-OWNER/anthropic"] });

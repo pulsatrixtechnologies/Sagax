@@ -1054,6 +1054,12 @@ export interface ConfigStatus {
   /** 2026-10-30: a person's own subscription or key may run an engine
    * outside `allowedEngines` (Perspicax, off by default). */
   ownAccountsOutsideList?: boolean;
+  /** 2026-10-30 (lot 2): the models the organization turned off in
+   * Perspicax, `<engine>/<model>` (shared/offered-models.ts). */
+  disabledModels?: string[];
+  /** The models the signed-in person turned off (Settings > Models); on a
+   * solo server, the installation's own. */
+  myDisabledModels?: string[];
   /** Organization server: new threads start confidential unless the person
    * picks an ordinary one (Settings > Organisation). */
   confidentialThreadsByDefault?: boolean;
@@ -1133,7 +1139,7 @@ export interface BrowserProfile {
 // Settings shows (a saved key's Test button used to vanish that way).
 export type ConfigStatusFrame = Pick<
   ConfigStatus,
-  "xai" | "mistral" | "cerebras" | "groq" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "fleet" | "box" | "vps" | "rooms" | "mcp" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "decider" | "imageGen" | "live" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "personalSettings" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer" | "allowedEngines" | "confidentialThreadsByDefault"
+  "xai" | "mistral" | "cerebras" | "groq" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "fleet" | "box" | "vps" | "rooms" | "mcp" | "threads" | "automaticRecovery" | "localVm" | "opencodeGo" | "tts" | "decider" | "imageGen" | "live" | "profile" | "language" | "features" | "onboarding" | "browserEngine" | "browserProfiles" | "personalSettings" | "edition" | "budgets" | "billing" | "managedPolicy" | "viewer" | "allowedEngines" | "ownAccountsOutsideList" | "disabledModels" | "myDisabledModels" | "confidentialThreadsByDefault"
 >;
 
 export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
@@ -1172,6 +1178,9 @@ export function configStatusFromFrame(frame: ConfigStatusFrame): ConfigStatus {
     managedPolicy: frame.managedPolicy,
     viewer: frame.viewer,
     allowedEngines: frame.allowedEngines,
+    ownAccountsOutsideList: frame.ownAccountsOutsideList,
+    disabledModels: frame.disabledModels,
+    myDisabledModels: frame.myDisabledModels,
     confidentialThreadsByDefault: frame.confidentialThreadsByDefault,
   };
 }
@@ -1198,6 +1207,8 @@ export interface EngineInstall {
 /** One row of GET /api/instances — the model picker's data. */
 export interface InstanceInfo {
   instanceId: string;
+  /** Metadata of this viewer's own compatible server. Never a credential. */
+  providerAccount?: { provider: string; serverId: string };
   driverKind: string;
   displayName: string;
   /** Optional presentation override belonging to this instance, independent

@@ -63,9 +63,10 @@ const SECTIONS: Record<
   customImage: { body: (v) => ({ imageGen: { customApiKey: v } }), flag: (c) => c.imageGen?.customKeyConfigured === true },
 };
 
-// Provider keys have no desktop-shell slot yet and go through the server's
-// own 0600 config, the same place they live on a hosted server.
-const ELECTRON_CREDENTIAL: Partial<Record<ConfigSection, "boxToken" | "opencodeGoApiKey" | "ttsKey" | "fishAudioKey" | "openaiImageApiKey" | "customImageApiKey">> = {
+// OpenAI shares the desktop credential used by Live calls. Other sections
+// without a shell slot are saved by the server.
+const ELECTRON_CREDENTIAL: Partial<Record<ConfigSection, "openaiApiKey" | "boxToken" | "opencodeGoApiKey" | "ttsKey" | "fishAudioKey" | "openaiImageApiKey" | "customImageApiKey">> = {
+  openai: "openaiApiKey",
   box: "boxToken",
   opencodeGo: "opencodeGoApiKey",
   elevenlabs: "ttsKey",

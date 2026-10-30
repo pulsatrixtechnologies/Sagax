@@ -9,12 +9,18 @@ Every HTTP route the server answers has one row in `server/tool-policy.generated
 | `readOnly` | `true` only for a GET that deletes nothing. |
 | `scope` | `<area>:<tier>`, the grant a caller needs. |
 | `defaultEnabled` | Whether agent tools may use the route without a grant that names it. It is never `true` for admin. |
-| `destructive`, `billing` | These rows are always admin. |
+| `destructive`, `billing` | Billing stays admin. Destructive rows are admin except the personal provider routes below. |
 
 Default classification (`classifyRoute`):
 - **read:** GET.
 - **admin:** DELETE, a deletion verb (`delete`, `remove`, `wipe`, `purge`, `reset`, `revoke`, `archive`), org, admin, billing, usage, fleet, engines, keys, credentials, roles, members, import and export.
 - **write:** everything else, including a route with no method guard.
+
+The personal provider routes (`/api/me/providers` and the older
+`/api/me/voice-keys` alias) are the person's own environment. Their handlers
+derive the owner from authentication and never accept another person's id.
+Their reads and writes, including removing their key or endpoint, are enabled
+without an admin grant. The normal approval rules still apply to bot writes.
 
 A request that matches no row is treated as **write**, off by default (`UNKNOWN_ROUTE_POLICY`).
 

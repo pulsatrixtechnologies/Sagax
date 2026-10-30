@@ -425,7 +425,7 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   const liveUrl = parentEnv.SAGAX_OPENAI_LIVE_URL?.trim() ?? "";
   if (/^http:\/\/127\.0\.0\.1:\d{1,5}$/.test(liveUrl)) {
     childEnv.SAGAX_OPENAI_LIVE_URL = liveUrl;
-    if (parentEnv.SAGAX_OPENAI_LIVE_KEY) childEnv.SAGAX_OPENAI_LIVE_KEY = parentEnv.SAGAX_OPENAI_LIVE_KEY;
+    if (parentEnv.SAGAX_OPENAI_API_KEY) childEnv.SAGAX_OPENAI_API_KEY = parentEnv.SAGAX_OPENAI_API_KEY;
   }
   // Voice-note e2e fault injection: arms the one-shot audio-append failure
   // prelude inside the fixture server (see fail-audio-append-once.mjs).

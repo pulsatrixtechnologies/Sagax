@@ -563,7 +563,7 @@ import { ManagedDesktopProviders } from "./managed-desktop.ts";
 import { wasOldestThread } from "./main-thread.ts";
 import { HOST_COMPUTER_REFUSAL, computerKindForResource, ManagedDesktopPolicy, type ComputerKind } from "./managed-policy.ts";
 import { hostedModelPolicy, HOSTED_MODEL_POLICY_HEADER, HOSTED_PROVIDER_SETTINGS_ERROR } from "./hosted-models.ts";
-import { holdIncludedServices } from "./included-services.ts";
+import { holdIncludedServices, voiceCredential } from "./included-services.ts";
 import type { ProviderInstance, RemoteMcpSpec } from "./contracts.ts";
 import { createModelAccessRefusals, personPayer, withoutRefusedModels, type RefusalPayer } from "./model-access-refusals.ts";
 import { MODEL_ACCESS_DISABLED_MESSAGE } from "../shared/model-access-disabled.ts";
@@ -573,6 +573,8 @@ import { NO_ENGINE_PERSON, engineProblem, namesEngine, noEngineError } from "./b
 import { sameModelSelection } from "../shared/thread-model.ts";
 import { allowedFallbackSelection, engineAllowed } from "../shared/org-allowed-engines.ts";
 import { offeredEngines, orgEngineMoveLine } from "../shared/offered-engines.ts";
+import { cleanDisabledModels, modelOffer, modelOn, type ModelSwitches } from "../shared/offered-models.ts";
+import { createModelSwitchRoutes } from "./routes/model-switches.ts";
 import { computerEngineMoveText, removedComputerInstanceIds, writeComputerEngineMoveLines } from "./computer-engine-removal.ts";
 import { cancelPeerApprovalsFor, cancelPeerApprovalsForThread, dismissStalePeerCards, peerApprovalFailure, requestPeerApproval, resolvePeerComms, type ApprovalBus } from "./peer-approval.ts";
 import { peerDeliveryReceipt, type PeerDeliveryReceipt } from "./peer-delivery.ts";
@@ -879,10 +881,11 @@ import { resolveMailSettings } from "./mail-config.ts";
 import { createCaptureMailer, createMailer, type Mailer } from "./mailer.ts";
 import { createMailSettingsRoutes } from "./mail-routes.ts";
 import { createVoiceModeRoutes, resolveVoiceKey, type VoiceModeDeps, type VoiceSpeaker } from "./voice-mode.ts";
-import { VOICE_MODE_STORAGE_KEY, VOICE_SERVER_ENGINE } from "../shared/voice-mode.ts";
+import { VOICE_MODE_STORAGE_KEY, VOICE_SERVER_ENGINE, ELEVENLABS_VOICE_SERVER_ENGINE, FISH_VOICE_SERVER_ENGINE } from "../shared/voice-mode.ts";
+import type { VoiceTtsProvider } from "../shared/voice-providers.ts";
 import { keyLast4, type VoiceKeyCandidate } from "./voice-keys.ts";
 import { IMAGE_SERVER_ENGINE } from "../shared/image-generation.ts";
-import { ORG_XAI_VOICE_NOTE_REFUSAL, orgXaiKeyAllowed, orgXaiMediaStatusFor, orgXaiRefusal, type OrgXaiMedia } from "./org-xai-media.ts";
+import { orgXaiKeyAllowed, orgXaiMediaStatusFor, orgXaiRefusal, type OrgXaiMedia } from "./org-xai-media.ts";
 import { configuredKeyterms, VOICE_KEYTERM_RECENT_MESSAGES, voiceKeyterms } from "./voice-keyterms.ts";
 import { installTerminalFeature } from "./terminal-install.ts";
 import { createRemoteSessionService } from "./remote-sessions.ts";
@@ -955,6 +958,9 @@ import * as grokVoice from "./tts/grok.ts";
 import { createOpenAiVoice } from "./tts/openai-voice.ts";
 import { createOpenAiStt } from "./tts/openai-stt.ts";
 import { createElevenLabsVoice } from "./tts/elevenlabs-voice.ts";
+import { createFishVoice } from "./tts/fish-voice.ts";
+import { createInstalledVoices } from "./tts/installed-voice.ts";
+import { systemVoicesAvailable } from "./tts/system-voices.ts";
 import { accountConnectorsForTurn, ClaudeAiConnectorInventory, claudeAiConnectorsForTurn, connectorPrincipalFor, createHarnessConnectorRoutes, engineConnectorsPrompt, grokCloudConnectorsForTurn, runClaudeCli, type ClaudeAiTurnInput, type ConnectorElsewhere } from "./harness-connectors.ts";
 import { connectorSwitchText, pickConnectorSwitch, type ConnectorSwitch, type SwitchEngine } from "./connector-switch.ts";
 import { connectorNeed } from "../shared/engine-connectors.ts";
@@ -999,7 +1005,7 @@ import { isAccountEmail, isPrincipalId, PrincipalRegistry, type Principal } from
 import { OrgTeams } from "./org-teams.ts";
 import { compatServers } from "./openai-compat-servers.ts";
 import { createOpenAiCompatServerRoutes } from "./routes/openai-compat-servers.ts";
-import { keyVia, materializeEngineAccess, paidByPerson, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type SubscriptionDriver, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
+import { keyVia, materializeEngineAccess, paidByPerson, providersOfDriver, providersOfInstance, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type SubscriptionDriver, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
 import { configKeyPatch, engineKeyScope, engineKeyTarget, EngineKeyError, fileKeyConfigured, hermesProviderEnv, normalizeEngineKey, writeFileEngineKey } from "./engine-api-keys.ts";
 import { isLoginDriver, LOGIN_MARKER, loginCliFor, loginSlotOf, PrincipalEngineLogins, secondLoginSupported, type LoginSlot } from "./principal-engine-logins.ts";
 import { createSectionChannelRoutes, migrationOwner, recordAccess, SectionChannels, sectionShareGrants } from "./section-channels.ts";
@@ -1074,8 +1080,11 @@ import { signInListWithOpenInvites, type OrgRole } from "./org-directory.ts";
 import { createOwnerAvatarRoute, OwnerIdentityStore, parseOwnerIdentityMessage } from "./owner-identity.ts";
 import { configForViewer, personAvatarUrl, personDisplayName, sessionIsOperator, type ViewerIdentity } from "./viewer-identity.ts";
 import { PersonSettingsStore, personSettingsPrincipal, personalProfilePartition } from "./person-settings.ts";
-import { PersonVoiceKeysStore, personVoiceKeysPrincipal, withPersonalVoiceKeys } from "./person-voice-keys.ts";
-import { createPersonVoiceKeysRoutes } from "./routes/person-voice-keys.ts";
+import { withPersonalVoiceKeys } from "./person-voice-keys.ts";
+import { PersonalProviderInstances } from "./personal-provider-instances.ts";
+import type { ProviderAccountsView } from "../shared/provider-accounts.ts";
+import { ProviderAccounts, type ProviderAccountOwner } from "./provider-accounts.ts";
+import { createProviderAccountsRoutes } from "./routes/provider-accounts.ts";
 import { createPersonSettingsRoutes } from "./routes/person-settings.ts";
 import { isPersonalBrowserProfileId, type PersonalFeature } from "../shared/person-settings.ts";
 import { BOT_REACTIONS, botReactionActorId, botReactionEmoji, normalizeReactions, reactionEmoji, reactionsBy, type ReactionActor } from "../shared/reactions.ts";
@@ -1499,6 +1508,9 @@ const IDENTITY = identityConfigFromEnv();
 setSharedHost(IDENTITY.kind === "perspicax");
 /** A model on an engine the organization's admin does not allow (allowedEngines). */
 const ORG_ENGINE_NOT_ALLOWED = "Your organization does not allow this model provider.";
+/** 2026-10-30 (lot 2): a model turned off, by the organization or by the person. */
+const MODEL_TURNED_OFF_BY_ORG = "Your organization turned this model off. Pick another model or Auto.";
+const MODEL_TURNED_OFF_BY_PERSON = "You turned this model off in Settings > Models. Turn it back on there, or pick another model.";
 /** Organization server: Perspicax owns each signed-in person's name and email. */
 const PROFILE_MANAGEMENT = profileManagement(IDENTITY);
 // Every stream frame and request rechecks email sessions against this list,
@@ -3953,6 +3965,13 @@ utilityParentPort?.on("message", (event) => {
 
 const bus = new EventBus();
 bus.attach(registry.instances());
+const personalProviderInstances = new PersonalProviderInstances({
+  load: async (configs) => {
+    await registry.load(configs, decorateHostedProvider);
+    bus.attach(Object.keys(configs).flatMap((id) => registry.get(id) ?? []));
+  },
+  remove: async (id) => { bus.detach(id); await registry.dispose(id); },
+});
 const machineRuns = createMachineRuns({
   engine(instanceId) {
     // The named engine on this computer, or pi (its PI_CODING_AGENT_DIR,
@@ -4555,8 +4574,10 @@ function agentsIntegration(
         // this turn is for (the route re-checks).
         const given = orgXaiMediaGiven("voice", turnMediaPrincipal(threadId), effectiveBotOwner(speaking ?? {}));
         // #1098: the person's own voice key serves their own turns.
-        const voice = voiceFor(cfg, turnMediaPrincipal(threadId) ?? effectiveBotOwner(speaking ?? {}), given);
-        return tts.voiceReady(voice.cfg, speaking?.voice, voice.access) && speaking?.voiceNotes !== false ? "1" : "0";
+        const owner = providerAccountOwner(turnMediaPrincipal(threadId) ?? effectiveBotOwner(speaking ?? {}));
+        const held = owner ? perspicaxDirectory?.providerKeys(owner.sub) ?? [] : [];
+        const ownVoice = ["elevenlabs", "fish", "xai"].some((provider) => held.includes(provider));
+        return (ownVoice || tts.voiceReady(cfg, speaking?.voice, { xaiKeyGiven: given })) && speaking?.voiceNotes !== false ? "1" : "0";
       })(),
       // end_call is offered only while this thread is on a live phone call.
       // The route re-checks; a turn that is not a call never sees the tool.
@@ -6632,7 +6653,8 @@ function personRunsEngine(principalId: string | null | undefined, instance: Sele
     identity: IDENTITY.kind,
     speaker: { origin: "person", principalId: id },
     owner: { principalId: id, ...orgPersonFacts(principals.byId(id)) },
-    instance: { instanceId: instance.instanceId, driver: instance.driverKind, installed: engineInstalled(instance.instanceId), keyOnly: keyOnlyInstance(instance.instanceId) },
+    instance: { instanceId: instance.instanceId, driver: instance.driverKind, installed: engineInstalled(instance.instanceId), keyOnly: keyOnlyInstance(instance.instanceId),
+      ...(personalProviderInstances.get(instance.instanceId) ? { keyProvider: personalProviderInstances.get(instance.instanceId)!.provider, personalOwner: personalProviderInstances.get(instance.instanceId)!.owner } : {}) },
     subscriptionSignedIn: (pid, driver) => engineLogins?.signedIn(pid, driver) ?? false,
     subscriptionExpired: (pid, driver) => engineLogins?.expired(pid, driver) ?? false,
     hasKey: (sub, provider) => perspicaxDirectory?.providerKeys(sub).includes(provider) ?? false,
@@ -6810,6 +6832,12 @@ function checkedModelSelection(
   if ((!current || current.selection.instanceId !== selection.instanceId) && orgEngineAllowRefusal(selection.instanceId, payer)) {
     return { ok: false, status: 403, error: ORG_ENGINE_NOT_ALLOWED };
   }
+  // 2026-10-30 (lot 2): a model turned off is never picked by name (Auto
+  // then starts from a model still on); the one a bot already runs stays
+  // writable until applyModelSwitches moves it.
+  const modelRefusal = value.auto === true || (current && current.selection.instanceId === selection.instanceId && current.selection.model === selection.model)
+    ? undefined : modelSwitchRefusal(selection.instanceId, selection.model, payer);
+  if (modelRefusal) return { ok: false, status: 403, error: modelRefusal };
   // Auto (docs/plans/2026-10-08-auto-model.md): only true is stored.
   if (value.auto !== undefined && value.auto !== true && value.auto !== false) {
     return { ok: false, status: 400, error: "modelSelection.auto must be a boolean" };
@@ -6821,7 +6849,12 @@ function checkedModelSelection(
     if (typeof fast !== "object" || typeof fast.instanceId !== "string" || !fast.instanceId.trim() || typeof fast.model !== "string" || !fast.model.trim()) {
       return { ok: false, status: 400, error: "modelSelection.fast needs an instanceId and a model" };
     }
-    if (value.auto === true) selection.fast = { instanceId: fast.instanceId.trim(), model: fast.model.trim() };
+    if (value.auto === true) {
+      const fastSelection = { instanceId: fast.instanceId.trim(), model: fast.model.trim() };
+      const refusal = modelSwitchRefusal(fastSelection.instanceId, fastSelection.model, payer);
+      if (refusal) return { ok: false, status: 403, error: refusal };
+      selection.fast = fastSelection;
+    }
   }
   if (value.effort !== undefined) {
     if (!isEffortLevel(value.effort)) {
@@ -7862,14 +7895,18 @@ function personalProfileOf(principalId: string | null | undefined, profileId: un
 // A person's own voice keys on an organization server (#1098, 2026-10-28,
 // server/person-voice-keys.ts): their speech and voice notes use them in
 // place of the organization's key for the same engine.
-const personVoiceKeys = new PersonVoiceKeysStore(DATA_DIR);
 /** The voice settings and the xAI access for speech made for this person:
  * their own key where they saved one (their own xAI key needs no grant of
  * the organization's), else the installation's. */
-function voiceFor(cfg: AppConfig, principalId: string | null | undefined, organizationXaiGiven: boolean): { cfg: AppConfig; access: tts.VoiceKeyAccess } {
-  const owner = IDENTITY.kind === "perspicax" ? personVoiceKeysPrincipal(principalId) : null;
-  const own = owner ? personVoiceKeys.keys(owner) : {};
-  return { cfg: withPersonalVoiceKeys(cfg, own), access: { xaiKeyGiven: own.xai ? true : organizationXaiGiven } };
+async function voiceFor(cfg: AppConfig, principalId: string | null | undefined, organizationXaiGiven: boolean): Promise<{ cfg: AppConfig; access: tts.VoiceKeyAccess }> {
+  const owner = providerAccountOwner(principalId);
+  const own = owner === null ? {} : Object.fromEntries(await Promise.all((["elevenlabs", "fish", "xai"] as const).map(async (provider) =>
+    [provider, await providerAccounts.key(owner, provider).catch(() => undefined)])));
+  return { cfg: withPersonalVoiceKeys(cfg, own), access: {
+    xaiKeyGiven: own.xai ? true : organizationXaiGiven,
+    elevenlabsKeyGiven: Boolean(own.elevenlabs) || serverEngineAllowedFor(principalId ?? "", ELEVENLABS_VOICE_SERVER_ENGINE),
+    fishKeyGiven: Boolean(own.fish) || serverEngineAllowedFor(principalId ?? "", FISH_VOICE_SERVER_ENGINE),
+  } };
 }
 function webSearchScopeForThread(threadId: string) {
   const organization = IDENTITY.kind === "perspicax";
@@ -21843,6 +21880,9 @@ async function startTurn(
     automationSource: opts?.automationSource,
   }));
   if (orgRefusal) throw Object.assign(new Error(orgRefusal), { status: 409, code: "engine_not_allowed" });
+  // 2026-10-30 (lot 2): a model turned off never runs a turn by name
+  const modelRefusal = bot.modelSelection.auto === true ? undefined : modelSwitchRefusal(instance.instanceId, bot.modelSelection.model, effectiveBotOwner(bot));
+  if (modelRefusal) throw Object.assign(new Error(modelRefusal), { status: 409, code: "model_turned_off" });
   const toolScope = toolScopeForTurn(bot.id);
   // On a Cloud home a guest's turn never gets a shell or reads outside its
   // own folder (docs/cloud-pro.md): an engine that cannot run it that way is
@@ -26485,14 +26525,15 @@ async function runGroupMemberTurn(
     return true;
   }
   const roomPolicyRefusal = instance ? policyModelRefusal(instance) : undefined;
+  const roomModelRefusal = modelSwitchRefusal(roomSelection.instanceId, roomSelection.model, effectiveBotOwner(bot));
   // A room turn a guest drives on a Cloud home is confined like a guest's
   // own conversation, or refused on an engine that cannot be.
   if (!groupSpeakers.has(threadId)) guestDrivenTurns.delete(threadId);
   const roomGuestConfined = cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(orchestration?.roomHandoffId) || botmailConfined(threadId);
   const roomGuestRefusal = roomGuestConfined && instance?.adapter.capabilities.guestTurns !== "confined"
     ? (cloudGuestDriven(threadId) || !botmailConfined(threadId) ? guestEngineRefusal(threadId) : BOTMAIL_ENGINE_REFUSAL) : undefined;
-  if (!instance || roomPolicyRefusal || roomGuestRefusal) {
-    const message = roomPolicyRefusal ?? roomGuestRefusal ?? (namesEngine(roomSelection) ? `${bot.name}'s model is unavailable` : NO_ENGINE_PERSON);
+  if (!instance || roomPolicyRefusal || roomModelRefusal || roomGuestRefusal) {
+    const message = roomPolicyRefusal ?? roomModelRefusal ?? roomGuestRefusal ?? (namesEngine(roomSelection) ? `${bot.name}'s model is unavailable` : NO_ENGINE_PERSON);
     store.appendMessage(threadId, {
       role: "bot",
       kind: "activity",
@@ -29717,6 +29758,9 @@ function configStatus() {
     membership: workspaceMembership(),
     // organization server: the model providers its admin allows (null: all)
     ...(IDENTITY.kind === "perspicax" ? { allowedEngines: orgAllowedEngines(), ownAccountsOutsideList: orgOwnAccountsOutsideList() } : {}),
+    // 2026-10-30 (lot 2): the models the organization turned off; on a solo
+    // server, the installation's own switches (a person's own come with configForPerson)
+    ...(IDENTITY.kind === "perspicax" ? { disabledModels: orgDisabledModels() } : { myDisabledModels: personDisabledModels(null) }),
     // organization server: new threads start confidential (server/confidential-threads.ts)
     ...(IDENTITY.kind === "perspicax" ? { confidentialThreadsByDefault: confidentialThreadsByDefault() } : {}),
   };
@@ -29735,6 +29779,8 @@ function configForPerson<T extends Parameters<typeof configForViewer>[0]>(status
   return {
     ...shown,
     personalSettings: true,
+    // 2026-10-30 (lot 2): the person's own model switches
+    myDisabledModels: own.disabledModels ?? [],
     features: { ...base.features, ...own.features },
     browserProfiles: [...(base.browserProfiles ?? []), ...own.browserProfiles.map((profile) => ({ ...profile, personal: true }))],
   };
@@ -30112,7 +30158,7 @@ function orgJoinsRunningTurn(bot: { ownerUserId?: unknown }, threadId: string, s
 /** #1533: an API-key engine (`access: "api"`: Claude (API key), xAI,
  * OpenAI, OpenRouter): it runs on a key only, never on a subscription. */
 function keyOnlyInstance(instanceId: string): boolean {
-  return providerConfigs()[instanceId]?.access === "api";
+  return Boolean(personalProviderInstances.get(instanceId)) || providerConfigs()[instanceId]?.access === "api";
 }
 /** #1533 (2026-10-28): the name a member reads for an engine the
  * organization's key runs: "Claude (organization key)" in their language.
@@ -30135,7 +30181,8 @@ function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKi
     speaker,
     peerOwnerPrincipalId: peerOwnerPrincipal(speaker),
     owner: { principalId: ownerId, ...orgPersonFacts(owner) },
-    instance: { instanceId: instance.instanceId, driver: instance.driverKind, installed: engineInstalled(instance.instanceId), keyOnly: keyOnlyInstance(instance.instanceId) },
+    instance: { instanceId: instance.instanceId, driver: instance.driverKind, installed: engineInstalled(instance.instanceId), keyOnly: keyOnlyInstance(instance.instanceId),
+      ...(personalProviderInstances.get(instance.instanceId) ? { keyProvider: personalProviderInstances.get(instance.instanceId)!.provider, personalOwner: personalProviderInstances.get(instance.instanceId)!.owner } : {}) },
     person: (principalId) => {
       const person = principals.byId(principalId);
       return person ? orgPersonFacts(person) : undefined;
@@ -30519,12 +30566,14 @@ function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = fa
       if (!plan.ok) continue;
       via = plan.via;
     }
-    const options = instance.models.options.filter((option) => !option.custom &&
+    // 2026-10-30 (lot 2): only models still on, for the organization and the bot's owner
+    const switches = modelSwitchesFor(effectiveBotOwner(bot));
+    const options = instance.models.options.filter((option) => !option.custom && modelOn(switches, instance.instanceId, option.id) &&
       (!hostedModels || hostedModels.allows({ instanceId: instance.instanceId, model: option.id })));
     // The bot's fast model (#1209): any row this engine lists, a local or
     // custom one included, when hosted models allow it.
     const fastWanted = bot.modelSelection.fast?.instanceId === instance.instanceId
-      ? instance.models.options.find((option) => option.id === bot.modelSelection.fast?.model &&
+      ? instance.models.options.find((option) => option.id === bot.modelSelection.fast?.model && modelOn(switches, instance.instanceId, option.id) &&
         (!hostedModels || hostedModels.allows({ instanceId: instance.instanceId, model: option.id })))
       : undefined;
     engines.push({
@@ -30555,7 +30604,8 @@ function relayEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = f
     if (orgEngineTurnRefusal(bot, instance, speaker)) continue;
     if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") continue;
     let via: AutoEngine["via"] = "server";
-    const options = instance.models.options.filter((option) => !hostedModels || hostedModels.allows({ instanceId: instance.instanceId, model: option.id }));
+    const switches = modelSwitchesFor(effectiveBotOwner(bot));
+    const options = instance.models.options.filter((option) => modelOn(switches, instance.instanceId, option.id) && (!hostedModels || hostedModels.allows({ instanceId: instance.instanceId, model: option.id })));
     const entry = (patch: Partial<AutoEngine> = {}): AutoEngine => ({
       instanceId: instance.instanceId,
       driverKind: instance.driverKind,
@@ -30727,7 +30777,11 @@ async function orgTurnAccess(threadId: string, bot: BotRecord, instance: { insta
   const input = orgEngineInput(bot, instance, speaker);
   const outcome = await materializeEngineAccess(input, resolveEngineAccess(input), {
     dataDir: DATA_DIR,
-    resolveKey: (sub, provider) => perspicaxDirectory ? perspicaxDirectory.resolveProviderKey(sub, provider) : Promise.resolve({ ok: false as const, error: "link" as const }),
+    resolveKey: (sub, provider) => {
+      const person = principals.list().find((entry) => entry.subject?.sub === sub && entry.subject.iss === (IDENTITY.kind === "perspicax" ? IDENTITY.issuer : ""));
+      const owner = providerAccountOwner(person?.id);
+      return owner ? providerAccounts.resolve(owner, provider) : Promise.resolve({ ok: false as const, error: "link" as const });
+    },
     invalidate: (sub, provider) => perspicaxDirectory?.invalidate(sub, provider),
     // the turn's own sign-in on this engine (a second Grok account runs in its own folder)
     loginDir: (principalId, driver) => principalLoginDir(principalId, driver, turnSlotFor(bot, instance)),
@@ -31141,8 +31195,15 @@ async function describeInstances() {
  * listed at all (2026-10-18, shared/offered-engines.ts): no menu, search,
  * favorite or Settings card of any app can offer it. */
 async function instancesForViewer(person: string | null) {
+  const owner = providerAccountOwner(person);
+  if (owner !== null) await syncPersonalProviders(owner).catch(() => {});
   // #1450: a model the paying account turned off is not offered again for a while
-  const instances = withoutRefusedModels(await describeInstances(), (instanceId) => refusedModelsFor(person, instanceId));
+  const instances = withoutRefusedModels(await describeInstances(), (instanceId) => refusedModelsFor(person, instanceId))
+    .filter((instance) => personalProviderInstances.visible(instance.instanceId, IDENTITY.kind === "perspicax" ? person ?? "" : "solo"))
+    .map((instance) => {
+      const account = personalProviderInstances.get(instance.instanceId);
+      return account ? { ...instance, access: "api" as const, providerAccount: { provider: account.provider, serverId: account.serverId } } : instance;
+    });
   if (IDENTITY.kind !== "perspicax") return instances;
   return desktopLocalModels.overlay(orgOfferedEngines(instances, person), person);
 }
@@ -31180,7 +31241,7 @@ function orgOfferedEngines<T extends { instanceId: string }>(instances: readonly
 function personalEngine(instanceId: string, person: string): boolean {
   const entry = registry.entries().find((candidate) => candidate.instanceId === instanceId);
   const driver = entry?.shadow?.driverKind ?? entry?.live?.driverKind ?? "";
-  return subscriptionDriver(driver) || providersOfDriver(driver).length > 0 || personPaysEngine(person, instanceId);
+  return subscriptionDriver(driver) || providersOfInstance(instanceId, driver).length > 0 || personPaysEngine(person, instanceId);
 }
 
 /** An organization member's copy of one engine (GET /api/instances on a
@@ -37939,7 +38000,11 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
     const person = principals.byId(principalId);
     const sub = person?.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
     if (method === "GET" && path === "/api/me/engines") {
-      const engines = orgOfferedEngines(registry.entries(), principalId).map((entry) => {
+      const owner = providerAccountOwner(principalId);
+      if (owner) await syncPersonalProviders(owner).catch(() => undefined);
+      const engines = orgOfferedEngines(registry.entries(), principalId)
+        .filter((entry) => personalProviderInstances.visible(entry.instanceId, principalId))
+        .map((entry) => {
         const driver = entry.shadow?.driverKind ?? entry.live?.driverKind ?? "";
         // #1098: outside the organization's list only the person's own
         // account or key runs it, never the organization's key
@@ -37951,7 +38016,7 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         // #1533: the provider refused that sign-in since (the card says Reconnect)
         const expired = signedIn && logins.expired(principalId, driver);
         const held = sub ? perspicaxDirectory?.providerKeys(sub) ?? [] : [];
-        const myKey = providersOfDriver(driver).some((provider) => held.includes(provider));
+        const myKey = providersOfInstance(entry.instanceId, driver).some((provider) => held.includes(provider));
         // a key sealed for this person on this server serves their turns too (engine-credentials.ts 4b)
         const localKey = fileKeyConfigured(DATA_DIR, { organization: true, principalId }, driver);
         const orgKeySet = !orgNotAllowed && driverKeyBacked(cfg, driver, entry.instanceId);
@@ -37962,7 +38027,10 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         // 2026-10-30: an expired sign-in no longer pays (engine-credentials.ts
         // step 3): the key or the organization's serves, else "expired",
         // which is never ready, never Auto's, and counted under Needs setup
-        const myTurns = !installed || person?.disabledAt !== undefined ? "none" : signedIn && !expired ? "subscription" : myKey || localKey ? "key" : orgKey ? "org-key" : expired ? "expired" : "none";
+        // A personal endpoint may deliberately accept requests without a key.
+        // Its owner still has working personal access, never the org key.
+        const personalServer = personalProviderInstances.get(entry.instanceId)?.owner === principalId;
+        const myTurns = !installed || person?.disabledAt !== undefined ? "none" : signedIn && !expired ? "subscription" : myKey || localKey || personalServer ? "key" : orgKey ? "org-key" : expired ? "expired" : "none";
         const live = registry.get(entry.instanceId);
         const notAvailable = installed ? undefined : engineNotAvailableReason(entry.instanceId);
         return {
@@ -38169,6 +38237,45 @@ ROUTES.push(createDirectGrantRoutes({
 // The organization of a server signed in with Perspicax (slice 3). Tried
 // before the interim organization routes, which serve solo mode only.
 let perspicaxDirectory: PerspicaxDirectory | null = null;
+const SOLO_PROVIDER_CONFIG: Record<string, { section: keyof AppConfig; field: "key" | "apiKey" | "fishKey" }> = {
+  anthropic: { section: "anthropic", field: "key" }, openai: { section: "openai", field: "key" },
+  openrouter: { section: "openrouter", field: "key" }, xai: { section: "xai", field: "key" },
+  mistral: { section: "mistral", field: "key" }, cerebras: { section: "cerebras", field: "key" },
+  groq: { section: "groq", field: "key" }, opencode: { section: "opencodeGo", field: "apiKey" },
+  elevenlabs: { section: "tts", field: "key" }, fish: { section: "tts", field: "fishKey" },
+};
+const providerAccounts = new ProviderAccounts({
+  dataDir: DATA_DIR,
+  get directory() { return perspicaxDirectory ?? undefined; },
+  soloKeys: () => Object.fromEntries(Object.entries(SOLO_PROVIDER_CONFIG).flatMap(([provider, { section, field }]) => {
+    const key = (cfg[section] as Record<string, unknown> | undefined)?.[field];
+    return typeof key === "string" && key ? [[provider, key]] : [];
+  })),
+  saveSoloKey: (provider, value) => {
+    const target = SOLO_PROVIDER_CONFIG[provider];
+    if (!target) return false;
+    saveConfig({ [target.section]: { [target.field]: value ?? "" } });
+    Object.assign(cfg, loadConfig());
+    return true;
+  },
+});
+if (IDENTITY.kind !== "perspicax") await syncPersonalProviderDirectory();
+function providerAccountOwner(principalId: string | null | undefined): ProviderAccountOwner | null | undefined {
+  if (IDENTITY.kind !== "perspicax") return undefined;
+  const person = principalId && isPrincipalId(principalId) ? principals.byId(principalId) : null;
+  if (!person?.subject || person.subject.iss !== IDENTITY.issuer || person.disabledAt !== undefined) return null;
+  return { principalId: person.id, sub: person.subject.sub };
+}
+async function syncPersonalProviders(owner: ProviderAccountOwner | undefined, view?: ProviderAccountsView): Promise<void> {
+  await personalProviderInstances.sync(owner?.principalId ?? "solo", view ?? await providerAccounts.list(owner), (provider) => providerAccounts.key(owner, provider));
+}
+async function syncPersonalProviderDirectory(): Promise<void> {
+  if (IDENTITY.kind !== "perspicax") { await syncPersonalProviders(undefined); return; }
+  for (const person of principals.list()) {
+    const owner = providerAccountOwner(person.id);
+    if (owner) await syncPersonalProviders(owner).catch(() => {});
+  }
+}
 // Slice 8: the window to attach people from before Perspicax opens at the
 // first organization start that finds any (30 days; an admin can change it).
 if (IDENTITY.kind === "perspicax" && !cfg.organization?.interimAttach && principals.listInterim().length) {
@@ -38772,9 +38879,41 @@ ROUTES.push(createPersonSettingsRoutes({
     }
   },
 }));
-ROUTES.push(createPersonVoiceKeysRoutes({
-  store: personVoiceKeys,
-  principal: (auth) => (IDENTITY.kind === "perspicax" ? personVoiceKeysPrincipal(sessionPrincipal(auth)) : null),
+// 2026-10-30 (lot 2): the person's own model switches (Settings > Models)
+ROUTES.push(createModelSwitchRoutes({
+  org: () => orgDisabledModels(),
+  owner: (auth) => {
+    if (IDENTITY.kind === "perspicax") return personSettingsOwner(sessionPrincipal(auth));
+    return callerCan(auth, "server.settings") ? "installation" : null;
+  },
+  mine: (owner) => (owner === "installation" ? personDisabledModels(null) : personDisabledModels(owner)),
+  save: (owner, list) => {
+    if (owner === "installation") {
+      saveConfig({ disabledModels: list });
+      cfg.disabledModels = list;
+      applyModelSwitches();
+      broadcast({ kind: "config", ...configStatus() });
+    } else {
+      personSettings.setDisabledModels(owner, list);
+      applyModelSwitches(owner);
+      // each stream gets its own person's list (configForPerson)
+      broadcast({ kind: "config", ...configStatus() });
+    }
+  },
+}));
+ROUTES.push(createProviderAccountsRoutes({
+  accounts: providerAccounts,
+  listed: (view, owner) => syncPersonalProviders(owner, view),
+  beforeChange: () => engineLaunches(providerConfigs()),
+  changed: async (before, owner) => {
+    if (!owner) await reloadProviders(before as Record<string, unknown>);
+    await syncPersonalProviders(owner);
+    broadcast({ kind: "config", ...configStatus() });
+  },
+  owner: (auth) => {
+    if (IDENTITY.kind !== "perspicax") return undefined;
+    return providerAccountOwner(sessionPrincipal(auth));
+  },
 }));
 // The signed-in person's own photo (server/routes/me-avatar.ts): written to
 // Perspicax with their own sign-in token, then shown everywhere at once.
@@ -39069,7 +39208,9 @@ ROUTES.push(createMailSettingsRoutes({
 const openAiStt = createOpenAiStt();
 // OpenAI speaks and, since the second step, listens too (server/tts/openai-stt.ts)
 const openAiVoiceMode = { ...createOpenAiVoice(), transcribe: openAiStt.transcribe, openTranscription: openAiStt.openTranscription };
-const elevenLabsVoiceMode = createElevenLabsVoice();
+const elevenLabsVoiceMode = createElevenLabsVoice({ apiForKey: (key) => voiceCredential(key)!.api });
+const fishVoiceMode = createFishVoice({ model: () => cfg.tts?.fishModel ?? "s2.1-pro" });
+const installedVoices = createInstalledVoices(() => cfg);
 
 /** The OpenAI or ElevenLabs keys that may serve one person's voice, in the
  * order of the xAI keys (server/voice-mode.ts resolveVoiceKeys): their own
@@ -39077,19 +39218,24 @@ const elevenLabsVoiceMode = createElevenLabsVoice();
  * organization's key when it was given to them (the same grant as its xAI
  * voice). A solo server: the server's key. Never sent anywhere but to the
  * provider. */
-async function voiceProviderKeys(provider: "openai" | "elevenlabs", speaker: VoiceSpeaker): Promise<VoiceKeyCandidate[]> {
-  const serverKey = (provider === "openai" ? cfg.openai?.key : cfg.tts?.key)?.trim();
-  if (IDENTITY.kind !== "perspicax") return serverKey ? [{ key: serverKey, via: "server", source: "server", last4: keyLast4(serverKey), provider }] : [];
+async function voiceProviderKeys(provider: Exclude<VoiceTtsProvider, "xai">, speaker: VoiceSpeaker): Promise<VoiceKeyCandidate[]> {
+  if (speaker.disabled) return [];
+  if (provider === "system" || provider === "chatterbox") {
+    const available = provider === "system" ? systemVoicesAvailable() : Boolean(cfg.tts?.baseUrl?.trim());
+    return available ? [{ key: `local-${provider}`, via: "server", source: "server", last4: null, provider }] : [];
+  }
+  const serverKey = (provider === "openai" ? cfg.openai?.key : provider === "fish" ? cfg.tts?.fishKey : voiceCredential(cfg.tts?.key)?.token)?.trim();
+  if (IDENTITY.kind !== "perspicax") {
+    const key = await providerAccounts.key(undefined, provider).catch(() => undefined) || serverKey;
+    return key ? [{ key, via: "server", source: "server", last4: keyLast4(key), provider }] : [];
+  }
   if (speaker.disabled || !speaker.principalId) return [];
   const keys: VoiceKeyCandidate[] = [];
-  const owner = personVoiceKeysPrincipal(speaker.principalId);
-  const personal = owner ? personVoiceKeys.keys(owner)[provider]?.trim() : undefined;
-  if (personal) keys.push({ key: personal, via: "speaker-key", source: "voice-key", last4: keyLast4(personal), payerPrincipalId: speaker.principalId, provider });
-  if (provider === "openai" && speaker.sub && perspicaxDirectory?.providerKeys(speaker.sub).includes("openai")) {
-    const own = await perspicaxDirectory.resolveProviderKey(speaker.sub, "openai").catch(() => null);
-    if (own?.ok) keys.push({ key: own.key, via: "speaker-key", source: "perspicax-key", last4: keyLast4(own.key), payerPrincipalId: speaker.principalId, provider });
-  }
-  if (serverKey && serverEngineAllowedFor(speaker.principalId, VOICE_SERVER_ENGINE)) keys.push({ key: serverKey, via: "org-key", source: "org-key", last4: keyLast4(serverKey), provider });
+  const owner = providerAccountOwner(speaker.principalId);
+  const personal = owner ? await providerAccounts.key(owner, provider).catch(() => undefined) : undefined;
+  if (personal) keys.push({ key: personal, via: "speaker-key", source: "perspicax-key", last4: keyLast4(personal), payerPrincipalId: speaker.principalId, provider });
+  const grant = provider === "elevenlabs" ? ELEVENLABS_VOICE_SERVER_ENGINE : provider === "fish" ? FISH_VOICE_SERVER_ENGINE : VOICE_SERVER_ENGINE;
+  if (serverKey && serverEngineAllowedFor(speaker.principalId, grant)) keys.push({ key: serverKey, via: "org-key", source: "org-key", last4: keyLast4(serverKey), provider });
   return keys;
 }
 
@@ -39126,19 +39272,16 @@ const voiceModeDeps: VoiceModeDeps = {
     }
     return { botId: bot.id, botName: bot.name, threadId: threadId ?? conversationOrStart(bot) ?? bot.threadId };
   },
-  serverKey: () => cfg.xai?.key,
-  hasOwnKey: (sub) => perspicaxDirectory?.providerKeys(sub).includes("xai") ?? false,
-  // the person's own xAI voice key (My voice keys, #1454): the live call
-  // uses it like their speech and voice notes do (voiceFor)
-  personalKey: (speaker) => {
-    if (IDENTITY.kind !== "perspicax") return undefined;
-    const owner = personVoiceKeysPrincipal(speaker.principalId);
-    return owner ? personVoiceKeys.keys(owner).xai : undefined;
-  },
+  serverKey: () => IDENTITY.kind === "perspicax" ? cfg.xai?.key : providerAccounts.key(undefined, "xai"),
+  hasOwnKey: () => IDENTITY.kind === "perspicax",
   // 2026-10-16 the organization's xAI key gives voice only to the
   // people Perspicax lists it for (an admin always).
   serverKeyAllowed: (speaker) => serverEngineAllowedFor(speaker.principalId, VOICE_SERVER_ENGINE),
-  resolveOwnKey: (sub) => perspicaxDirectory ? perspicaxDirectory.resolveProviderKey(sub, "xai") : Promise.resolve({ ok: false as const, error: "link" as const }),
+  resolveOwnKey: (sub) => {
+    const person = IDENTITY.kind === "perspicax" ? principals.bySubject(IDENTITY.issuer, sub) : null;
+    const owner = providerAccountOwner(person?.id);
+    return owner ? providerAccounts.resolve(owner, "xai") : Promise.resolve({ ok: false as const, error: "no_key" as const });
+  },
   keysUrl: () => perspicaxKeysUrl(),
   isAdmin: (auth) => orgAdminCaller(auth),
   xai: {
@@ -39155,6 +39298,9 @@ const voiceModeDeps: VoiceModeDeps = {
   // others (server/voice-mode.ts)
   openai: openAiVoiceMode,
   elevenlabs: elevenLabsVoiceMode,
+  fish: fishVoiceMode,
+  ...installedVoices,
+  legacyChoice: () => ({ provider: tts.voiceProvider(cfg), voice: cfg.tts?.voice }),
   providerKeys: (provider, speaker) => voiceProviderKeys(provider, speaker),
   preference: (speaker) => {
     if (IDENTITY.kind !== "perspicax" || !speaker.principalId || !isPrincipalId(speaker.principalId)) return undefined;
@@ -39663,10 +39809,11 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
     },
     // Membership is the trigger of the Flow plugins: the first directory,
     // an invitation accepted, a declaration changed in Perspicax.
-    onDirectory: () => { void orgFlowPlugins.sync("directory").catch(() => undefined); },
+    onDirectory: () => { void orgFlowPlugins.sync("directory").catch(() => undefined); void syncPersonalProviderDirectory(); },
     version,
   });
   perspicaxDirectory.start(intervalMs);
+  void syncPersonalProviderDirectory();
   // a newer Flow version: the sync fetches the marketplaces again when due
   setInterval(() => { void orgFlowPlugins.sync("schedule").catch(() => undefined); }, 30 * 60_000).unref();
   // at start: what is missing or older than the last directory read
@@ -39894,7 +40041,7 @@ function personEngineAccess(principalId: string): Array<{ id: string; via: Engin
     const driver = entry.shadow?.driverKind ?? entry.live?.driverKind ?? "";
     // #1533: an API-key engine never runs on a subscription
     const signedIn = Boolean(engineLogins && isLoginDriver(driver) && !keyOnlyInstance(entry.instanceId) && engineLogins.signedIn(principalId, driver));
-    const key = providersOfDriver(driver).some((provider) => held.includes(provider));
+    const key = providersOfInstance(entry.instanceId, driver).some((provider) => held.includes(provider));
     const orgKey = driverKeyBacked(cfg, driver, entry.instanceId);
     const off = !engineInstalled(entry.instanceId) || person?.disabledAt !== undefined || Boolean(person?.consoleDisabled);
     const via: EngineVia = off ? "none" : signedIn ? "subscription" : key ? "key" : orgKey ? "org-key" : "none";
@@ -40663,6 +40810,10 @@ const orgOpsDeps: OpsDeps = {
         allowedMarketplaces: policy?.mode === "list" ? [...policy.allow] : null,
         allowedEngines: cfg.organization?.allowedEngines ? [...cfg.organization.allowedEngines] : null,
         ownAccountsOutsideList: cfg.organization?.ownAccountsOutsideList === true,
+        // 2026-10-30 (lot 2): per model, `<engine>/<model>`, and each engine's models to switch
+        disabledModels: orgDisabledModels(),
+        engineModels: Object.fromEntries(registry.instances().map((instance) => [instance.instanceId,
+          instance.models.options.filter((option) => !option.local).map((option) => ({ id: option.id, label: option.label || option.id }))])),
         defaults: { engine: selection?.instanceId ?? null, model: selection?.model ?? null, approvalMode: cfg.newBotDefaults?.profile.approvalMode ?? null },
       },
       backup,
@@ -40702,6 +40853,18 @@ const orgOpsDeps: OpsDeps = {
       orgAudit({ category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["allowedEngines"], before: { allowedEngines: before }, after: { allowedEngines: changes.allowedEngines }, actor });
       applyOrgEngineAllowList();
       // Every open picker lists the new set at once (config frame).
+      broadcast({ kind: "config", ...configStatus() });
+    }
+    if (changes.disabledModels !== undefined) {
+      // 2026-10-30 (lot 2): models off for everyone, admins included
+      const before = orgDisabledModels();
+      const organization = { ...cfg.organization };
+      if (changes.disabledModels.length) organization.disabledModels = changes.disabledModels;
+      else delete organization.disabledModels;
+      saveConfig({ organization });
+      cfg.organization = organization;
+      orgAudit({ category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["disabledModels"], before: { disabledModels: before }, after: { disabledModels: changes.disabledModels }, actor });
+      applyModelSwitches();
       broadcast({ kind: "config", ...configStatus() });
     }
     if (changes.ownAccountsOutsideList !== undefined) {
@@ -40876,6 +41039,72 @@ function saveOrgPluginMarketplaces(raw: unknown, actor: AdminActor): void {
 function consoleEngineAllowed(instanceId: string): boolean {
   return engineAllowed(orgAllowedEngines(), instanceId);
 }
+/** 2026-10-30 (lot 2): the models the organization turned off in Perspicax
+ * (`<engine>/<model>`, shared/offered-models.ts). Empty on a solo server. */
+function orgDisabledModels(): string[] {
+  return IDENTITY.kind === "perspicax" ? cleanDisabledModels(cfg.organization?.disabledModels) : [];
+}
+/** The models this person turned off (an organization server's person), or
+ * the installation's own list on a solo server. */
+function personDisabledModels(principalId: string | null | undefined): string[] {
+  if (IDENTITY.kind !== "perspicax") return cleanDisabledModels(cfg.disabledModels);
+  const owner = personSettingsOwner(principalId);
+  return owner ? personSettings.get(owner).disabledModels ?? [] : [];
+}
+/** Both levels for one person (a bot's owner, a turn's payer). */
+function modelSwitchesFor(principalId: string | null | undefined): ModelSwitches {
+  return { org: orgDisabledModels(), mine: personDisabledModels(principalId) };
+}
+/** Why this model may not be picked or run for this person, if it may not. */
+function modelSwitchRefusal(instanceId: string, model: string, principalId: string | null | undefined): string | undefined {
+  const offer = modelOffer(modelSwitchesFor(principalId), instanceId, model);
+  if (offer === "adminOff") return MODEL_TURNED_OFF_BY_ORG;
+  if (offer === "personOff") return MODEL_TURNED_OFF_BY_PERSON;
+  return undefined;
+}
+/** A bot on a model now off (the organization's switch, or its owner's own)
+ * moves to Auto on the same engine, from its first model still on; a
+ * thread's own model follows its bot. `owner`: only that person's bots. */
+function applyModelSwitches(owner?: string): void {
+  for (const { id } of store.bots) {
+    const bot = store.bot(id);
+    if (!bot) continue;
+    const botOwner = effectiveBotOwner(bot);
+    if (owner !== undefined && botOwner !== owner) continue;
+    const switches = modelSwitchesFor(botOwner);
+    const selection = bot.modelSelection;
+    const withoutDisabledFast = (value: ModelSelection): ModelSelection => {
+      if (!value.fast || modelOn(switches, value.fast.instanceId, value.fast.model)) return value;
+      const { fast: _fast, ...rest } = value;
+      return rest;
+    };
+    const cleaned = withoutDisabledFast(selection);
+    if (cleaned !== selection) store.applyModelDefault(id, cleaned);
+    const offer = modelOffer(switches, selection.instanceId, selection.model);
+    if (offer !== "on") {
+      const live = registry.get(selection.instanceId);
+      const next = live?.models.options.find((option) => !option.custom && modelOn(switches, selection.instanceId, option.id));
+      // Auto can use another ready engine even when this engine has no
+      // model left on. Its concrete selection is checked before dispatch.
+      const model = next?.id ?? selection.model;
+      store.applyModelDefault(id, { instanceId: selection.instanceId, model, auto: true });
+      console.log(`[models] bot=${id} model ${selection.instanceId}/${selection.model} is turned off; now on Auto (${model})`);
+      if (offer === "adminOff" && bot.threadId) {
+        const move = { from: selection.model, to: orgEngineName(selection.instanceId) };
+        store.appendMessage(bot.threadId, { role: "bot", kind: "activity", tool: { name: `notice: ${orgEngineMoveLine(move)}`, ok: true, engineMove: move } });
+      }
+    }
+    for (const task of store.bot(id)?.tasks ?? []) {
+      if (!task.modelSelection) continue;
+      const cleanedTask = withoutDisabledFast(task.modelSelection);
+      if (cleanedTask !== task.modelSelection) store.patchTask(id, task.threadId, { modelSelection: cleanedTask });
+    }
+    const stray = (store.bot(id)?.tasks ?? [])
+      .filter((task) => task.modelSelection && !modelOn(switches, task.modelSelection.instanceId, task.modelSelection.model))
+      .map((task) => task.threadId);
+    if (stray.length) store.followBotModel(id, stray, (from, to) => hostedModels?.resetTask(from, to) ?? {});
+  }
+}
 /** 2026-10-30: the organization lets a person run an engine outside its
  * list on their own subscription or key (Perspicax, Model providers:
  * `ownAccountsOutsideList`). Off by default: what the admin turns off is
@@ -40928,7 +41157,8 @@ function personPaysEngine(principalId: string, instanceId: string): boolean {
     identity: IDENTITY.kind,
     speaker: { origin: "person", principalId: id },
     owner: { principalId: id, ...orgPersonFacts(person) },
-    instance: { instanceId, driver: driverKind, installed: engineInstalled(instanceId) },
+    instance: { instanceId, driver: driverKind, installed: engineInstalled(instanceId),
+      ...(personalProviderInstances.get(instanceId) ? { keyOnly: true, keyProvider: personalProviderInstances.get(instanceId)!.provider, personalOwner: personalProviderInstances.get(instanceId)!.owner } : {}) },
     subscriptionSignedIn: (pid, driver) => engineLogins?.signedIn(pid, driver) ?? false,
     subscriptionExpired: (pid, driver) => engineLogins?.expired(pid, driver) ?? false,
     hasKey: (sub, provider) => perspicaxDirectory?.providerKeys(sub).includes(provider) ?? false,
@@ -40942,7 +41172,7 @@ function personPaysEngine(principalId: string, instanceId: string): boolean {
  * is Local, an API key or a subscription engine is Cloud). */
 function orgAdminEngines(): AdminEngine[] {
   const configs = providerConfigs();
-  const engines: AdminEngine[] = registry.entries().map((entry) => {
+  const engines: AdminEngine[] = registry.entries().filter((entry) => !personalProviderInstances.get(entry.instanceId)).map((entry) => {
     const live = registry.get(entry.instanceId);
     const access = configs[entry.instanceId]?.access ?? registry.access(entry.instanceId);
     const auth: AdminEngine["auth"] = access === "api" ? "apiKey"
@@ -40962,6 +41192,8 @@ function orgAdminEngines(): AdminEngine[] {
   });
   // Voice mode on the organization's xAI key is given the same way.
   if (cfg.xai?.key) engines.push({ id: VOICE_SERVER_ENGINE, name: "Grok voice (xAI)", kind: "cloud", installed: true, auth: "apiKey", orgKey: true, voice: true });
+  if (voiceCredential(cfg.tts?.key)) engines.push({ id: ELEVENLABS_VOICE_SERVER_ENGINE, name: "ElevenLabs voice", kind: "cloud", installed: true, auth: "apiKey", orgKey: true, voice: true });
+  if (cfg.tts?.fishKey) engines.push({ id: FISH_VOICE_SERVER_ENGINE, name: "Fish Audio voice", kind: "cloud", installed: true, auth: "apiKey", orgKey: true, voice: true });
   // 2026-10-16: Grok voice also covers read aloud and voice notes when the
   // voice engine is xAI; avatar images on the organization's xAI key are
   // given the same way.
@@ -46650,7 +46882,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // this turn is for (a routine: its owner; nobody known: the owner).
         const voiceGiven = orgXaiMediaGiven("voice", turnMediaPrincipal(internalCapability.threadId), effectiveBotOwner(internalSender));
         try {
-          const voice = voiceFor(cfg, turnMediaPrincipal(internalCapability.threadId) ?? effectiveBotOwner(internalSender), voiceGiven);
+          const voice = await voiceFor(cfg, turnMediaPrincipal(internalCapability.threadId) ?? effectiveBotOwner(internalSender), voiceGiven);
           const audio = await tts.speak(voice.cfg, text, voiceBot.voice, undefined, voice.access);
           // Synthesis can outlive its turn: a stop or settle during the await
           // revokes the capability and clears the live turn. Re-check both
@@ -46671,7 +46903,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           // "no voice configured" is a setup state, not a provider failure —
           // 409 with the hint, exactly like /api/tts/speak.
           if (error instanceof tts.NoVoiceConfigured) return json(res, 409, { error: error.message });
-          if (error instanceof tts.XaiVoiceNotGiven) return json(res, 403, { error: ORG_XAI_VOICE_NOTE_REFUSAL, cause: error.code });
+          if (error instanceof tts.XaiVoiceNotGiven) return json(res, 403, { error: error.message, cause: error.code });
           const status = (error as { status?: number }).status;
           if (typeof status === "number" && status >= 400 && status < 500) {
             return json(res, status, { error: error instanceof Error ? error.message : "voice note failed" });
@@ -53021,7 +53253,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           signedIn: (driver) => logins.signedIn(principalId, driver),
           apiKeyConfigured: (_driver, instanceId) => {
             const driver = instances[instanceId]?.driver ?? "";
-            return providersOfDriver(driver).some((provider) => held.includes(provider)) || planKeyConfigured(driver, instanceId);
+            return providersOfInstance(instanceId, driver).some((provider) => held.includes(provider)) || planKeyConfigured(driver, instanceId);
           },
         });
         const report = await loadPlanUsage({ accounts, refresh });
@@ -53204,6 +53436,28 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (!target) return json(res, 404, { error: "This provider does not take an access key here." });
       const organization = IDENTITY.kind === "perspicax";
       const principalId = auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null : null;
+      if (organization) {
+        const owner = providerAccountOwner(principalId);
+        if (!owner) return json(res, 403, { error: "Sign in to manage your provider accounts." });
+        try {
+          const providers = providersOfInstance(instanceId, driver);
+          if (!providers.length) return json(res, 404, { error: "This provider does not take an access key here." });
+          if (method === "GET") {
+            const view = await providerAccounts.list(owner);
+            return json(res, 200, { configured: view.keys.some((key) => providers.includes(key.provider as typeof providers[number])) });
+          }
+          const body = await readBody(req, 8192);
+          if (!body || typeof body !== "object" || typeof (body as { key?: unknown }).key !== "string") return json(res, 400, { error: "Send { key }." });
+          const picked = typeof (body as { provider?: unknown }).provider === "string" ? (body as { provider: string }).provider : providers[0]!;
+          if (!providers.includes(picked as typeof providers[number])) return json(res, 400, { error: "Unknown provider." });
+          const key = normalizeEngineKey((body as { key: string }).key);
+          await providerAccounts.setKey(owner, picked, key || null);
+          return json(res, 200, { configured: Boolean(key) });
+        } catch (error) {
+          if (error instanceof EngineKeyError) return json(res, error.status, { error: error.message });
+          return json(res, 503, { error: "Your provider accounts are unavailable. Try again." });
+        }
+      }
       let scope: ReturnType<typeof engineKeyScope>;
       try {
         scope = engineKeyScope(organization, principalId, target);
@@ -54248,7 +54502,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (persisted.decider?.key !== undefined) persisted.decider.key = "";
           if (persisted.imageGen?.key !== undefined) persisted.imageGen.key = "";
           if (persisted.imageGen?.customApiKey !== undefined) persisted.imageGen.customApiKey = "";
-          if (persisted.live?.key !== undefined) persisted.live.key = "";
+          if (persisted.openai?.key !== undefined) persisted.openai.key = "";
           saveConfig(persisted);
           configWriteCommitted = true;
           syncCredentialEnv(patch);
@@ -54392,56 +54646,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       }
     }
 
-    // ── voice ─────────────────────────────────────────────────────────
-    // Splitting text into utterances lives HERE, not in the renderer, for
-    // the same reason approvalKey does — it is the piece most likely to be
-    // tuned against real transcripts, and it belongs next to the transform
-    // that produced it.
-    if (method === "POST" && path === "/api/tts/prepare") {
-      const body = await readBody(req);
-      return json(res, 200, {
-        ready: (() => {
-          const voice = voiceFor(cfg, requesterPrincipal(auth), orgXaiMediaGiven("voice", requesterPrincipal(auth)));
-          return tts.voiceReady(voice.cfg, typeof body.voiceId === "string" ? body.voiceId : undefined, voice.access);
-        })(),
-        utterances: toUtterances(String(body.text ?? "")),
-      });
-    }
-    if (method === "GET" && path === "/api/tts/voices") {
-      try {
-        const voice = voiceFor(cfg, requesterPrincipal(auth), orgXaiMediaGiven("voice", requesterPrincipal(auth)));
-        return json(res, 200, { voices: await tts.listVoices(voice.cfg, undefined, voice.access) });
-      } catch (e) {
-        if (e instanceof tts.XaiVoiceNotGiven) return json(res, 200, { voices: [], ...orgXaiRefusal("voice") });
-        return json(res, 200, { voices: [], error: e instanceof Error ? e.message : String(e) });
-      }
-    }
-    if (method === "POST" && path === "/api/tts/speak") {
-      const body = await readBody(req);
-      const text = String(body.text ?? "").trim();
-      if (!text) return json(res, 400, { error: "text required" });
-      // The normal client sends <=320-character utterances. A hard ceiling
-      // prevents an arbitrary local request from turning the user's hosted
-      // voice account into an unbounded, billable synthesis job.
-      if (text.length > 500) return json(res, 413, { error: "voice utterances are limited to 500 characters" });
-      try {
-        const voice = voiceFor(cfg, requesterPrincipal(auth), orgXaiMediaGiven("voice", requesterPrincipal(auth)));
-        const audio = await tts.speak(voice.cfg, text, typeof body.voiceId === "string" ? body.voiceId : undefined, undefined, voice.access);
-        res.writeHead(200, {
-          "content-type": audio.mime,
-          "content-length": String(audio.bytes.byteLength),
-          "cache-control": "no-store",
-        });
-        return res.end(Buffer.from(audio.bytes));
-      } catch (e) {
-        // "you haven't set this up yet" is not a provider failure — 409 so
-        // the client can point at App Settings instead of showing a 502
-        if (e instanceof tts.NoVoiceConfigured) return json(res, 409, { error: e.message });
-        if (e instanceof tts.XaiVoiceNotGiven) return json(res, 403, orgXaiRefusal("voice"));
-        return json(res, 502, { error: e instanceof Error ? e.message : String(e) });
-      }
-    }
-
+    // /api/tts/* is handled by the shared voice-mode routes.
 
     // Phone credential entry arrives as an HPKE envelope bound to the exact
     // paired device, bot, task, card and allowlisted target. The companion

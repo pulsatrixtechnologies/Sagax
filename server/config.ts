@@ -498,6 +498,9 @@ const appConfigSchema = z.object({
      * choice). Absent or false: an engine off the list is off for everyone,
      * admins included. */
     ownAccountsOutsideList: z.boolean().optional(),
+    /** 2026-10-30 (lot 2): models the organization turned off, as
+     * `<engine>/<model>` (shared/offered-models.ts). Off for everyone. */
+    disabledModels: z.array(z.string().max(300)).max(2000).optional(),
     /** #1098: folders of the server's disk an admin opened to members as
      * working folders, keyed by principal id or `*` for every member
      * (server/member-folders.ts). */
@@ -590,6 +593,9 @@ const appConfigSchema = z.object({
    * server's name and address live in its `instances` entry; only the key
    * is here, write-only, handed to that one instance. */
   openaiCompatServers: z.record(z.string().max(80), z.object({ key: optionalText }).strict()).optional(),
+  /** 2026-10-30 (lot 2): on a solo server, the models its person turned off
+   * (`<engine>/<model>`, shared/offered-models.ts). */
+  disabledModels: z.array(z.string().max(300)).max(2000).optional(),
   /** Historical config section name "box" (the persisted config.json key); the
    * provider is Boat now and the key is kept for compatibility. */
   box: z.object({ token: optionalText }).optional(),
@@ -641,11 +647,8 @@ const appConfigSchema = z.object({
       .optional(),
     jobs: z.object({ roomRouting: z.boolean().optional() }).optional(),
   }).optional(),
-  /** Live calls: an OpenAI project key for GPT-Live, kept apart from every
-   * other OpenAI credential so a Live call never bills an image or engine key
-   * the user did not hand to it. `voice` is a GPT-Live built-in voice name. */
+  /** Live calls use the OpenAI provider. `voice` is a built-in voice name. */
   live: z.object({
-    key: optionalText,
     voice: z.string().trim().max(40).regex(/^[a-z]*$/, "a Live voice is a lowercase built-in voice name").optional(),
     readTypedReplies: z.boolean().optional(),
     idleMinutes: z.number().int().min(1).max(60).optional(),
@@ -778,6 +781,8 @@ export interface AppConfig {
     allowedEngines?: string[];
     /** 2026-10-30: own subscriptions and keys run engines outside the list. */
     ownAccountsOutsideList?: boolean;
+    /** 2026-10-30: models the organization turned off (`<engine>/<model>`). */
+    disabledModels?: string[];
     /** #1098: folders of the server's disk an admin opened to members as
      * working folders, by principal id or `*` (server/member-folders.ts). */
     memberFolders?: Record<string, string[]>;
@@ -829,6 +834,8 @@ export interface AppConfig {
   openaiCompat?: { key?: string; url?: string; model?: string; provider?: string };
   /** 2026-10-30: each named OpenAI-compatible server's key, by instance id. */
   openaiCompatServers?: Record<string, { key?: string }>;
+  /** 2026-10-30: a solo server's own model switches (`<engine>/<model>` off). */
+  disabledModels?: string[];
   /** Persisted under the historical config key "box" (ascii.dev renamed Box to Boat). */
   box?: { token?: string };
   /** A named host from the user's SSH config. Authentication stays with SSH. */
@@ -843,7 +850,7 @@ export interface AppConfig {
   /** The decision model; see the schema above and server/decider. */
   decider?: { enabled?: boolean; provider?: "jev" | "off"; key?: string; baseUrl?: string; jobs?: { roomRouting?: boolean } };
   imageGen?: ImageGenerationConfig;
-  live?: { key?: string; voice?: string; readTypedReplies?: boolean; idleMinutes?: number };
+  live?: { voice?: string; readTypedReplies?: boolean; idleMinutes?: number };
   profile?: { name?: string; email?: string; aboutMe?: string; avatarUrl?: string };
   rooms?: { turnTimeoutMinutes: number };
   mcp?: { callTimeoutMinutes?: number };
@@ -1002,7 +1009,7 @@ export function stripLegacyComposioConfig(value: JsonValue): JsonValue {
 }
 
 export function parseStoredConfig(value: JsonValue): AppConfig {
-  const parsed = storedAppConfigSchema.safeParse(stripLegacyComposioConfig(foldLegacyNewBotEffort(value)));
+  const parsed = storedAppConfigSchema.safeParse(stripLegacyComposioConfig(foldLegacyLiveKey(foldLegacyNewBotEffort(value))));
   if (!parsed.success) throw new Error(schemaIssue(parsed.error, "Invalid stored configuration"));
   return parsed.data;
 }
@@ -1059,11 +1066,9 @@ export function liveCallsEnabled(env: NodeJS.ProcessEnv = process.env): boolean 
   return env.SAGAX_LIVE_CALLS === "1";
 }
 
-/** The key a Live call uses: a key saved for Live calls only (older
- * installs), else the OpenAI key of Settings > Models and voice. One OpenAI
- * key is enough since 2026-10-14. */
+/** Live calls use the same OpenAI provider as the rest of the bot. */
 export function liveCallKey(cfg: AppConfig): string {
-  return cfg.live?.key?.trim() || cfg.openai?.key?.trim() || "";
+  return cfg.openai?.key?.trim() || "";
 }
 
 export function liveSettingsFor(cfg: AppConfig, env: NodeJS.ProcessEnv = process.env): LiveSettings {
@@ -1071,7 +1076,6 @@ export function liveSettingsFor(cfg: AppConfig, env: NodeJS.ProcessEnv = process
   return {
     enabled: liveCallsEnabled(env),
     configured: Boolean(liveCallKey(cfg)),
-    ...(cfg.live?.key?.trim() ? { separateKey: true } : {}),
     voice: cfg.live?.voice ?? "",
     readTypedReplies: cfg.live?.readTypedReplies ?? true,
     idleMinutes: Number.isInteger(minutes) && minutes! >= 1 && minutes! <= 60 ? minutes! : LIVE_IDLE_MINUTES_DEFAULT,
@@ -1325,7 +1329,28 @@ export function ensureDirs() {
   migrateLegacyFeatureFlags();
   migrateLegacyNewBotEffort();
   migrateGrokVoiceKey();
+  migrateLiveProviderKey();
   migrateOnboardingEngineKeys();
+}
+
+/** Retire the old Live-only slot without overwriting an OpenAI provider
+ * already chosen by the person. The next write persists this same fold. */
+export function foldLegacyLiveKey(value: JsonValue): JsonValue {
+  if (!isJsonRecord(value) || !isJsonRecord(value.live) || !Object.hasOwn(value.live, "key")) return value;
+  const { key: legacy, ...live } = value.live;
+  const openai = isJsonRecord(value.openai) ? value.openai : {};
+  const saved = typeof openai.key === "string" ? openai.key.trim() : "";
+  const key = typeof legacy === "string" ? legacy.trim() : "";
+  return { ...value, live, ...(key && !saved && !process.env.SAGAX_OPENAI_API_KEY?.trim() ? { openai: { ...openai, key } } : {}) };
+}
+
+function migrateLiveProviderKey(): void {
+  const path = join(DATA_DIR, "config.json");
+  try {
+    const raw = parseJson(readFileSync(path, "utf8"));
+    const next = foldLegacyLiveKey(raw);
+    if (next !== raw) writeFileAtomic(path, JSON.stringify(next, null, 2), { mode: 0o600 });
+  } catch { /* A later config save retries the fold. */ }
 }
 
 /** Heal an install that was onboarded by an older CLI: a provider API key
@@ -1526,7 +1551,6 @@ export function loadConfig(): AppConfig {
   cfg.decider = { ...cfg.decider };
   if (process.env.SAGAX_JEV_API_KEY !== undefined) cfg.decider.key = process.env.SAGAX_JEV_API_KEY;
   cfg.live = { ...cfg.live };
-  if (process.env.SAGAX_OPENAI_LIVE_KEY !== undefined) cfg.live.key = process.env.SAGAX_OPENAI_LIVE_KEY;
   cfg.imageGen = { ...cfg.imageGen };
   if (process.env.SAGAX_OPENAI_IMAGE_KEY !== undefined) cfg.imageGen.key = process.env.SAGAX_OPENAI_IMAGE_KEY;
   if (process.env.SAGAX_CUSTOM_IMAGE_KEY !== undefined) cfg.imageGen.customApiKey = process.env.SAGAX_CUSTOM_IMAGE_KEY;
@@ -1594,7 +1618,6 @@ export function syncCredentialEnv(patch: Partial<Omit<AppConfig, "threads">>): v
     [patch.decider?.key, "SAGAX_JEV_API_KEY"],
     [patch.imageGen?.key, "SAGAX_OPENAI_IMAGE_KEY"],
     [patch.imageGen?.customApiKey, "SAGAX_CUSTOM_IMAGE_KEY"],
-    [patch.live?.key, "SAGAX_OPENAI_LIVE_KEY"],
   ];
   for (const [value, name] of secrets) {
     if (value === undefined) continue;
@@ -1633,6 +1656,9 @@ export const WORKSPACE_CREDENTIAL_ENV = [
   "OPENAI_COMPAT_API_KEY",
   "OPENAI_COMPAT_URL",
   "SAGAX_OPENAI_API_KEY",
+  "SAGAX_PERSONAL_PROVIDER_KEY",
+  // Retired credential: never consumed or forwarded to child processes.
+  "SAGAX_OPENAI_LIVE_KEY",
   "SAGAX_OPENROUTER_API_KEY",
   // 2026-10-30: a named OpenAI-compatible server's key (openai-compat-servers.ts)
   "SAGAX_COMPAT_SERVER_API_KEY",
@@ -1644,7 +1670,6 @@ export const WORKSPACE_CREDENTIAL_ENV = [
   "SAGAX_JEV_API_KEY",
   "SAGAX_OPENAI_IMAGE_KEY",
   "SAGAX_CUSTOM_IMAGE_KEY",
-  "SAGAX_OPENAI_LIVE_KEY",
   // The key of the encrypted MCP sign-in vault (server/mcp-oauth.ts).
   "SAGAX_MCP_OAUTH_KEY",
   // The client secret that signs in to Azure Key Vault for content
@@ -1842,7 +1867,7 @@ export function saveConfig(
   let disk: JsonObject = {};
   try {
     const parsed = jsonObjectSchema.safeParse(parseJson(readFileSync(p, "utf8")));
-    if (parsed.success) disk = parsed.data;
+    if (parsed.success) disk = foldLegacyLiveKey(parsed.data) as JsonObject;
   } catch {
     /* first write */
   }
@@ -1878,6 +1903,7 @@ export function saveConfig(
   if (checkedPatch.organization !== undefined) disk.organization = checkedPatch.organization;
   // Replaced whole: removing a named server removes its key.
   if (checkedPatch.openaiCompatServers !== undefined) disk.openaiCompatServers = checkedPatch.openaiCompatServers;
+  if (checkedPatch.disabledModels !== undefined) disk.disabledModels = checkedPatch.disabledModels;
   if (checkedPatch.identityMigratedAt !== undefined) disk.identityMigratedAt = checkedPatch.identityMigratedAt;
   if (checkedPatch.privateThreadsMigratedAt !== undefined) disk.privateThreadsMigratedAt = checkedPatch.privateThreadsMigratedAt;
   if (checkedPatch.invites !== undefined) disk.invites = checkedPatch.invites;

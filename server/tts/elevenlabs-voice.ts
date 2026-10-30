@@ -27,6 +27,7 @@ export interface OwnVoice extends Voice {
 
 export interface ElevenLabsVoiceOptions {
   api?: string;
+  apiForKey?(key: string): string;
   model?: string;
   fetch?: typeof fetch;
   now?: () => number;
@@ -72,7 +73,7 @@ function keyId(key: string): string {
 }
 
 export function createElevenLabsVoice(options: ElevenLabsVoiceOptions = {}) {
-  const api = () => (options.api ?? elevenLabsProviderApi()).replace(/\/+$/, "");
+  const api = (key: string) => (options.api ?? options.apiForKey?.(key) ?? elevenLabsProviderApi()).replace(/\/+$/, "");
   const doFetch = options.fetch ?? fetch;
   const now = options.now ?? Date.now;
   const model = () => options.model ?? (process.env.SAGAX_ELEVENLABS_VOICE_MODEL?.trim() || "eleven_flash_v2_5");
@@ -82,7 +83,7 @@ export function createElevenLabsVoice(options: ElevenLabsVoiceOptions = {}) {
   async function request(path: string, init: RequestInit, key: string): Promise<Response> {
     let response: Response;
     try {
-      response = await doFetch(`${api()}${path}`, { ...init, headers: { ...(init.headers as Record<string, string>), "xi-api-key": key }, redirect: "error" });
+      response = await doFetch(`${api(key)}${path}`, { ...init, headers: { ...(init.headers as Record<string, string>), "xi-api-key": key }, redirect: "error" });
     } catch (error) {
       const reason = (init.signal as AbortSignal | undefined)?.reason as { name?: string } | undefined;
       if (error instanceof Error && (error.name === "TimeoutError" || (error.name === "AbortError" && reason?.name === "TimeoutError"))) {
