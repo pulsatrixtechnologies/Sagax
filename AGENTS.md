@@ -13,6 +13,20 @@ Before claiming a server or conversation change works, follow
 [`docs/verification/README.md`](docs/verification/README.md). Always launch an
 isolated fixture; never verify mutations against the user's live app or data.
 
+## Routine authorization and untrusted event data (2026-10-30)
+
+An owner's configured webhook routine uses the bot's chosen approval level.
+`routine-authorization.ts` binds its active run, routine, current root and
+receiving bot owners, run-as person and owned trigger. Peer turns carry only
+that server-created reference and revalidate it; another person's bot or a
+completed/deleted root grants nothing. Pausing future runs does not cancel
+an active grant. Event and email content remains UNTRUSTED in the prompt.
+Confirmed Full on that owner's routine supersedes the legacy botmail tools
+confinement, and Full answers Sagax gate calls after explicit Ask/Deny and
+holds. The real Perspicax Flow policy GO remains a person's answer, including
+at Full. Regression: `routine-full-approval.e2e.test.ts` exercises the real
+ingress, dispatcher, broker and a peer, in an isolated home.
+
 ## Where work goes
 
 All work stays in `pulsatrixtechnologies` repositories. Never open a pull
@@ -6427,6 +6441,39 @@ connectors and My MCP servers only.
   `src/components/plugins/ConnectAppsView.test.ts`. Captures:
   `scripts/capture-github-plugin.mjs`, `docs/screenshots/github-plugin/`.
 
+## Capabilities on iPhone and iPad (lot 1c, 2026-10-30)
+
+Library > Capabilities opens the server's one resolved list on the iPhone
+and iPad (`BotCapabilityList`, `ios/Sources/CompanionCore/BotCapabilities.swift`).
+It shows scope, state, source and the engine's receipt summary, including
+skills omitted by the prompt index. Keys and bot ids never appear. Unknown
+future fields and values remain decodable. The view's identity follows the
+bot, so a different bot creates a fresh state model.
+
+`BotCapabilitiesModel` calls existing plugin, server, Role and skill routes
+for switches that `canToggle` allows. Skill enablement still opens the skill
+text for review. A disabled installation server and a library whose feature
+is off stay unchanged. Sidecar pairings use the existing bot-plugins surface
+gate. Tests: `ios/Tests/CompanionCoreTests/BotCapabilitiesTests.swift`.
+
+## Capabilities: the same resolved list on desktop (lot 1b, 2026-10-30)
+
+Bot panel > Capabilities and Capabilities > Installed in a bot's scope read
+`GET /api/bots/:id/capabilities` through `useBotCapabilities`
+(`src/lib/capabilities.ts`). The server's rows are the only list source in
+that scope, including personal servers, skills, organization Flow, Roles and
+account connectors. Installed preserves its existing plugin detail, update
+and remove actions. A bot change or an engine preview hides the previous
+list immediately; late answers cannot replace the new bot's list.
+
+The bot panel switches only the rows whose `canToggle` allows it through
+the existing routes, and a server switch waits for `flushBotPatches` before
+reading the list again. A skill still goes through its review. The detail
+and the receipt summary use the shared engine matrix and say when the prompt
+index omits skills. Tests: `src/lib/capabilities*.test.ts`,
+`src/components/bot-settings/CapabilitiesTab.test.ts`,
+`src/components/plugins/ConnectAppsView.test.ts`.
+
 ## Reserved MCP server names (2026-10-17, one rule since 2026-10-30)
 
 One rule, `reservedMcpName` (`shared/mcp-reserved-names.ts`), for this
@@ -6544,9 +6591,15 @@ builds no Graph client, no Teams bot registration and no mailbox for this.
   settings), Teams posts and chats, events and meetings (create, insert,
   change, cancel), answering an invitation, every SharePoint, OneDrive or
   Google Drive write (upload, save, permissions, grant access). On an
-  engine connector server (`isEngineConnectorServer`) any call that is not
-  a read or a draft asks (fail closed). Reads, drafts and reply drafts do
-  not. Full access and the primary bot rule are unchanged.
+  engine connector server (`isEngineConnectorServer`), an unclassified
+  `other-write` follows the bot's level and explicit rules. Moving,
+  labeling, marking or deleting mail is not an outbound send and never
+  gets a draft/send hold, including with misuse guardrails in enforce.
+  Deletes and bulk operations keep their destructive classification;
+  organization Ask/Deny, isolation and sensitive paths still apply.
+  Reads, drafts and reply drafts send nothing. Full access and the primary
+  bot rule are unchanged. Regression: `server/safety-review.test.ts` uses
+  the measured Outlook catalog in `server/testing/`.
 - An outward card never offers "always for this session", and the ACP
   driver answers Grok's ask once, never `allow_always`
   (`server/drivers/acp/connector-ask.ts`). A Grok `use_tool` call to a

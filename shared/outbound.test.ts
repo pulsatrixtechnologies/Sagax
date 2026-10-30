@@ -21,6 +21,8 @@ describe("isOutboundTool", () => {
       "mcp__claude_ai_Gmail__reply",
       "mcp__claude_ai_Gmail__forward",
       "mcp__claude_ai_Slack__slack_send_message",
+      "mcp__claude_ai_Microsoft_365__create_task_comment",
+      "outlook__create_invoice",
     ]) {
       expect(isOutboundTool(name), name).toBe(true);
     }
@@ -88,6 +90,22 @@ describe("isOutboundTool, the engines' mail, Teams, calendar and SharePoint conn
     for (const tool of ["outlook_email_search", "outlook_calendar_search", "find_meeting_availability", "outlook_create_draft", "teams_list_chats", "sharepoint_search", "sharepoint_folder_search"]) {
       expect(isOutboundTool(`mcp__claude_ai_Microsoft_365__${tool}`), tool).toBe(false);
     }
+  });
+
+  it("does not turn mailbox organization, deletion or an unknown connector write into an outbound send", () => {
+    for (const tool of [
+      "outlook__move_message",
+      "outlook__move_email",
+      "mcp__Outlook__move_email",
+      "mcp__claude_ai_Microsoft_365__outlook_move_message",
+      "cursor__user-Outlook-move_5fmail_5fmessage___12",
+      "outlook__delete_message",
+      "outlook__batch_delete_messages",
+      "outlook__mark_as_read",
+      "mcp__claude_ai_Gmail__modify_labels",
+      "mcp__claude_ai_Microsoft_365__outlook_create_filter",
+      "outlook__whatever_new_tool",
+    ]) expect(isOutboundTool(tool), tool).toBe(false);
   });
 });
 

@@ -17,6 +17,7 @@ import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useAdvancedMode } from "@/lib/interface-mode";
 import { BotActionsMenu, type BotActionsMenuAnchor } from "./bot-settings/BotActionsMenu";
 import { LibraryTab } from "./bot-settings/LibraryTab";
+import { CapabilitiesTab } from "./bot-settings/CapabilitiesTab";
 import { RoutinesSection } from "./bot-settings/RoutinesSection";
 import { RemoteSessionsSection } from "./remote-session/RemoteSessionsSection";
 import { visiblePanelTabs, type PanelTab } from "./bot-settings/panel-tabs";
@@ -268,6 +269,8 @@ export function BotSettingsDialog({ bot, onOpenVmWorkspace }: {
           )}
 
           {tab === "library" && <LibraryTab bot={bot} />}
+
+          {tab === "capabilities" && <CapabilitiesTab bot={bot} />}
 
           {tab === "computer" && (
             <div className="px-4 pt-2">

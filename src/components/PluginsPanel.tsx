@@ -48,6 +48,8 @@ import { permissionMissingText } from "@/lib/permissions";
 import { canEditBotField } from "@/lib/bot-capabilities";
 import { canEditConfig } from "@/lib/viewer";
 import { detailIdentity, discoverItems, installedEntries, privateSkills, type InstalledEntry } from "@/lib/installed-model";
+import { engineGetsNothing, enginesLine, organizationRows, useBotCapabilities } from "@/lib/capabilities";
+import type { CapabilityForm, EngineParts } from "../../shared/capabilities";
 import type { SkillsLibrarySkillWire } from "../../shared/wire";
 import { WHOP_KEY, buildPluginItems, isGrokConnector, marketplacePluginKey, type PluginFilter, type PluginItem, type PluginTypeFilter } from "@/lib/plugins-model";
 import { GROK_CLOUD_CONNECTORS, GROK_CONNECTORS_URL } from "../../shared/grok-cloud-connectors";
@@ -306,6 +308,9 @@ export function PluginsPanel() {
   const [scopeChoice, setScopeChoice] = useState<PluginScope>(() => initialPluginScope(state.pluginsBotId, scopeBot));
   const scope: PluginScope = scopeChoice === "bot" && scopeBot ? "bot" : "workspace";
   const [botView, setBotView] = useState<BotPluginsView | null>(null);
+  // the bot's one resolved list (lot 1b): its engine, its organization Flow
+  // and Roles for Installed, read again after each change of its plugins
+  const botCapabilities = useBotCapabilities(scopeBotId, { revision: botView });
   const [botBusy, setBotBusy] = useState<string | null>(null);
 
   const loadFeatured = useCallback(() => api("/api/plugins/search")
@@ -651,6 +656,42 @@ export function PluginsPanel() {
     }
     return { installState, primaryAction };
   };
+  /** What a page's capability brings, for its "Engines" line and the
+   * warning before an install (lib/capabilities, shared engineReceipt): a
+   * plugin for this bot brings its skills, commands and agents; for
+   * everyone, its MCP servers and its skills through the library. */
+  const engineParts = (item: PluginItem): { form: CapabilityForm; parts: Omit<EngineParts, "customMcp"> } | null => {
+    if (item.source === "grok") return null;
+    if (item.kind === "plugin") {
+      const at = item.id.lastIndexOf("@");
+      if (scope === "bot") {
+        const contents = botView ? botPluginState(botView, item.id)?.contents : undefined;
+        return contents ? { form: "plugin", parts: { skills: contents.skills.length > 0, commands: contents.commands.length > 0, agents: contents.agents.length > 0 } } : null;
+      }
+      const entry = marketplaces?.find((market) => market.name === item.id.slice(at + 1))?.plugins.find((candidate) => candidate.name === item.id.slice(0, at));
+      return entry ? { form: "plugin", parts: { mcp: entry.servers.length > 0, skills: entry.skills.length > 0, indexOnly: true } } : null;
+    }
+    if (item.kind === "mcp" || item.kind === "app" || item.kind === "featured") return { form: "mcp", parts: { mcp: true } };
+    if (item.kind === "skill") return { form: "skill", parts: { skills: true, indexOnly: true } };
+    return null;
+  };
+  /** The "Engines" row of a page's details, and the warning when the bot in
+   * reach would receive nothing of it. */
+  const engineInfo = (item: PluginItem): Pick<PluginDetailProps, "notice"> & { row: { label: string; value: string } | null } => {
+    const what = engineParts(item);
+    if (!what) return { row: null };
+    const row = { label: t("capabilities.detail.engines"), value: enginesLine(what.form, what.parts) };
+    const engine = botCapabilities.data?.engine;
+    const warn = scopeBot && engine && engineGetsNothing(engine.kind, what.form, what.parts);
+    return {
+      row,
+      notice: warn ? (
+        <p role="note" data-plugins-engine-warning className="flex items-start gap-1.5 rounded-xl bg-warning/10 px-3 py-2 text-[12px] leading-[17px] text-warning">
+          {t("capabilities.detail.engineGetsNothing", { name: scopeBot.name, engine: engine.label })}
+        </p>
+      ) : undefined,
+    };
+  };
   /** Add on a marketplace plugin: its MCP servers and skills, for every bot. */
   const installPlugin = async (item: PluginItem) => {
     const [plugin, marketplace] = item.id.split("@") as [string, string];
@@ -932,11 +973,15 @@ export function PluginsPanel() {
     );
   } else if (page.page === "detail" && detailItem) {
     const identity = detailIdentity(detailItem, entries);
+    const base = detailProps(detailItem, { mcp, mcpAccountDraft, setMcpAccountDraft, openGithub, githubKey, githubSection,
+      items, marketplaces: shownMarketplaces, installing, openItem, uninstallPlugin: (item) => void uninstallPlugin(item), updatePlugin: (item) => void updatePlugin(item),
+      scope, botCard: botCard(detailItem) });
+    const engines = engineInfo(detailItem);
     subpage = (
       <PluginDetailView
-        {...detailProps(detailItem, { mcp, mcpAccountDraft, setMcpAccountDraft, openGithub, githubKey, githubSection,
-          items, marketplaces: shownMarketplaces, installing, openItem, uninstallPlugin: (item) => void uninstallPlugin(item), updatePlugin: (item) => void updatePlugin(item),
-          scope, botCard: botCard(detailItem) })}
+        {...base}
+        details={engines.row ? [...base.details, engines.row] : base.details}
+        notice={engines.notice}
         {...detailHead(detailItem)}
         displayName={identity.name}
         icon={identity.icon}
@@ -1102,6 +1147,11 @@ export function PluginsPanel() {
         <InstalledView
           loading={mcp.servers === null}
           entries={entries}
+          resolved={scope === "bot" ? botCapabilities.data : undefined}
+          resolvedError={scope === "bot" && !botCapabilities.data ? botCapabilities.error : null}
+          onRetryResolved={() => void botCapabilities.reload()}
+          botName={scopeBot?.name}
+          organization={scope === "bot" && botCapabilities.data ? organizationRows(botCapabilities.data.items) : []}
           skills={scope === "bot" ? [] : privateSkills(items)}
           sourceLabel={pluginSourceLabel}
           onOpenEntry={(entry) => openItem(entry.primary)}
