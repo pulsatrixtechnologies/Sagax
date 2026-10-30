@@ -106,7 +106,8 @@ it("boots the migrated custom account and runs its first turn with the same paid
   writeFileSync(join(DATA_DIR, "config.json"), JSON.stringify({
     anthropic: { key: "fixture-paid-account-key" }, instances: { claude: {
       driver: "claudeAgent", config: { cli: join(root, "server/testing/fake-claude-cli.ts") },
-      environment: { FAKE_CLAUDE_DUMP: dump, FAKE_CLAUDE_AUTH: "inherited-api-key" },
+      environment: { FAKE_CLAUDE_DUMP: dump, FAKE_CLAUDE_AUTH: "inherited-api-key",
+        FAKE_CLAUDE_TOOL_CALLS: "[]", FAKE_CLAUDE_REPLIES: JSON.stringify(["Migrated account answered."]) },
     } },
   }));
   const port = await freePortBlock([0, 1]);
@@ -134,6 +135,18 @@ it("boots the migrated custom account and runs its first turn with the same paid
     await expect.poll(() => existsSync(dump), { timeout: 25_000, interval: 100 }).toBe(true);
     const turn = JSON.parse(readFileSync(dump, "utf8"));
     expect(turn.env.ANTHROPIC_API_KEY).toBe("fixture-paid-account-key");
+    let messages: Array<{ role?: string; kind?: string; text?: string; turnTerminal?: boolean; turnSucceeded?: boolean }> = [];
+    await expect.poll(async () => {
+      const transcript = await (await fetch(`${base}/api/threads/${bot.threadId}/messages`)).json() as { messages: typeof messages };
+      messages = transcript.messages;
+      return messages.some((message) => message.role === "bot" && message.turnTerminal);
+    }, { timeout: 25_000, interval: 100 }).toBe(true);
+    expect(messages.find((message) => message.role === "bot" && message.turnTerminal)).toMatchObject({
+      kind: "text", text: "Migrated account answered.", turnSucceeded: true,
+    });
+    expect(messages.some((message) => message.kind === "error")).toBe(false);
+    const settled = await (await fetch(`${base}/api/bots`)).json() as { bots: Array<{ id: string; busy?: boolean }> };
+    expect(Boolean(settled.bots.find((entry) => entry.id === bot.id)?.busy)).toBe(false);
     const disk = JSON.parse(readFileSync(join(DATA_DIR, "config.json"), "utf8"));
     expect(disk.anthropic.everyClaudeBot).toBe(false);
   } finally { await waitForExit(child, { signal: "SIGTERM" }); }
