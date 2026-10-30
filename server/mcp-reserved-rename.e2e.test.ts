@@ -63,20 +63,20 @@ it("logs, lists apart and renames a saved server whose name is reserved", async 
   const listed = await api("GET", "/api/mcp/servers");
   expect(listed.status).toBe(200);
   expect(listed.body.servers.map((server: { name: string }) => server.name)).toEqual(["notes"]);
-  expect(listed.body.reserved).toEqual([{ name: "mcp", suggestedName: "mcp-server" }]);
+  expect(listed.body.reserved).toEqual([{ name: "mcp", suggestedName: "server" }]);
 
   // never back under another reserved name, never over a taken one
   expect((await api("POST", "/api/mcp/servers/mcp/rename", { to: "sagax-mcp" })).status).toBe(400);
   expect((await api("POST", "/api/mcp/servers/mcp/rename", { to: "notes" })).status).toBe(409);
   expect((await api("POST", "/api/mcp/servers/notes/rename", { to: "notes2" })).status).toBe(400);
 
-  const renamed = await api("POST", "/api/mcp/servers/mcp/rename", { to: "mcp-server" });
+  const renamed = await api("POST", "/api/mcp/servers/mcp/rename", { to: "server" });
   expect(renamed.status).toBe(200);
-  expect(renamed.body.renamed).toEqual({ from: "mcp", to: "mcp-server" });
+  expect(renamed.body.renamed).toEqual({ from: "mcp", to: "server" });
   expect(renamed.body.reserved).toBeUndefined();
-  expect(renamed.body.servers).toEqual(expect.arrayContaining([expect.objectContaining({ name: "mcp-server", command: "legacy-mcp", enabled: false })]));
+  expect(renamed.body.servers).toEqual(expect.arrayContaining([expect.objectContaining({ name: "server", command: "legacy-mcp", enabled: false })]));
 
   const disk = JSON.parse(readFileSync(join(home, "config.json"), "utf8"));
-  expect(Object.keys(disk.mcpServers)).toEqual(["notes", "mcp-server"]);
-  expect(disk.mcpServers["mcp-server"]).toMatchObject({ command: "legacy-mcp", args: ["--serve"], enabled: false });
+  expect(Object.keys(disk.mcpServers)).toEqual(["notes", "server"]);
+  expect(disk.mcpServers.server).toMatchObject({ command: "legacy-mcp", args: ["--serve"], enabled: false });
 }, 60_000);

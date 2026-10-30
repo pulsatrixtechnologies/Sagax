@@ -2,12 +2,8 @@
 // the server mounted for this turn, sorted by where it comes from, plus what
 // the person set up that this turn could not use (to reconnect). Pure: the
 // caller hands every list it already holds when it builds the turn.
+import { PERSPICAX_MCP_PREFIX as PERSPICAX, reservedMcpName } from "../shared/mcp-reserved-names.ts";
 import { TURN_CONNECTORS_MAX, type TurnConnector, type TurnConnectors } from "../shared/turn-connectors.ts";
-
-/** Sagax's own servers (the person's environment, the desktop bridge, the
- * computer, Flow's compute): tools of Sagax, not connectors. */
-const INTERNAL = /^(?:sagax[-_]|openmausbot[-_])/;
-const PERSPICAX = /^perspicax_/;
 
 export interface TurnConnectorsInput {
   at: number;
@@ -36,11 +32,14 @@ export function turnConnectorsRecord(input: TurnConnectorsInput): TurnConnectors
   const rows: TurnConnector[] = [];
 
   for (const name of input.mounted) {
-    if (INTERNAL.test(name)) continue;
     if (PERSPICAX.test(name)) {
       rows.push({ name: name.replace(PERSPICAX, "") || name, source: "perspicax", state: "connected" });
       continue;
     }
+    // Sagax's own servers (the person's environment, the desktop bridge,
+    // the computer, Flow's compute) and every other reserved name
+    // (shared/mcp-reserved-names.ts): tools of Sagax, not connectors.
+    if (reservedMcpName(name)) continue;
     if (personal.has(name)) {
       rows.push({ name, source: "personal", state: "connected" });
       continue;

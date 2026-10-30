@@ -1122,7 +1122,9 @@ import { createAccountRoutes, type PerspicaxDeletion } from "./routes/account.ts
 import { ACCOUNT_REAUTH_PATH, AccountReauth, perspicaxDeletion } from "./account-reauth.ts";
 import { createRegistrySearch } from "./plugin-registry.ts";
 import { BotPluginError, BotPlugins, marketplaceAllowed, migrateBotMarketplaces, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, type MarketplacePolicy } from "./bot-plugins.ts";
-import { claudePluginDirs, pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
+import { pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
+import { engineServerMcp, perspicaxServerName, personalMcpPrecheck, serverMcpAsPerson, turnPluginDirs, turnPluginPromptDirs } from "./turn-mounts.ts";
+import { reservedMcpName } from "../shared/mcp-reserved-names.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
 import { createLifecycleHookRoutes } from "./routes/lifecycle-hooks.ts";
 import { createMessagesRoutes } from "./routes/messages.ts";
@@ -1141,9 +1143,9 @@ import { GithubCredentials, LOCAL_OWNER, ORG_OWNER } from "./github-credentials.
 import { OrgBotSecrets } from "./org-bot-secrets.ts";
 import { MarketplaceTokens } from "./marketplace-tokens.ts";
 import { githubSkillFetch, type GithubCredential } from "./github-access.ts";
-import { parsePersonalMcpInput, personalMcpInputFromAgent, personalAuthHeaders, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
+import { parsePersonalMcpInput, personalMcpInputFromAgent, personalMcpHostRefusal, personalMcpPrivateAllowed, PersonConnections, PersonConnectionsError, principalDir, type PersonalMcpServer } from "./person-connections.ts";
 import { createPersonConnectionRoutes } from "./routes/person-connections.ts";
-import { readsGithubToken, githubServersAsPerson, githubWithheldPrompt, withGithubToken } from "./github-mcp-token.ts";
+import { readsGithubToken, githubServersAsPerson, githubWithheldPrompt } from "./github-mcp-token.ts";
 import { createGithubCredentialRoutes } from "./routes/github-credentials.ts";
 import { SandboxStdioRelay, StdioRelayError } from "./sandbox-stdio-mcp.ts";
 import { testStdioMcpCommand, testStdioMcpStream } from "./mcp-stdio-test.ts";
@@ -6239,17 +6241,7 @@ function messagesIntegration(botId: string, threadId: string, generation: string
 const imessageSender = createOsascriptSender();
 
 // ── Perspicax MCP for the person who speaks (slice 5) ─────────────────
-/** An engine-side server name for a profile: `perspicax_<slug or id>`,
- * [a-z0-9_], at most 40 characters, with a suffix on a collision. */
-function perspicaxServerName(label: string, taken: ReadonlySet<string>): string {
-  const base = `perspicax_${label.toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "") || "profile"}`.slice(0, 40);
-  if (!taken.has(base)) return base;
-  for (let n = 2; ; n += 1) {
-    const suffix = `_${n}`;
-    const candidate = `${base.slice(0, 40 - suffix.length)}${suffix}`;
-    if (!taken.has(candidate)) return candidate;
-  }
-}
+// perspicaxServerName: server/turn-mounts.ts (shared with the capabilities resolver)
 /** The Perspicax user id of a principal of this organization, or null (the
  * operator, an interim or local principal, another issuer). */
 function perspicaxSubOf(principalId: string): string | null {
@@ -8287,8 +8279,6 @@ const stdioRelay = new SandboxStdioRelay({
     return userSandbox.stdioStream(principalId, spec, botId);
   },
 });
-/** Names Sagax mounts itself: a personal server never takes one. */
-const PERSONAL_MCP_RESERVED_PREFIX = /^(?:sagax|perspicax|openmausbot|claude_ai|mcp)/;
 function personalRemoteSpec(server: Extract<PersonalMcpServer, { kind: "remote" }>): RemoteMcpSpec {
   return { type: server.type, url: server.url, headers: {} };
 }
@@ -8347,14 +8337,17 @@ async function mountPersonalMcp(
   try { servers = personConnections.servers(principalId); } catch { return; }
   const github = personGithub(principalId);
   for (const [name, server] of Object.entries(servers)) {
-    if (!server.enabled || Object.hasOwn(integrations.custom ?? {}, name)) continue;
-    if (server.kind === "stdio") {
-      if (!userSandbox) continue;
+    // server/turn-mounts.ts, shared with the capabilities resolver: off, a
+    // name the turn already has, a reserved name, no environment for a
+    // command, no GitHub connection or token: not mounted
+    const check = personalMcpPrecheck(name, server, { taken: (taken) => Object.hasOwn(integrations.custom ?? {}, taken), hasEnvironment: Boolean(userSandbox), github });
+    if ("skip" in check) continue;
+    if (check.mount === "stdio") {
       integrations.custom = { ...integrations.custom, [name]: personalStdioIntegration(input.botId, input.threadId, input.generation, principalId, name) };
       continue;
     }
-    let headers = personalAuthHeaders(server, github);
-    if (headers === null) continue;
+    if (server.kind !== "remote") continue;
+    let headers = check.headers;
     // Checked again at each mount (cached): a name that now resolves to a
     // private address is not handed to the engine on this host.
     if (await personalHostRefusalCached(server.url)) continue;
@@ -8639,7 +8632,8 @@ async function addPersonalMcpServer(principalId: string, body: unknown): Promise
     const hostRefusal = await personalMcpHostRefusal(server.url, { allowPrivate: personalMcpPrivateAllowed() });
     if (hostRefusal) throw new PersonConnectionsError(hostRefusal, "private_address");
   }
-  if (PERSONAL_MCP_RESERVED_PREFIX.test(name)) throw new PersonConnectionsError("That name is reserved by Sagax. Choose another one.", "invalid_name");
+  // one rule for every server (shared/mcp-reserved-names.ts)
+  if (reservedMcpName(name)) throw new PersonConnectionsError("That name is reserved by Sagax. Choose another one.", "invalid_name");
   if (server.kind === "stdio" && !userSandbox) {
     throw new PersonConnectionsError("This server has no server environments, so a command cannot run for you here. Add a remote server (an https address) instead.", "no_environment", 409);
   }
@@ -8718,17 +8712,18 @@ function botLoadsPlugins(bot: { modelSelection: { instanceId: string } }): boole
 /** Enabled plugin folders for a Claude turn (`--plugin-dir`). Empty for every other engine. */
 function pluginDirsFor(bot: { id: string; ownerUserId?: unknown }, instance: { driverKind: string }): { pluginDirs?: string[] } {
   const owner = effectiveBotOwner(bot);
-  const own = claudePluginDirs(instance.driverKind, botPlugins.pluginDirs(bot.id));
-  // The organization's Flow plugins (an admin's choice in Perspicax), after
-  // the bot's own and never twice.
-  const org = instance.driverKind === "claudeAgent" ? orgFlowPlugins.dirsFor(owner, own) : [];
-  const dirs = [...own, ...org];
+  // The bot's own, then the organization's Flow plugins (an admin's choice
+  // in Perspicax), never twice: server/turn-mounts.ts, shared with the
+  // capabilities resolver.
+  const dirs = turnPluginDirs({ driverKind: instance.driverKind, botDirs: botPlugins.pluginDirs(bot.id), orgDirs: (own) => orgFlowPlugins.dirsFor(owner, own) });
   return dirs.length ? { pluginDirs: dirs } : {};
 }
 /** The same enabled skills and commands, for a workspace engine that is not Claude. Claude uses --plugin-dir instead. */
 function pluginSkillsForTurn(bot: { id: string; ownerUserId?: unknown }, instance: { driverKind: string } | undefined): string {
-  if (!instance || instance.driverKind === "claudeAgent" || !supportsWorkspaceFiles(instance.driverKind)) return "";
-  return pluginTurnPrompt({ driverKind: instance.driverKind, files: pluginTurnFiles(botPlugins.pluginDirs(bot.id)) });
+  if (!instance) return "";
+  const dirs = turnPluginPromptDirs(instance.driverKind, botPlugins.pluginDirs(bot.id));
+  if (!dirs.length) return "";
+  return pluginTurnPrompt({ driverKind: instance.driverKind, files: pluginTurnFiles(dirs) });
 }
 // "Create a Team Bot from this conversation" (routes/team-bot-from-thread.ts):
 // the draft by the conversation's bot model, and the opt-in memory carry-over.
@@ -29698,7 +29693,14 @@ function mcpServerBody(body: unknown): Record<string, unknown> {
 /** Configured MCP servers that may reach this bot's engine. While enrolled,
  * the organisation's allow-list filters them; config.json is never changed. */
 function engineMcpServers(bot: BotRecord, threadId?: string) {
-  const servers = mcpOAuth.withAuthHeaders(managedPolicy.filterMcp(withoutHostCommands(customMcpServers(cfg, bot.mcpServers))), (name) => bot.mcpAccounts?.[name]);
+  // the selection is server/turn-mounts.ts engineServerMcp, which the
+  // capabilities resolver (server/capabilities.ts) reads too
+  const servers = engineServerMcp({
+    configured: customMcpServers(cfg, bot.mcpServers),
+    organization: IDENTITY.kind === "perspicax",
+    filterPolicy: (configured) => managedPolicy.filterMcp(configured),
+    sign: (allowed) => mcpOAuth.withAuthHeaders(allowed, (name) => bot.mcpAccounts?.[name]),
+  });
   // A turn mounts a server with tools switched off through the gate
   // (server/mcp-tool-filter.ts); listings only need the names.
   return threadId === undefined ? servers : withDisabledTools(servers, mcpDisabledTools(cfg), threadId);
@@ -29708,19 +29710,7 @@ function engineMcpServers(bot: BotRecord, threadId?: string) {
  * connection, never the sign-in or header it was saved with, and is left
  * out (named in githubWithheld) when they have none. */
 function mcpServersAsPerson(bot: BotRecord, person: string | null | undefined, threadId?: string): { servers: ReturnType<typeof engineMcpServers>; githubWithheld: string[] } {
-  const servers = engineMcpServers(bot, threadId);
-  const token = githubAccountToken(person);
-  if (IDENTITY.kind !== "perspicax") return { servers: withGithubToken(servers, token), githubWithheld: [] };
-  const asPerson = githubServersAsPerson(servers, token);
-  return { servers: asPerson.servers, githubWithheld: asPerson.withheld };
-}
-/** Organization server: a server-wide MCP server that is a command would
- * run on this host, where no person's tools run (withholdHostTools). It is
- * kept in config.json but never mounted; a person adds a command as their
- * own server instead (it runs in their server environment). */
-function withoutHostCommands<T extends Record<string, McpServerSpec>>(servers: T): T {
-  if (IDENTITY.kind !== "perspicax") return servers;
-  return Object.fromEntries(Object.entries(servers).filter(([, server]) => "url" in server)) as T;
+  return serverMcpAsPerson(engineMcpServers(bot, threadId), { organization: IDENTITY.kind === "perspicax", githubToken: githubAccountToken(person) });
 }
 const ORG_HOST_COMMAND_REFUSAL = "On an organization server a command would run on the Sagax server itself. Add it in Settings > Mes connexions instead: it then runs in each person's own server environment.";
 
