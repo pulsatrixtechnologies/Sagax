@@ -930,6 +930,7 @@ never a message; a routine failure carries `routineId`.
   "policies": {
     "allowedMarketplaces": null,
     "allowedEngines": ["claude", "codex"],
+    "ownAccountsOutsideList": false,
     "defaults": { "engine": "claude", "model": "claude-opus-4-1", "approvalMode": "ask" }
   },
   "backup": { "enabled": true, "schedule": "daily 03:00 UTC", "lastAt": 1791472000000, "ok": true }
@@ -956,7 +957,7 @@ approval level).
 ### `POST settings`
 
 ```json
-{ "allowFullAccess": false, "memberEnvironmentAutonomy": true, "memberAutoApproval": false, "pluginMarketplaces": { "mode": "list", "allow": ["acme/plugins", "acme/*"] }, "allowedEngines": ["claude"], "defaults": { "engine": "claude", "model": "claude-opus-4-1", "approvalMode": "ask" }, "interimAttachDays": 0 }
+{ "allowFullAccess": false, "memberEnvironmentAutonomy": true, "memberAutoApproval": false, "pluginMarketplaces": { "mode": "list", "allow": ["acme/plugins", "acme/*"] }, "allowedEngines": ["claude"], "ownAccountsOutsideList": false, "defaults": { "engine": "claude", "model": "claude-opus-4-1", "approvalMode": "ask" }, "interimAttachDays": 0 }
 ```
 
 Any subset. Answers `{settings}` (the GET shape). Refusals: 400
@@ -967,7 +968,9 @@ row with its before and after.
 
 `allowedEngines` (engine instance ids, `null` for every engine; an empty
 list means no engine at all since 2026-10-17, Perspicax 1.8.34) is enforced
-everywhere since 2026-10-09:
+everywhere since 2026-10-09, and since 2026-10-30 for everyone: an admin
+too, and whoever pays (the organization's key, or a person's own
+subscription or key):
 
 - The console's model changes (`POST bots/{id}/model`, bulk `model`) answer
   400 `engine_not_allowed`.
@@ -979,9 +982,21 @@ everywhere since 2026-10-09:
   allowed, else on the first allowed engine installed here; a thread's own
   model on such an engine follows its bot again.
 - The list reaches every open Sagax app in its config (`allowedEngines`,
-  refreshed live): the model picker lists only these providers and their
-  models. A provider the person already connected but no longer allowed
-  shows once, disabled, as "Not allowed by your organization".
+  refreshed live): the model picker, Settings > Models and New bot list
+  only these providers and their models (`shared/offered-engines.ts`). A
+  provider the person already connected but no longer allowed is not
+  listed.
+
+`ownAccountsOutsideList` (`false` unless an admin turns it on, 2026-10-30;
+Perspicax, Model providers: "Members may use their own account on a
+provider that is not allowed") brings back the 2026-10-27 exception: an
+engine outside `allowedEngines` runs for a person on their own
+subscription or key, never on the organization's key. The person sees it
+in the picker and Settings > Models with "Allowed through your own
+account"; Auto still never picks it, and their bot stays on it when the
+list changes. Turning it off moves such bots to Auto at once, as a change
+of the list does. A sign-in the provider refused since (expired) never
+counts as the person's own account.
 
 ## Computers
 

@@ -15982,7 +15982,20 @@
       "model.listIssue.bad-url": "cb9c8248ad0856cbe30cfbcaf8fe10e49bd0a79ee71f3ea97b505e86d6bd0e86",
       "model.listIssue.unreachable": "ab0289ff1da1d15853de41504d594d604ca287b4ecddf3747305a6bed369f236",
       "model.listIssue.azure-bad-url": "7c1f9271d67eb60f2aac62cc0916fbbd83f73cddb7817e1136e1a8fb728389da",
-      "model.listIssue.azure-no-deployments": "60c517b11f2c87506f3a931664a07513f7afd88abdbf35ec072ac35965a229e1"
+      "model.listIssue.azure-no-deployments": "60c517b11f2c87506f3a931664a07513f7afd88abdbf35ec072ac35965a229e1",
+      "engines.ownAccountOnly": "a06ec724f3a66fba8fbad36dae72919f732be3d1f96112b875e5e591b416163e",
+      "model.scope.allThreads": "ae5c91b139e445b4a0d3b626f997d69907d148d249760741f7826fe68e067a47",
+      "compatServers.addTitle": "82238d3b02764472259133cb9db151d81d6acc011c0c4e2a60693ec56087ed75",
+      "compatServers.add": "9fd728c66c9a256b121472dabf32a34317aed01d8427d70ec830289cf23a7cc8",
+      "compatServers.edit": "464c4ffd019e1e9691dcf0537c797353ef2b1c1d4833d3d463e5b74ae4547344",
+      "compatServers.remove": "c3812fc4acb861d5182fc2b8155f327f736fbe5e5eb86a7bd7afcb6dc5497282",
+      "compatServers.name": "21babfed6c3829985b43ce0de25b2d582154b45a779a71da5ea204c9d8a3cd20",
+      "compatServers.namePlaceholder": "33ca0b3ae99dac6586dcf229d70dc497a8494b81176aba38c60382440cbdcc57",
+      "compatServers.url": "8be89710b2f1d0c515eaff86dd4f049ec2447de5bfdb07d02d9720ff7fe017e1",
+      "compatServers.key": "16f0ee47f993d6270c9059450473eea493ca8ae037f8877782ae2bc176f24d18",
+      "compatServers.keyPlaceholder": "c52dc612ce3ab0e23a66015c9c339c1af521bf71d2f0077327d1cc87c4bd4d8a",
+      "compatServers.keyKeep": "f5ad9ca7f435749fc3c8b4b5ecf5b197121772c6d703b31ce128255c098bbdaf",
+      "compatServers.hint": "0491d076c1cd633c039b0171a6e9c95717a2a3fd27201665681ff61bcb1bf20e"
     },
     "hi": {
       "noEngines.title": "77a6e0966b7323ceae6973abb581b31d52263bb0ec8249e2b1c1b7ae1e586f04",

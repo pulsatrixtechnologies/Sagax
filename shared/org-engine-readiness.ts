@@ -47,9 +47,18 @@ export interface ReadinessAccess {
   instanceId: string;
   driver: string;
   installed: boolean;
-  subscription: { supported: boolean; signedIn: boolean };
+  subscription: { supported: boolean; signedIn: boolean; expired?: boolean };
   orgKeyNotGiven?: boolean;
-  myTurns: "subscription" | "key" | "org-key" | "none";
+  myTurns: "subscription" | "key" | "org-key" | "expired" | "none";
+}
+
+/** 2026-10-30: the person's turns on this engine have something that works
+ * to pay with. "expired" (a sign-in the provider refused since, nothing
+ * else to pay) is not ready; nor is "subscription" from an older server
+ * that still says so for an expired sign-in. */
+export function myTurnsReady(access: { myTurns: string; subscription?: { expired?: boolean } }): boolean {
+  if (access.myTurns === "none" || access.myTurns === "expired") return false;
+  return !(access.myTurns === "subscription" && access.subscription?.expired === true);
 }
 
 export type OrgEngineReadinessState = "loading" | "ready" | "connect" | "blocked";
@@ -71,7 +80,7 @@ export function admittedOnOrg(instance: ReadinessInstance): boolean {
 /** Whether the person's turns on this engine have something to pay with,
  * for chat: the organization's xAI key alone is voice only. */
 export function accessWorksForChat(access: ReadinessAccess): boolean {
-  if (!access.installed || access.myTurns === "none") return false;
+  if (!access.installed || !myTurnsReady(access)) return false;
   if (access.myTurns === "org-key" && XAI_DRIVERS.includes(access.driver)) return false;
   return true;
 }

@@ -6,6 +6,10 @@
 // refuses a model on another engine, moves a bot whose engine left the list
 // onto Auto on an allowed engine, and Auto never picks outside the list. No
 // menu lists another provider (2026-10-18): shared/offered-engines.ts.
+// 2026-10-30: this holds for everyone, admins included, and whoever pays:
+// a person's own subscription or key runs an engine outside the list only
+// when the organization says so (`ownAccountsOutsideList`, off by default),
+// and even then Auto stays inside the list.
 import type { ModelSelection } from "./model-selection.ts";
 
 export type AllowedEngines = readonly string[] | null | undefined;

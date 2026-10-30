@@ -12085,5 +12085,18 @@
   "voiceProviders.none": "Ajoutez une clé xAI, OpenAI ou ElevenLabs dans Mes clés vocales pour choisir qui parle et qui écoute.",
   "voiceProviders.fallbackNote": "Seuls les fournisseurs dont vous avez une clé sont proposés. Si l'un échoue ou atteint sa limite, un autre que vous avez prend le relais tout seul, et l'onglet Événements de la conversation l'indique.",
   "voiceMode.keyLineProvider": "Voix : {provider} avec {key}",
-  "voiceProviders.ownVoice": "{voice} (votre voix)"
+  "voiceProviders.ownVoice": "{voice} (votre voix)",
+  "engines.ownAccountOnly": "Permis grâce à votre propre compte",
+  "model.scope.allThreads": "Ce choix s’applique à tous les fils de ce bot.",
+  "compatServers.addTitle": "Ajouter un serveur compatible OpenAI",
+  "compatServers.add": "Ajouter",
+  "compatServers.edit": "Modifier",
+  "compatServers.remove": "Retirer",
+  "compatServers.name": "Nom du serveur",
+  "compatServers.namePlaceholder": "Nom, par exemple Azure AI Foundry",
+  "compatServers.url": "Adresse du serveur",
+  "compatServers.key": "Clé API",
+  "compatServers.keyPlaceholder": "Clé API (facultative)",
+  "compatServers.keyKeep": "Laisser vide pour garder la clé enregistrée",
+  "compatServers.hint": "Chaque serveur est un fournisseur distinct dans le sélecteur de modèle, sous ce nom. Ses modèles viennent de sa liste /models."
 }

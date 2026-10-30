@@ -565,6 +565,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/instances\\/([\\w.-]+)\\/leftover-files(\\/remove)?$","tier":"admin","readOnly":false,"scope":"instances:admin","defaultEnabled":false,"destructive":true},
   {"method":"PATCH","kind":"pattern","route":"^\\/api\\/instances\\/([\\w.-]+)$","tier":"write","readOnly":false,"scope":"instances:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/instances\\/(company\\.[\\w.-]+)(?:\\/|$)","tier":"write","readOnly":false,"scope":"instances:write","defaultEnabled":true},
+  {"method":"ANY","kind":"pattern","route":"^\\/api\\/instances\\/openai-compat-servers(?:\\/([\\w.-]+))?$","tier":"write","readOnly":false,"scope":"instances:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/internal\\/(browser|computer|data)\\/mcp-http$","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/internal\\/agent-api\\/([a-z_]{1,40})$","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/internal\\/cloud-agents\\/([a-z_]+)$","tier":"write","readOnly":false,"scope":"internal:write","defaultEnabled":true},

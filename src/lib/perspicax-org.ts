@@ -239,11 +239,14 @@ export interface MyEngine {
    * does not give this engine to this person (`sagax_server_engines`). */
   orgKeyNotGiven?: boolean;
   /** 2026-10-27 (#1098): outside the organization's engine list; only the
-   * person's own subscription or key runs it (offered once one does). */
+   * person's own subscription or key runs it (offered once one does). Listed
+   * only when the organization lets own accounts through (2026-10-30). */
   orgNotAllowed?: boolean;
   /** What the person's own turns on this engine run with, on their bots
-   * and on the bots shared with them (server/engine-credentials.ts). */
-  myTurns: "subscription" | "key" | "org-key" | "none";
+   * and on the bots shared with them (server/engine-credentials.ts).
+   * "expired" (2026-10-30): only a sign-in the provider refused since, which
+   * pays for nothing until the person reconnects. */
+  myTurns: "subscription" | "key" | "org-key" | "expired" | "none";
   /** 2026-10-29: Grok on an organization server: the person's two sign-ins
    * (a personal grok.com account and a team one), what each is and the
    * grok.com connectors it brings. The first one pays their turns; the
@@ -342,6 +345,7 @@ export function myTurnsText(engine: Pick<MyEngine, "myTurns" | "installed" | "no
   if (engine.myTurns === "subscription") return t("myEngines.turns.subscription");
   if (engine.myTurns === "key") return t("myEngines.turns.key");
   if (engine.myTurns === "org-key") return t("myEngines.turns.orgKey");
+  if (engine.myTurns === "expired") return t("engineConnect.signInExpired");
   return t("myEngines.turns.none");
 }
 

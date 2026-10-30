@@ -493,6 +493,11 @@ const appConfigSchema = z.object({
     /** 2026-10-08, the console's Settings: the engine instances bots may be
      * switched to from the console. Absent means every engine. */
     allowedEngines: z.array(z.string().max(80)).max(100).optional(),
+    /** 2026-10-30: a member may run an engine outside `allowedEngines` on
+     * their own subscription or key (the #1098 exception, now the admin's
+     * choice). Absent or false: an engine off the list is off for everyone,
+     * admins included. */
+    ownAccountsOutsideList: z.boolean().optional(),
     /** #1098: folders of the server's disk an admin opened to members as
      * working folders, keyed by principal id or `*` for every member
      * (server/member-folders.ts). */
@@ -580,6 +585,11 @@ const appConfigSchema = z.object({
   openaiCompat: z
     .object({ key: optionalText, url: optionalText, model: optionalText, provider: optionalText })
     .optional(),
+  /** 2026-10-30: the keys of the named OpenAI-compatible servers added from
+   * the app (server/openai-compat-servers.ts), by engine instance id. Each
+   * server's name and address live in its `instances` entry; only the key
+   * is here, write-only, handed to that one instance. */
+  openaiCompatServers: z.record(z.string().max(80), z.object({ key: optionalText }).strict()).optional(),
   /** Historical config section name "box" (the persisted config.json key); the
    * provider is Boat now and the key is kept for compatibility. */
   box: z.object({ token: optionalText }).optional(),
@@ -766,6 +776,8 @@ export interface AppConfig {
     pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
     githubClientId?: string;
     allowedEngines?: string[];
+    /** 2026-10-30: own subscriptions and keys run engines outside the list. */
+    ownAccountsOutsideList?: boolean;
     /** #1098: folders of the server's disk an admin opened to members as
      * working folders, by principal id or `*` (server/member-folders.ts). */
     memberFolders?: Record<string, string[]>;
@@ -815,6 +827,8 @@ export interface AppConfig {
   decisions?: { retentionDays?: number };
   billing?: { currency?: string; prices?: Record<string, { inputPerMillion: number; outputPerMillion: number; cachedInputPerMillion?: number }> };
   openaiCompat?: { key?: string; url?: string; model?: string; provider?: string };
+  /** 2026-10-30: each named OpenAI-compatible server's key, by instance id. */
+  openaiCompatServers?: Record<string, { key?: string }>;
   /** Persisted under the historical config key "box" (ascii.dev renamed Box to Boat). */
   box?: { token?: string };
   /** A named host from the user's SSH config. Authentication stays with SSH. */
@@ -1620,6 +1634,8 @@ export const WORKSPACE_CREDENTIAL_ENV = [
   "OPENAI_COMPAT_URL",
   "SAGAX_OPENAI_API_KEY",
   "SAGAX_OPENROUTER_API_KEY",
+  // 2026-10-30: a named OpenAI-compatible server's key (openai-compat-servers.ts)
+  "SAGAX_COMPAT_SERVER_API_KEY",
   "BOX_TOKEN",
   "OPENCODE_API_KEY",
   "SAGAX_TTS_KEY",
@@ -1860,6 +1876,8 @@ export function saveConfig(
   if (checkedPatch.customDomain !== undefined) disk.customDomain = checkedPatch.customDomain;
   if (checkedPatch.signIn !== undefined) disk.signIn = checkedPatch.signIn;
   if (checkedPatch.organization !== undefined) disk.organization = checkedPatch.organization;
+  // Replaced whole: removing a named server removes its key.
+  if (checkedPatch.openaiCompatServers !== undefined) disk.openaiCompatServers = checkedPatch.openaiCompatServers;
   if (checkedPatch.identityMigratedAt !== undefined) disk.identityMigratedAt = checkedPatch.identityMigratedAt;
   if (checkedPatch.privateThreadsMigratedAt !== undefined) disk.privateThreadsMigratedAt = checkedPatch.privateThreadsMigratedAt;
   if (checkedPatch.invites !== undefined) disk.invites = checkedPatch.invites;
@@ -2118,8 +2136,12 @@ function injectedEnvironment(cfg: AppConfig, instanceId: string, driver: string)
   if (anthropicHere && cfg.anthropic!.url) environment.set("ANTHROPIC_BASE_URL", cfg.anthropic!.url);
   // OpenAI and OpenRouter have their own instances and keys; the workspace
   // OpenAI-compatible key and URL belong to every other openai-compat
-  // instance ("Other" in Settings).
-  if (driver === "openai-compat" && instanceId === OPENAI_API_INSTANCE) {
+  // instance ("Other" in Settings), except a named server added from the app
+  // (2026-10-30), which runs on its own key only.
+  if (driver === "openai-compat" && isCompatServerId(instanceId)) {
+    const key = cfg.openaiCompatServers?.[instanceId]?.key;
+    if (key) environment.set(COMPAT_SERVER_KEY_ENV, key);
+  } else if (driver === "openai-compat" && instanceId === OPENAI_API_INSTANCE) {
     if (cfg.openai?.key) environment.set("SAGAX_OPENAI_API_KEY", cfg.openai.key);
   } else if (driver === "openai-compat" && instanceId === OPENROUTER_API_INSTANCE) {
     if (cfg.openrouter?.key) environment.set("SAGAX_OPENROUTER_API_KEY", cfg.openrouter.key);
@@ -2137,13 +2159,22 @@ function injectedEnvironment(cfg: AppConfig, instanceId: string, driver: string)
   return environment;
 }
 
+/** 2026-10-30: a named OpenAI-compatible server added from the app
+ * (server/openai-compat-servers.ts): its instance id starts with this, and
+ * its key reaches it, and only it, as COMPAT_SERVER_KEY_ENV. */
+export const COMPAT_SERVER_PREFIX = "compat-";
+export const COMPAT_SERVER_KEY_ENV = "SAGAX_COMPAT_SERVER_API_KEY";
+export function isCompatServerId(instanceId: string): boolean {
+  return instanceId.startsWith(COMPAT_SERVER_PREFIX) && instanceId.length > COMPAT_SERVER_PREFIX.length;
+}
+
 /** The credential variables each key-backed driver reads. */
 const DRIVER_CREDENTIAL_VARIABLES: Record<string, readonly string[]> = {
   claudeAgent: ["ANTHROPIC_API_KEY"],
   mistral: ["MISTRAL_API_KEY"],
   grok: ["XAI_API_KEY"],
   grokAgent: ["XAI_API_KEY"],
-  "openai-compat": ["OPENAI_COMPAT_API_KEY", "SAGAX_OPENAI_API_KEY", "SAGAX_OPENROUTER_API_KEY"],
+  "openai-compat": ["OPENAI_COMPAT_API_KEY", "SAGAX_OPENAI_API_KEY", "SAGAX_OPENROUTER_API_KEY", "SAGAX_COMPAT_SERVER_API_KEY"],
   opencodeGo: ["OPENCODE_API_KEY"],
 };
 
@@ -2292,7 +2323,9 @@ export function instanceConfigs(cfg: AppConfig): InstanceConfigMap {
       ? builtIn.config as { url?: string; apiKeyEnv?: string } | undefined
       : undefined;
     const ownsRouting = instanceOwnsRouting(cfg, entry, routingDefaults);
-    if (!ownsRouting) {
+    // A named OpenAI-compatible server owns its address, and its own key
+    // still comes from here (injectedEnvironment gives it nothing else).
+    if (!ownsRouting || (entry.driver === "openai-compat" && isCompatServerId(id))) {
       for (const [key, value] of injectedEnvironment(cfg, id, entry.driver)) environment[key] = value;
     }
     entry.environment = environment;

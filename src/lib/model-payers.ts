@@ -5,11 +5,11 @@
 // that order and never recomputes the choice. A routine pays as the bot's
 // owner. Solo servers have no payer order.
 import type { MyEngine } from "@/lib/perspicax-org";
-import { PERSONAL_KEY_DRIVERS } from "../../shared/org-engine-readiness";
+import { myTurnsReady, PERSONAL_KEY_DRIVERS } from "../../shared/org-engine-readiness";
 
 /** A payer the person's own turns can use, in engine-credentials.ts order:
  * their subscription, their key in Perspicax, the organization's key. */
-export type PayerId = Exclude<MyEngine["myTurns"], "none">;
+export type PayerId = Exclude<MyEngine["myTurns"], "none" | "expired">;
 
 export const PAYER_ORDER: readonly PayerId[] = ["subscription", "key", "org-key"];
 
@@ -53,11 +53,12 @@ export function engineCanConnect(engine: Pick<MyEngine, "installed" | "notAvaila
 }
 
 export function payerOrder(engine: EngineFacts): PayerOrder {
-  const ready: Record<PayerId, boolean> = { subscription: engine.subscription.signedIn, key: engine.myKey, "org-key": engine.orgKey };
+  // 2026-10-30: an expired sign-in pays for nothing
+  const ready: Record<PayerId, boolean> = { subscription: engine.subscription.signedIn && engine.subscription.expired !== true, key: engine.myKey, "org-key": engine.orgKey };
   const rows = PAYER_ORDER
     .filter((id) => (id === "subscription" ? engine.subscription.supported : id === "key" ? keyProviderDriver(engine.driver) : true))
     .map((id) => ({ id, ready: ready[id] }));
-  return { rows, current: engine.myTurns === "none" ? null : engine.myTurns };
+  return { rows, current: myTurnsReady(engine) ? engine.myTurns as PayerId : null };
 }
 
 export type OrgEngineState = "connected" | "signInRequired" | "noAccess" | "notInstalled" | "notAvailable";
@@ -67,7 +68,7 @@ export function orgEngineState(engine: EngineFacts): OrgEngineState {
   // The server image deliberately does not carry it (engines.lock.json): a
   // real, unactionable state.
   if (engineUnavailable(engine)) return "notAvailable";
-  if (engine.myTurns !== "none") return "connected";
+  if (myTurnsReady(engine)) return "connected";
   // A subscription engine that is signed out needs a sign-in, even if the CLI
   // probe is momentarily unsure: a logout must never read as missing software
   // (the Grok lockout). Only a non-connectable engine whose binary is genuinely

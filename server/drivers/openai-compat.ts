@@ -29,10 +29,11 @@ const DEFAULT_MODELS: ModelCatalog = {
 };
 
 const DEFAULT_KEY_ENV = "OPENAI_COMPAT_API_KEY";
-/** A provider's own key (the built-in OpenAI and OpenRouter instances). An
+/** A provider's own key (the built-in OpenAI and OpenRouter instances, and
+ * a named OpenAI-compatible server added from the app, 2026-10-30). An
  * instance reading one of these never falls back to the workspace
  * OpenAI-compatible key, URL, model or routing. */
-const OWN_KEY_ENVS = new Set(["SAGAX_OPENAI_API_KEY", "SAGAX_OPENROUTER_API_KEY"]);
+const OWN_KEY_ENVS = new Set(["SAGAX_OPENAI_API_KEY", "SAGAX_OPENROUTER_API_KEY", "SAGAX_COMPAT_SERVER_API_KEY"]);
 
 /** OpenAI's own API, seeded until its live catalog loads. */
 const OPENAI_MODELS: ModelCatalog = {

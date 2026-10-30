@@ -22,12 +22,14 @@ import { EngineConnect, paysWithText } from "./EngineConnect";
 import { HarnessConnectorsSection } from "./HarnessConnectorsSection";
 import { EngineConnectorsLine } from "./plugins/EngineCapabilities";
 import { reloadMyEngines, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
+import { myTurnsReady } from "../../shared/org-engine-readiness";
 import { canEditConfig, canManageKeys, viewerCan, viewerIsOrgMember } from "@/lib/viewer";
 import { viewerIsOrgAdmin } from "@/lib/group-owner";
 import { boatComputerEnabled, vpsComputerEnabled } from "@/lib/feature-flags";
 import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
 import { DescribedRow, FIELD, FoldRow, HelpTip, PILL, PillSelect, SettingsGroup } from "./SettingsPrimitives";
 import { KeyList, ProviderKeyDialog } from "./settings/ProviderKeys";
+import { OpenAiCompatServers } from "./settings/OpenAiCompatServers";
 import { CloudAgentProvidersSettings, useCloudAgentProviders } from "./settings/CloudAgentProvidersSettings";
 import { VoiceProviderSettings } from "./settings/VoiceProviderSettings";
 import { PersonalVoiceKeys } from "./settings/PersonalVoiceKeys";
@@ -218,6 +220,17 @@ export function orgEngineRows(instances: InstanceInfo[], mine: readonly MyEngine
   return instances.filter((instance) => mine.find((engine) => engine.instanceId === instance.instanceId)?.installed !== false);
 }
 
+/** 2026-10-30: the card's line for a person's own access: what pays, and
+ * "Allowed through your own account" for an engine outside the
+ * organization's list that their own subscription or key runs (listed only
+ * when the organization lets own accounts through). Never ready on an
+ * expired sign-in. */
+export function personalEngineLine(mine: MyEngine): { ready: boolean; line: string; turns: string } {
+  const ready = myTurnsReady(mine);
+  const line = paysWithText(mine);
+  return { ready, line: ready && mine.orgNotAllowed === true ? `${line} · ${t("engines.ownAccountOnly")}` : line, turns: mine.myTurns };
+}
+
 /** `mine`: on an organization server, the signed-in person's own access to
  * this engine. The card then shows one line on what pays for their turns and
  * their own Connect or Disconnect (EngineConnect), never the server's account
@@ -284,7 +297,7 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
   // never runs a turn there (409 host_tools); its card says why.
   const hostToolsNote = (member || mine !== undefined) && orgRefusesEngine(instance) && <OrgHostToolsNote instance={instance} className="mb-3 text-[12px]" />;
   if (member && mine) return (
-    <EngineCard instance={instance} personal={{ ready: mine.myTurns !== "none", line: paysWithText(mine), turns: mine.myTurns }}>
+    <EngineCard instance={instance} personal={personalEngineLine(mine)}>
       {policyNote}
       {hostToolsNote}
       <div data-member-engine={instance.instanceId}><EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} statusLine={false} /></div>
@@ -297,7 +310,7 @@ function EngineRow({ instance, mine, member = false, issuer = "" }: { instance: 
   </EngineCard>;
 
   return (
-    <EngineCard instance={instance} personal={mine && { ready: mine.myTurns !== "none", line: paysWithText(mine), turns: mine.myTurns }}>
+    <EngineCard instance={instance} personal={mine && personalEngineLine(mine)}>
       {policyNote}
       {hostToolsNote}
       {mine && <EngineConnect engine={mine} issuer={issuer} onChanged={reloadMyEngines} className="mb-3" statusLine={false} />}
@@ -462,7 +475,8 @@ export function EnginesSettings() {
   const myEngines = useMyEngines();
   const mineOf = (instance: InstanceInfo) => (org ? myEngines?.find((engine) => engine.instanceId === instance.instanceId) : undefined);
   const shown = org ? orgEngineRows(rows, myEngines).filter((instance) => !member || mineOf(instance)) : rows;
-  const isReady = (instance: InstanceInfo) => { const mine = mineOf(instance); return mine ? mine.myTurns !== "none" : engineReady(instance); };
+  // 2026-10-30: an expired sign-in is never Ready; it counts under Needs setup
+  const isReady = (instance: InstanceInfo) => { const mine = mineOf(instance); return mine ? myTurnsReady(mine) : engineReady(instance); };
 
   return (
     <div className="flex min-w-0 flex-col gap-6 pb-2" data-models-voice="" data-models-page="">
@@ -549,6 +563,8 @@ function KeysSection({ issuer }: { issuer?: string }) {
       >
         <KeyList moreExtra={cloudSaved ? undefined : cloudRow} moreExtraCount={cloudSaved ? 0 : cloud.rows?.length ?? 0} />
         {cloudSaved && cloudRow}
+        {/* 2026-10-30: each named OpenAI-compatible server, a provider of its own */}
+        <OpenAiCompatServers />
       </SettingsGroup>
     </div>
   );

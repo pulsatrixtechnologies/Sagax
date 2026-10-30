@@ -202,6 +202,27 @@ describe("desktop local models", () => {
     expect(service.publish(owner, { endpoints: [{ id: "desk8002", label: "DwarfStar", models: ["qwen3"], anthropic: "yes" }] }).ok).toBe(false);
   });
 
+  it("grafts the computer's models only on the engines that can run them (2026-10-30)", async () => {
+    const { service, bridge } = await start();
+    const owner = "pr_owner";
+    bridge.online.add(owner);
+    service.publish(owner, { endpoints: [
+      { id: "desk8002", label: "DwarfStar", models: ["qwen3"], anthropic: true },
+      { id: "desk9337", label: "llama-server", models: ["gguf"] },
+    ] });
+    const options = () => [{ id: "cloud", label: "Cloud" }] as { id: string; label: string; local?: boolean; anthropic?: boolean }[];
+    const [compat, pi, claude] = service.overlay([
+      { driverKind: "openai-compat", models: { default: "cloud", options: options() } },
+      { driverKind: "piAgent", models: { default: "cloud", options: options() } },
+      { driverKind: "claudeAgent", models: { default: "cloud", options: options() } },
+    ], owner);
+    // an OpenAI-compatible server (Azure, a gateway) never lists them, not even greyed out
+    expect(compat!.models.options.map((option) => option.id)).toEqual(["cloud"]);
+    expect(pi!.models.options.filter((option) => option.local)).toHaveLength(2);
+    // Claude Code: only the server that speaks the Anthropic protocol
+    expect(claude!.models.options.filter((option) => option.local).map((option) => option.id)).toEqual([encodeInjectId(injectHostId(owner, "desk8002"), "qwen3")]);
+  });
+
   it("runs Claude Code on an organization server against the person's local model", async () => {
     const { service, bridge } = await start();
     const owner = "pr_owner";
