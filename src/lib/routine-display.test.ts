@@ -69,7 +69,7 @@ describe("a failed run's error", () => {
     // runs recorded before 2026-10-08 kept only the code (production, "Failed: rpc_error")
     expect(routineRunError("rpc_error")).toMatch(/^The bot's engine stopped this run with an internal error/);
     expect(routineRunError("auth_required")).toMatch(/sign-in, key or credit/);
-    expect(routineRunError("shutdown_timeout")).toBe("The bot's engine stopped this run (shutdown_timeout). Open the results thread for the details.");
+    expect(routineRunError("shutdown_timeout")).toBe("The bot's engine stopped this run (shutdown_timeout). Open the run's steps for the details.");
   });
 });
 
