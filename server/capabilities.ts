@@ -14,7 +14,8 @@ import { basename } from "node:path";
 import type { McpServerSpec } from "./contracts.ts";
 import type { GithubConnection, PersonalMcpServer } from "./person-connections.ts";
 import type { PluginContents } from "./bot-plugins.ts";
-import { engineServerMcp, perspicaxServerName, withoutHostCommands, personalMcpPrecheck, serverMcpAsPerson, turnPluginDirs, turnPluginPromptDirs } from "./turn-mounts.ts";
+import { engineServerMcp, perspicaxServerName, withoutHostCommands, personalMcpPrecheck, serverMcpAsPerson, turnPluginPromptDirs } from "./turn-mounts.ts";
+import { pluginMcpPrecheck, selectPluginScopes } from "./capability-plugin-mounts.ts";
 import {
   engineReceipt,
   type BotCapabilities,
@@ -98,6 +99,12 @@ export interface CapabilityInputs<S extends Record<string, McpServerSpec> = Reco
 
   // plugins
   botPlugins: BotPluginInput[];
+  personalPlugins?: BotPluginInput[];
+  /** Private inputs, never returned: the exact currently selected installs
+   * whose MCP declarations the turn considers after the personal servers. */
+  pluginMcp?: Array<{ scope: "person" | "bot"; key: string; name: string; spec: McpServerSpec }>;
+  pluginEnvironment?: boolean;
+  pluginHostRefused?: (url: string) => boolean | undefined;
   /** the bot's enabled plugin folders as a turn reads them (BotPlugins.pluginDirs) */
   botPluginDirs: string[];
   workspacePlugins: WorkspacePluginInput[];
@@ -171,34 +178,41 @@ export function resolveBotCapabilities(inputs: CapabilityInputs, viewer: Capabil
   };
 
   // ── plugins of this bot, and the organization's Flow ──────────────────
-  const dirs = new Set([
-    ...turnPluginDirs({ driverKind: kind, botDirs: inputs.botPluginDirs, orgDirs: inputs.orgFlow.dirsFor }),
-    ...turnPluginPromptDirs(kind, inputs.botPluginDirs),
-  ]);
-  for (const plugin of inputs.botPlugins) {
+  const folders = selectPluginScopes({
+    organization: inputs.orgFlow.dirsFor([]).map((dir) => ({ name: basename(dir), dir })),
+    person: (inputs.personalPlugins ?? []).filter((plugin) => plugin.enabled && plugin.present),
+    bot: inputs.botPluginDirs.map((dir) => ({ name: basename(dir), dir })),
+  });
+  const dirs = new Set(kind === "claudeAgent" ? folders.map((plugin) => plugin.dir)
+    : turnPluginPromptDirs(kind, folders.filter((plugin) => plugin.scope !== "organization").map((plugin) => plugin.dir)));
+  for (const { plugin, scope } of [
+    ...(inputs.personalPlugins ?? []).map((plugin) => ({ plugin, scope: "me" as const })),
+    ...inputs.botPlugins.map((plugin) => ({ plugin, scope: "bot" as const })),
+  ]) {
     const loaded = dirs.has(plugin.dir);
-    const state: CapabilityState = !plugin.enabled ? "off" : loaded ? "on" : plugin.present ? "not_served" : "off";
+    const selected = folders.some((folder) => folder.dir === plugin.dir);
+    const state: CapabilityState = !plugin.enabled || !selected ? "off" : loaded ? "on" : plugin.present ? "not_served" : "off";
     push({
-      key: `plugin:bot:${plugin.key}`,
+      key: `plugin:${scope}:${plugin.key}`,
       form: "plugin",
       name: readableName(plugin.name),
       ...(plugin.description ? { description: plugin.description } : {}),
       source: { kind: "marketplace", label: plugin.marketplace, ...(plugin.version ? { version: plugin.version } : {}) },
-      scope: "bot",
+      scope,
       state,
       enabled: plugin.enabled,
-      canToggle: viewer.mayChange,
+      canToggle: scope === "bot" && viewer.mayChange,
       ...(plugin.updateAvailable ? { updateAvailable: true } : {}),
       brings: { skills: plugin.contents.skills, commands: plugin.contents.commands, agents: plugin.contents.agents, mcpServers: plugin.declaredMcpServers },
-      // a plugin "For this bot" loads without its MCP servers (C-1)
+      // MCP receipts are completed below using the actual selected mounts.
       engine: receipt("plugin", { skills: has(plugin.contents.skills), commands: has(plugin.contents.commands), agents: has(plugin.contents.agents) }),
       ...(plugin.installedBy ? { installedBy: plugin.installedBy } : {}),
-      ...(plugin.enabled && !plugin.present ? { reason: "not_installed" as const } : {}),
+      ...(plugin.enabled && !plugin.present ? { reason: "not_installed" as const }
+        : plugin.enabled && !folders.some((folder) => folder.dir === plugin.dir) ? { reason: "name_taken" as const } : {}),
     });
   }
-  // OrgFlowPlugins.dirsFor receives these actual Claude folders, not the
-  // installed records: an enabled plugin whose copy is gone takes no name.
-  const ownNames = new Set(kind === "claudeAgent" ? inputs.botPluginDirs.map((dir) => basename(dir)) : []);
+  // Organization folders have already won their names over personal and
+  // bot copies. A declaration without a current folder claims nothing.
   for (const declared of inputs.orgFlow.declared ?? []) {
     const dir = inputs.orgFlow.dirOf(declared.name);
     const loaded = dir !== undefined && dirs.has(dir);
@@ -206,7 +220,6 @@ export function resolveBotCapabilities(inputs: CapabilityInputs, viewer: Capabil
     let reason: CapabilityReason | undefined;
     if (!inputs.orgFlow.guarded) { state = "off"; reason = "guard_off"; }
     else if (!inputs.orgFlow.member) { state = "off"; reason = "not_member"; }
-    else if (ownNames.has(declared.name)) { state = "off"; reason = "name_taken"; }
     else if (!dir) { state = "off"; reason = "not_installed"; }
     else if (!loaded) state = "not_served";
     push({
@@ -372,6 +385,27 @@ export function resolveBotCapabilities(inputs: CapabilityInputs, viewer: Capabil
         ...(state === "on" ? { mounts: [name] } : {}),
       });
     }
+  }
+
+  // Complete-plugin MCP servers, in the runtime's exact order. The
+  // selected plugin folder has already resolved organization/person/bot.
+  for (const candidate of inputs.pluginMcp ?? []) {
+    const row = items.find((item) => item.key === `plugin:${candidate.scope === "person" ? "me" : "bot"}:${candidate.key}`);
+    if (!row) continue;
+    const check = pluginMcpPrecheck(candidate.name, candidate.spec, {
+      taken: (name) => taken.has(name), organization: inputs.organization,
+      hasEnvironment: inputs.pluginEnvironment ?? inputs.personal?.hasEnvironment ?? !inputs.organization,
+    });
+    const allowed = Object.hasOwn(inputs.filterPolicy({ [candidate.name]: candidate.spec }), candidate.name);
+    const privateAddress = "url" in candidate.spec && inputs.organization && inputs.pluginHostRefused?.(candidate.spec.url);
+    if (check || !allowed || privateAddress || !engine.customMcp) {
+      if (!row.reason && check !== "invalid" && check !== "reserved") row.reason = check ?? (!allowed ? "policy" : privateAddress ? "private_address" : undefined);
+      continue;
+    }
+    taken.add(candidate.name);
+    row.mounts = [...(row.mounts ?? []), candidate.name];
+    row.engine = { ...row.engine, mcp: receipt("mcp", { mcp: true }).mcp, nothing: false };
+    row.state = "on";
   }
 
   // ── skills of the bot and of the library ──────────────────────────────

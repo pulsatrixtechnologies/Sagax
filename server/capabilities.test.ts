@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { basename } from "node:path";
 
 import type { McpServerSpec } from "./contracts.ts";
 import type { PersonalMcpServer } from "./person-connections.ts";
 import { listedMounts, resolveBotCapabilities, type CapabilityInputs } from "./capabilities.ts";
-import { engineServerMcp, perspicaxServerName, personalMcpPrecheck, serverMcpAsPerson, turnPluginDirs, turnPluginPromptDirs } from "./turn-mounts.ts";
+import { engineServerMcp, perspicaxServerName, personalMcpPrecheck, serverMcpAsPerson, turnPluginPromptDirs } from "./turn-mounts.ts";
+import { selectPluginScopes } from "./capability-plugin-mounts.ts";
 import { servedCapabilities } from "../shared/capabilities.ts";
 import { PERSPICAX_MCP_PREFIX, reservedMcpName } from "../shared/mcp-reserved-names.ts";
 
@@ -116,10 +118,13 @@ function turnMcp(input: CapabilityInputs): string[] {
 }
 
 function turnDirs(input: CapabilityInputs): string[] {
-  return [
-    ...turnPluginDirs({ driverKind: input.engine.kind, botDirs: input.botPluginDirs, orgDirs: input.orgFlow.dirsFor }),
-    ...turnPluginPromptDirs(input.engine.kind, input.botPluginDirs),
-  ].sort();
+  const selected = selectPluginScopes({
+    organization: input.orgFlow.dirsFor([]).map((dir) => ({ name: basename(dir), dir })),
+    person: (input.personalPlugins ?? []).filter((plugin) => plugin.enabled && plugin.present),
+    bot: input.botPluginDirs.map((dir) => ({ name: basename(dir), dir })),
+  });
+  return (input.engine.kind === "claudeAgent" ? selected.map((plugin) => plugin.dir)
+    : turnPluginPromptDirs(input.engine.kind, selected.filter((plugin) => plugin.scope !== "organization").map((plugin) => plugin.dir))).sort();
 }
 
 const dirOfItem = (input: CapabilityInputs, key: string): string | undefined => {
@@ -128,6 +133,43 @@ const dirOfItem = (input: CapabilityInputs, key: string): string | undefined => 
   const flow = /^flow:organization:(.+)$/.exec(key);
   return flow ? input.orgFlow.dirOf(flow[1]!) : undefined;
 };
+
+describe("personal and complete plugin capabilities", () => {
+  const byKey = (list: ReturnType<typeof resolveBotCapabilities>, key: string) => list.items.find((item) => item.key === key);
+  it("serves a personal plugin to both file engines with priority over a bot copy", () => {
+    for (const engine of ENGINES.slice(0, 2)) {
+      const input = inputs(engine);
+      input.personalPlugins = [{ ...input.botPlugins[0]!, dir: "/me/alpha" }];
+      const list = resolveBotCapabilities(input, { principalId: "p1", mayChange: true });
+      expect(byKey(list, "plugin:me:alpha@market")).toMatchObject({ scope: "me", state: "on" });
+      expect(byKey(list, "plugin:bot:alpha@market")).toMatchObject({ state: "off", reason: "name_taken" });
+      expect(turnDirs(input)).toContain("/me/alpha");
+      expect(turnDirs(input)).not.toContain("/plugins/alpha");
+    }
+  });
+
+  it("serves plugin MCP on an API engine and reports only actual unique mounts", () => {
+    const input = inputs(ENGINES[2]!);
+    input.personalPlugins = [{ ...input.botPlugins[0]!, key: "personal@market", name: "personal", dir: "/me/personal" }];
+    input.pluginEnvironment = true;
+    input.pluginHostRefused = (url) => url.includes("intranet");
+    input.pluginMcp = [
+      { scope: "person", key: "personal@market", name: "review", spec: remote("https://review.example.com/mcp") },
+      { scope: "bot", key: "alpha@market", name: "review", spec: remote("https://other.example.com/mcp") },
+      { scope: "bot", key: "alpha@market", name: "notes", spec: remote("https://notes.example.com/mcp") },
+      { scope: "bot", key: "alpha@market", name: "private", spec: remote("https://intranet.example.com/mcp") },
+      { scope: "bot", key: "alpha@market", name: "blocked", spec: remote("https://blocked.example.com/mcp") },
+      { scope: "bot", key: "alpha@market", name: "command", spec: { command: "node", args: [], env: {} } },
+    ];
+    const list = resolveBotCapabilities(input, { principalId: "p1", mayChange: true });
+    expect(byKey(list, "plugin:me:personal@market")).toMatchObject({ state: "on", mounts: ["review"], engine: { mcp: "proxied", nothing: false } });
+    expect(byKey(list, "plugin:bot:alpha@market")).toMatchObject({ state: "on", mounts: ["command"] });
+    expect(listedMounts(list).filter((name) => ["review", "command", "blocked", "private"].includes(name))).toEqual(["command", "review"]);
+    input.pluginEnvironment = false;
+    const noEnvironment = resolveBotCapabilities(input, { principalId: "p1", mayChange: true });
+    expect(byKey(noEnvironment, "plugin:bot:alpha@market")?.mounts).toBeUndefined();
+  });
+});
 
 describe("a turn mounts exactly what the list says", () => {
   for (const engine of ENGINES) {
@@ -186,7 +228,7 @@ describe("resolveBotCapabilities", () => {
     expect(byKey(resolveBotCapabilities(off, { mayChange: true }), "flow:organization:pulsatrix-flow")).toMatchObject({ state: "off", reason: "guard_off" });
   });
 
-  it("only a bot plugin folder actually passed to Claude takes the organization's Flow name", () => {
+  it("the organization's current Flow folder wins over bot copies, and a missing copy claims nothing", () => {
     const input = inputs(ENGINES[0]!);
     const flow = { ...input.botPlugins[0]!, key: "pulsatrix-flow@market", name: "pulsatrix-flow", dir: "/plugins/pulsatrix-flow", present: false };
     input.botPlugins.push(flow);
@@ -198,8 +240,10 @@ describe("resolveBotCapabilities", () => {
     flow.present = true;
     input.botPluginDirs.push(flow.dir);
     list = resolveBotCapabilities(input, { mayChange: true });
-    expect(byKey(list, "flow:organization:pulsatrix-flow")).toMatchObject({ state: "off", reason: "name_taken" });
-    expect(turnDirs(input)).not.toContain("/org-flow/pulsatrix-flow");
+    expect(byKey(list, "flow:organization:pulsatrix-flow")).toMatchObject({ state: "imposed" });
+    expect(byKey(list, "plugin:bot:pulsatrix-flow@market")).toMatchObject({ state: "off", reason: "name_taken" });
+    expect(turnDirs(input)).toContain("/org-flow/pulsatrix-flow");
+    expect(turnDirs(input)).not.toContain(flow.dir);
 
     input.engine = ENGINES[1]!;
     list = resolveBotCapabilities(input, { mayChange: true });

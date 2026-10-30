@@ -1125,11 +1125,13 @@ import { ACCOUNT_REAUTH_PATH, AccountReauth, perspicaxDeletion } from "./account
 import { createRegistrySearch } from "./plugin-registry.ts";
 import { BotPluginError, BotPlugins, marketplaceAllowed, migrateBotMarketplaces, marketplacePolicySchema, normalizePolicyEntry, parseGitSource, readPluginContents, type MarketplacePolicy, type PluginContents } from "./bot-plugins.ts";
 import { pluginTurnFiles, pluginTurnPrompt } from "./plugin-turn.ts";
-import { engineServerMcp, perspicaxServerName, personalMcpPrecheck, serverMcpAsPerson, turnPluginDirs, turnPluginPromptDirs } from "./turn-mounts.ts";
+import { engineServerMcp, perspicaxServerName, personalMcpPrecheck, serverMcpAsPerson, turnPluginPromptDirs } from "./turn-mounts.ts";
 import { resolveBotCapabilities, type CapabilityInputs, type InstallationServerInput } from "./capabilities.ts";
 import { createBotCapabilitiesRoutes, type BotCapabilitiesAnswer } from "./routes/bot-capabilities.ts";
 import { reservedMcpName } from "../shared/mcp-reserved-names.ts";
-import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
+import { createBotPluginRoutes, createPersonalPluginRoutes } from "./routes/bot-plugins.ts";
+import { personalPluginStorage } from "./person-plugins.ts";
+import { pluginMcpPrecheck, pluginSpecOnComputer, selectPluginScopes, type PluginScope } from "./capability-plugin-mounts.ts";
 import { createLifecycleHookRoutes } from "./routes/lifecycle-hooks.ts";
 import { createMessagesRoutes } from "./routes/messages.ts";
 import { handleMessagesMcp } from "./imessage-mcp.ts";
@@ -4103,6 +4105,9 @@ type InternalCapability = {
   /** A "personal-mcp" capability: which of that person's own MCP servers
    * (a command in their server environment) it relays to. */
   personalMcpServer?: string;
+  /** A complete plugin's command, resolved against its current selected
+   * install on every request. No execution spec rides the bearer. */
+  pluginMcp?: { scope: "person" | "bot"; key: string; name: string };
   /** A "desktop" capability: whose own computer it reaches (desktop bridge). */
   desktopPrincipalId?: string;
   skillAuthoring: boolean;
@@ -8057,16 +8062,23 @@ async function syncGithubForTurn(principalId: string, generation: string, botId?
  * computer (server/sandbox-plugins.ts), so a plugin's scripts run there.
  * Never in another person's environment: a plugin may come from a private
  * marketplace only its owner reads. Best effort. */
-const pluginSyncedGenerations = new Set<string>();
+const pluginSyncedGenerations = new Map<string, Promise<void>>();
 async function syncPluginsForTurn(principalId: string, generation: string, botId: string): Promise<void> {
   if (!userSandbox) return;
   const key = `${principalId}\n${generation}\n${botId}`;
-  if (pluginSyncedGenerations.has(key)) return;
-  pluginSyncedGenerations.add(key);
-  if (pluginSyncedGenerations.size > 2_000) pluginSyncedGenerations.delete(pluginSyncedGenerations.values().next().value!);
+  const current = pluginSyncedGenerations.get(key);
+  if (current) return current;
+  const copying = syncPluginFoldersForTurn(principalId, botId);
+  pluginSyncedGenerations.set(key, copying);
+  if (pluginSyncedGenerations.size > 2_000) pluginSyncedGenerations.delete(pluginSyncedGenerations.keys().next().value!);
+  return copying;
+}
+async function syncPluginFoldersForTurn(principalId: string, botId: string): Promise<void> {
   const bot = store.bot(botId);
-  if (!bot || effectiveBotOwner(bot).trim().toLowerCase() !== principalId.trim().toLowerCase()) return;
-  const plugins = botPlugins.enabledPlugins(botId);
+  if (!bot || !userSandbox) return;
+  // A private bot install stays with its owner. Organization and personal
+  // installs are selected for the person whose environment receives them.
+  const plugins = scopedPluginFolders(bot, principalId).filter((plugin) => plugin.scope !== "bot" || samePerson(effectiveBotOwner(bot), principalId));
   if (!plugins.length) return;
   try {
     const result = await syncPluginsToSandbox(plugins, { exec: (input) => userSandbox!.exec(principalId, input, botId) });
@@ -8197,11 +8209,20 @@ const pluginMarketplaces = new PluginMarketplaces({
   dataDir: DATA_DIR,
   gitEnvironment: (actor) => githubGitEnvironment(githubCredentialsFor(actor)[0]?.token),
   policy: pluginMarketplacePolicy,
-  inUse: (name) => botPlugins.botsUsing(name),
+  inUse: (name) => [...botPlugins.botsUsing(name), ...personalPlugins.botsUsing(name).map((id) => `person:${id}`)],
 });
 const botPlugins = new BotPlugins({
   dataDir: DATA_DIR,
   marketplaces: pluginMarketplaces,
+  gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
+  credentials: ({ actor, source }) => githubCredentialsFor(actor, source.github?.owner),
+  tokens: marketplaceCredentials,
+  policy: pluginMarketplacePolicy,
+});
+const personalPlugins = new BotPlugins({
+  dataDir: DATA_DIR,
+  marketplaces: pluginMarketplaces,
+  storage: personalPluginStorage(DATA_DIR, personConnections),
   gitEnvironment: (actor) => githubGitEnvironment(usablePersonGithub(actor)?.token),
   credentials: ({ actor, source }) => githubCredentialsFor(actor, source.github?.owner),
   tokens: marketplaceCredentials,
@@ -8316,10 +8337,11 @@ async function personalHostRefusalCached(url: string): Promise<boolean> {
   return refused;
 }
 /** A person's own command, relayed to their server environment for one turn. */
-function personalStdioIntegration(botId: string, threadId: string, generation: string, principalId: string, server: string) {
+function personalStdioIntegration(botId: string, threadId: string, generation: string, principalId: string, server: string, pluginMcp?: InternalCapability["pluginMcp"]) {
   const token = mintInternalCapability({
     botId, threadId, generation, depth: 0, kind: "personal-mcp", skillAuthoring: false, createdBots: 0, openedThreads: 0,
     sandboxPrincipalId: principalId, personalMcpServer: server,
+    ...(pluginMcp ? { pluginMcp } : {}),
   });
   return {
     command: process.execPath,
@@ -8364,6 +8386,35 @@ async function mountPersonalMcp(
       headers = signed.headers;
     }
     integrations.custom = { ...integrations.custom, [name]: { type: server.type, url: server.url, headers } };
+  }
+}
+
+/** A complete plugin's MCP servers use the same selected plugin folders
+ * and namespace as the receipt. Commands on an organization server always
+ * cross the per-turn relay into this person's environment. */
+async function mountPluginMcp(
+  integrations: NonNullable<SendTurnInput["integrations"]>,
+  input: { botId: string; threadId: string; generation: string; customMcp: boolean; principal: string | null },
+): Promise<void> {
+  if (!input.customMcp) return;
+  const bot = store.bot(input.botId);
+  if (!bot) return;
+  const person = IDENTITY.kind === "perspicax" ? input.principal?.trim().toLowerCase() : localPrincipalId();
+  if (!person) return;
+  for (const server of scopedPluginMcp(bot, person)) {
+    const refused = pluginMcpPrecheck(server.name, server.spec, {
+      taken: (name) => Object.hasOwn(integrations.custom ?? {}, name),
+      organization: IDENTITY.kind === "perspicax", hasEnvironment: Boolean(userSandbox),
+    });
+    if (refused) continue;
+    if (!Object.hasOwn(managedPolicy.filterMcp({ [server.name]: server.spec }), server.name)) continue;
+    let spec = server.spec;
+    if ("url" in spec) {
+      if (IDENTITY.kind === "perspicax" && await personalHostRefusalCached(spec.url)) continue;
+    } else if (IDENTITY.kind === "perspicax") {
+      spec = personalStdioIntegration(input.botId, input.threadId, input.generation, person, server.name, { scope: server.scope, key: server.key, name: server.name });
+    } else spec = pluginSpecOnComputer(spec, { name: server.plugin, dir: server.dir });
+    integrations.custom = { ...integrations.custom, [server.name]: spec };
   }
 }
 // Published pages (routes/published-pages.ts): a person's own pages, managed
@@ -8713,19 +8764,40 @@ function botLoadsPlugins(bot: { modelSelection: { instanceId: string } }): boole
   // enabled skills and commands in the turn prompt.
   return kind !== undefined && supportsWorkspaceFiles(kind);
 }
+function scopedPluginFolders(bot: { id: string; ownerUserId?: unknown }, principal = effectiveBotOwner(bot)): Array<{ name: string; dir: string; scope: PluginScope }> {
+  const person = IDENTITY.kind === "perspicax" ? principal.trim().toLowerCase() : localPrincipalId();
+  return selectPluginScopes({
+    organization: orgFlowPlugins.dirsFor(person, []).map((dir) => ({ name: basename(dir), dir })),
+    person: person ? personalPlugins.enabledPlugins(person) : [],
+    bot: botPlugins.enabledPlugins(bot.id),
+  });
+}
+function scopedPluginMcp(bot: { id: string; ownerUserId?: unknown }, principal: string) {
+  const selected = scopedPluginFolders(bot, principal);
+  const candidates = [
+    ...personalPlugins.mcpServers(principal).map((server) => ({ ...server, scope: "person" as const })),
+    ...(IDENTITY.kind !== "perspicax" || samePerson(effectiveBotOwner(bot), principal) ? botPlugins.mcpServers(bot.id).map((server) => ({ ...server, scope: "bot" as const })) : []),
+  ];
+  return candidates.flatMap((server) => {
+    const folder = selected.find((plugin) => plugin.scope === server.scope && plugin.name === server.plugin);
+    if (!folder) return [];
+    // Two marketplaces may use the same plugin name. Only the install
+    // whose exact current folder was selected owns its declared servers.
+    const source = server.scope === "person" ? personalPlugins : botPlugins;
+    const install = source.listPlugins(server.scope === "person" ? principal : bot.id).find((plugin) => plugin.key === server.key);
+    if (!install || source.installedFolder(server.scope === "person" ? principal : bot.id, install).dir !== folder.dir) return [];
+    return [{ ...server, dir: folder.dir }];
+  });
+}
 /** Enabled plugin folders for a Claude turn (`--plugin-dir`). Empty for every other engine. */
-function pluginDirsFor(bot: { id: string; ownerUserId?: unknown }, instance: { driverKind: string }): { pluginDirs?: string[] } {
-  const owner = effectiveBotOwner(bot);
-  // The bot's own, then the organization's Flow plugins (an admin's choice
-  // in Perspicax), never twice: server/turn-mounts.ts, shared with the
-  // capabilities resolver.
-  const dirs = turnPluginDirs({ driverKind: instance.driverKind, botDirs: botPlugins.pluginDirs(bot.id), orgDirs: (own) => orgFlowPlugins.dirsFor(owner, own) });
+function pluginDirsFor(bot: { id: string; ownerUserId?: unknown }, instance: { driverKind: string }, principal?: string): { pluginDirs?: string[] } {
+  const dirs = instance.driverKind === "claudeAgent" ? scopedPluginFolders(bot, principal).map((plugin) => plugin.dir) : [];
   return dirs.length ? { pluginDirs: dirs } : {};
 }
 /** The same enabled skills and commands, for a workspace engine that is not Claude. Claude uses --plugin-dir instead. */
-function pluginSkillsForTurn(bot: { id: string; ownerUserId?: unknown }, instance: { driverKind: string } | undefined): string {
+function pluginSkillsForTurn(bot: { id: string; ownerUserId?: unknown }, instance: { driverKind: string } | undefined, principal?: string): string {
   if (!instance) return "";
-  const dirs = turnPluginPromptDirs(instance.driverKind, botPlugins.pluginDirs(bot.id));
+  const dirs = turnPluginPromptDirs(instance.driverKind, scopedPluginFolders(bot, principal).filter((plugin) => plugin.scope !== "organization").map((plugin) => plugin.dir));
   if (!dirs.length) return "";
   return pluginTurnPrompt({ driverKind: instance.driverKind, files: pluginTurnFiles(dirs) });
 }
@@ -8807,13 +8879,22 @@ function botCapabilitiesFor(auth: RequestAuth, botId: string, engineId: string |
       };
     }),
     botPluginDirs: botPlugins.pluginDirs(bot.id),
+    personalPlugins: (principal || !organization ? personalPlugins.listPlugins(principal ?? localPrincipalId()) : []).map((plugin) => {
+      const folder = personalPlugins.installedFolder(principal ?? localPrincipalId(), plugin);
+      let contents: PluginContents = { skills: [], commands: [], agents: [] };
+      try { if (folder.present) contents = readPluginContents(folder.dir); } catch { /* listed without its contents */ }
+      return { ...plugin, dir: folder.dir, present: folder.present, contents };
+    }),
+    pluginMcp: principal || !organization ? scopedPluginMcp(bot, principal ?? localPrincipalId()) : [],
+    pluginEnvironment: Boolean(userSandbox),
+    pluginHostRefused: (url) => personalHostChecks.get(url)?.refused,
     workspacePlugins: pluginMarketplaces.installed().map((plugin) => ({
       key: plugin.key, name: plugin.name, marketplace: plugin.marketplace, servers: plugin.servers, skills: plugin.skills,
       ...(plugin.version ? { version: plugin.version } : {}),
       ...(workspaceOffered.get(plugin.key) ? { updateAvailable: true } : {}),
     })),
     orgFlow: {
-      dirsFor: (own) => orgFlowPlugins.dirsFor(owner, own),
+      dirsFor: (own) => orgFlowPlugins.dirsFor(principal ?? owner, own),
       ...(declaration ? { declared: declaration.plugins } : {}),
       guarded: orgFlowGuarded(declaration),
       member: Boolean(owner) && orgMemberActive(owner),
@@ -8911,6 +8992,19 @@ ROUTES.push(createBotWizardRoutes({
     if (!bot) return null;
     const gate = threadTitleGate(bot);
     return gate.ok && gate.instance.generateText ? gate.instance.generateText.bind(gate.instance) : null;
+  },
+}));
+ROUTES.push(createPersonalPluginRoutes({
+  plugins: personalPlugins,
+  person: (auth) => IDENTITY.kind === "perspicax" ? sessionPrincipal(auth) : localPrincipalId(),
+  actor: (auth) => IDENTITY.kind === "perspicax" ? sessionPrincipal(auth) ?? undefined : localPrincipalId(),
+  viewer: marketplaceViewer,
+  mayShareOrgWide: mayShareMarketplaceOrgWide,
+  ownIntegrationsRefusal,
+  mayManageMarketplaces,
+  policy: pluginMarketplacePolicy,
+  changed: (person, action, detail, auth) => {
+    orgAudit({ category: "security", action: `person.${action}`, target: { kind: "person", id: person.id }, changed: ["plugins"], after: detail, actor: orgAuditActor(auth) });
   },
 }));
 ROUTES.push(createBotPluginRoutes<BotRecord>({
@@ -22662,6 +22756,10 @@ async function startTurn(
         botId: bot.id, threadId, generation: dispatchClaimId,
         customMcp: instance.adapter.capabilities.customMcp === true, principal: turnPlace.principal,
       });
+      await mountPluginMcp(integrations, {
+        botId: bot.id, threadId, generation: dispatchClaimId,
+        customMcp: instance.adapter.capabilities.customMcp === true, principal: turnPlace.principal,
+      });
       /** A Team incidents turn's computer is optional (turnAnswers): a place
        * that cannot be prepared leaves it with none — any seat taken on the
        * way let go — and the prompt names the cause, where any other turn
@@ -23362,7 +23460,7 @@ async function startTurn(
         { id: "docs", label: "Documents index", text: docsIndexPrompt(bot.id, { tools: integrations.agents ? "agents" : worksInWorkspace ? "files" : "none" }) },
         // liveBot was captured before awaited setup work; an assignment PUT
         // in that window must still reach this turn's prompt.
-        { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined) + pluginSkillsForTurn(bot, instance) : "" },
+        { id: "skills", label: "Skills index", text: privateWorkspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined) + pluginSkillsForTurn(bot, instance, orgSpeakerPrincipal(bot, speaker)) : "" },
         { id: "skill-instructions", label: "Skill instructions", text: skillInstructions },
         { id: "playbooks", label: "Playbooks", text: packagePlaybooks },
         { id: "webhook", label: "Webhook provenance", text: opts?.automationSource === "webhook" ? WEBHOOK_PROMPT : "" },
@@ -23549,7 +23647,7 @@ async function startTurn(
         mcpFromUserConfig: claudeUserMcpEnabled(cfg, IDENTITY.kind === "perspicax") && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(bot, instance, speaker, turnAccess?.via),
         grokCloudConnectors: grokCloudConnectorsForTurn(accountConnectorInput(bot, instance, speaker, turnAccess?.via)),
-        ...pluginDirsFor(bot, instance),
+        ...pluginDirsFor(bot, instance, orgSpeakerPrincipal(bot, speaker)),
         mcpCallTimeoutMs: mcpCallTimeoutMinutes(cfg) * 60_000,
         cwd,
       });
@@ -26905,6 +27003,10 @@ async function runGroupMemberTurn(
     botId: readyBot.id, threadId, generation: internalGeneration,
     customMcp: instance.adapter.capabilities.customMcp === true, principal: roomPlace.principal,
   });
+  await mountPluginMcp(integrations, {
+    botId: readyBot.id, threadId, generation: internalGeneration,
+    customMcp: instance.adapter.capabilities.customMcp === true, principal: roomPlace.principal,
+  });
   if (!roomSetupIsCurrent()) return false;
   // A lazily claimed desktop (the VPS, the member's Boat) shows in the room
   // from the moment its first computer call claims it.
@@ -27186,7 +27288,7 @@ async function runGroupMemberTurn(
     })() },
     // readyBot was captured before awaited setup work; an assignment PUT in
     // that window must still reach this turn's prompt.
-    { id: "skills", label: "Skills index", text: workspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined) + pluginSkillsForTurn(bot, instance) : "" },
+    { id: "skills", label: "Skills index", text: workspace ? skillsSystemPrompt(bot.id, skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined) + pluginSkillsForTurn(bot, instance, roomPrincipal ?? undefined) : "" },
     { id: "skill-instructions", label: "Skill instructions", text: renderSkillInstructions(selectedSkills, { includeRoot: Boolean(workspace) }) },
     { id: "playbooks", label: "Playbooks", text: installedPlaybookInstructions(text, bot.playbooks) },
   ], roomStable || instance.driverKind === "claudeAgent"
@@ -27376,7 +27478,7 @@ async function runGroupMemberTurn(
         mcpFromUserConfig: claudeUserMcpEnabled(cfg, IDENTITY.kind === "perspicax") && !managedPolicy.restrictsMcp(),
         claudeAiConnectors: claudeAiConnectorsFor(readyBot, instance, roomSpeaker, roomTurnAccess?.via),
         grokCloudConnectors: grokCloudConnectorsForTurn(accountConnectorInput(readyBot, instance, roomSpeaker, roomTurnAccess?.via)),
-        ...pluginDirsFor(readyBot, instance),
+        ...pluginDirsFor(readyBot, instance, roomPrincipal ?? undefined),
         mcpCallTimeoutMs: mcpCallTimeoutMinutes(cfg) * 60_000,
         ...(instance.instanceId === roomTurnSelection(readyBot).instanceId
           ? memberTurnSelection(roomTurnSelection(readyBot))
@@ -30799,8 +30901,8 @@ function turnConnectorsFor(bot: BotRecord, instance: Parameters<typeof withholdH
       personalServers = Object.entries(personConnections.servers(person)).filter(([, server]) => server.enabled).map(([name]) => name);
     } catch { /* unreadable: none listed */ }
   }
-  const plugins = (pluginDirsFor(bot, instance).pluginDirs ?? []).map((dir) => basename(dir));
-  if (!plugins.length && pluginSkillsForTurn(bot, instance)) plugins.push(...botPlugins.enabledPlugins(bot.id).map((plugin) => plugin.name));
+  const plugins = (pluginDirsFor(bot, instance, person).pluginDirs ?? []).map((dir) => basename(dir));
+  if (!plugins.length && pluginSkillsForTurn(bot, instance, person)) plugins.push(...scopedPluginFolders(bot, person).filter((plugin) => plugin.scope !== "organization").map((plugin) => plugin.name));
   return turnConnectorsRecord({
     at: Date.now(),
     mounted: Object.keys(integrations.custom ?? {}),
@@ -39403,7 +39505,7 @@ function harnessCommandSource(bot: BotRecord, threadId: string | undefined, opti
         ...(cwd ? { cwd } : {}),
         ...(withholdHostToolsFor(instance) ? { withholdHostTools: true } : {}),
         mcpFromUserConfig: claudeUserMcpEnabled(cfg, IDENTITY.kind === "perspicax") && !managedPolicy.restrictsMcp(),
-        ...pluginDirsFor(bot, instance),
+        ...pluginDirsFor(bot, instance, options.speaker ? orgSpeakerPrincipal(bot, options.speaker) : undefined),
       }),
       ...account,
     },
@@ -43758,9 +43860,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (personalHeld) return json(res, 200, answerError(personalHeld));
         }
         let server: PersonalMcpServer | undefined;
-        try { server = personConnections.servers(person)[name]; } catch { server = undefined; }
+        if (internalCapability.pluginMcp) {
+          const plugin = internalCapability.pluginMcp;
+          const bot = store.bot(internalCapability.botId);
+          const current = bot ? scopedPluginMcp(bot, person).find((entry) => entry.scope === plugin.scope && entry.key === plugin.key && entry.name === plugin.name) : undefined;
+          if (current && !("url" in current.spec)) server = { kind: "stdio", ...current.spec, runsIn: "environment", enabled: true, addedAt: 0 };
+        } else {
+          try { server = personConnections.servers(person)[name]; } catch { server = undefined; }
+        }
         if (!server || server.kind !== "stdio" || !server.enabled) return json(res, 200, answerError("This MCP server was removed or turned off in Settings > Mes connexions."));
         try {
+          if (internalCapability.pluginMcp) await syncPluginsForTurn(person, internalCapability.generation, internalCapability.botId);
           if (frame?.method === "tools/call") await syncGithubForTurn(person, internalCapability.generation, internalCapability.botId);
           const answer = await stdioRelay.relay({
             principalId: person, botId: internalCapability.botId, threadId: internalCapability.threadId, server: name,

@@ -179,3 +179,24 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
     }
   };
 }
+
+/** The same complete installer for "Me". Its target comes exclusively
+ * from the signed-in caller; no bot or person id in the URL/body can
+ * select someone else's encrypted store. */
+export function createPersonalPluginRoutes(deps: Omit<BotPluginRouteDeps<{ id: string }>, "bot" | "mayRead" | "mayChange" | "engineLoadsPlugins"> & {
+  person: (auth: RequestAuth) => string | null;
+}): RouteHandler {
+  return async (context) => {
+    if (context.path !== "/api/me/plugins" && !context.path.startsWith("/api/me/plugins/")) return PASS;
+    const person = deps.person(context.auth);
+    if (!person) return context.json(context.res, 403, { error: "Sign in to manage your own capabilities.", code: "person_required" });
+    const handler = createBotPluginRoutes({
+      ...deps,
+      bot: (id) => id === "me" ? { id: person } : undefined,
+      mayRead: () => true,
+      mayChange: () => true,
+      engineLoadsPlugins: () => true,
+    });
+    return handler({ ...context, path: `/api/bots/me/plugins${context.path.slice("/api/me/plugins".length)}` });
+  };
+}

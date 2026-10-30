@@ -37,12 +37,12 @@ export interface PluginMcpDeclarations {
 
 /** `executionRoot` can be the plugin folder in the person's environment;
  * no command receives the server host's checkout path in that case. */
-export function readPluginMcpServers(root: string, executionRoot = root): PluginMcpDeclarations {
+export function readPluginMcpServers(root: string, executionRoot = root, fallbackManifest?: Record<string, unknown>): PluginMcpDeclarations {
   const result: PluginMcpDeclarations = { servers: [], skipped: [] };
   const blocks: Json[] = [];
   const mcpJson = readJson(join(root, ".mcp.json"));
   if (mcpJson) blocks.push(record(mcpJson.mcpServers) ?? mcpJson);
-  const manifest = readJson(join(root, ".claude-plugin", "plugin.json"));
+  const manifest = readJson(join(root, ".claude-plugin", "plugin.json")) ?? fallbackManifest;
   if (manifest) {
     if (record(manifest.mcpServers)) blocks.push(record(record(manifest.mcpServers)!.mcpServers) ?? record(manifest.mcpServers)!);
     else if (typeof manifest.mcpServers === "string") {

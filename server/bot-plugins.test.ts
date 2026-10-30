@@ -155,7 +155,7 @@ describe("BotPlugins", () => {
 
     const installed = await plugins.install("bot-1", { marketplace: "acme-tools", plugin: "reviewer" }, "pr_owner");
     expect(installed).toMatchObject({ key: "reviewer@acme-tools", enabled: true, version: "1.2.0" });
-    expect(installed.removed).toEqual(expect.arrayContaining(["hooks", ".mcp.json", "bin", "plugin.json hooks", "plugin.json mcpServers"]));
+    expect(installed.removed).toEqual(expect.arrayContaining(["hooks", ".mcp.json", "plugin.json hooks", "plugin.json mcpServers"]));
     expect(installed.declaredMcpServers.sort()).toEqual(["db", "tracker"]);
     const [dir] = plugins.pluginDirs("bot-1");
     expect(dir).toBeTruthy();
@@ -163,7 +163,7 @@ describe("BotPlugins", () => {
     expect(existsSync(join(dir!, "commands/review.md"))).toBe(true);
     expect(existsSync(join(dir!, "hooks"))).toBe(false);
     expect(existsSync(join(dir!, ".mcp.json"))).toBe(false);
-    expect(existsSync(join(dir!, "bin"))).toBe(false);
+    expect(existsSync(join(dir!, "bin", "tool"))).toBe(true);
     expect(existsSync(join(dir!, "skills/review/link"))).toBe(false);
     const manifest = JSON.parse(readFileSync(join(dir!, ".claude-plugin/plugin.json"), "utf8"));
     expect(manifest).toEqual({ name: "reviewer" });
@@ -172,6 +172,39 @@ describe("BotPlugins", () => {
     expect(plugins.pluginDirs("bot-1")).toEqual([]);
     // another bot gets nothing
     expect(plugins.pluginDirs("bot-2")).toEqual([]);
+  });
+
+  it("keeps plugin MCP execution specs private, uses the sandbox root and replaces them on update", async () => {
+    const repo = marketplaceRepo();
+    write(repo, "plugins/reviewer/.mcp.json", JSON.stringify({ mcpServers: {
+      local: { command: "node", args: ["${CLAUDE_PLUGIN_ROOT}/bin/tool"], env: { REGION: "fixture-region" } },
+      remote: { url: "https://tools.example.com/mcp", headers: { "X-Token": "fixture-header" } },
+    } }));
+    const plugins = botPluginsWithMarketplaces({ dataDir: temp(), git: fakeGit({ "https://github.com/acme/tools.git": repo }, []), gitEnvironment: () => ({}), policy: () => undefined });
+    await plugins.addMarketplace("bot-1", { source: "acme/tools" }, undefined);
+    const installed = await plugins.install("bot-1", { marketplace: "acme-tools", plugin: "reviewer" }, undefined);
+    const servers = plugins.mcpServers("bot-1");
+    expect(servers.find((server) => server.name === "local")?.spec).toEqual({ command: "node", args: ["/workspace/sagax-plugins/reviewer/bin/tool"], env: { REGION: "fixture-region" } });
+    expect(servers.find((server) => server.name === "remote")?.spec).toEqual({ type: "http", url: "https://tools.example.com/mcp", headers: { "X-Token": "fixture-header" } });
+    for (const listing of [installed, plugins.listPlugins("bot-1"), plugins.stateFor("bot-1")]) {
+      expect(JSON.stringify(listing)).not.toContain("fixture-region");
+      expect(JSON.stringify(listing)).not.toContain("fixture-header");
+    }
+    const stateFile = join(plugins.folder("bot-1"), "state.json");
+    const stored = JSON.parse(readFileSync(stateFile, "utf8"));
+    stored.plugins[installed.key].mcpServers.injected = { command: "node", args: [], env: { SAGAX_HARNESS_URL: "https://other.example.com" } };
+    writeFileSync(stateFile, JSON.stringify(stored));
+    expect(plugins.mcpServers("bot-1").map((server) => server.name).sort()).toEqual(["local", "remote", "tracker"]);
+    plugins.setEnabled("bot-1", installed.key, false);
+    expect(plugins.mcpServers("bot-1")).toEqual([]);
+    plugins.setEnabled("bot-1", installed.key, true);
+    write(repo, "plugins/reviewer/.mcp.json", JSON.stringify({ mcpServers: { remote: { url: "https://new-tools.example.com/mcp" } } }));
+    await plugins.updateMarketplace("bot-1", "acme-tools", undefined);
+    await plugins.install("bot-1", { marketplace: "acme-tools", plugin: "reviewer" }, undefined);
+    expect(plugins.mcpServers("bot-1").some((server) => server.name === "local")).toBe(false);
+    expect(plugins.mcpServers("bot-1").find((server) => server.name === "remote")?.spec).toMatchObject({ url: "https://new-tools.example.com/mcp" });
+    await plugins.uninstall("bot-1", installed.key);
+    expect(plugins.mcpServers("bot-1")).toEqual([]);
   });
 
   it("refuses a plugin path that leaves its marketplace", async () => {

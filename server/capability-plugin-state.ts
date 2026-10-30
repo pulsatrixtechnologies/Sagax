@@ -2,6 +2,11 @@
 // Contents and execution stay in BotPlugins; a store chooses its scope.
 import { z } from "zod";
 
+const pluginMcpSpecSchema = z.union([
+  z.object({ command: z.string(), args: z.array(z.string()), env: z.record(z.string(), z.string()) }).strict(),
+  z.object({ type: z.enum(["http", "sse"]), url: z.string(), headers: z.record(z.string(), z.string()) }).strict(),
+]);
+
 export const capabilityPluginRecordSchema = z.object({
   name: z.string(),
   marketplace: z.string(),
@@ -14,6 +19,8 @@ export const capabilityPluginRecordSchema = z.object({
   updatedAt: z.number(),
   removed: z.array(z.string()),
   declaredMcpServers: z.array(z.string()),
+  /** Private execution specs. Listings carry names only. */
+  mcpServers: z.record(z.string(), pluginMcpSpecSchema).optional(),
   lifecycleHooks: z.number().int().min(0).max(100).optional(),
 }).strict();
 
