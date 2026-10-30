@@ -8831,6 +8831,7 @@ function botCapabilitiesFor(auth: RequestAuth, botId: string, engineId: string |
     skills: library
       ? listBotSkillsWithOrigin(bot.id, bot.assignedSkills).skills.map((skill) => ({ name: skill.name, description: skill.description, enabled: skill.enabled, origin: skill.origin, source: skill.source }))
       : listSkills(bot.id).map((skill) => ({ name: skill.name, description: skill.description, enabled: skill.enabled, origin: "private" as const, source: skill.source })),
+    librarySkills: Object.values(readSkillLibraryIndex()).map((skill) => ({ name: skill.name, source: skill.source })),
     skillsLibrary: library,
     ...(supportsWorkspaceFiles(kind) ? { promptIndex: skillsPromptIndex(bot.id, library ? bot.assignedSkills : undefined) } : {}),
     roles: {

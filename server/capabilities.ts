@@ -10,6 +10,7 @@
 // the turn calls (server/turn-mounts.ts), so the list says what a turn gets
 // (server/capabilities.test.ts, "a turn mounts exactly what the list says").
 // Ids never reach a name: names are readable, keys are never shown.
+import { basename } from "node:path";
 import type { McpServerSpec } from "./contracts.ts";
 import type { GithubConnection, PersonalMcpServer } from "./person-connections.ts";
 import type { PluginContents } from "./bot-plugins.ts";
@@ -136,6 +137,9 @@ export interface CapabilityInputs<S extends Record<string, McpServerSpec> = Reco
 
   // skills
   skills: SkillInput[];
+  /** Current library provenance, including unassigned skills while the
+   * library is off. Installed-plugin records can outlive their contents. */
+  librarySkills: Array<{ name: string; source: string }>;
   skillsLibrary: boolean;
   promptIndex?: BotCapabilities["promptIndex"];
 
@@ -192,7 +196,9 @@ export function resolveBotCapabilities(inputs: CapabilityInputs, viewer: Capabil
       ...(plugin.enabled && !plugin.present ? { reason: "not_installed" as const } : {}),
     });
   }
-  const ownNames = new Set(inputs.botPlugins.filter((plugin) => plugin.enabled).map((plugin) => plugin.name));
+  // OrgFlowPlugins.dirsFor receives these actual Claude folders, not the
+  // installed records: an enabled plugin whose copy is gone takes no name.
+  const ownNames = new Set(kind === "claudeAgent" ? inputs.botPluginDirs.map((dir) => basename(dir)) : []);
   for (const declared of inputs.orgFlow.declared ?? []) {
     const dir = inputs.orgFlow.dirOf(declared.name);
     const loaded = dir !== undefined && dirs.has(dir);
@@ -224,8 +230,8 @@ export function resolveBotCapabilities(inputs: CapabilityInputs, viewer: Capabil
   const mounted = new Set(engine.customMcp ? Object.keys(asPerson.servers) : []);
   const withheld = new Set(asPerson.githubWithheld);
   const policyKept = new Set(Object.keys(inputs.filterPolicy(withoutHostCommands(inputs.organization, inputs.configured))));
-  const byPlugin = new Map<string, WorkspacePluginInput>();
-  for (const plugin of inputs.workspacePlugins) for (const server of plugin.servers) byPlugin.set(server, plugin);
+  const serverOwners = currentPluginOwners(inputs.installationServers.filter((server) => server.valid), inputs.workspacePlugins, (plugin) => plugin.servers);
+  const skillOwners = currentPluginOwners(inputs.librarySkills, inputs.workspacePlugins, (plugin) => plugin.skills);
   const serverRow = (server: InstallationServerInput): { state: CapabilityState; reason?: CapabilityReason; connect?: Capability["connect"] } => {
     if (reservedMcpName(server.name)) return { state: "reserved" };
     if (!server.enabled) return { state: "off", reason: "disabled" };
@@ -244,7 +250,7 @@ export function resolveBotCapabilities(inputs: CapabilityInputs, viewer: Capabil
     if (!server.valid) continue;
     const row = serverRow(server);
     serverItems.set(server.name, row);
-    if (byPlugin.has(server.name)) continue; // folded into its plugin below
+    if (serverOwners.has(server.name)) continue; // folded into its current, unique plugin below
     push({
       key: `mcp:installation:${server.name}`,
       form: "mcp",
@@ -264,15 +270,16 @@ export function resolveBotCapabilities(inputs: CapabilityInputs, viewer: Capabil
   const skillByName = new Map(inputs.skills.map((skill) => [skill.name, skill] as const));
   const pluginSkills = new Set<string>();
   for (const plugin of inputs.workspacePlugins) {
-    const servers = plugin.servers.filter((name) => serverItems.has(name));
+    const servers = [...new Set(plugin.servers)].filter((name) => serverOwners.get(name) === plugin.key);
+    const ownedSkills = [...new Set(plugin.skills)].filter((name) => skillOwners.get(name) === plugin.key);
     const on = servers.filter((name) => serverItems.get(name)!.state === "on");
-    const skills = plugin.skills.filter((name) => skillByName.get(name)?.origin === "library" && skillByName.get(name)!.enabled);
-    for (const name of plugin.skills) pluginSkills.add(name);
+    const skills = ownedSkills.filter((name) => skillByName.get(name)?.origin === "library" && skillByName.get(name)!.source === plugin.marketplace && skillByName.get(name)!.enabled);
+    for (const name of ownedSkills) pluginSkills.add(name);
     const needs = servers.map((name) => serverItems.get(name)!).find((row) => row.state === "to_connect" || row.connect);
     let state: CapabilityState = on.length || skills.length ? "on" : needs?.state === "to_connect" ? "to_connect" : "off";
     let reason: CapabilityReason | undefined = needs?.reason;
     // its skills wait in the library: off, or not assigned to this bot (C-2)
-    if (state === "off" && plugin.skills.length && !servers.length) reason = inputs.skillsLibrary ? "not_assigned" : "library_off";
+    if (state === "off" && ownedSkills.length && !servers.length) reason = inputs.skillsLibrary ? "not_assigned" : "library_off";
     if (state === "off" && !reason && servers.length) reason = servers.map((name) => serverItems.get(name)!.reason).find(Boolean);
     if (state === "on" && !engine.customMcp && !skills.length) state = "not_served";
     push({
@@ -286,7 +293,7 @@ export function resolveBotCapabilities(inputs: CapabilityInputs, viewer: Capabil
       enabled: state !== "off",
       canToggle: false,
       ...(plugin.updateAvailable ? { updateAvailable: true } : {}),
-      brings: { skills: plugin.skills, commands: [], agents: [], mcpServers: plugin.servers },
+      brings: { skills: ownedSkills, commands: [], agents: [], mcpServers: servers },
       engine: receipt("plugin", { mcp: servers.length > 0, skills: skills.length > 0, indexOnly: true }),
       ...(needs?.connect ? { connect: needs.connect } : {}),
       ...(reason ? { reason } : {}),
@@ -370,7 +377,8 @@ export function resolveBotCapabilities(inputs: CapabilityInputs, viewer: Capabil
   // ── skills of the bot and of the library ──────────────────────────────
   const assigned = new Set(inputs.bot.assignedSkills ?? []);
   for (const skill of inputs.skills) {
-    if (skill.origin === "library" && pluginSkills.has(skill.name)) continue; // folded into its plugin
+    if (skill.origin === "library" && pluginSkills.has(skill.name)
+      && inputs.librarySkills.some((current) => current.name === skill.name && current.source === skill.source)) continue; // folded into its current plugin
     const fromOrg = skill.origin === "private" && skill.source.startsWith("org:");
     push({
       key: `skill:${skill.origin === "library" ? "installation" : fromOrg ? "organization" : "bot"}:${skill.name}`,
@@ -448,6 +456,20 @@ export function resolveBotCapabilities(inputs: CapabilityInputs, viewer: Capabil
     items,
     ...(inputs.promptIndex ? { promptIndex: inputs.promptIndex } : {}),
   };
+}
+
+/** Installed records keep names after a resource is removed or replaced.
+ * Fold only when its current provenance identifies exactly one owner.
+ * Two historical claims from one marketplace are ambiguous: the resource
+ * stays a separate row rather than being credited to either plugin. */
+function currentPluginOwners(resources: ReadonlyArray<{ name: string; source?: string }>, plugins: readonly WorkspacePluginInput[], names: (plugin: WorkspacePluginInput) => readonly string[]): Map<string, string> {
+  const owners = new Map<string, string>();
+  for (const resource of resources) {
+    if (!resource.source) continue;
+    const candidates = plugins.filter((plugin) => plugin.marketplace === resource.source && names(plugin).includes(resource.name));
+    if (candidates.length === 1) owners.set(resource.name, candidates[0]!.key);
+  }
+  return owners;
 }
 
 function hostOf(url: string): string {

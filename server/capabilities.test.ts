@@ -53,7 +53,7 @@ function inputs(engine: Engine): CapabilityInputs {
       dirOf: (name) => name === "pulsatrix-flow" ? "/org-flow/pulsatrix-flow" : undefined,
     },
     installationServers: [
-      ...Object.entries(configured).map(([name, spec]) => ({ name, valid: true, enabled: true, remote: "url" in spec, ...("url" in spec ? { url: spec.url } : {}) })),
+      ...Object.entries(configured).map(([name, spec]) => ({ name, valid: true, enabled: true, remote: "url" in spec, ...("url" in spec ? { url: spec.url } : {}), ...(name === "docs" ? { source: "market" } : {}) })),
       { name: "docs-off", valid: true, enabled: false, remote: true },
       { name: "mcp-old", valid: true, enabled: true, remote: true },
     ],
@@ -80,6 +80,7 @@ function inputs(engine: Engine): CapabilityInputs {
       { name: "own-skill", description: "d", enabled: true, origin: "private", source: "https://github.com/acme/skills" },
       { name: "off-skill", description: "d", enabled: false, origin: "private", source: "https://github.com/acme/skills" },
     ],
+    librarySkills: [{ name: "docs-skill", source: "market" }],
     skillsLibrary: false,
     roles: {
       catalog: [{ id: "r1", slug: "dispatch", name: "Dispatch", description: "" }, { id: "r2", slug: "cw", name: "ConnectWise", description: "" }],
@@ -185,6 +186,27 @@ describe("resolveBotCapabilities", () => {
     expect(byKey(resolveBotCapabilities(off, { mayChange: true }), "flow:organization:pulsatrix-flow")).toMatchObject({ state: "off", reason: "guard_off" });
   });
 
+  it("only a bot plugin folder actually passed to Claude takes the organization's Flow name", () => {
+    const input = inputs(ENGINES[0]!);
+    const flow = { ...input.botPlugins[0]!, key: "pulsatrix-flow@market", name: "pulsatrix-flow", dir: "/plugins/pulsatrix-flow", present: false };
+    input.botPlugins.push(flow);
+    let list = resolveBotCapabilities(input, { mayChange: true });
+    expect(byKey(list, "flow:organization:pulsatrix-flow")).toMatchObject({ state: "imposed" });
+    expect(servedCapabilities(list.items).filter((item) => item.form === "flow").map((item) => dirOfItem(input, item.key))).toEqual(["/org-flow/pulsatrix-flow"]);
+    expect(turnDirs(input)).toContain("/org-flow/pulsatrix-flow");
+
+    flow.present = true;
+    input.botPluginDirs.push(flow.dir);
+    list = resolveBotCapabilities(input, { mayChange: true });
+    expect(byKey(list, "flow:organization:pulsatrix-flow")).toMatchObject({ state: "off", reason: "name_taken" });
+    expect(turnDirs(input)).not.toContain("/org-flow/pulsatrix-flow");
+
+    input.engine = ENGINES[1]!;
+    list = resolveBotCapabilities(input, { mayChange: true });
+    expect(byKey(list, "flow:organization:pulsatrix-flow")).toMatchObject({ state: "not_served" });
+    expect(byKey(list, "flow:organization:pulsatrix-flow")?.reason).toBeUndefined();
+  });
+
   it("this installation's servers: each with its state and reason", () => {
     const list = claude();
     expect(byKey(list, "mcp:installation:notes")).toMatchObject({ state: "on", connect: { reason: "sign_in" }, mounts: ["notes"] });
@@ -200,6 +222,74 @@ describe("resolveBotCapabilities", () => {
     const list = claude();
     expect(byKey(list, "mcp:installation:docs")).toBeUndefined();
     expect(byKey(list, "plugin:installation:docs@market")).toMatchObject({ state: "on", scope: "installation", mounts: ["docs"], brings: { mcpServers: ["docs"], skills: ["docs-skill"] } });
+  });
+
+  it("deleting a plugin MCP and recreating its name manually never gives the replacement to the old plugin", () => {
+    const input = inputs(ENGINES[0]!);
+    input.installationServers = input.installationServers.filter((server) => server.name !== "docs");
+    delete input.configured.docs;
+    input.librarySkills = [];
+    let list = resolveBotCapabilities(input, { mayChange: true });
+    expect(byKey(list, "plugin:installation:docs@market")).toMatchObject({ state: "off", brings: { mcpServers: [], skills: [] } });
+
+    input.configured.docs = remote("https://new-docs.example.com/mcp");
+    input.installationServers.push({ name: "docs", valid: true, enabled: true, remote: true });
+    for (const source of [undefined, "another-market"]) {
+      input.installationServers.find((server) => server.name === "docs")!.source = source;
+      list = resolveBotCapabilities(input, { mayChange: true });
+      expect(byKey(list, "mcp:installation:docs")).toMatchObject({ state: "on", mounts: ["docs"] });
+      expect(byKey(list, "plugin:installation:docs@market")).toMatchObject({ state: "off", brings: { mcpServers: [], skills: [] } });
+      expect(list.items.flatMap((item) => item.mounts ?? []).filter((name) => name === "docs")).toHaveLength(1);
+    }
+  });
+
+  it("a deleted and replaced library skill stays independent of the historical plugin", () => {
+    const input = inputs(ENGINES[0]!);
+    input.installationServers = input.installationServers.filter((server) => server.name !== "docs");
+    delete input.configured.docs;
+    input.librarySkills = [];
+    expect(byKey(resolveBotCapabilities(input, { mayChange: true }), "plugin:installation:docs@market")?.brings?.skills).toEqual([]);
+
+    input.skillsLibrary = true;
+    input.librarySkills = [{ name: "docs-skill", source: "another-market" }];
+    input.skills.push({ name: "docs-skill", source: "another-market", origin: "library", description: "Replacement", enabled: true });
+    let list = resolveBotCapabilities(input, { mayChange: true });
+    expect(byKey(list, "skill:installation:docs-skill")).toMatchObject({ state: "on", description: "Replacement" });
+    expect(byKey(list, "plugin:installation:docs@market")).toMatchObject({ state: "off", brings: { skills: [] } });
+
+    input.skillsLibrary = false;
+    input.skills = input.skills.filter((skill) => skill.origin !== "library");
+    input.bot.assignedSkills = ["docs-skill"];
+    list = resolveBotCapabilities(input, { mayChange: true });
+    expect(byKey(list, "skill:installation:docs-skill")).toMatchObject({ state: "off", reason: "library_off" });
+    expect(byKey(list, "plugin:installation:docs@market")?.reason).toBeUndefined();
+  });
+
+  it("two historical plugins from one marketplace cannot both own a current MCP or library skill", () => {
+    const input = inputs(ENGINES[0]!);
+    input.workspacePlugins.push({ ...input.workspacePlugins[0]!, key: "replacement@market", name: "replacement" });
+    input.skillsLibrary = true;
+    input.skills.push({ name: "docs-skill", source: "market", origin: "library", description: "Docs", enabled: true });
+    const list = resolveBotCapabilities(input, { principalId: "p1", mayChange: true });
+    expect(byKey(list, "mcp:installation:docs")).toMatchObject({ state: "on", mounts: ["docs"] });
+    expect(byKey(list, "skill:installation:docs-skill")).toMatchObject({ state: "on" });
+    for (const key of ["docs@market", "replacement@market"]) {
+      expect(byKey(list, `plugin:installation:${key}`)).toMatchObject({ state: "off", brings: { mcpServers: [], skills: [] } });
+    }
+    expect(list.items.flatMap((item) => item.mounts ?? []).filter((name) => name === "docs")).toHaveLength(1);
+    expect(listedMounts(list)).toEqual(turnMcp(input));
+  });
+
+  it("the current marketplace selects a single new owner despite an old plugin's name claims", () => {
+    const input = inputs(ENGINES[0]!);
+    input.workspacePlugins.push({ ...input.workspacePlugins[0]!, key: "replacement@new-market", name: "replacement", marketplace: "new-market" });
+    input.installationServers.find((server) => server.name === "docs")!.source = "new-market";
+    input.librarySkills = [{ name: "docs-skill", source: "new-market" }];
+    const list = resolveBotCapabilities(input, { mayChange: true });
+    expect(byKey(list, "mcp:installation:docs")).toBeUndefined();
+    expect(byKey(list, "plugin:installation:docs@market")).toMatchObject({ state: "off", brings: { mcpServers: [], skills: [] } });
+    expect(byKey(list, "plugin:installation:replacement@new-market")).toMatchObject({ state: "on", mounts: ["docs"], brings: { mcpServers: ["docs"], skills: ["docs-skill"] } });
+    expect(list.items.flatMap((item) => item.mounts ?? []).filter((name) => name === "docs")).toHaveLength(1);
   });
 
   it("the person's own servers: a name the turn already has is shown, not skipped in silence (C-18)", () => {

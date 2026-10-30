@@ -145,6 +145,13 @@ sheet). Keep these rules, covered by `server/capabilities.test.ts`,
   (`ENGINES_WITHOUT_FILES`, which `supportsWorkspaceFiles` now reads) get
   nothing of a plugin, a skill or Flow; MCP is `mounted` by an engine with
   files, `proxied` by Sagax for one without, `none` without `customMcp`.
+- An installed plugin record is historical, not proof of ownership. Fold
+  an installation MCP server or library skill into a plugin only when its
+  current `source` matches the marketplace and exactly one record claims
+  that name. A replacement or an ambiguous claim keeps its own row, with
+  one mount. Read library provenance even while the library is off. Flow
+  name priority follows the actual bot folders passed to Claude, never an
+  enabled record whose copy is missing.
 - The list and the turn use the same functions (`server/turn-mounts.ts`):
   `engineServerMcp` and `serverMcpAsPerson` (this installation's servers,
   `engineMcpServers` / `mcpServersAsPerson`), `personalMcpPrecheck` (the
