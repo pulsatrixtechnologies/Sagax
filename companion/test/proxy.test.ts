@@ -426,7 +426,7 @@ describe("the sidecar in front of an unmodified harness", () => {
 
     const seen = await device("POST", "/api/routine-runs/seen-all");
     expect(seen.status).toBe(200);
-    expect(Array.isArray(seen.body.runs)).toBe(true);
+    expect(Array.isArray(seen.body.ids)).toBe(true);
     const brand = await device("GET", "/api/brand");
     expect(brand.status).toBe(200);
   });

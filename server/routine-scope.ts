@@ -244,3 +244,16 @@ export function routineRunClearable(
     return true;
   };
 }
+
+/** What Mark all as read answers: the ids it stamped, how many, and the
+ * stamp, never a run's contents. `runs` stays an empty list for phone
+ * builds that still read that key. */
+export function routineRunsSeenAnswer(stamped: readonly Pick<RoutineRun, "id" | "seenAt">[]): {
+  ids: string[];
+  count: number;
+  seenAt?: number;
+  runs: [];
+} {
+  const seenAt = stamped.find((run) => typeof run.seenAt === "number")?.seenAt;
+  return { ids: stamped.map((run) => run.id), count: stamped.length, ...(seenAt !== undefined ? { seenAt } : {}), runs: [] };
+}

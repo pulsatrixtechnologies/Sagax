@@ -152,6 +152,19 @@ public enum RoutineRunLog {
         let byId = Dictionary(updated.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
         return runs.map { byId[$0.id] ?? $0 }
     }
+
+    /// "Mark all as read": stamp the runs the computer named by id.
+    public static func stamping(_ runs: [RoutineRun], with seen: RoutineRunsSeen) -> [RoutineRun] {
+        let ids = Set(seen.ids)
+        guard !ids.isEmpty else { return runs }
+        let stamp = seen.seenAt ?? Date().timeIntervalSince1970 * 1000
+        return runs.map { run in
+            guard ids.contains(run.id), run.seenAt == nil else { return run }
+            var stamped = run
+            stamped.seenAt = stamp
+            return stamped
+        }
+    }
 }
 
 /// The "Filter schedule by bot" picker (AU6): nil is "All bots".
@@ -292,10 +305,29 @@ public extension CompanionClient {
         try await send(try makeRequest("POST", "/api/routine-runs/\(id)/seen"), as: RoutineRunResponse.self).run
     }
 
-    /// "Mark all as read" (`POST /api/routine-runs/seen-all`): the runs it changed.
-    func markAllRoutineRunsSeen() async throws -> [RoutineRun] {
-        try await send(try makeRequest("POST", "/api/routine-runs/seen-all"), as: RoutineRunsResponse.self).runs
+    /// "Mark all as read" (`POST /api/routine-runs/seen-all`): the ids of
+    /// the runs it changed and their stamp.
+    func markAllRoutineRunsSeen() async throws -> RoutineRunsSeen {
+        try await send(try makeRequest("POST", "/api/routine-runs/seen-all"), as: RoutineRunsSeen.self)
     }
 }
 
-struct RoutineRunsResponse: Codable, Sendable { var runs: [RoutineRun] }
+/// What "Mark all as read" answers: the ids it stamped, how many, and when.
+public struct RoutineRunsSeen: Codable, Hashable, Sendable {
+    public var ids: [String]
+    public var count: Int
+    public var seenAt: Double?
+
+    public init(ids: [String] = [], count: Int = 0, seenAt: Double? = nil) {
+        self.ids = ids
+        self.count = count
+        self.seenAt = seenAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ids = try container.decodeIfPresent([String].self, forKey: .ids) ?? []
+        count = try container.decodeIfPresent(Int.self, forKey: .count) ?? ids.count
+        seenAt = try container.decodeIfPresent(Double.self, forKey: .seenAt)
+    }
+}

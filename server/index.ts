@@ -741,7 +741,7 @@ import type { HeadlessBot } from "./headless-cli.ts";
 import { createHeadlessTaskRunner } from "./headless-task-runner.ts";
 import * as vps from "./vps-computer.ts";
 import { runAsOptions, runAsRefusal, type RunAsChooser, type RunAsPerson } from "./routine-run-as.ts";
-import { parseRoutineScopeQuery, routineRunClearable, routineScopeRefusal, scopedRoutineListing, type RoutineScopeCaller, type RoutineScopeDeps, type RoutineScopeFacts } from "./routine-scope.ts";
+import { parseRoutineScopeQuery, routineRunClearable, routineRunsSeenAnswer, routineScopeRefusal, scopedRoutineListing, type RoutineScopeCaller, type RoutineScopeDeps, type RoutineScopeFacts } from "./routine-scope.ts";
 import { recordRoutineChange, recordRoutineToggle, routineToggleForViewer } from "./routine-chat-events.ts";
 import { botReplyQuoteId } from "./reply-to-turn.ts";
 import { isTriggerSchedule } from "../shared/routines.ts";
@@ -18492,6 +18492,24 @@ function routineRunNowParties(routine: Routine): { botOwner?: string; runAs?: st
   const botOwner = bot ? effectiveBotOwner(bot) : undefined;
   const runAs = effectiveRunAs(routine);
   return { ...(botOwner ? { botOwner } : {}), ...(runAs ? { runAs } : {}) };
+}
+/** Stop a run (#1711): the Run now rule on its routine; a run whose routine
+ * is gone is judged by the run's own bot and run-as person. */
+function mayCancelRoutineRun(auth: RequestAuth, run: RoutineRun, routine: Routine | undefined): boolean {
+  if (routine) return mayRunRoutineNow(auth, routine);
+  const organization = IDENTITY.kind === "perspicax";
+  const person = auth.kind === "session";
+  const bot = store.bot(run.botId);
+  const botOwner = bot ? effectiveBotOwner(bot) : undefined;
+  const runAs = effectiveRunAs(run);
+  return routineRunNowAllowed({
+    organization,
+    person,
+    ...(person ? { principalId: auth.session.principalId } : {}),
+    admin: organization && person && (orgAdminCaller(auth) || callerCan(auth, "routines.runNowAny")),
+    ...(botOwner ? { botOwner } : {}),
+    ...(runAs ? { runAs } : {}),
+  });
 }
 /** Whether a run of this routine is queued, running or waiting. */
 function routineRunInFlight(routineId: string): boolean {
@@ -46560,8 +46578,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       const done = deleteRoutineAs(auth, routineMatch[1]);
       return json(res, done.status, done.body);
     }
+    // Mark all as read: only the runs this caller may see (the listing's own
+    // `mine` rule), and the answer names them by id, nothing more. `runs`
+    // stays an empty list for phone builds that still read it.
     if (path === "/api/routine-runs/seen-all" && method === "POST") {
-      return json(res, 200, { runs: routines!.markAllSeen() });
+      const deps = routineScopeDeps(auth, visible, viewerId);
+      const stamped = routines!.markAllSeen((run) => deps.mine(run));
+      return json(res, 200, routineRunsSeenAnswer(stamped));
     }
     // Clear logs: every saved run the caller may see (the list's own rule),
     // never one in progress. Others' runs stay, unless the caller asks
@@ -46579,6 +46602,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     }
     const runMatch = path.match(/^\/api\/routine-runs\/([\w-]+)\/(cancel|seen)$/);
     if (runMatch && method === "POST") {
+      if (runMatch[2] === "cancel") {
+        // Stopping a run takes the same rights as starting one: the right
+        // to run the bot's routines, then the Run now rule on its routine.
+        const existing = routines!.listRuns().find((candidate) => candidate.id === runMatch[1]);
+        if (existing) {
+          if (routineNeedsRun(auth, existing.botId)) return json(res, 403, NEEDS_RUN);
+          const target = routines!.listRoutines().find((candidate) => candidate.id === existing.routineId);
+          if (!mayCancelRoutineRun(auth, existing, target)) return json(res, 403, { error: "Only the bot's owner, the person this routine runs as or an admin can stop this run.", code: "run_now_not_allowed", permission: "routines.runNowAny" });
+        }
+      }
       const run = runMatch[2] === "cancel"
         ? await routines!.cancelRun(runMatch[1])
         : routines!.markSeen(runMatch[1]);

@@ -2339,17 +2339,20 @@ export class RoutineManager {
     return cloneRun(run);
   }
 
-  /** Clear every failure indicator at once: stamp seenAt on each unseen
+  /** Clear every failure indicator the caller may see (`allow`, the same
+   * rule as the listing) at once: stamp seenAt on each such unseen
    * failed/missed run in one committed save, then emit the updated runs so
    * connected clients drop their dots immediately. A failed save rolls the
    * stamps back so a retry still finds the unseen runs. */
-  markAllSeen(): RoutineRun[] {
-    if (!this.runs.some((run) => !run.seenAt && isRoutineProblemRun(run))) return [];
+  markAllSeen(allow: (run: RoutineRun) => boolean): RoutineRun[] {
+    const pending = this.runs.filter((run) => !run.seenAt && isRoutineProblemRun(run) && allow(cloneRun(run)));
+    if (!pending.length) return [];
+    const ids = new Set(pending.map((run) => run.id));
     const stampAt = this.now();
     const updated: RoutineRun[] = [];
     this.commitMutation(() => {
       for (const run of this.runs) {
-        if (run.seenAt || !isRoutineProblemRun(run)) continue;
+        if (!ids.has(run.id) || run.seenAt) continue;
         run.seenAt = stampAt;
         updated.push(run);
       }
