@@ -6,6 +6,8 @@
 // Needs the pinned agent-browser binary. It runs when one resolves (the tools
 // directory, SAGAX_AGENT_BROWSER_PATH or PATH) or when SAGAX_UI_E2E=1 asks for the
 // verified download; otherwise it is skipped with a printed reason.
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -213,12 +215,13 @@ describe("control-omb ui drives the real renderer", () => {
     // Settings is its own chunk (src/components/lazy-screens.tsx): opened before
     // the idle prefetch has fetched it, it paints once the chunk arrives.
     await expect.poll(() => evaluate(`(() => {
-      const tab = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Models');
+      const tab = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Providers');
       tab?.click();
       return Boolean(tab);
     })()`), { timeout: 10_000 }).toBe(true);
     // The OpenAI-compatible key opens in its own dialog from the provider key list.
-    await expect.poll(() => evaluate(`(() => { const b = document.querySelector('[data-provider-key="openaiCompat"] button'); b?.click(); return Boolean(b); })()`), { timeout: 10_000 }).toBe(true);
+    await expect.poll(() => evaluate(`(() => { const b = document.querySelector('[data-provider-row$=":openaiCompat"] > button'); b?.click(); return Boolean(b); })()`), { timeout: 10_000 }).toBe(true);
+    await expect.poll(() => evaluate(`(() => { const b = document.querySelector('[data-provider-key-open="openaiCompat"]'); b?.click(); return Boolean(b); })()`), { timeout: 10_000 }).toBe(true);
     await expect.poll(() => evaluate(`document.querySelector('[data-provider-key-dialog="openaiCompat"] [data-api-key-row="openaiCompat"]') !== null`), { timeout: 10_000 }).toBe(true);
 
     // A saved key with an untouched field can be checked again.
@@ -259,6 +262,70 @@ describe("control-omb ui drives the real renderer", () => {
     expect(existsSync(info.dataDir)).toBe(false);
   }, LAUNCH_TIMEOUT_MS + 180_000);
 
+  run("connects a named Azure-compatible provider in Settings and runs its model from the flat picker", async () => {
+    const requests: Array<{ path: string; key?: string; model?: string }> = [];
+    const upstream = createServer(async (req, res) => {
+      let raw = "";
+      for await (const chunk of req) raw += chunk;
+      const body = raw ? JSON.parse(raw) : {};
+      requests.push({ path: req.url ?? "", key: req.headers.authorization, model: body.model });
+      res.setHeader("content-type", "application/json");
+      if (req.url === "/v1/models") return res.end(JSON.stringify({ data: [{ id: "azure-chat" }, { id: "azure-fast" }] }));
+      if (req.url === "/v1/chat/completions") return res.end(JSON.stringify({ choices: [{ message: { role: "assistant", content: "Azure-compatible fixture answered." }, finish_reason: "stop" }], usage: { prompt_tokens: 2, completion_tokens: 3 } }));
+      res.statusCode = 404; res.end("{}");
+    });
+    await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+    try {
+      launched = await launch([]);
+      const { info } = launched;
+      const evaluate = async (js: string) => (await ui("eval", info.ui, "--js", js)).result;
+      await ui("click", info.ui, "--name", "You");
+      await ui("click", info.ui, "--name", "Settings");
+      await expect.poll(() => evaluate(openSettingsPageJs("Providers")), { timeout: 10_000 }).toBe(true);
+      await evaluate(`document.querySelector('[data-add-provider-open]').click(); true`);
+      await evaluate(`document.querySelector('[data-add-provider-way="server"]').click(); true`);
+      const fill = async (selector: string, value: string) => {
+        await evaluate(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`);
+      };
+      await expect.poll(() => evaluate(`Boolean(document.querySelector('[data-personal-provider-server]'))`)).toBe(true);
+      await fill('[data-personal-provider-server] input:not([type])', "Azure Foundry");
+      await fill('[data-personal-provider-server] input[type="url"]', `http://127.0.0.1:${(upstream.address() as AddressInfo).port}/v1`);
+      await fill('[data-personal-provider-server] input[type="password"]', "fixture-personal-provider-key");
+      await evaluate(`document.querySelector('[data-personal-provider-server] button[type="submit"]').click(); true`);
+      const ownInstance = async () => {
+        const response = await fetch(`${info.url}/api/instances`);
+        const body = await response.json();
+        return body.instances.find((instance: any) => instance.displayName === "Azure Foundry");
+      };
+      await expect.poll(async () => (await ownInstance())?.models.options.map((model: any) => model.id), { timeout: 20_000 }).toEqual(["azure-chat", "azure-fast"]);
+      const instance = await ownInstance();
+      await expect.poll(() => evaluate(`document.querySelector('[data-providers-page]').textContent`)).toContain("Azure Foundry");
+      mkdirSync(evidenceDir, { recursive: true });
+      await ui("screenshot", info.ui, "--out", join(evidenceDir, "azure-providers.png"));
+      await expect.poll(() => evaluate(openSettingsPageJs("Models"))).toBe(true);
+      await expect.poll(() => evaluate(`document.querySelector('[data-models-page]').textContent`)).toContain("azure-chat");
+      await ui("screenshot", info.ui, "--out", join(evidenceDir, "azure-models.png"));
+      await evaluate(`document.querySelector('[aria-label="Close settings"]').click(); true`);
+      await evaluate(`window.dispatchEvent(new CustomEvent('omb:composer-model', { detail: { botId: ${JSON.stringify(info.botId)} } })); true`);
+      await expect.poll(() => evaluate(`Boolean(document.querySelector('[data-model-option="azure-chat"]'))`)).toBe(true);
+      await evaluate(`document.querySelector('[data-model-option="azure-chat"]').scrollIntoView({ block: "center" }); true`);
+      await ui("screenshot", info.ui, "--out", join(evidenceDir, "azure-model-picker.png"));
+      await evaluate(`document.querySelector('[data-model-option="azure-chat"]').click(); true`);
+      await expect.poll(async () => (await fixtureApi(info.url)("GET", "/api/bots")).bots.find((bot: any) => bot.id === info.botId).modelSelection).toMatchObject({ instanceId: instance.instanceId, model: "azure-chat" });
+      await ui("type", info.ui, "--name", "Message Pepper", "--text", "Say hello");
+      await ui("press", info.ui, "--keys", "Enter");
+      await ui("wait-settle", info.ui, "--timeout", "30");
+      await expect.poll(() => evaluate(`document.body.textContent`)).toContain("Azure-compatible fixture answered.");
+      expect(requests).toContainEqual({ path: "/v1/chat/completions", key: "Bearer fixture-personal-provider-key", model: "azure-chat" });
+      await ui("screenshot", info.ui, "--out", join(evidenceDir, "azure-reply.png"));
+      await waitForExit(launched.child, { signal: "SIGINT", graceMs: 30_000 });
+      expect(launched.child.exitCode).toBe(0);
+    } finally {
+      upstream.closeAllConnections();
+      await new Promise<void>((resolve) => upstream.close(() => resolve()));
+    }
+  }, LAUNCH_TIMEOUT_MS + 180_000);
+
   run("sends a turn from the composer and shows the reply and the scripted tool chip", async () => {
     launched = await launch(["--tool-calls", TOOL_CALLS]);
     const { info } = launched;
@@ -290,14 +357,12 @@ describe("control-omb ui drives the real renderer", () => {
     // the mascot opens with omb:composer-model (Composer.grok.test.ts).
     await expect.poll(async () => (await ui("eval", info.ui, "--js", "String(Boolean(document.querySelector('[data-composer-model]')))")).result, { timeout: 10_000 }).toBe("true");
     await ui("eval", info.ui, "--js", `window.dispatchEvent(new CustomEvent("omb:composer-model", { detail: { botId: ${JSON.stringify(info.botId)} } })); true`);
+    await ui("screenshot", info.ui, "--out", join(evidenceDir, "before-model-menu.png"));
     await expect.poll(async () => (await ui("eval", info.ui, "--js", "String(document.querySelector('[aria-label=\"Apply model changes to\"]') === null && Boolean(document.querySelector('[data-model-menu]')))")).result, { timeout: 10_000 }).toBe("true");
     const scopeShot = join(evidenceDir, "model-dropdown.png");
     mkdirSync(evidenceDir, { recursive: true });
     await ui("screenshot", info.ui, "--out", scopeShot);
-    // Models sit in a submenu per provider (#477), behind Provider (2026-10-18): open the bot's provider first.
-    await ui("eval", info.ui, "--js", "document.querySelector('[data-model-menu] [data-model-all]').click(); true");
-    await expect.poll(async () => (await ui("eval", info.ui, "--js", `String(Boolean(document.querySelector('[data-model-menu] [data-model-provider="${originalBot.modelSelection.instanceId}"]')))`)).result, { timeout: 10_000 }).toBe("true");
-    await ui("eval", info.ui, "--js", `document.querySelector('[data-model-menu] [data-model-provider="${originalBot.modelSelection.instanceId}"]').click(); true`);
+    // Active models are immediately visible in the flat provider groups.
     await expect.poll(async () => (await ui("eval", info.ui, "--js", `Boolean(document.querySelector('[data-model-menu] [data-model-option="${nextModel.id}"]'))`)).result, { timeout: 10_000 }).toBe(true);
     await ui("eval", info.ui, "--js", `document.querySelector('[data-model-menu] [data-model-option="${nextModel.id}"]').click(); true`);
     await expect.poll(async () => (await savedBot()).modelSelection.model, { timeout: 10_000 }).toBe(nextModel.id);
@@ -340,12 +405,13 @@ describe("control-omb ui drives the real renderer", () => {
     // CLI, so all three are verified; one failed and one was a dry run.
     expect(tree).toContain("3 steps · 3 verified · 1 failed · 1 dry run");
 
+    await ui("screenshot", info.ui, "--out", join(evidenceDir, "model-picked-fixture-turn.png"));
     // Hit-test the actual layout, not just the Tailwind class strings: the
     // blank band beside the floating card must reach the transcript while
     // the card and composer remain interactive.
     const hitTest = await ui("eval", info.ui, "--js", `(() => {
       const card = document.querySelector('section[aria-label="This run"]');
-      const dock = card.parentElement.parentElement;
+      const dock = card.closest("[data-run-overlay]");
       const rect = card.getBoundingClientRect();
       const blank = document.elementFromPoint(dock.getBoundingClientRect().left + 8, rect.top + rect.height / 2);
       const onCard = document.elementFromPoint(rect.left + 20, rect.top + 20);

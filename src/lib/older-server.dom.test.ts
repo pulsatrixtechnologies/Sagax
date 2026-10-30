@@ -10,7 +10,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { setLocale } from "@/lib/i18n";
+import { setLocale, t } from "@/lib/i18n";
 import type { Routine } from "@/lib/routines";
 import { SERVER_FEATURES } from "../../shared/server-features";
 
@@ -25,7 +25,7 @@ vi.mock("@/state/store", async (importOriginal) => ({
 
 const { api, ApiError, initialState, reducer } = await import("@/state/store");
 const { RoutineFolderList } = await import("@/components/routines/RoutineFolders");
-const { PersonalVoiceKeys } = await import("@/components/settings/PersonalVoiceKeys");
+const { PersonalProviderKey } = await import("@/components/settings/PersonalProviderAccount");
 const { ToolCallsRow } = await import("@/components/settings/AppearanceSettings");
 const { applyServerDescriptor, loadServerFeatures, noteRoutinesListing, resetServerFeatures, serverFeature } = await import("@/lib/server-features");
 const { routeMissingOnServer } = await import("@/lib/server-route");
@@ -45,6 +45,7 @@ const DESCRIPTOR_087 = {
 const MISSING_087: Array<{ method: string; path: string; memberOnly?: boolean }> = [
   { method: "POST", path: "/api/routines/folders" },
   { method: "GET", path: "/api/me/voice-keys" },
+  { method: "GET", path: "/api/me/providers" },
   { method: "PUT", path: "/api/me/voice-keys/elevenlabs" },
   { method: "DELETE", path: "/api/me/voice-keys/xai" },
   { method: "GET", path: "/api/me/experimental", memberOnly: true },
@@ -199,11 +200,11 @@ describe("Routines panel against a 0.8.7 server", () => {
 
 describe("the person's own settings against a 0.8.7 server", () => {
   for (const role of ["admin", "member"] as const) {
-    it(`My voice keys stay, disabled, with the neutral line (${role})`, async () => {
+    it(`Personal providers stay, disabled, with the neutral line (${role})`, async () => {
       vi.stubGlobal("fetch", server087(role));
-      await mount(createElement(PersonalVoiceKeys));
+      await mount(createElement(PersonalProviderKey, { provider: "elevenlabs", name: "ElevenLabs" }));
       expect(host.querySelector("[data-needs-server-update]")?.textContent).toContain(NEEDS_UPDATE);
-      expect(host.querySelector("[data-voice-key-input]")).toBeNull();
+      expect(host.querySelector("[data-personal-provider-key-input]")).toBeNull();
       expect(shownErrors()).toEqual([]);
     });
   }
@@ -219,4 +220,14 @@ describe("the person's own settings against a 0.8.7 server", () => {
     expect((host.querySelector('[role="switch"]') as HTMLButtonElement).disabled).toBe(true);
     expect(shownErrors()).toEqual([]);
   });
+});
+
+it("names an older organization host instead of an admin or transport error", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+    error: "Your organization server needs an update to manage provider accounts.", code: "provider_accounts_update_required",
+  }), { status: 409, headers: { "content-type": "application/json" } })));
+  await mount(createElement(PersonalProviderKey, { provider: "openai", name: "OpenAI" }));
+  expect(host.querySelector("[data-needs-server-update]")?.textContent).toBe(t("providers.organizationUpdate"));
+  expect(host.querySelector("[data-personal-provider-key-input]")).toBeNull();
+  expect(shownErrors()).toEqual([]);
 });

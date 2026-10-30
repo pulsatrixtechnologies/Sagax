@@ -237,6 +237,7 @@ import {
 import { chiefOfStaffSystemPrompt } from "./chief-of-staff.ts";
 import { buildRecall, CALL_RECALL_BUDGET, LOCAL_RECALL_BUDGET, recallQuery, sessionMemoryHitFor, type RecallBudget } from "./recall.ts";
 import { prepareSemanticRecall, setSemanticIndex } from "./semantic-recall.ts";
+import { prepareEveryClaudeRetirement, retireEveryClaudeBot } from "./retire-every-claude.ts";
 import { LocalSemanticIndex, semanticIndexFile } from "./semantic-index.ts";
 import { withoutWiderAudience, type MemoryDestination } from "./memory-audience.ts";
 import { BriefStore, type BriefAppCall } from "./background-brief.ts";
@@ -444,7 +445,7 @@ import { renewalPrompt, type RenewalStep } from "./context-renewal.ts";
 import { ModelCatalogStore } from "./model-catalog/catalog.ts";
 import { turnRunFor, type TurnRun } from "./turn-run.ts";
 import { attachmentsInText, autoModelRecord, bareModelId, concrete as concreteSelection, explainPick, familyOfModel, isModelRefusal, nextInChain, pickEquivalentModel, pickOrchestrationModel, pickVoiceModel, pickWorkerModel, tierOfModel, type AutoChainEntry, type AutoEngine, type AutoPick, type CatalogFacts } from "./model-auto.ts";
-import type { AutoModelRecord } from "../shared/auto-model.ts";
+import type { AutoModelRecord, AutoModelExcluded, AutoModelEntry, AutoExclusionReason } from "../shared/auto-model.ts";
 import { decodeGeneratedImage } from "./generated-image.ts";
 import {
   MAX_DISABLED_TOOLS,
@@ -1349,6 +1350,7 @@ import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type P
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
 import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachmentRead, ownComputerChoiceCall, ownDestinationCall, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentSensitiveRead, ownEnvironmentTool, ownEnvironmentTurnOrigin } from "./member-environment.ts";
 import { lineageEnvironmentCall, ownerLineageOrigin, ownerModeForTurn, perspicaxSelfAnswer, perspicaxSelfAnswerAt } from "./owner-autonomy.ts";
+import { routineOwnerAuthorization } from "./routine-authorization.ts";
 import { runPermissionModeMigration } from "./approval-level-migration.ts";
 import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberAutoSettle, memberRoomTurnLevel, memberTurnLevel, type MemberAutoReset } from "./member-auto-approval.ts";
 import { newConversationFullAllowed, ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED, parseOrgFullAccessBody, threadFollowsFullGrant, trustedChannelFullRefusal } from "./org-full-access.ts";
@@ -2137,6 +2139,8 @@ const FALLBACK_PUBLIC_URL = process.env.SAGAX_PUBLIC_URL?.trim().replace(/\/+$/,
 dropRetiredOrganizationKeys();
 const cfg = loadConfig();
 const hostedModels = hostedModelPolicy(DATA_DIR);
+const claudeRetirement = IDENTITY.kind === "solo" && !hostedModels ? prepareEveryClaudeRetirement(cfg) : undefined;
+if (claudeRetirement?.patch.instances) cfg.instances = claudeRetirement.patch.instances;
 const providerConfigs = () => hostedModels ? hostedModels.configs() : instanceConfigs(cfg);
 const decorateHostedProvider = hostedModels ? (instance: ProviderInstance) => hostedModels.decorate(instance) : undefined;
 if (hostedModels) {
@@ -7308,6 +7312,9 @@ const store = new Store(
   newBotApprovalMode,
   newBotGreetingLanguage,
 );
+// Preserve the payer of legacy solo choices before serving or probing them.
+// Persist bot/thread references first and the marker last so a failed write retries.
+if (claudeRetirement) retireEveryClaudeBot(cfg, store, saveConfig, claudeRetirement);
 setTurnTimingWriter((threadId, timing) => store.noteConversationTiming(threadId, timing));
 // One-time notice (migration): Composio was removed this release. Connected
 // apps now come only from the engines' own connectors (Claude, Grok) and
@@ -25789,7 +25796,7 @@ function dispatchTeamSetupResume(entry: TeamSetupResumeEntry): void {
   }
   const notNow = request.suggestion && request.result?.state === "denied"
     ? " The user chose Not now for this suggested specialist. Do not suggest another specialist in this conversation unless they ask for one." : "";
-  const prompt = `Sagax team setup decision ${request.requestId}: ${JSON.stringify(request.result)}. Report this exact result and continue the user's already requested work. Do not ask for confirmation again or repeat this setup/deletion. A denied or cancelled operation did not authorize any substitute action. Existing thread models were not changed.${notNow}`;
+  const prompt = `Sagax team setup decision ${request.requestId}: ${JSON.stringify(request.result)}. Report this exact result and continue the user's already requested work. Do not ask for confirmation again or repeat this setup/deletion. A denied or cancelled operation did not authorize any substitute action. Each changed bot's model applies to all its threads.${notNow}`;
   const failed = (error: string) => {
     if (cancelled()) return;
     const current = store.messagesFor(request.threadId).find((item) => item.id === messageId);
@@ -29778,7 +29785,7 @@ function configStatus() {
     mistral: { configured: Boolean(cfg.mistral?.key) },
     cerebras: { configured: Boolean(cfg.cerebras?.key) },
     groq: { configured: Boolean(cfg.groq?.key) },
-    anthropic: { configured: Boolean(cfg.anthropic?.key), everyClaudeBot: cfg.anthropic?.everyClaudeBot !== false },
+    anthropic: { configured: Boolean(cfg.anthropic?.key), everyClaudeBot: false },
     openai: { configured: Boolean(cfg.openai?.key) },
     openrouter: { configured: Boolean(cfg.openrouter?.key) },
     // a fleet agent on this server means Settings → Workspaces has something to drive
@@ -30278,7 +30285,9 @@ function peerSpeaker(fromBotId: string, fromThreadId?: string): TurnSpeaker {
   const routine = fromThreadId ? turnRoutineLineage.has(fromThreadId) : false;
   const routinePayer = routine && fromThreadId ? turnRoutinePayers.get(fromThreadId) : undefined;
   const routineTrigger = routine && fromThreadId ? routineTriggerOf(fromThreadId) : undefined;
-  return { origin: "peer", fromBotId, ...(principalId !== undefined ? { principalId } : {}), ...(routine ? { routine: true as const } : {}), ...(routinePayer ? { routinePayer } : {}), ...(routineTrigger ? { routineTrigger } : {}) };
+  const sourceBot = store.bot(fromBotId);
+  const authorization = routine && sourceBot && fromThreadId ? routineOwnerAuthorizationFor(sourceBot, fromThreadId) : null;
+  return { origin: "peer", fromBotId, ...(principalId !== undefined ? { principalId } : {}), ...(routine ? { routine: true as const } : {}), ...(routinePayer ? { routinePayer } : {}), ...(routineTrigger ? { routineTrigger } : {}), ...(authorization ? { routineOwnerAuthorization: authorization } : {}) };
 }
 /** On an organization server, words may join a running turn only when they
  * speak for the same principal as that turn: anyone else's words wait for a
@@ -30669,7 +30678,7 @@ function autoRefusalsFor(payer: string): AutoChainEntry[] {
  * engine counts while its availability is unknown; another engine only when
  * it is known to work, the payer can pay for it, and moving there keeps the
  * bot's approval level, tools and workspace. */
-function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = false): AutoEngine[] {
+function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = false, excluded?: AutoModelExcluded[]): AutoEngine[] {
   const base = registry.get(bot.modelSelection.instanceId);
   const mode = approvalModeFor(bot);
   const engines: AutoEngine[] = [];
@@ -30678,33 +30687,50 @@ function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = fa
   if (IDENTITY.kind !== "perspicax" && (!engineProbes.size || [...engineProbes.values()].some((probe) => Date.now() - probe.at > ENGINE_PROBE_TTL_MS))) {
     void probeEngines().catch(() => {});
   }
+  const payer = autoPayerKey(bot, speaker);
   for (const instance of registry.instances()) {
-    if (!instance.enabled || providerInstancesChanging.has(instance.instanceId) || policyModelRefusal(instance)) continue;
+    // Another person's endpoint is never named, including in exclusions.
+    if (!personalProviderInstances.visible(instance.instanceId, IDENTITY.kind === "perspicax" ? payer : "solo")) continue;
+    const omit = (reason: AutoExclusionReason) => excluded?.push({ instanceId: instance.instanceId, engineLabel: engineDisplayName(instance), reason });
+    if (!instance.enabled || providerInstancesChanging.has(instance.instanceId)) { omit("offline"); continue; }
+    if (policyModelRefusal(instance)) { omit("policy"); continue; }
     // 2026-10-30: Auto picks only what the organization's list allows, even
     // when the person's own account could run another engine (that one is
     // picked by name, when the organization lets own accounts through).
-    if (!consoleEngineAllowed(instance.instanceId) || orgEngineTurnRefusal(bot, instance, speaker)) continue;
+    if (!consoleEngineAllowed(instance.instanceId)) { omit("adminOff"); continue; }
+    if (orgEngineTurnRefusal(bot, instance, speaker)) {
+      const expired = payer && isLoginDriver(instance.driverKind) && engineLogins?.expired(payer, instance.driverKind);
+      omit(expired ? "reconnect" : "credentials"); continue;
+    }
     // A guest's turn on a Cloud home runs only on an engine that confines it.
-    if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") continue;
+    if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") { omit("capabilities"); continue; }
     const own = instance.instanceId === base?.instanceId;
     if (!own) {
-      if (!base) continue;
-      if (modelSwitchNeedsAsk(mode, base.driverKind, instance.driverKind)) continue;
+      if (!base) { omit("capabilities"); continue; }
+      if (modelSwitchNeedsAsk(mode, base.driverKind, instance.driverKind)) { omit("approval"); continue; }
       if (recoveryCapabilityError(
         { driverKind: base.driverKind, capabilities: base.adapter.capabilities },
-        { driverKind: instance.driverKind, capabilities: instance.adapter.capabilities })) continue;
+        { driverKind: instance.driverKind, capabilities: instance.adapter.capabilities })) { omit("capabilities"); continue; }
       if (IDENTITY.kind === "perspicax") {
-        if (instance.adapter.capabilities.withholdsHostTools !== true) continue;
-      } else if (engineProbes.get(instance.instanceId)?.ready !== true) continue;
+        if (instance.adapter.capabilities.withholdsHostTools !== true) { omit("capabilities"); continue; }
+      } else if (engineProbes.get(instance.instanceId)?.ready !== true) {
+        omit("offline"); continue;
+      }
     }
     let via: AutoEngine["via"] = "server";
     if (IDENTITY.kind === "perspicax") {
       const plan = resolveEngineAccess(orgEngineInput(bot, instance, speaker));
-      if (!plan.ok) continue;
+      if (!plan.ok) {
+        const expired = payer && isLoginDriver(instance.driverKind) && engineLogins?.expired(payer, instance.driverKind);
+        omit(expired ? "reconnect" : "credentials"); continue;
+      }
       via = plan.via;
     }
     // 2026-10-30 (lot 2): only models still on, for the organization and the bot's owner
     const switches = modelSwitchesFor(effectiveBotOwner(bot));
+    for (const option of instance.models.options) {
+      if (!modelOn(switches, instance.instanceId, option.id)) excluded?.push({ instanceId: instance.instanceId, engineLabel: engineDisplayName(instance), model: option.id, modelLabel: option.label || option.id, reason: "modelOff" });
+    }
     const options = instance.models.options.filter((option) => !option.custom && modelOn(switches, instance.instanceId, option.id) &&
       (!hostedModels || hostedModels.allows({ instanceId: instance.instanceId, model: option.id })));
     // The bot's fast model (#1209): any row this engine lists, a local or
@@ -32193,14 +32219,18 @@ function botMailResync(): void {
     /* before start-up finished: the first read syncs */
   }
 }
-/** v2 (S2): a routine run woken by bot email is confined (no shell, a card
- * for every write or outbound call, no Always-allow or Full) unless its
- * trigger's owner turned on full tools. */
+/** Bot email keeps the trigger's tool confinement except when the current
+ * owner explicitly runs their own configured routine at confirmed Full.
+ * The inbound email remains untrusted in either case. */
 function botmailConfined(threadId: string): boolean {
   try {
     // 2026-10-30: a proactive wake an email started is confined the same way
     if (activeRoutineRunForThread(threadId)?.proactive?.confined) return true;
-    return botmailRunConfined(activeRoutineRunForThread(threadId), (id) => webhooks.list().find((hook) => hook.id === id) ?? null);
+    const run = activeRoutineRunForThread(threadId);
+    const bot = run ? botForThread(run.botId, threadId) : null;
+    const authorizedFull = Boolean(bot && approvalModeFor(bot) === "full" && !orgDeniesFull(bot)
+      && supportsApprovalMode(bot.modelSelection, "full") && routineOwnerAuthorizationFor(bot, threadId));
+    return botmailRunConfined(run, (id) => webhooks.list().find((hook) => hook.id === id) ?? null, authorizedFull);
   } catch {
     return false;
   }
@@ -36104,12 +36134,13 @@ function memberHostToolPlace(bot: BotRecord, threadId: string): MemberHostToolPl
     botRoots: [join(realpathSync(DATA_DIR), "task-workspaces", bot.id), workspaceDir(bot.id)],
   };
 }
-function ownLineageFields(bot: BotRecord, threadId: string): { botOwnerPrincipalId: string; automationTrigger?: string; peerFromOwner?: string } {
+function ownLineageFields(bot: BotRecord, threadId: string): { botOwnerPrincipalId: string; automationTrigger?: string; peerFromOwner?: string; routineAuthorized: boolean } {
   const speaker = turnSpeakers.get(threadId);
   const trigger = routineTriggerOf(threadId);
   const peerFromOwner = speaker ? peerOwnerPrincipal(speaker) : undefined;
   return {
     botOwnerPrincipalId: effectiveBotOwner(bot),
+    routineAuthorized: routineOwnerAuthorizationFor(bot, threadId) !== null,
     ...(trigger ? { automationTrigger: trigger } : {}),
     ...(peerFromOwner ? { peerFromOwner } : {}),
   };
@@ -36137,9 +36168,32 @@ function sameOwnerRosterMember(bot: BotRecord): (member: { id: string }) => bool
   };
 }
 /** 2026-10-19 (owner setup, server/owner-autonomy.ts): whether this turn
- * is the owner's own work through their own bots or their own scheduled or
- * manual routine (never a webhook, an email, another person or an unknown
- * source). */
+ * is the owner's own work through their own bots or their own routine.
+ * A webhook routine needs live server-owned authorization; its event data
+ * never supplies permission or changes another person's rights. */
+/** Permission lineage of an owner's webhook routine. References carried by
+ * peers are rechecked against live records and current bot owners. */
+function routineOwnerAuthorizationFor(bot: BotRecord, threadId: string): ReturnType<typeof routineOwnerAuthorization> {
+  const speaker = turnSpeakers.get(threadId);
+  const carried = speaker?.origin === "peer" ? speaker.routineOwnerAuthorization : undefined;
+  if (speaker?.origin === "peer" && !carried) return null;
+  if (speaker && speaker.origin !== "owner-routine" && speaker.origin !== "peer") return null;
+  const run = carried ? routines?.listRuns().find((entry) => entry.id === carried.runId) ?? null : activeRoutineRunForThread(threadId);
+  if (!run) return null;
+  const rootBot = store.bot(run.botId);
+  const routine = routines?.getRoutine(run.routineId) ?? null;
+  const hook = run.webhookId ? webhooks.list().find((entry) => entry.id === run.webhookId) : undefined;
+  const grant = routineOwnerAuthorization({
+    run, routine,
+    rootBotOwner: rootBot ? effectiveBotOwner(rootBot) : "",
+    receivingBotOwner: effectiveBotOwner(bot),
+    webhookRoutineId: hook?.routineId,
+  });
+  if (!grant || (carried && (carried.routineId !== grant.routineId || carried.botId !== grant.botId || carried.principalId !== grant.principalId))) return null;
+  if (speaker?.origin === "peer" && peerOwnerPrincipal(speaker)?.trim().toLowerCase() !== grant.principalId) return null;
+  return grant;
+}
+
 function ownerLineageFor(bot: BotRecord, threadId: string): "owner" | "other" {
   const speaker = turnSpeakers.get(threadId);
   const automation = directRequestOwners.get(threadId)?.automation;
@@ -36149,6 +36203,7 @@ function ownerLineageFor(bot: BotRecord, threadId: string): "owner" | "other" {
     ...(speaker ? { peerFromOwner: peerOwnerPrincipal(speaker) } : {}),
     ...(automation !== undefined ? { automation } : {}),
     unattended: automation === "webhook",
+    routineAuthorized: routineOwnerAuthorizationFor(bot, threadId) !== null,
   });
 }
 /** The lineage the bot's one approval level is read under (ownerModeForTurn).
@@ -39558,8 +39613,9 @@ function claudeAccountForPrincipal(principalId: string): { cli: string; env: Nod
     delete env.ANTHROPIC_AUTH_TOKEN;
     return { cli, env, key: `person:${principalId}` };
   }
-  // a workspace key that runs every Claude bot replaces the login
-  if (cfg.anthropic?.key && cfg.anthropic.everyClaudeBot !== false) return { unavailable: "key" as const };
+  // A custom API instance has no claude.ai account. A separate provider key
+  // never hides the subscription account's connectors.
+  if (entry.environment?.ANTHROPIC_API_KEY) return { unavailable: "key" as const };
   if (typeof config.configDir === "string" && config.configDir.trim()) {
     try {
       env.CLAUDE_CONFIG_DIR = resolveClaudeConfigDir(config.configDir, env);
@@ -49958,9 +50014,40 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     m = path.match(/^\/api\/bots\/([\w-]+)\/auto-model$/);
     if (m && method === "GET") {
       const bot = requestedTaskBot(m[1], url.searchParams.get("threadId") ?? undefined);
-      if (bot.modelSelection.auto !== true) return json(res, 200, { auto: false });
-      const turn = autoPickForTurn({ bot, threadId: bot.threadId, speaker: speakerFor(auth), role: "orchestration", text: "" });
-      return json(res, 200, { auto: true, pick: turn ? autoModelRecord(turn.pick, Date.now()) : null, explanation: turn ? explainPick(turn.pick) : "" });
+      const speaker = speakerFor(auth);
+      const previewBot = { ...bot, modelSelection: { ...bot.modelSelection, auto: true as const } };
+      const excluded: AutoModelExcluded[] = [];
+      const engines = autoEnginesFor(previewBot, speaker, false, excluded);
+      const payer = autoPayerKey(bot, speaker);
+      const refused = autoRefusalsFor(payer);
+      const limited = limitFailover.autoExcluded(payer, engines);
+      const entry = (choice: { instanceId: string; model: string }): AutoModelEntry | null => {
+        const engine = engines.find((candidate) => candidate.instanceId === choice.instanceId);
+        const option = engine?.models.options.find((candidate) => candidate.id === choice.model);
+        return engine && option ? { ...choice, engineLabel: engine.displayName, modelLabel: option.label || option.id, ...(engine.via ? { via: engine.via } : {}) } : null;
+      };
+      for (const choice of refused) {
+        const item = entry(choice); if (item) excluded.push({ ...item, reason: "refused" });
+      }
+      for (const engine of engines) {
+        if (limited.has(engine.instanceId) && engines.some((candidate) => !limited.has(candidate.instanceId))) excluded.push({ instanceId: engine.instanceId, engineLabel: engine.displayName, reason: "limit" });
+      }
+      const turn = autoPickForTurn({ bot: previewBot, threadId: bot.threadId, speaker, role: "orchestration", text: "" });
+      const chain = (turn?.pick.chain ?? []).flatMap((choice) => {
+        const item = entry(choice);
+        return item && !refused.some((skip) => skip.instanceId === choice.instanceId && skip.model === choice.model) ? [item] : [];
+      });
+      const usablePick = turn && chain.some((choice) => choice.instanceId === turn.pick.selection.instanceId && choice.model === turn.pick.selection.model);
+      // Recovery uses the saved selections, including custom/local endpoints
+      // that the automatic candidate scorer intentionally leaves out.
+      const backups = botRecoveryBackups(bot, cfg).flatMap((choice) => {
+        const instance = registry.get(choice.instanceId);
+        if (!instance || !personalProviderInstances.visible(choice.instanceId, IDENTITY.kind === "perspicax" ? actorPrincipalId(auth) ?? "" : "solo")) return [];
+        const option = instance.models.options.find((candidate) => candidate.id === choice.model);
+        return [{ ...choice, engineLabel: engineDisplayName(instance), modelLabel: option?.label || choice.model }];
+      });
+      return json(res, 200, { auto: bot.modelSelection.auto === true, pick: usablePick ? autoModelRecord(turn.pick, Date.now()) : null,
+        chain, excluded, backups, explanation: usablePick ? explainPick(turn.pick) : "" });
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/command-allowlist(?:\/([\w-]+))?$/);
     if (m && ["GET", "POST", "DELETE"].includes(method)) {
@@ -50812,8 +50899,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // the next turn on each thread follows the new setting. Person-set pins
       // and pins that already match stay; returning to Auto sweeps nothing.
       if (computerSpecified && requestedComputer !== undefined) store.clearAutoSurfacePins(m[1], requestedComputer);
-      // A new bot model moves every thread that follows the bot; the selected
-      // thread follows it from now on too.
+      // patchBot moved every thread silently; hosted state for the selected
+      // thread is reset through the same model-change path.
       if (normalizedSelection && selectedTask) store.patchTask(bot.id, selectedTask.threadId, { modelSelection: undefined,
         ...hostedModels?.resetTask(selectedTask.modelSelection, normalizedSelection) });
       if (existingBot && (bot.browserProfile !== beforeBrowserProfile || bot.browser !== beforeBrowserEnabled)) {

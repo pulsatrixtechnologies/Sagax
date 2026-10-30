@@ -138,17 +138,22 @@ export function botmailEvent(mail: InboundMail): NormalizedTriggerEvent {
 /** v2 (S2): whether a run is a mail-woken routine run that must stay
  * confined: no shell, every write or outbound call behind its own card (no
  * Always-allow, no Full). Its trigger's owner may opt in to the bot's usual
- * tools (`source.allowFullTools`). A webhook run whose trigger is gone is
+ * tools (`source.allowFullTools`). Confirmed Full on the owner's own routine
+ * is that same authorization, checked by the caller against current owners
+ * and live routine records; it never changes the email's data provenance.
+ * A webhook run whose trigger is gone is
  * confined too: what woke it can no longer be told. Every relayed source is
  * confined the same way: bot email and, since 2026-10-26, bot phone
  * (server/bot-inbound-telephony.ts). */
 export function botmailRunConfined(
   run: { triggerSource?: string; webhookId?: string } | null | undefined,
   triggerOf: (webhookId: string) => { source?: Pick<TriggerSourceConfig, "type" | "allowFullTools"> } | null | undefined,
+  authorizedFull = false,
 ): boolean {
   if (!run || run.triggerSource !== "webhook" || !run.webhookId) return false;
   const trigger = triggerOf(run.webhookId);
   if (!trigger) return true;
+  if (authorizedFull) return false;
   const type = trigger.source?.type;
   return isTriggerSourceType(type) && isRelaySource(type) && trigger.source?.allowFullTools !== true;
 }

@@ -7,7 +7,7 @@
 import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { PersonalVoiceKeys } from "../components/settings/PersonalVoiceKeys";
+import { PersonalProviderKey } from "../components/settings/PersonalProviderAccount";
 import { WebSearchSettings } from "../components/settings/WebSearchSettings";
 import { ToolCallsRow } from "../components/settings/AppearanceSettings";
 import { RoomWorkingFolder, roomFolderEditable } from "../components/GroupView";
@@ -71,7 +71,7 @@ function Gallery() {
     <main className="flex min-h-screen flex-col bg-app text-ink" data-gallery-member-environment="">
       <Sample id="models-voice-member">
         <WebSearchSettings />
-        <PersonalVoiceKeys />
+        <PersonalProviderKey provider="elevenlabs" name="ElevenLabs" />
       </Sample>
       <Sample id="group-folder-owner-member">
         <RoomWorkingFolder group={ownGroup} disabled={!roomFolderEditable(ownGroup, store.state.config)} adminOnlyNote={!roomFolderEditable(ownGroup, store.state.config)} />

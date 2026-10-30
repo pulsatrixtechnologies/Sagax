@@ -14,6 +14,8 @@ import {
   cleanProviderVoices,
   cleanSttChoice,
   cleanTtsChoice,
+  isVoiceTtsProvider,
+  isProviderVoiceId,
   type BotVoiceChoice,
   type ProviderVoices,
   type VoiceProviderId,
@@ -171,6 +173,18 @@ export interface VoiceModeSettings {
 }
 
 export const DEFAULT_VOICE_MODE_SETTINGS: VoiceModeSettings = { voice: "", speed: 1, language: "auto" };
+
+/** One-time seed for an installation's older voice choice. A saved personal
+ * preference always wins. Keys stay in the provider store. */
+export function installedVoiceSettings(tts: { provider?: string; voice?: string } | undefined, bots: ReadonlyArray<{ id: string; voice?: string }> = []): VoiceModeSettings {
+  const provider = isVoiceTtsProvider(tts?.provider) ? tts.provider : "elevenlabs";
+  const voices = tts?.voice && isProviderVoiceId(provider, tts.voice) ? { [provider]: tts.voice } : {};
+  return cleanVoiceModeSettings({
+    ...DEFAULT_VOICE_MODE_SETTINGS, tts: provider,
+    ...(provider === "xai" ? { voice: voices.xai ?? "" } : { voices }),
+    bots: Object.fromEntries(bots.filter((bot) => bot.voice && isProviderVoiceId(provider, bot.voice)).map((bot) => [bot.id, { tts: provider, voices: { [provider]: bot.voice } }])),
+  });
+}
 
 /** A voice id as xAI lists them (GET /v1/tts/voices): short and plain. */
 export const VOICE_ID = /^[\w.-]{1,64}$/;

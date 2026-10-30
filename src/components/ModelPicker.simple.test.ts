@@ -89,10 +89,10 @@ describe("model picker in Simple mode", () => {
 
   it("lists local models under Local in Simple too", () => {
     const instance = claude(true);
-    instance.models.options.push({ id: "dwarfstar::qwen3.8-flash-next-chat", label: "DwarfStar: Qwen3.8 Flash Next", custom: true, local: true });
+    instance.models.options.push({ id: "dwarfstar::qwen3.8-flash-next-chat", label: "DwarfStar: Qwen3.8 Flash Next", custom: true, local: true, anthropic: true });
     fixture.instances = [instance];
     const markup = html();
-    expect(markup).toContain('data-model-section="local"');
+    expect(markup).toContain('data-model-section="local:this-computer"');
     expect(markup).toContain("DwarfStar: Qwen3.8 Flash Next");
     expect(markup).not.toContain("data-model-local-entry");
   });
@@ -100,10 +100,10 @@ describe("model picker in Simple mode", () => {
   it("shows a local model by its name alone, with the server only when a name is duplicated (2026-10-26)", () => {
     const instance = claude(true);
     instance.models.options.push(
-      { id: "desk8000abc::Ornith-1.5-122B-oQ4e-mtp", label: "Ornith-1.5-122B-oQ4e-mtp", custom: true, local: true },
-      { id: "desk8000abc::Twin-Model", label: "Twin-Model", server: "oMLX", custom: true, local: true },
-      { id: "desk8000cd::Shared-Model-With-A-Long-Name", label: "Shared-Model-With-A-Long-Name", sharedBy: "Camille Tremblay", custom: true, local: true },
-      { id: "desk8002abc::Twin-Model", label: "Twin-Model", server: ":8002", custom: true, local: true },
+      { id: "desk8000abc::Ornith-1.5-122B-oQ4e-mtp", label: "Ornith-1.5-122B-oQ4e-mtp", custom: true, local: true, anthropic: true },
+      { id: "desk8000abc::Twin-Model", label: "Twin-Model", server: "oMLX", custom: true, local: true, anthropic: true },
+      { id: "desk8000cd::Shared-Model-With-A-Long-Name", label: "Shared-Model-With-A-Long-Name", sharedBy: "Camille Tremblay", custom: true, local: true, anthropic: true },
+      { id: "desk8002abc::Twin-Model", label: "Twin-Model", server: ":8002", custom: true, local: true, anthropic: true },
     );
     fixture.instances = [instance];
     const markup = html();
@@ -118,10 +118,11 @@ describe("model picker in Simple mode", () => {
     expect(markup).toContain("desk8000abc::Ornith-1.5-122B-oQ4e-mtp");
   });
 
-  it("keeps engine sign-in", () => {
+  it("links to Providers for sign-in", () => {
     fixture.instances = [claude(false)];
     const markup = html();
-    expect(markup).toContain("Sign in to Claude");
+    expect(markup).toContain("data-model-providers-link");
+    expect(markup).not.toContain("data-claude-sign-in");
     expect(markup).not.toContain("data-model-add-api-keys");
     expect(markup).not.toContain("data-model-engines-link");
   });

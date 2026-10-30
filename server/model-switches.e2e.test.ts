@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { expect, it } from "vitest";
 import { launchVerificationServer } from "../scripts/control-omb.ts";
 
@@ -55,12 +57,64 @@ it("keeps a model off across selection, Auto and its fast model", async () => {
     const preview = await api("GET", `/api/bots/${bot.id}/auto-model`);
     expect(preview.pick.model).not.toBe(top);
     expect(preview.pick.model).not.toBe(fast);
+    expect(preview.chain.length).toBeGreaterThan(0);
+    expect(preview.chain.every((entry: any) => entry.model !== top && entry.model !== fast)).toBe(true);
+    expect(preview.excluded).toEqual(expect.arrayContaining([
+      expect.objectContaining({ instanceId, model: top, reason: "modelOff" }),
+      expect.objectContaining({ instanceId, model: fast, reason: "modelOff" }),
+    ]));
+    // The same dispatch diagnostics are available for a pinned bot's backup card.
+    await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: { instanceId, model: preview.pick.model } });
+    const pinnedPreview = await api("GET", `/api/bots/${bot.id}/auto-model`);
+    expect(pinnedPreview.auto).toBe(false);
+    expect(pinnedPreview.chain).toEqual(preview.chain);
+    expect(pinnedPreview.backups).toEqual([]);
     // With this engine's whole catalog off, the bot still changes to Auto.
     const instance = (await api("GET", "/api/instances")).instances.find((entry: any) => entry.instanceId === instanceId);
     const disabledModels = instance.models.options.map((entry: any) => `${instanceId}/${entry.id}`);
     await api("PUT", "/api/me/models", { disabledModels });
     expect((await api("GET", "/api/bots")).bots.find((entry: any) => entry.id === bot.id).modelSelection.auto).toBe(true);
+    const exhausted = await api("GET", `/api/bots/${bot.id}/auto-model`);
+    expect(exhausted.pick).toBeNull();
+    expect(exhausted.chain).toEqual([]);
   } finally {
     await server.close();
   }
 }, 90_000);
+
+
+it("shows configured custom endpoint backups even outside the Auto candidate list", async () => {
+  const upstream = createServer((_req, res) => {
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ data: [{ id: "vendor/backup" }] }));
+  });
+  await new Promise<void>((resolve) => upstream.listen(0, "127.0.0.1", resolve));
+  const endpointUrl = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}/v1`;
+  const server = await launchVerificationServer();
+  const api = async (method: string, path: string, body?: unknown) => {
+    const response = await fetch(`${server.info.url}${path}`, {
+      method, headers: { "content-type": "application/json" },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }), signal: AbortSignal.timeout(15_000),
+    });
+    const result = await response.json() as any;
+    expect(response.ok, `${method} ${path}: ${JSON.stringify(result)}`).toBe(true);
+    return result;
+  };
+  try {
+    await api("PUT", "/api/me/providers/servers/lab", { instanceId: "lab", name: "Local backup", url: endpointUrl,
+      protocol: "openai", models: [{ id: "vendor/backup", label: "Custom backup model" }] });
+    const instances = (await api("GET", "/api/instances")).instances;
+    const endpoint = instances.find((entry: any) => entry.providerAccount?.serverId === "lab");
+    expect(endpoint).toBeTruthy();
+    const { bot } = await api("POST", "/api/bots", { name: "Custom backup fixture" });
+    const backup = { instanceId: endpoint.instanceId, model: "vendor/backup" };
+    await api("PATCH", `/api/bots/${bot.id}/runtime-settings`, { automaticRecovery: { enabled: true, backup } });
+    const preview = await api("GET", `/api/bots/${bot.id}/auto-model`);
+    expect(preview.backups).toEqual([{ ...backup, engineLabel: "Local backup", modelLabel: "Custom backup model" }]);
+    expect(preview.chain.some((entry: any) => entry.instanceId === backup.instanceId && entry.model === backup.model)).toBe(false);
+  } finally {
+    await server.close();
+    upstream.closeAllConnections();
+    await new Promise<void>((resolve) => upstream.close(() => resolve()));
+  }
+}, 60_000);

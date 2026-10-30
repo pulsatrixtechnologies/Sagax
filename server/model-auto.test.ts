@@ -517,3 +517,14 @@ describe("pickVoiceModel", () => {
     expect(pickVoiceModel({ base: claudeBase, engines: [noFast], catalog })).toBeNull();
   });
 });
+
+
+describe("active fallback chain", () => {
+  it("never appends an old base model that was switched off or refused", () => {
+    const withoutBase = { ...claude, models: { ...claude.models, options: claude.models.options.filter((option) => option.id !== claudeBase.model) } };
+    const off = pickWorkerModel({ base: claudeBase, engines: [withoutBase, codex], catalog, task: { text: "Fix the parser" } });
+    expect(off.chain).not.toContainEqual({ instanceId: claudeBase.instanceId, model: claudeBase.model });
+    const refused = pickWorkerModel({ base: claudeBase, engines: [claude, codex], catalog, skip: [{ instanceId: claudeBase.instanceId, model: claudeBase.model }], task: { text: "Fix the parser" } });
+    expect(refused.chain).not.toContainEqual({ instanceId: claudeBase.instanceId, model: claudeBase.model });
+  });
+});

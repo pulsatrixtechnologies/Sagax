@@ -104,6 +104,16 @@ describe("own-environment autonomy, security review 2026-10-16", () => {
     expect(origin({ ...lineage, speaker: { origin: "peer", fromBotId: "b2", principalId: OWNER, routine: true, routineTrigger: "schedule" }, automationTrigger: "schedule", peerFromOwner: "pr_bob" })).toBe("other");
   });
 
+  it("uses an owner-authorized webhook routine for the owner's own sandbox, including its peer lineage", () => {
+    const webhook = { botOwnerPrincipalId: OWNER, routineLineage: true, automation: true, unattended: true, automationTrigger: "webhook", routineAuthorized: true };
+    expect(origin({ ...webhook, speaker: { origin: "owner-routine", principalId: OWNER } })).toBe("owner");
+    const peer = { ...webhook, internalTurn: true, peerFromOwner: OWNER, speaker: { origin: "peer" as const, principalId: OWNER, routine: true as const, routineTrigger: "webhook" } };
+    expect(origin(peer)).toBe("owner");
+    expect(origin({ ...peer, routineAuthorized: false })).toBe("other");
+    expect(origin({ ...peer, peerFromOwner: "pr_other" })).toBe("other");
+    expect(origin({ ...webhook, speaker: { origin: "owner-routine", principalId: "pr_other" } })).toBe("other");
+  });
+
   it("a webhook, a trigger, someone else's routine or bot, a routine's hop, a guest stay other", () => {
     const lineage = { botOwnerPrincipalId: OWNER };
     const routine = { routineLineage: true, automation: true, unattended: true };

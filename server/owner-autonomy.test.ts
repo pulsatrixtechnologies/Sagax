@@ -27,6 +27,18 @@ describe("ownerLineageOrigin", () => {
     expect(ownerLineageOrigin({ speaker: { origin: "peer", fromBotId: "b1", principalId: OTHER, routine: true, routineTrigger: "schedule" }, ownerPrincipalId: OWNER, peerFromOwner: OWNER })).toBe("other");
   });
 
+  it("uses a server-verified owner routine grant, without trusting webhook data or another person's hop", () => {
+    const routine = { speaker: { origin: "owner-routine" as const, principalId: OWNER }, ownerPrincipalId: OWNER, automation: "webhook", unattended: true, routineAuthorized: true };
+    expect(ownerLineageOrigin(routine)).toBe("owner");
+    expect(ownerLineageOrigin({ ...routine, routineAuthorized: false })).toBe("other");
+    expect(ownerLineageOrigin({ ...routine, speaker: { origin: "owner-routine", principalId: OTHER } })).toBe("other");
+    const peer = { ...routine, speaker: { origin: "peer" as const, principalId: OWNER, routine: true as const, routineTrigger: "webhook" }, peerFromOwner: OWNER };
+    expect(ownerLineageOrigin(peer)).toBe("owner");
+    expect(ownerLineageOrigin({ ...peer, peerFromOwner: OTHER })).toBe("other");
+    expect(ownerLineageOrigin({ ...peer, routineAuthorized: false })).toBe("other");
+    expect(ownerLineageOrigin({ ...routine, speaker: { origin: "person", principalId: OWNER } })).toBe("other");
+  });
+
   it("is never the owner's for a webhook, another person, another owner's bot, an unknown root or a routine hop", () => {
     expect(ownerLineageOrigin({ speaker: { origin: "owner-routine" }, ownerPrincipalId: OWNER, automation: "webhook" })).toBe("other");
     expect(ownerLineageOrigin({ speaker: { origin: "person", principalId: OTHER }, ownerPrincipalId: OWNER })).toBe("other");

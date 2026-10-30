@@ -98,6 +98,7 @@ import { useChatErrorClear } from "./chat-error";
 import type { OnboardingStatus } from "@/lib/onboarding";
 import { openLiveEvents, publishLiveFrame, publishMissedFrames } from "@/lib/live-events";
 import { receiveAchievementsFrame } from "@/lib/achievements";
+import { migrateInstalledVoiceSettings } from "@/lib/voice-mode/settings";
 import { announceServerPreferences, applyBotPreference } from "@/lib/user-preferences-sync";
 import { receiveDeviceSettingsFrame } from "@/lib/device-settings-app";
 import { isViewersPrimaryBot } from "@/lib/primary-bot";
@@ -940,7 +941,7 @@ export interface ConfigStatus {
   mistral?: { configured: boolean };
   cerebras?: { configured: boolean };
   groq?: { configured: boolean };
-  /** `everyClaudeBot`: the key runs every Claude bot, not only "Claude (API key)". */
+  /** Legacy status field, retained for older servers. New servers return false. */
   anthropic?: { configured: boolean; everyClaudeBot?: boolean };
   openai?: { configured: boolean };
   openrouter?: { configured: boolean };
@@ -3073,6 +3074,10 @@ function reduce(state: AppState, action: Action): AppState {
       return state;
     }
     case "setModel":
+      if (action.threadId && action.updateBotDefault) {
+        return reconcileModelVariantSessions(updateBot(state, action.botId, (bot) => ({ ...bot, modelSelection: action.selection,
+          tasks: bot.tasks?.map((task) => ({ ...task, modelSelection: action.selection, followsBotModel: true })) })));
+      }
       if (action.threadId) {
         const picked = reducer(state, { type: "updateTask", botId: action.botId, threadId: action.threadId,
           patch: { modelSelection: action.selection } });
@@ -3080,7 +3085,8 @@ function reduce(state: AppState, action: Action): AppState {
         return updateBot(picked, action.botId, (bot) => ({ ...bot, tasks: bot.tasks?.map((task) => task.threadId !== action.threadId ? task
           : { ...task, followsBotModel: Boolean(action.updateBotDefault) || sameModelSelection(action.selection, bot.modelSelection) }) }));
       }
-      return reconcileModelVariantSessions(updateBot(state, action.botId, (b) => ({ ...b, modelSelection: action.selection })));
+      return reconcileModelVariantSessions(updateBot(state, action.botId, (b) => ({ ...b, modelSelection: action.selection,
+        tasks: b.tasks?.map((task) => ({ ...task, modelSelection: action.selection, followsBotModel: true })) })));
     case "updateTask": {
       const patch = taskPatchFields(action.patch);
       return reconcileModelVariantSessions(updateBot(state, action.botId, (bot) => ({
@@ -3405,6 +3411,9 @@ function reduce(state: AppState, action: Action): AppState {
       }
       return updateBot(next, action.botId, (b) => {
         const updated: Bot = { ...b, ...botPatch };
+        if (botPatch.modelSelection) updated.tasks = updated.tasks?.map((task) => ({
+          ...task, modelSelection: botPatch.modelSelection!, followsBotModel: true,
+        }));
         // #1169: a new bot level reaches every thread; none keeps its own
         if (followMode && updated.tasks) {
           updated.tasks = updated.tasks.map(({ approvalMode: _mode, autoApprove: _auto, approvalOwn: _own, ...task }) => task);
@@ -4293,6 +4302,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, rawDispatch] = useReducer(reducer, initialState, restoreBotSettingsSection);
   const stateRef = useRef(state);
   stateRef.current = state;
+  useEffect(() => {
+    if (state.hydrated && state.config && !state.config.personalSettings) migrateInstalledVoiceSettings(state.config.tts, state.bots);
+  }, [state.hydrated, state.config, state.bots]);
   const showThreads = useShowThreads();
   const showThreadsRef = useRef(showThreads);
   showThreadsRef.current = showThreads;

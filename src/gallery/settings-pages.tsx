@@ -9,6 +9,7 @@
  * scripts/capture-settings-pages.mjs shoots each page in light and dark. */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
+import { ModelPicker } from "../components/ModelPicker";
 import { SettingsModal } from "../components/SettingsModal";
 import { setLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
@@ -50,7 +51,7 @@ const API: Record<string, unknown> = {
     live: { enabled: true, configured: false, voice: "", readTypedReplies: true, idleMinutes: 5 },
     imageGen: { configured: false },
     anthropic: { configured: true },
-    ...(params.get("org") ? { viewer: { role: "admin", operator: false, principalId: "p-1", email: "alex@example.com", name: "Alex Example", canCreateBots: true }, allowedEngines: ["claude", "codex", "grok", "compat-azure"], disabledModels: ["compat-azure/gpt-4o"] } : {}),
+    ...(params.get("org") ? { personalSettings: true, viewer: { role: "admin", operator: false, principalId: "p-1", email: "alex@example.com", name: "Alex Example", canCreateBots: true }, allowedEngines: ["claude", "codex", "grok", "compat-azure"], disabledModels: ["compat-azure/gpt-4o"] } : {}),
     ...(params.get("providers") ? { myDisabledModels: ["compat-azure/o4-mini"] } : {}),
     ...(params.get("providers") ? { openai: { configured: true }, openaiCompatServers: [{ instanceId: "compat-azure", name: "Azure Foundry", url: "https://example-resource.openai.azure.com/openai/v1", configured: true }] } : {}),
     features: {},
@@ -64,7 +65,7 @@ const API: Record<string, unknown> = {
       { instanceId: "grok", displayName: "Grok", driverKind: "grokAgent", cliDefault: "grok", access: "subscription", snapshot: { state: "available", authenticated: true }, models: { default: "", options: [] } },
       { instanceId: "openai-api", displayName: "OpenAI (API key)", driverKind: "codex", access: "api", snapshot: { state: "available", authenticated: true }, models: { default: "", options: [] } },
       { instanceId: "mistral", displayName: "Mistral", driverKind: "mistral", access: "api", snapshot: { state: "available", authenticated: false }, models: { default: "", options: [] } },
-      { instanceId: "compat-azure", displayName: "Azure Foundry", driverKind: "openaiCompat", access: "custom", snapshot: { state: "available", authenticated: true }, models: { default: "gpt-4.1", options: [{ id: "gpt-4.1", label: "gpt-4.1", custom: true }, { id: "gpt-4.1-mini", label: "gpt-4.1-mini", custom: true }, { id: "o4-mini", label: "o4-mini", custom: true }, { id: "gpt-4o", label: "gpt-4o", custom: true }] } },
+      { instanceId: "compat-azure", displayName: "Azure Foundry", driverKind: "openai-compat", access: "api", capabilities: { withholdsHostTools: true }, snapshot: { state: "available", authenticated: true }, models: { default: "gpt-4.1", options: [{ id: "gpt-4.1", label: "gpt-4.1", custom: true }, { id: "gpt-4.1-mini", label: "gpt-4.1-mini", custom: true }, { id: "o4-mini", label: "o4-mini", custom: true }, { id: "gpt-4o", label: "gpt-4o", custom: true }] } },
     ] : []),
   ] },
   "/api/me/cloud-agent-providers": { providers: [] },
@@ -79,8 +80,16 @@ const API: Record<string, unknown> = {
     ] },
     "/api/me/voice-keys": { elevenlabs: { configured: true, last4: "9f3a" }, fish: { configured: false, last4: null }, xai: { configured: false, last4: null }, openai: { configured: false, last4: null } },
   } : {}),
+  "/api/me/providers": { keys: [{ provider: "elevenlabs", last4: "demo" }, { provider: "openai", last4: "demo" }], servers: [] },
+  "/api/voice/status": { provider: "xai", available: true, organization: params.has("org"), tts: "elevenlabs", stt: "openai", providers: { tts: ["openai", "elevenlabs", "system", "chatterbox"], stt: ["openai"] } },
+  "/api/voice/voices": { voices: [{ id: "demo-voice", label: "Example voice", own: true }] },
   "/api/me/local-models": params.get("providers") ? { expose: true, share: false, connected: true, endpoints: [{ id: "omlx", baseUrl: "http://127.0.0.1:8000/v1", label: "Local server" }], published: [{ id: "omlx", label: "Local server", models: ["local-large", "local-fast"] }], probes: [] } : undefined,
-  "/api/bots": { bots: BOTS.map((name, index) => ({ id: `bot-${index}`, name, instanceId: "claude", model: "default", threads: [], messages: [] })), groups: [], sections: [] },
+  "/api/bots": { bots: BOTS.map((name, index) => ({ id: `bot-${index}`, name, instanceId: "claude", model: "sonnet", threadId: `thread-${index}`, modelSelection: { instanceId: "claude", model: "sonnet", ...(params.has("auto") ? { auto: true } : {}) }, threads: [], messages: [] })), groups: [], sections: [] },
+  ...Object.fromEntries(BOTS.map((_, index) => [`/api/bots/bot-${index}/auto-model`, {
+    auto: params.has("auto"), pick: { instanceId: "claude", model: "opus", engineLabel: "Claude", modelLabel: "Claude Opus 4.1", role: "orchestration", tier: "top", reason: "strongest-own", via: params.has("org") ? "org-key" : "subscription", at: NOW },
+    chain: [{ instanceId: "claude", engineLabel: "Claude", model: "opus", modelLabel: "Claude Opus 4.1" }, { instanceId: "compat-azure", engineLabel: "Azure Foundry", model: "gpt-4.1", modelLabel: "gpt-4.1" }],
+    excluded: [{ instanceId: "codex", engineLabel: "Codex", reason: "reconnect" }, { instanceId: "mistral", engineLabel: "Mistral", reason: "credentials" }, { instanceId: "compat-azure", engineLabel: "Azure Foundry", model: "o4-mini", modelLabel: "o4-mini", reason: "modelOff" }], backups: [],
+  }])),
   "/api/approval-rules": { rules },
   "/api/security-keys": { keys: [{ id: "key-1", name: "Desk key", createdAt: NOW - 40 * DAY, lastUsedAt: NOW - 2 * DAY, rpId: "localhost", deviceType: "singleDevice" }], classes: ["money"], rpId: "localhost" },
   "/api/me/tool-grants": { grants: [
@@ -111,9 +120,14 @@ window.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
 
 const section = (params.get("section") ?? "account") as AppSettingsSection;
 
+function OpenModelPicker() {
+  const { state } = useStore();
+  return state.bots[0] ? <ModelPicker bot={state.bots[0]} windowOnly /> : null;
+}
+
 function OpenSettings() {
   const { dispatch } = useStore();
-  useEffect(() => { dispatch({ type: "toggleAppSettings", open: true, section }); }, [dispatch]);
+  useEffect(() => { if (!params.has("picker")) dispatch({ type: "toggleAppSettings", open: true, section }); }, [dispatch]);
   return null;
 }
 
@@ -122,7 +136,7 @@ createRoot(document.getElementById("root")!).render(
     <StoreProvider>
       <div className="flex h-screen bg-app text-ink" data-gallery-settings-pages="">
         <OpenSettings />
-        <SettingsModal />
+        {params.has("picker") ? <OpenModelPicker /> : <SettingsModal />}
       </div>
     </StoreProvider>
   </StrictMode>,

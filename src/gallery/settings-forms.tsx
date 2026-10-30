@@ -15,7 +15,6 @@ import { OrgVaultExportPolicy } from "../components/settings/OrgVaultExportPolic
 import { CredentialsSettings } from "../components/settings/CredentialsSettings";
 import { ExportPanel } from "../components/settings/CredentialsTransfer";
 import { ComputerCareSettings } from "../components/settings/ComputerCareSettings";
-import { AnthropicEveryClaudeBot } from "../components/ApiKeys";
 import { PublishedPagesSettings } from "../components/PublishedPages";
 import { ConnectedWorkspacesSettings } from "../components/ConnectedWorkspacesSettings";
 import { RemoteComputerSection } from "../components/RemoteComputerSection";
@@ -154,9 +153,6 @@ function Gallery() {
         </SettingsGroup>
       </Sample>
       <Sample id="computer-care"><ComputerCareSettings /></Sample>
-      <Sample id="anthropic">
-        <div className="rounded-xl border-[0.5px] border-border bg-elevated px-3.5 py-4"><AnthropicEveryClaudeBot /></div>
-      </Sample>
       <Sample id="pages"><PublishedPagesSettings /></Sample>
       <Sample id="environments"><ConnectedWorkspacesSettings /></Sample>
       <Sample id="pairing"><RemoteComputerSection /></Sample>

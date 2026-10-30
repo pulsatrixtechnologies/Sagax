@@ -105,9 +105,10 @@ function canHover(): boolean {
   }
 }
 
-export function ModelSearchList({ sections, onPick, variant, autoFocus = false, onEscape, disabled = false, label, favorites, submenus = false, groupProviders = false }: {
+export function ModelSearchList({ sections, onPick, variant, autoFocus = false, onEscape, disabled = false, label, favorites, submenus = false, groupProviders = false, onPreview }: {
   sections: ModelMenuSection[];
   onPick: (row: ModelMenuRow) => void;
+  onPreview?: (row: ModelMenuRow) => void;
   variant: "popover" | "window";
   /** The composer's menu types straight into the search. */
   autoFocus?: boolean;
@@ -207,7 +208,10 @@ export function ModelSearchList({ sections, onPick, variant, autoFocus = false, 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      setMoved(stepRow(rows, active, event.key));
+      const next = stepRow(rows, active, event.key);
+      setMoved(next);
+      const preview = pickableRows(shown).find((row) => row.key === next);
+      if (preview) onPreview?.(preview);
       if (openSub) setOpenSub(null);
       return;
     }
@@ -278,6 +282,7 @@ export function ModelSearchList({ sections, onPick, variant, autoFocus = false, 
     favorite: favorites ? { on: favorites.keys.includes(row.key), onToggle: () => favorites.onToggle(row) } : undefined,
     onHover: () => {
       setMoved(key);
+      onPreview?.(row);
       if (openSub) later(leaveSubmenu);
     },
     onPick: () => onPick(row),

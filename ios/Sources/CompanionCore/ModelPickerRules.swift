@@ -1,12 +1,5 @@
-// The model picker's one mode (desktop #261, ModelPicker.tsx, 2026-10-09):
-// a model chosen in a thread runs that thread and becomes the bot's model,
-// in one request (PATCH /api/bots/:id/tasks/:t with updateBotDefault). Groups
-// and new threads use the bot's model; threads that follow the bot move with
-// it, a thread on its own model keeps it. "Only this thread" is gone; "Use
-// <bot>'s model" puts a thread back on the bot's model. The list has two
-// groups, Cloud and Local; the effort is kept on the same engine (a variant
-// only on the same model); an organization lists only the providers its
-// admin allows (`allowedEngines`).
+// A model choice updates the bot and every existing conversation silently.
+// Thread-specific low-level API choices remain readable until the next bot change.
 import Foundation
 
 public enum ModelPickerRules {
@@ -62,14 +55,5 @@ public enum ModelPickerRules {
     public static func listed(_ instances: [Instance], allowed: [String]?, organization: Bool, selectedId: String) -> [Instance] {
         guard organization else { return instances }
         return instances.filter { engineAllowed(allowed, $0.instanceId) || $0.instanceId == selectedId }
-    }
-
-    /// `threadsOnOwnModel`: threads that keep a model of their own.
-    public static func threadsOnOwnModel(botModel: ModelSelection, tasks: [BotTask]) -> Int {
-        tasks.filter { task in
-            guard task.followsBotModel == false else { return false }
-            let own = task.modelSelection ?? botModel
-            return own.instanceId != botModel.instanceId || own.model != botModel.model
-        }.count
     }
 }

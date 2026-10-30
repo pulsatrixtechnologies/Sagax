@@ -43,6 +43,12 @@ describe("which models can run a turn", () => {
     expect(modelUsable(gemini, "dwarfstar::qwen", solo)).toBe(false);
   });
 
+  it("keeps an API endpoint's manual models while hiding the organization's loopback rows", () => {
+    const models = { default: "deployment", options: [{ id: "deployment", label: "Deployment", custom: true }] };
+    expect(modelUsable(engine("compat-lab", { models }), "deployment", { orgMode: true })).toBe(true);
+    expect(modelUsable(engine("ollama", { models, access: "custom" }), "deployment", { orgMode: true })).toBe(false);
+  });
+
   it("asks the person's engines on an organization server", () => {
     const facts = (instanceId: string, myTurns: MyEngine["myTurns"]) => ({ instanceId, driver: "x", displayName: instanceId, installed: true,
       subscription: { supported: true, signedIn: false }, myKey: false, orgKey: false, myTurns }) as unknown as MyEngine;

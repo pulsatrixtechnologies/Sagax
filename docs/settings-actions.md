@@ -367,11 +367,9 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Réglage | Où dans l'UI | Outil du bot | Classe |
 |---|---|---|---|
 | Voice mode (voice, speed, language) | Settings > Voice > Voice mode | `sagax_settings` get, set `models.voiceMode` | simple |
-| Voice engine | Settings > Voice | `sagax_settings` get, set `models.voiceProvider` | simple; organisation : organisation |
 | Fish Audio model | Settings > Voice | `sagax_settings` get, set `models.fishModel` | simple; organisation : organisation |
 | Image generation | Settings > Models > Images | `sagax_settings` get, set `models.imageGen` | simple; organisation : organisation |
 | Decision model | Settings > Models > Decision model | `sagax_settings` get, set `models.decider` | simple; organisation : organisation |
-| Anthropic key for every Claude bot | Settings > Models > Keys | `sagax_settings` get, set `models.everyClaudeBot` | simple; organisation : organisation |
 | Live call settings | Settings > Voice > Live calls | `sagax_settings` get, set `models.liveCalls` | simple; organisation : organisation |
 | Engines and their accounts (read only: instanceId, name, driver, signedIn, account) | Settings > Models > Engines | `sagax_settings` get, set `models.engines` | simple |
 | An engine's settings ({displayName, configDir: a Claude account's folder, cli: the program's path, '' for the default, tools}) | Settings > Models > Engines > engine | `sagax_settings` get, set `models.engine` | simple; organisation : autrui |
@@ -387,8 +385,9 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Add an Antigravity account ({name, source: the Antigravity engine's instanceId}); then models.engineSignIn | Settings > Models > Antigravity > Add account | `sagax_settings` set `models.antigravityAccount` | simple |
 | The person's own engine access (organization server: subscription signed in, own key, organization key; read only) | Settings > Models > My engines | `sagax_settings` get, set `models.myEngines` | simple |
 | Sign the person's own subscription out of an engine (organization server; value true) | Settings > Models > My engines > Disconnect | `sagax_settings` set `models.mySignOut` | suppression |
-| Custom voice server address (the voice engine's own server) | Settings > Voice > Voice engine | `sagax_settings` get, set `models.ttsServer` | simple; organisation : organisation |
-| Custom voice server model | Settings > Voice > Voice engine | `sagax_settings` get, set `models.ttsModel` | simple; organisation : organisation |
+| A personal OpenAI or Anthropic server ({instanceId, name, url, protocol, models}; {instanceId, remove:true} removes) | Settings > Providers > Add a provider | `sagax_settings` get, set `models.myProviderServer` | simple |
+| Custom voice server address (the voice engine's own server) | Settings > Voice > Advanced | `sagax_settings` get, set `models.ttsServer` | simple; organisation : organisation |
+| Custom voice server model | Settings > Voice > Advanced | `sagax_settings` get, set `models.ttsModel` | simple; organisation : organisation |
 | Test the decision model (value true) | Settings > Models > Decision model > Test | `sagax_settings` set `models.deciderTest` | simple |
 | Free up space: delete Antigravity's leftover files (get lists them; value true deletes) | Settings > Models > Antigravity > Free up space | `sagax_settings` get, set `models.antigravityLeftovers` | simple + suppression |
 
@@ -409,7 +408,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 
 | Réglage | Où dans l'UI | Outil du bot | Classe |
 |---|---|---|---|
-| A provider key ({<provider>: {key}}; get says which are saved, never a key) | Settings > Models > Keys | `sagax_settings` get, set `models.providerKey` | secret; organisation : secret + organisation |
+| A provider key ({<provider>: {key}}; get says which are saved, never a key) | Settings > Providers | `sagax_settings` get, set `models.providerKey` | secret; organisation : secret + organisation |
 | Cloud coding agent key ({provider: cursor/claude/codex, token}, token null removes; get says which are saved) | Settings > Models > Cloud coding agents | `sagax_settings` get, set `connections.cloudAgentKey` | secret |
 | A vault item ({name, username, password, apiKey, notes, domains}); no target creates one | Settings > Vault | `sagax_settings` get, set `credentials.item` | secret |
 | Let a bot use an item ({botId, allow: true/false}) | Settings > Vault > item | `sagax_settings` get, set `credentials.botAccess` | secret |
@@ -420,7 +419,8 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | One-time card wallets the person uses ({wallet: shop_pay/link, chosen}) | Settings > Vault > One-time card | `sagax_settings` get, set `credentials.wallets` | secret |
 | Purchases waiting for the person (read only; sagax_approvals answers them) | Settings > Vault > Purchases | `sagax_settings` get, set `credentials.purchases` | simple |
 | Add an item of the person's 1Password to the vault as a reference ({vaultId, itemId, name?, domains?}; get lists names, vaults and sites, never a value) | Settings > Vault > 1Password | `sagax_settings` get, set `credentials.onePassword` | secret |
-| The person's own voice keys ({<elevenlabs/fish/xai>: {key}}, key null removes; get says which are saved, never a key) | Settings > Voice > Your voice keys | `sagax_settings` get, set `models.myVoiceKeys` | secret |
+| A personal provider key ({provider, key}; null removes; get returns metadata only) | Settings > Providers | `sagax_settings` get, set `models.myProviderKey` | secret |
+| The person's own voice keys ({<elevenlabs/fish/xai>: {key}}, key null removes; get says which are saved, never a key) | Settings > Providers | `sagax_settings` get, set `models.myVoiceKeys` | secret |
 
 ### Serveur
 

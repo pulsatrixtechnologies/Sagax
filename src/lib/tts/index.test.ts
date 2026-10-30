@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Speaker } from "./index";
+import { refreshVoiceMode } from "@/lib/voice-mode/api";
 
 class FakeAudio {
   static latest: FakeAudio | null = null;
@@ -96,6 +97,19 @@ describe("Speaker lifecycle", () => {
       { text: "Distinct voice.", voiceId: "voice-bot" },
     ]);
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:voice-test");
+  });
+
+  it("uses the personal provider path when reading aloud on a solo server", async () => {
+    await refreshVoiceMode("b-solo-provider", async () => ({ state: "ready", status: { provider: "xai", available: false, providers: { tts: ["elevenlabs"], stt: [] } } }));
+    const request = vi.fn(async (input: string | URL | Request) => String(input).endsWith("/prepare")
+      ? json({ utterances: ["Hello."] }) : new Response(new Blob(["mp3"]), { status: 200 }));
+    vi.stubGlobal("fetch", request);
+    const speaker = new Speaker();
+    const speaking = speaker.speak("Hello.", { botId: "b-solo-provider" });
+    await vi.waitFor(() => expect(FakeAudio.latest).not.toBeNull());
+    FakeAudio.latest!.onended?.();
+    await speaking;
+    expect(request.mock.calls.map(([url]) => String(url))).toEqual(["/api/bots/b-solo-provider/voice/prepare", "/api/bots/b-solo-provider/voice/speak"]);
   });
 });
 

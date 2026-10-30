@@ -821,9 +821,8 @@ export interface AppConfig {
   mistral?: { key?: string };
   cerebras?: { key?: string };
   groq?: { key?: string; url?: string };
-  /** `everyClaudeBot`: the key runs every Claude bot instead of its login.
-   * Unset means true, which is how a key behaved before it had its own
-   * `claudeApi` instance; a key first saved from Settings sets false. */
+  /** Legacy every-Claude selection migration marker. False after old
+   * paid choices move onto claudeApi; never changes credential routing. */
   anthropic?: { key?: string; url?: string; everyClaudeBot?: boolean };
   openai?: { key?: string };
   openrouter?: { key?: string };
@@ -1883,6 +1882,9 @@ export function saveConfig(
     // concurrency default.
     if (key === "threads" && !current.success) merged.maxConcurrentPerBot = DEFAULT_MAX_CONCURRENT_BOT_THREADS;
     Object.assign(merged, section);
+    // New provider-key writes never opt existing subscription bots into an
+    // API bill. Only stored pre-retirement configs need the boot migration.
+    if (key === "anthropic" && Object.hasOwn(section, "key")) merged.everyClaudeBot = false;
     // null is the patch's explicit "remove this key" marker (the threads
     // event-log knobs use it); a key the patch omits keeps its value.
     for (const [sectionKey, sectionValue] of Object.entries(section as Record<string, unknown>)) {
@@ -2144,15 +2146,13 @@ function injectedEnvironment(cfg: AppConfig, instanceId: string, driver: string)
   // organization server it is the organization's key for Grok Build, after
   // each person's own sign-in and key (server/engine-credentials.ts).
   if (driver === "grokAgent" && cfg.xai?.key && process.env.SAGAX_IDENTITY?.trim().toLowerCase() === "perspicax") environment.set("XAI_API_KEY", cfg.xai.key);
-  // The workspace Anthropic key reaches Claude Code as the variable it
-  // reads, carried in the instance environment so the driver can tell a
-  // deliberate workspace key from one riding along in the parent's env.
-  // By default it runs only the `claudeApi` instance, so signed-in Claude
-  // bots stay on their plan; `everyClaudeBot` (the pre-split behaviour, and
-  // what a hosted workspace seeded with only a key relies on) runs every
-  // other Claude instance on it too.
+  // A provider key belongs only to its API instance. The retired global
+  // switch is read once by the saved-selection migration, never at dispatch.
+  const explicitApi = cfg.instances?.[instanceId];
+  const requiresAnthropic = explicitApi?.access === "api" && explicitApi.config && typeof explicitApi.config === "object"
+    && !Array.isArray(explicitApi.config) && (explicitApi.config as Record<string, unknown>).requireApiKey === true;
   const anthropicHere = driver === "claudeAgent" && Boolean(cfg.anthropic?.key)
-    && (cfg.anthropic?.everyClaudeBot === false ? instanceId === CLAUDE_API_INSTANCE : instanceId !== CLAUDE_API_INSTANCE);
+    && (instanceId === CLAUDE_API_INSTANCE || requiresAnthropic);
   if (anthropicHere) environment.set("ANTHROPIC_API_KEY", cfg.anthropic!.key!);
   if (anthropicHere && cfg.anthropic!.url) environment.set("ANTHROPIC_BASE_URL", cfg.anthropic!.url);
   // OpenAI and OpenRouter have their own instances and keys; the workspace

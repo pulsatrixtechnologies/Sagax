@@ -25,7 +25,8 @@
 // 2. Owner lineage. A teammate's hop or the bot's own scheduled or manual
 //    routine is the owner's own work when every link of it is: the owner's
 //    own bots, started by the owner's own words (or the routine they wrote),
-//    never by a webhook, an email, another person or an unknown source.
+//    including an owner-authorized webhook routine. Webhook and email data
+//    remain untrusted; another person or an unknown source grants nothing.
 //    Such a turn counts as the owner's own for their cloud computer (and,
 //    since 2026-10-26, their Local VM) too, which it did not before: one bot asked 32 times in a row to run a
 //    command in its owner's own cloud computer because the owner's Primary
@@ -57,11 +58,14 @@ export function ownerLineageOrigin(input: {
   automation?: string;
   /** A turn from a webhook is never the owner's own words. */
   unattended?: boolean;
+  /** The live owner-written routine was verified by the server. Event data stays untrusted. */
+  routineAuthorized?: boolean;
 }): "owner" | "other" {
   const owner = input.ownerPrincipalId.trim().toLowerCase();
   if (!owner) return "other";
   const same = (id: string | undefined) => Boolean(id) && id!.trim().toLowerCase() === owner;
-  if (input.automation !== undefined && input.automation !== "schedule" && input.automation !== "manual") return "other";
+  const authorizedWebhook = input.automation === "webhook" && input.routineAuthorized === true;
+  if (input.automation !== undefined && input.automation !== "schedule" && input.automation !== "manual" && !authorizedWebhook) return "other";
   const speaker = input.speaker;
   if (!speaker) return "other";
   switch (speaker.origin) {
@@ -70,19 +74,19 @@ export function ownerLineageOrigin(input: {
     // own mode.
     case "operator": return "other";
     case "person": return same(speaker.principalId) && !input.unattended ? "owner" : "other";
-    // Only a routine whose trigger is known to be its schedule or a manual run.
-    case "owner-routine": return (input.automation === "schedule" || input.automation === "manual")
+    // Clock/manual runs, or a webhook whose owner routine the server verified.
+    case "owner-routine": return (input.automation === "schedule" || input.automation === "manual" || authorizedWebhook)
       && (speaker.principalId === undefined || same(speaker.principalId)) ? "owner" : "other";
     case "peer": {
       // A hop from a routine may carry what a webhook brought in. 2026-10-27
       // (#1098): a hop between two of the owner's own bots from the owner's
       // own routine (its schedule or a manual run, the trigger the hop
-      // carries) is the owner's too; a webhook, a typed trigger or an unknown
-      // source stays someone else's.
+      // carries) is the owner's too. A webhook additionally needs the live
+      // routine authorization; an unknown source grants nothing.
       if (speaker.routine) {
         const trigger = speaker.routineTrigger ?? input.automation;
-        return (trigger === "schedule" || trigger === "manual") && same(input.peerFromOwner)
-          && (speaker.principalId === undefined || same(speaker.principalId)) && !input.unattended ? "owner" : "other";
+        return (trigger === "schedule" || trigger === "manual" || (trigger === "webhook" && input.routineAuthorized === true)) && same(input.peerFromOwner)
+          && (speaker.principalId === undefined || same(speaker.principalId)) && (!input.unattended || input.routineAuthorized === true) ? "owner" : "other";
       }
       return same(input.peerFromOwner) && same(speaker.principalId) && !input.unattended ? "owner" : "other";
     }
