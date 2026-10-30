@@ -181,7 +181,7 @@ describe("composer controls (Grok Bot's prompt bar)", () => {
     const mic = $("[data-composer-mic]")!;
     expect(mic.getAttribute("data-composer-mic")).toBe("setup");
     click(mic);
-    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "toggleAppSettings", open: true, section: "engines" });
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "toggleAppSettings", open: true, section: "providers" });
     expect(openProviderKeyDialog).toHaveBeenCalledWith("xai");
     expect($("[data-dictation-chip]")).toBeNull();
   });

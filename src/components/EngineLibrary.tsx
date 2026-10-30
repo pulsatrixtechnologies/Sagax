@@ -22,13 +22,17 @@ const providers: Record<string, string> = {
 
 /** One disclosure, not a second settings dialog. Keep its children mounted so
  * closing a card does not abandon an in-progress sign-in or a CLI path draft. */
-export function EngineCard({ instance, personal, children }: {
+export function EngineCard({ instance, personal, bare = false, children }: {
   instance: InstanceInfo;
   /** On an organization server: the signed-in person's own access (who
    * pays for their turns) instead of the server's account and readiness. */
   personal?: { ready: boolean; line: string; turns: string };
+  /** 2026-10-30: the body only, inside a row of Settings > Providers that
+   * draws its own heading. */
+  bare?: boolean;
   children: ReactNode;
 }) {
+  if (bare) return <div data-engine-card={instance.instanceId} data-engine-card-bare="" className="min-w-0">{children}</div>;
   const ready = personal ? personal.ready : engineReady(instance);
   const email = !personal && instance.snapshot.authenticated === true ? instance.snapshot.account?.email : undefined;
   const subtitle = personal?.line ?? email ?? (instance.access === "custom"

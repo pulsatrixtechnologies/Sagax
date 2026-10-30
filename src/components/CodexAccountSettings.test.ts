@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, expect, it, vi } from "vitest";
 import type { InstanceInfo } from "@/state/store";
 import { CodexAccountSettings } from "./CodexAccountSettings";
-import { EnginesSettings } from "./EnginesSettings";
+import { EnginesSettings, LEGACY_CARD } from "./EnginesSettings";
+import { requestSettingsCard } from "./SettingsPrimitives";
 
 const fixture = vi.hoisted(() => ({
   instances: [] as InstanceInfo[],
@@ -74,6 +75,8 @@ it("uses the successful sign-out snapshot even when a later refresh would fail",
   expect(request).toHaveBeenCalledOnce();
   expect(request).toHaveBeenCalledWith("/api/instances/codex/auth/sign-out", expect.objectContaining({ method: "POST" }));
   expect(fixture.refreshInstances).not.toHaveBeenCalled();
+  // the engine cards are the former view on Models since 2026-10-30
+  requestSettingsCard(LEGACY_CARD);
   const markup = renderToStaticMarkup(createElement(EnginesSettings));
   expect(markup).toContain("Connect ChatGPT");
   expect(markup).not.toContain("ChatGPT connected on this server");

@@ -48,7 +48,7 @@ describe("Settings nav groups", () => {
     expect([...at].sort((x, y) => x - y)).toEqual(at);
     expect(SECTIONS.map((entry) => entry.id)).toEqual([
       "account", "security", "credentials", "appearance", "notifications",
-      "engines", "voice",
+      "providers", "engines", "voice",
       "organization", "computer", "usage", "backups", "import",
       "updates", "experimental",
     ]);

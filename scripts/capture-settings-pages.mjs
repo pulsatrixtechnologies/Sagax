@@ -8,6 +8,7 @@
  * only: no window opens; the gallery answers /api itself.
  * Usage: node scripts/capture-settings-pages.mjs [--out DIR] [--port N]
  *   [--prefix before|after] [--lang en|fr] [--sections account,security,...]
+ *   [--query providers=1] [--wait ms]
  *   (SAGAX_VERIFY_BROWSER_CHROME=<chromium> to use an installed browser)
  */
 import { spawn } from "node:child_process";
@@ -25,6 +26,9 @@ const port = Number(arg("--port", "5311"));
 const prefix = arg("--prefix", "after");
 const lang = arg("--lang", "en");
 const sections = arg("--sections", "account,security,credentials,engines,voice").split(",");
+// extra gallery parameters, e.g. --query providers=1 (a fuller set of engines and keys)
+const query = arg("--query", "");
+const settle = Number(arg("--wait", "900"));
 const skins = [{ id: "pulsatrix-light", label: "light" }, { id: "pulsatrix", label: "dark" }];
 
 async function waitForServer(url, ms = 120_000) {
@@ -56,9 +60,9 @@ try {
     const page = await browser.newPage({ viewport: { width: 1100, height: 900 }, deviceScaleFactor: 2, colorScheme: skin.label });
     page.on("pageerror", (error) => console.error("page error:", error.stack));
     for (const section of sections) {
-      await page.goto(`${base}?section=${section}&skin=${skin.id}&lang=${lang}`, { waitUntil: "networkidle" });
+      await page.goto(`${base}?section=${section}&skin=${skin.id}&lang=${lang}${query ? `&${query}` : ""}`, { waitUntil: "networkidle" });
       await page.waitForSelector('[role="dialog"][aria-labelledby="app-settings-title"] [data-settings-pane]', { timeout: 30_000 });
-      await page.waitForTimeout(900);
+      await page.waitForTimeout(settle);
       // the whole page, not the 700px window: the dialog grows with its page
       await page.addStyleTag({ content: '[aria-labelledby="app-settings-title"]{height:auto!important;max-height:none!important}[aria-labelledby="app-settings-title"] [data-settings-pane]{overflow:visible!important}[aria-labelledby="app-settings-title"] nav{overflow:visible!important}.fixed.inset-0{position:static!important;min-height:100vh;align-items:flex-start!important}' });
       await page.waitForTimeout(300);
