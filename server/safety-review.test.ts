@@ -17,6 +17,9 @@ import { resetMisuseGuardrailsForTests, setMisuseOwnPaths } from "./misuse-guard
 import { removeTempDir } from "./testing/cleanup.ts";
 import { callUserSandboxTool, type ToolExec } from "./user-sandbox-tools.ts";
 import { SAFER_GIT, SAFETY_REFUSAL_FINAL } from "../shared/safety-review.ts";
+import { isOutboundTool } from "../shared/outbound.ts";
+import { autoVerdict } from "./auto-approve.ts";
+import { destructiveKindOf, ownerDecision } from "./owner-approval.ts";
 
 const dirs: string[] = [];
 let dataDir = "";
@@ -49,6 +52,48 @@ const exec = (): ToolExec => ({
 });
 
 describe("safety review server", () => {
+  it("uses the real Outlook connector catalog without treating mailbox organization as a send in enforce", () => {
+    enforce();
+    const catalog = JSON.parse(readFileSync(new URL("./testing/grok-gateway-team-mcp-list.json", import.meta.url), "utf8")) as {
+      servers: Array<{ name: string; session: { tools: Array<{ name: string }> } }>;
+    };
+    const tools = catalog.servers.find((server) => server.name === "managed_gateway:outlook")!.session.tools.map((tool) => tool.name);
+    for (const [tool, outbound] of [
+      ["outlook__move_message", false],
+      ["outlook__delete_message", false],
+      ["outlook__get_message", false],
+      ["outlook__send_message", true],
+      ["outlook__send_draft", true],
+      ["outlook__reply_all", true],
+      ["outlook__forward_message", true],
+    ] as const) {
+      expect(tools, tool).toContain(tool);
+      expect(isOutboundTool(tool), tool).toBe(outbound);
+      const effect = safetyPermissionEffect({ text: `${tool} {"message_id":"owned-email"}`, surface: "mcp", tool, known: true, threadId: tool });
+      if (outbound) expect(effect, tool).toMatchObject({ kind: "stop", classKey: "outbound:send" });
+      else expect(effect, tool).toBeNull();
+    }
+  });
+
+  it("leaves mailbox moves to Full and explicit organization rules, with deletion, bulk and person boundaries intact", () => {
+    enforce();
+    for (const tool of ["outlook__move_message", "mcp__Outlook__move_email", "cursor__user-Outlook-move_5fmail_5fmessage___12", "mcp__claude_ai_Gmail__modify_labels"]) {
+      const effect = safetyPermissionEffect({ text: `${tool} {"message_id":"owned-email","destination_id":"owned-folder"}`, surface: "mcp", tool, known: true, threadId: tool });
+      expect(effect, tool).toBeNull();
+      const context = { toolName: tool, outbound: isOutboundTool(tool), safetyHold: effect?.kind === "hold" || effect?.kind === "stop" };
+      expect(autoVerdict("full", "other", context).source, tool).toBe("full-access");
+      for (const behavior of ["ask", "deny"] as const) {
+        expect(autoVerdict("full", "other", { ...context, customRule: { behavior, id: "orule_mail" } }), tool)
+          .toMatchObject({ approve: null, source: `custom-rule-${behavior}` });
+      }
+    }
+    expect(destructiveKindOf({ tool: "outlook__delete_message", input: "{}" })).toBe("delete");
+    const bulk = { ownerId: "pr_owner", botId: "bot-1", tool: "outlook__move_message", input: JSON.stringify({ ids: ["email-1", "email-2"] }) };
+    expect(destructiveKindOf(bulk)).toBe("bulk");
+    expect(ownerDecision({ mode: "auto", rules: [], call: bulk })).toMatchObject({ kind: "card", destructive: "bulk" });
+    expect(ownerDecision({ mode: "bypass", rules: [], call: bulk, crossPerson: true })).toMatchObject({ kind: "card", reason: "cross-person" });
+  });
+
   it("shadow records nothing that stops the tool", async () => {
     process.env.SAGAX_MISUSE_GUARDRAILS = "shadow";
     const held = await safetyToolHold({ text: "mkdir out", surface: "shell", tool: "run_command", known: true, threadId: "t1" });

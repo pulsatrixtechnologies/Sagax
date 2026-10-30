@@ -89,6 +89,22 @@ describe("isOutboundTool, the engines' mail, Teams, calendar and SharePoint conn
       expect(isOutboundTool(`mcp__claude_ai_Microsoft_365__${tool}`), tool).toBe(false);
     }
   });
+
+  it("does not turn mailbox organization, deletion or an unknown connector write into an outbound send", () => {
+    for (const tool of [
+      "outlook__move_message",
+      "outlook__move_email",
+      "mcp__Outlook__move_email",
+      "mcp__claude_ai_Microsoft_365__outlook_move_message",
+      "cursor__user-Outlook-move_5fmail_5fmessage___12",
+      "outlook__delete_message",
+      "outlook__batch_delete_messages",
+      "outlook__mark_as_read",
+      "mcp__claude_ai_Gmail__modify_labels",
+      "mcp__claude_ai_Microsoft_365__outlook_create_filter",
+      "outlook__whatever_new_tool",
+    ]) expect(isOutboundTool(tool), tool).toBe(false);
+  });
 });
 
 describe("normalizeOutboundPolicy", () => {
