@@ -30,7 +30,7 @@ function engineConnectable(engine: Partial<Pick<MyEngine, "subscription" | "driv
 
 /** The one status line: what pays for the person's turns today. */
 export function paysWithText(
-  engine: Pick<MyEngine, "myTurns" | "installed" | "notAvailable"> & Partial<Pick<MyEngine, "subscription" | "driver">>,
+  engine: Pick<MyEngine, "myTurns" | "installed" | "notAvailable"> & Partial<Pick<MyEngine, "subscription" | "driver" | "keyWhere">>,
 ): string {
   // Only the image deliberately not carrying the engine is "not available".
   if (engineUnavailable(engine)) return t("myEngines.notAvailable");
@@ -43,7 +43,8 @@ export function paysWithText(
     // 2026-10-30 a key that serves instead is what the line names
     if (engine.myTurns === "expired" || (engine.myTurns === "subscription" && engine.subscription?.signedIn && engine.subscription.expired)) return t("engineConnect.signInExpired");
     if (engine.myTurns === "subscription") return t("engineConnect.paysWith.subscription");
-    if (engine.myTurns === "key") return t("engineConnect.paysWith.key");
+    // 2026-10-30: a key sealed on this server is not "in Perspicax"
+    if (engine.myTurns === "key") return t(engine.keyWhere === "server" ? "engineConnect.paysWith.serverKey" : "engineConnect.paysWith.key");
     if (engine.myTurns === "org-key") return t("engineConnect.paysWith.organization");
   }
   return t("engineConnect.notConnected");
