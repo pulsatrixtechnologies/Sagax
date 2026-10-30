@@ -407,6 +407,9 @@ const ALLOWED: ReadonlyArray<{ method: string; path: RegExp }> = [
   // rooms — making one, and talking in one
   { method: "POST", path: /^\/api\/groups$/ },
   { method: "POST", path: /^\/api\/groups\/[\w-]+\/messages$/ },
+  // #1480, #1786: leave a group this person is listed in. The server reads
+  // who leaves from the session.
+  { method: "POST", path: /^\/api\/groups\/[\w-]+\/leave$/ },
   { method: "POST", path: /^\/api\/groups\/[\w-]+\/interrupt$/ },
   { method: "DELETE", path: /^\/api\/groups\/[\w-]+\/queue\/[\w-]+$/ },
   { method: "POST", path: /^\/api\/groups\/[\w-]+\/read$/ },

@@ -732,6 +732,10 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // rooms
   { methods: ["GET", "POST"], path: /^\/api\/groups$/ },
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/messages$/ },
+  // #1480, #1786: a person listed in a group leaves it on their own. The
+  // handler (planGroupLeave) names who leaves from the session, never the
+  // body, and refuses anyone who is not listed.
+  { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/leave$/ },
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/interrupt$/ },
   { methods: ["POST"], path: /^\/api\/groups\/[\w-]+\/read$/ },
   { methods: ["DELETE"], path: /^\/api\/groups\/[\w-]+\/queue\/[\w-]+$/ },

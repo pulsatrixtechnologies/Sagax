@@ -136,6 +136,8 @@ describe("scopes", () => {
       ["POST", "/api/bots/x/messages"], ["POST", "/api/bots/x/respond"], ["POST", "/api/threads/t/respond"],
       ["POST", "/api/threads/t/undo"], ["POST", "/api/bots/x/compact"], ["POST", "/api/bots/x/tasks/t/title"],
       ["PATCH", "/api/bots/x/cards/m"], ["POST", "/api/groups/g/messages"], ["PATCH", "/api/groups/g"],
+      // #1786: leaving a group is the member's own membership, not an admin act
+      ["POST", "/api/groups/g/leave"],
       ["PATCH", "/api/bots/x"], ["PATCH", "/api/bots/x/profile"], ["POST", "/api/attachments"],
       ["GET", "/api/attachments/a.png"], ["POST", "/api/routines"], ["POST", "/api/routines/r/run"],
       ["POST", "/api/routines/watch-check"], // #1202 Check now: the handler applies the routine save's rights
@@ -750,6 +752,15 @@ describe("resolveRequestAuth", () => {
     expect(mcpDenied.status).toBe(403);
     expect(mcpDenied.error).toContain("lacks the admin scope");
     expect(resolve({ host: "bots.example.com", authorization: `Bearer ${token}` }, "/api/bots").auth?.kind).toBe("session");
+    // #1786: POST leave reaches the handler; any other method stays admin.
+    const leave = resolve({ host: "bots.example.com", authorization: `Bearer ${token}` }, "/api/groups/g-1/leave", "POST");
+    expect(leave.auth?.kind).toBe("session");
+    expect(leave.error).not.toContain("lacks the admin scope");
+    for (const method of ["GET", "PUT", "DELETE"] as const) {
+      const refused = resolve({ host: "bots.example.com", authorization: `Bearer ${token}` }, "/api/groups/g-1/leave", method);
+      expect(refused.status, method).toBe(403);
+      expect(refused.error, method).toContain("lacks the admin scope");
+    }
   });
 
   it.each([
