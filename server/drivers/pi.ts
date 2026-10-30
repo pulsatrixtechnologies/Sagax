@@ -1276,6 +1276,13 @@ export const PiDriver: ProviderDriver<PiConfig> = {
           throw err;
         }
       })();
+      // Drain diagnostics on cold turns too. An unread stderr pipe can
+      // fill and stop pi before it sends its next protocol frame.
+      let stderr = "";
+      child.stderr.setEncoding("utf8");
+      child.stderr.on("data", (chunk: string) => {
+        stderr = (stderr + chunk).slice(-8192);
+      });
       let assistantText = "";
       // a tool's resolved name between its start and its end (gateway calls)
       const toolNames = new Map<string, string>();
@@ -1695,7 +1702,9 @@ export const PiDriver: ProviderDriver<PiConfig> = {
       });
       child.on("close", () => {
         // a clean close without a terminal event is a failed turn, never a hang
-        rejectWaiters(new Error("pi process exited before replying"));
+        const message = `pi process exited before replying${stderr.trim() ? `: ${stderr.trim().slice(-300)}` : ""}`;
+        rejectWaiters(new Error(message));
+        if (!settled) emit({ ...base(threadId, turnId), type: "runtime.error", message });
         settle(false);
       });
 

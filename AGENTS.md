@@ -2203,6 +2203,10 @@ refused, failed or expired, with what decided it. Rules:
 
 ## Tests
 
+The pi driver drains every turn's stderr, keeps only its last 8 KiB, and
+includes the last 300 characters when the process exits before replying
+(`#1718`, `server/drivers/pi.test.ts`).
+
 `pnpm test` runs every vitest file in one serial process (about 45 minutes),
 then the broker, Electron and packaged-server checks. For day-to-day work use
 the sharded runner `scripts/testing/vitest-shards.mjs`, which runs N vitest
