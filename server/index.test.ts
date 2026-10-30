@@ -5683,7 +5683,7 @@ describe("harness HTTP API", () => {
       ]) {
         const rejected = await isolatedApi("PATCH", `/api/bots/${custom.id}`, body);
         expect(rejected.status, JSON.stringify(body)).toBe(403);
-        expect(rejected.body.error).toMatch(/packaged desktop app/i);
+        expect(rejected.body.error).toMatch(/desktop app on the computer that runs this server/i);
       }
       const stillCustom = (await isolatedApi("GET", "/api/bots?messages=0")).body.bots.find(
         (candidate: { id: string }) => candidate.id === custom.id,
