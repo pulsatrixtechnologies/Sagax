@@ -346,6 +346,31 @@ add({
     return source ? { method: "POST", path: `/api/bots/${enc(ids.target!)}/skills`, body: { source } } : "value is {repo: owner/repo, path?, ref?} or a GitHub link.";
   },
 });
+// 2026-10-30 (Capabilities, lot 1a): the one resolved list of what a bot
+// receives (server/capabilities.ts), read only; the actions that change it
+// are bot.plugin, bot.skill, bot.mcpServers and bot.perspicaxProfiles
+add({
+  key: "bot.capabilities", family: "bot", target: "bot", value: "object",
+  label: "What the bot receives on top of its engine, read only: one list of its plugins, skills, MCP servers, account connectors, Perspicax Roles and Flow, each with its scope (bot, me, organization, installation, account), its state and what its engine receives",
+  where: "Bot panel > Capabilities",
+  read: (ids) => ({ path: `/api/bots/${enc(ids.target!)}/capabilities`, shape: (v) => {
+    const r = (v ?? {}) as { engine?: { label?: unknown }; items?: Array<Record<string, unknown>>; promptIndex?: unknown };
+    const received = (engine: unknown) => {
+      const parts = Object.entries((engine ?? {}) as Record<string, unknown>).filter(([part, how]) => part !== "nothing" && how !== "none");
+      return parts.length ? parts.map(([part, how]) => `${part}: ${String(how)}`).join(", ") : "nothing";
+    };
+    return {
+      engine: r.engine?.label,
+      items: (r.items ?? []).map((item) => ({
+        name: item.name, form: item.form, scope: item.scope, state: item.state,
+        ...(item.reason ? { reason: item.reason } : {}),
+        receives: received(item.engine),
+      })),
+      ...(r.promptIndex ? { promptIndex: r.promptIndex } : {}),
+    };
+  } }),
+  write: () => "bot.capabilities is read only: bot.plugin, bot.skill, bot.mcpServers and bot.perspicaxProfiles change what it lists.",
+});
 // 2026-10-29: plugins of a configured marketplace, as Capabilities installs
 // them: For <bot> (/api/bots/:id/plugins) or Everyone (/api/marketplaces)
 const PLUGIN_PART = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;

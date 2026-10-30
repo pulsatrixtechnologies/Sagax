@@ -898,6 +898,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/skill-upload$/, feature: "orgDirectory" },
   // A path shown once (server/routes/shown-path.ts): same rights as skills.
   { methods: ["POST"], path: /^\/api\/bots\/[\w-]+\/shown-path$/, feature: "orgDirectory" },
+  // A bot's capabilities (server/routes/bot-capabilities.ts): the one
+  // resolved list, read by a person who may use the bot (checked in the handler).
+  { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/capabilities$/, feature: "orgDirectory" },
   { methods: ["GET"], path: /^\/api\/bots\/[\w-]+\/plugins$/, feature: "orgDirectory" },
   { methods: ["POST", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/marketplaces(?:\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}(?:\/update)?)?$/, feature: "orgDirectory" },
   { methods: ["PUT", "DELETE"], path: /^\/api\/bots\/[\w-]+\/plugins\/marketplaces\/[A-Za-z0-9][A-Za-z0-9._-]{0,63}\/token$/, feature: "orgDirectory" },
