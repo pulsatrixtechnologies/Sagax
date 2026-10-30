@@ -6311,6 +6311,24 @@ connectors and My MCP servers only.
   `src/components/plugins/ConnectAppsView.test.ts`. Captures:
   `scripts/capture-github-plugin.mjs`, `docs/screenshots/github-plugin/`.
 
+## Capabilities: the same resolved list on desktop (lot 1b, 2026-10-30)
+
+Bot panel > Capabilities and Capabilities > Installed in a bot's scope read
+`GET /api/bots/:id/capabilities` through `useBotCapabilities`
+(`src/lib/capabilities.ts`). The server's rows are the only list source in
+that scope, including personal servers, skills, organization Flow, Roles and
+account connectors. Installed preserves its existing plugin detail, update
+and remove actions. A bot change or an engine preview hides the previous
+list immediately; late answers cannot replace the new bot's list.
+
+The bot panel switches only the rows whose `canToggle` allows it through
+the existing routes, and a server switch waits for `flushBotPatches` before
+reading the list again. A skill still goes through its review. The detail
+and the receipt summary use the shared engine matrix and say when the prompt
+index omits skills. Tests: `src/lib/capabilities*.test.ts`,
+`src/components/bot-settings/CapabilitiesTab.test.ts`,
+`src/components/plugins/ConnectAppsView.test.ts`.
+
 ## Reserved MCP server names (2026-10-17, one rule since 2026-10-30)
 
 One rule, `reservedMcpName` (`shared/mcp-reserved-names.ts`), for this

@@ -107,10 +107,10 @@ describe("bot panel header and tabs", () => {
     expect(html).not.toContain('id="bot-instructions-bot-1"');
   });
 
-  it("shows Details, Library and Computer, with Routines on Details and no empty Coding or Activity", () => {
+  it("shows Details, Library, Capabilities and Computer, with Routines on Details and no empty Coding or Activity", () => {
     const html = panel();
     const tabs = [...html.matchAll(/data-panel-tab="(\w+)"/g)].map((match) => match[1]);
-    expect(tabs).toEqual(["details", "library", "computer"]);
+    expect(tabs).toEqual(["details", "library", "capabilities", "computer"]);
     expect(html).not.toContain("Search settings");
     expect(html.indexOf('data-bot-settings-section="routines"')).toBeGreaterThan(-1);
     // nothing running and no code work yet: neither section is drawn

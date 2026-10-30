@@ -3,16 +3,21 @@
 // folds a server added by hand, the same address brought by a plugin and
 // the plugin itself into one), its real logo, a readable name, what it
 // brings, its state and a "..." menu (Update, For which bots, Remove); then
-// the private skills, only when there are some. Every empty section is
-// hidden.
+// the private skills, only when there are some. In a bot's scope (lot 1b,
+// 2026-10-30), what the organization and Perspicax put on the bot, read
+// from the bot's one resolved list (GET /api/bots/:id/capabilities): the
+// organization's Flow ("imposed by the organization") and its Perspicax
+// Roles ("held" / "not held"). Every empty section is hidden.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { BookOpen, ClipboardPaste, MoreHorizontal, Plus, RotateCw, Trash2, Users } from "lucide-react";
+import { BookOpen, Building2, ClipboardPaste, KeyRound, MoreHorizontal, Plus, RotateCw, Settings2, Trash2, Users } from "lucide-react";
 
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { entryIcon, type InstalledBrings, type InstalledEntry } from "@/lib/installed-model";
 import type { PluginItem } from "@/lib/plugins-model";
+import { botPluginKey, capabilityName, formWord, installationServerName, reasonText, stateWord, type BotCapabilities, type Capability } from "@/lib/capabilities";
 import { PluginIcon, PluginStatusLabel } from "./PluginParts";
+import { CapabilitiesBody } from "../bot-settings/CapabilitiesTab";
 
 /** What an entry brings, in one short line: "app + 2 connectors",
  * "plugin (claude-plugins-official) · 3 skills", "1 connector". */
@@ -56,6 +61,12 @@ export interface InstalledViewProps {
    * the entries and the skills, under its own title. A provider listed is
    * already installed. */
   providers?: ReactNode;
+  /** a bot's scope: its organization Flow and Perspicax Roles, from the
+   * bot's resolved list (lib/capabilities organizationRows) */
+  organization?: Capability[];
+  /** In a bot's scope, the server's complete list is the only row source. */
+  resolved?: BotCapabilities;
+  botName?: string;
 }
 
 function EmptyLine({ children, action }: { children: ReactNode; action?: ReactNode }) {
@@ -67,7 +78,7 @@ function EmptyLine({ children, action }: { children: ReactNode; action?: ReactNo
   );
 }
 
-export function InstalledView({ entries, skills, sourceLabel, onOpenEntry, onOpenSkill, entryActions, onAddServer, onPasteConfig, addDisabled, onNewSkill, forms, loading, onDiscover, providers }: InstalledViewProps) {
+export function InstalledView({ entries, skills, sourceLabel, onOpenEntry, onOpenSkill, entryActions, onAddServer, onPasteConfig, addDisabled, onNewSkill, forms, loading, onDiscover, providers, organization = [], resolved, botName = "" }: InstalledViewProps) {
   const tools = onAddServer || onPasteConfig || onNewSkill;
   return (
     <div data-plugins-installed-tab>
@@ -91,14 +102,29 @@ export function InstalledView({ entries, skills, sourceLabel, onOpenEntry, onOpe
         </div>
       )}
       {forms}
-      {entries.length === 0 && skills.length === 0 && !loading && (
+      {resolved && <CapabilitiesBody botName={botName} data={resolved} switchable={() => false} showReceived={false}
+        rowActions={(item) => {
+          const plugin = botPluginKey(item);
+          const server = installationServerName(item);
+          const entry = entries.find((candidate) => candidate.members.some((member) =>
+            plugin ? member.kind === "plugin" && member.id === plugin : Boolean(server && member.kind === "mcp" && member.id === server)));
+          if (!entry) return null;
+          return <>
+            <button type="button" onClick={() => onOpenEntry(entry)} className="ui-icon-button"
+              aria-label={t("connectApps.openAria", { name: capabilityName(item) })}>
+              <Settings2 size={14} aria-hidden="true" />
+            </button>
+            <EntryMenu name={capabilityName(item)} actions={entryActions(entry)} updateWaiting={entry.updateAvailable} />
+          </>;
+        }} />}
+      {!resolved && entries.length === 0 && skills.length === 0 && organization.length === 0 && !loading && (
         <EmptyLine action={onDiscover ? (
           <button type="button" data-plugins-go-discover onClick={onDiscover} className="text-[12.5px] font-medium text-accent-text hover:underline">{t("connectApps.manage.tab.discover")}</button>
         ) : undefined}>
           {t("connectApps.manage.nothingInstalled")}
         </EmptyLine>
       )}
-      {entries.length > 0 && (
+      {!resolved && entries.length > 0 && (
         <section data-plugins-installed>
           <ul className="divide-y divide-hairline/60 rounded-2xl border border-border bg-card">
             {entries.map((entry) => (
@@ -109,7 +135,17 @@ export function InstalledView({ entries, skills, sourceLabel, onOpenEntry, onOpe
           </ul>
         </section>
       )}
-      {skills.length > 0 && (
+      {!resolved && organization.length > 0 && (
+        <section className="mt-6 first:mt-0" data-plugins-organization>
+          <h3 className="mb-2 text-[13px] font-semibold text-ink">{t("capabilities.installed.organization")}</h3>
+          <ul className="divide-y divide-hairline/60 rounded-2xl border border-border bg-card">
+            {organization.map((item) => (
+              <li key={item.key}><OrganizationRow item={item} /></li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {!resolved && skills.length > 0 && (
         <section className="mt-6" data-plugins-skills>
           <h3 className="mb-2 text-[13px] font-semibold text-ink">{t("connectApps.manage.skills")}</h3>
           <ul className="divide-y divide-hairline/60 rounded-2xl border border-border bg-card">
@@ -218,6 +254,33 @@ function EntryMenu({ name, actions, updateWaiting }: { name: string; actions: En
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** The organization's Flow or a Perspicax Role on the bot: its name, its
+ * source, and what the organization or the Role says (imposed, held, not
+ * held). Read only here: Flow is set by the organization, a Role in the
+ * bot's editor (Bot panel > Capabilities switches it). */
+function OrganizationRow({ item }: { item: Capability }) {
+  const name = capabilityName(item);
+  const role = item.form === "role";
+  const chip = item.state === "imposed" ? { text: t("capabilities.state.imposed"), tone: "bg-accent/12 text-accent-text" }
+    : role && item.state === "on" ? { text: t("capabilities.installed.held"), tone: "bg-success/10 text-success" }
+      : role && item.state === "not_held" ? { text: t("capabilities.installed.notHeld"), tone: "bg-warning/12 text-warning" }
+        : { text: stateWord(item.state), tone: "bg-ink/[0.06] text-ink-secondary" };
+  const sub = [role ? t("capabilities.installed.roleOf", { source: item.source.label }) : formWord(item.form), !role ? item.source.label : null, item.source.version ? `v${item.source.version}` : null].filter(Boolean).join(" · ");
+  const reason = reasonText(item.reason);
+  return (
+    <div className="flex items-center gap-3 px-4 py-2.5" data-installed-capability={item.form} data-installed-capability-state={item.state}>
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-raised text-ink-secondary">
+        {role ? <KeyRound size={15} aria-hidden="true" /> : <Building2 size={15} aria-hidden="true" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-medium text-ink">{name}</span>
+        <span className="block truncate text-[11.5px] text-ink-secondary" title={reason ?? sub}>{reason ? `${sub} · ${reason}` : sub}</span>
+      </span>
+      <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] leading-[15px]", chip.tone)}>{chip.text}</span>
     </div>
   );
 }
