@@ -9521,3 +9521,7 @@ only by `ios/project-carplay.yml` (`xcodegen generate --spec project-carplay.yml
 once Apple grants it; never put that entitlement in `project.yml`. Never show
 a message's content on the car's screen. Tests:
 `ios/Tests/CompanionCoreTests/CarAssistTests.swift`. See `docs/ios-carplay.md`.
+
+The main app's localized `ios/App/{Base,en,fr,pt-BR}.lproj/AppIntentVocabulary.plist`
+files supply example phrases for both supported Siri intents. Keep each
+locale aligned with `App/Localizable.xcstrings`; Base is the English fallback.

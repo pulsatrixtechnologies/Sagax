@@ -19,6 +19,17 @@ calls a bot (`SiriAccess.askOnce`). The Siri capability of the App ID is
 turned on by automatic signing (`com.apple.developer.siri`); it is not a
 request to Apple.
 
+The main app includes `AppIntentVocabulary.plist` under
+`ios/App/{Base,en,fr,pt-BR}.lproj/`. Each file supplies example phrases for
+both `INSendMessageIntent` and `INStartCallIntent`. `en`, `fr` and `pt-BR`
+are the app's supported catalog locales; Base supplies the development
+language fallback. XcodeGen includes these localized resources through
+the app's `App` source path, without adding them to an extension.
+Apple requires examples for every supported intent and locale
+([QA1950](https://developer.apple.com/library/archive/qa/qa1950/_index.html),
+[Intent Phrases](https://developer.apple.com/documentation/sirikit/intent-phrases));
+omitting them produces ITMS-90626 after a successful upload.
+
 Who a name is (`CarDirectory.resolve`): the same name first, then a name
 that starts with what was said, then one that contains it; case, accents and
 a leading article do not count. Two bots for one name make Siri ask which
