@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import type { McpServerSpec, RemoteMcpSpec, StdioMcpSpec } from "./contracts.ts";
+import { RESERVED_MCP_PREFIX, reservedMcpName } from "../shared/mcp-reserved-names.ts";
 
 /** One server as kept in config.json `mcpServers`. The shape is the block
  * Claude Code, Cursor and Claude Desktop write, so a pasted entry is a
@@ -151,36 +152,8 @@ function urlError(value: string): string | null {
   return null;
 }
 
-const RESERVED_MCP_NAMES = new Set([
-  "ogb",
-  "computer",
-  "agents",
-  "data",
-  "browser",
-  "phone",
-  "dweb",
-  "openmausbot_connectors",
-  "openmausbot_phone",
-  // 2026-10-16 security review: the person's own environment servers Sagax
-  // mounts itself (user-sandbox-routing.ts USER_SANDBOX_MCP_NAME,
-  // shared/bot-workplace.ts DESKTOP_BRIDGE_MCP_NAME). Their tools may run
-  // without a card in the bot owner's environment (member-environment.ts),
-  // so no person's server may take these names.
-  "sagax-environment",
-  "sagax-desktop",
-  // 2026-10-17 (leftovers of #690): a server named `mcp` spells its tool
-  // `data__data_sql` as `mcp__data__data_sql` on a chat engine, the name of
-  // the built-in Data tool on Claude (sagax-internal-tools.ts).
-  "mcp",
-]);
-
-/** Name families Sagax mounts itself or reads as a separator: Sagax's own
- * servers (`sagax-computer`, `sagax-flow`...), Perspicax profiles
- * (`perspicax_<slug>`, owner-scoped: index.ts ownerScopedMcpServerFor),
- * claude.ai connectors (`claude_ai_<Service>`) and the legacy app's servers.
- * A double underscore is the separator of `<server>__<tool>` and is refused
- * anywhere in a name. */
-const RESERVED_MCP_PREFIX = /^(?:sagax[-_]|perspicax[-_]|claude[-_]ai[-_]|openmausbot[-_])/;
+// The reserved names: one rule for the installation's servers, a person's
+// own servers and the turn's Connectors record (shared/mcp-reserved-names.ts).
 
 const stdioEntrySchema = z.object({
   command: z.string().trim().min(1).max(1_024),
@@ -264,14 +237,14 @@ export function mcpServerNameError(name: string): string | null {
   if (!MCP_NAME.test(name)) {
     return "Use 1–32 lowercase letters, numbers, underscores, or hyphens, starting with a letter.";
   }
-  if (RESERVED_MCP_NAMES.has(name) || RESERVED_MCP_PREFIX.test(name) || name.includes("__")) return "That name is reserved by Sagax.";
+  if (reservedMcpName(name)) return "That name is reserved by Sagax.";
   return null;
 }
 
 /** A well-formed name Sagax reserves (2026-10-17, #695): a server saved
  * under it by an older build is never mounted. */
 export function reservedMcpServerName(name: string): boolean {
-  return MCP_NAME.test(name) && (RESERVED_MCP_NAMES.has(name) || RESERVED_MCP_PREFIX.test(name) || name.includes("__"));
+  return MCP_NAME.test(name) && reservedMcpName(name);
 }
 
 /** A free, allowed name close to a reserved one: the reserved family
@@ -683,6 +656,15 @@ export function parseMcpServersImport(
 }
 
 function slugMcpName(raw: string): string {
-  const slug = raw.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
-  return /^[a-z]/.test(slug) ? slug : slug ? `mcp-${slug}`.slice(0, 32) : "";
+  let slug = raw.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
+  if (slug && !/^[a-z]/.test(slug)) slug = `server-${slug}`.slice(0, 32);
+  // 2026-10-30 (one reserved-name rule, shared/mcp-reserved-names.ts): an
+  // imported name in a reserved family (`mcp-atlassian`, the host
+  // `mcp.example.com`) takes the name without it; a built-in name stays
+  // refused.
+  if (slug && RESERVED_MCP_PREFIX.test(slug)) {
+    const rest = slug.replace(RESERVED_MCP_PREFIX, "").replace(/^[^a-z]+/, "").replace(/[-_]+$/, "").slice(0, 32);
+    if (rest && !reservedMcpName(rest)) slug = rest;
+  }
+  return slug;
 }

@@ -374,6 +374,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"DELETE","kind":"pattern","route":"^\\/api\\/bot-presets\\/([\\w-]+)$","tier":"admin","readOnly":false,"scope":"bot-presets:admin","defaultEnabled":false,"destructive":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bot-wizard\\/([\\w-]{1,128})(?:\\/(soul|finish))?$","tier":"write","readOnly":false,"scope":"bot-wizard:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/(?:([\\w-]+)\\/export\\.zip|import\\/(upload|agent|[0-9a-f-]{36})(?:\\/(preview))?)$","tier":"admin","readOnly":false,"scope":"bots:admin","defaultEnabled":false},
+  {"method":"GET","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]{1,128})\\/capabilities$","tier":"read","readOnly":true,"scope":"bots:read","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]{1,128})\\/team-bot-draft$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"GET","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]{1,80})\\/remote-sessions\\/([a-f0-9]{12})(?:\\/(close|focus|shell|upload|download|screen|os))?$","tier":"admin","readOnly":true,"scope":"bots:admin","defaultEnabled":false},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]{1,80})\\/remote-sessions\\/([a-f0-9]{12})\\/control$","tier":"admin","readOnly":false,"scope":"bots:admin","defaultEnabled":false},
