@@ -20,7 +20,7 @@ let claudeInventory: Array<{ name: string; status: string }> | null = null;
 let claudeReads = 0;
 let clock = 1_000;
 let proofs: ConnectorSetupProofs;
-let grokReach: Record<string, { connectors: string[]; at: number; elsewhere?: { engine: string; connectors: string[] } }> = {};
+let grokReach: Record<string, { connectors: string[]; at: number; elsewhere?: { engine: string; connectors: string[] }; account?: "personal" | "team" }> = {};
 let signInCards: string[] = [];
 let signInEngine: string | null = null;
 
@@ -102,6 +102,15 @@ describe("open_connector_setup (bot route)", () => {
     expect(rows[0]!.connectorSetup).toMatchObject({ provider: "grok", url: "https://grok.com/connectors", status: "waiting", owner: connectorSetupOwner("pr_a") });
     // the card carries no person id
     expect(JSON.stringify(rows[0])).not.toContain("pr_a");
+  });
+
+  it("names the Grok account the connector goes on, team or personal (2026-10-30)", async () => {
+    grokReach = { pr_a: { connectors: [], at: 500, account: "team" } };
+    const out = await open({ connector: "Outlook", language: "fr" });
+    expect(out.body).toMatchObject({ card: "posted", route: "grok" });
+    expect(String(out.body.note)).toContain("team Grok account");
+    expect(rows[0]!.connectorSetup).toMatchObject({ provider: "grok", account: "team", url: "https://grok.com/connectors" });
+    expect(rows[0]!.text).toBe("Connectez Outlook sur [grok.com](https://grok.com/connectors), avec votre compte Grok d'équipe.");
   });
 
   it("asked twice in one conversation: the same card, not a second one", async () => {

@@ -28,7 +28,7 @@ export const GROK_CLOUD_CONNECTORS: readonly GrokCloudConnector[] = [
  * "Microsoft Teams", "Outlook (Exchange)", "gmail") to its id here. */
 export const GROK_CONNECTOR_ALIASES: ReadonlyArray<readonly [RegExp, string]> = [
   [/^(?:microsoft[\s_-]*teams|ms[\s_-]*teams|teams)$/, "microsoft-teams"],
-  [/^(?:outlook|microsoft outlook|outlook \(exchange\)|exchange|outlook mail|hotmail)$/, "outlook"],
+  [/^(?:outlook|microsoft outlook|outlook \(exchange\)|exchange|outlook mail|hotmail|outlook[\s_-]*calendar)$/, "outlook"],
   [/^(?:gmail|google mail)$/, "gmail"],
   [/^(?:google[\s_-]*drive|gdrive|drive)$/, "google-drive"],
   [/^(?:one[\s_-]*drive)$/, "onedrive"],
@@ -78,4 +78,22 @@ export function grokGatewayToolConnector(toolName: string): { name: string; id?:
   if (!name) return null;
   const id = grokConnectorIdForName(name);
   return id ? { name, id } : { name };
+}
+
+/** The connector a whole gateway server stands for. Since 2026-10-30 a
+ * grok.com account may also bring one managed server per connector
+ * (`managed_gateway:outlook` "Outlook", `managed_gateway:microsoft_teams`
+ * "Microsoft Teams", `managed_gateway:outlook_calendar` "Outlook Calendar"),
+ * whose tool names carry no connector (`outlook__send_message`): the server
+ * names it. Measured on grok 1.0.46 with a team account. Null for a server
+ * that names none of GROK_CLOUD_CONNECTORS (`tasks`, `github`, `cursor`). */
+export function grokGatewayServerConnector(serverName: string, displayName?: string): { name: string; id: string } | null {
+  if (!serverName.startsWith(GROK_GATEWAY_SERVER_PREFIX)) return null;
+  const key = serverName.slice(GROK_GATEWAY_SERVER_PREFIX.length).replace(/_/g, " ").trim();
+  for (const candidate of [displayName, key]) {
+    if (!candidate) continue;
+    const id = grokConnectorIdForName(candidate);
+    if (id) return { name: candidate, id };
+  }
+  return null;
 }

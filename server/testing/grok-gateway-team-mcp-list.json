@@ -1,0 +1,170 @@
+{
+  "_comment": "_x.ai/mcp/list as grok 1.0.46 answers it on a signed-in xAI TEAM account whose grok.com connectors include Outlook, Outlook Calendar and Microsoft Teams, with GROK_MANAGED_MCPS_ENABLED=true and GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED=true (measured 2026-10-30 on an organization server; other servers and tool descriptions removed). Each connector is its own managed server and its tool names carry no connector. Without GROK_MANAGED_MCPS_ENABLED=true no managed_gateway server is listed at all.",
+  "sessionMcpResolved": true,
+  "servers": [
+    {
+      "name": "managed_gateway:microsoft_teams",
+      "displayName": "Microsoft Teams",
+      "source": "managed",
+      "type": "managedGateway",
+      "session": {
+        "enabled": true,
+        "status": "ready",
+        "tools": [
+          {
+            "name": "microsoft_teams__list_teams",
+            "enabled": true
+          },
+          {
+            "name": "microsoft_teams__list_channels",
+            "enabled": true
+          },
+          {
+            "name": "microsoft_teams__read_messages",
+            "enabled": true
+          },
+          {
+            "name": "microsoft_teams__search_messages",
+            "enabled": true
+          },
+          {
+            "name": "microsoft_teams__send_message",
+            "enabled": true
+          },
+          {
+            "name": "microsoft_teams__reply_to_message",
+            "enabled": true
+          },
+          {
+            "name": "microsoft_teams__create_chat",
+            "enabled": true
+          },
+          {
+            "name": "microsoft_teams__send_chat_message",
+            "enabled": true
+          },
+          {
+            "name": "microsoft_teams__list_chats",
+            "enabled": true
+          },
+          {
+            "name": "microsoft_teams__read_chat_messages",
+            "enabled": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "managed_gateway:outlook",
+      "displayName": "Outlook",
+      "source": "managed",
+      "type": "managedGateway",
+      "session": {
+        "enabled": true,
+        "status": "ready",
+        "tools": [
+          {
+            "name": "outlook__search",
+            "enabled": true
+          },
+          {
+            "name": "outlook__get_message",
+            "enabled": true
+          },
+          {
+            "name": "outlook__list_drafts",
+            "enabled": true
+          },
+          {
+            "name": "outlook__list_folders",
+            "enabled": true
+          },
+          {
+            "name": "outlook__create_draft",
+            "enabled": true
+          },
+          {
+            "name": "outlook__send_draft",
+            "enabled": true
+          },
+          {
+            "name": "outlook__send_message",
+            "enabled": true
+          },
+          {
+            "name": "outlook__reply_all",
+            "enabled": true
+          },
+          {
+            "name": "outlook__forward_message",
+            "enabled": true
+          },
+          {
+            "name": "outlook__delete_message",
+            "enabled": true
+          },
+          {
+            "name": "outlook__move_message",
+            "enabled": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "managed_gateway:outlook_calendar",
+      "displayName": "Outlook Calendar",
+      "source": "managed",
+      "type": "managedGateway",
+      "session": {
+        "enabled": true,
+        "status": "ready",
+        "tools": [
+          {
+            "name": "outlook_calendar__search",
+            "enabled": true
+          },
+          {
+            "name": "outlook_calendar__availability",
+            "enabled": true
+          },
+          {
+            "name": "outlook_calendar__create_event",
+            "enabled": true
+          },
+          {
+            "name": "outlook_calendar__get_event",
+            "enabled": true
+          },
+          {
+            "name": "outlook_calendar__update_event",
+            "enabled": true
+          },
+          {
+            "name": "outlook_calendar__rsvp_event",
+            "enabled": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "managed_gateway:tasks",
+      "displayName": "Automations",
+      "source": "managed",
+      "type": "managedGateway",
+      "session": {
+        "enabled": true,
+        "status": "ready",
+        "tools": [
+          {
+            "name": "tasks__create",
+            "enabled": true
+          },
+          {
+            "name": "tasks__list",
+            "enabled": true
+          }
+        ]
+      }
+    }
+  ]
+}

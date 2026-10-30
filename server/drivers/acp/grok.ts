@@ -128,9 +128,18 @@ export function grokHome(env: Record<string, string | undefined> = process.env):
  * follow the managed configs: on for the person's own sign-in on an
  * organization turn without a tool selection, off everywhere else. A
  * gateway call is a use_tool call to a server Sagax did not mount, so it
- * keeps its card below Full access, like any engine connector. */
+ * keeps its card below Full access, like any engine connector.
+ *
+ * 2026-10-30: the gateway variable alone no longer brings anything. Grok
+ * fetches the managed MCP configs (`managed_mcps.enabled`, a pinned user
+ * setting that xAI now leaves unset) only when GROK_MANAGED_MCPS_ENABLED is
+ * true; unset, `_x.ai/mcp/list` holds no `managed_gateway:` server at all and
+ * a person whose Outlook and Teams are active on grok.com got "Grok sees no
+ * connector". Measured on grok 1.0.46 (organization server, team account)
+ * and 1.0.70 (personal account): unset, no gateway; true, the gateway. So
+ * the on path sets both. */
 export function grokCloudConnectorEnv(toolScope: unknown, withholdHostTools?: boolean, ownAccount?: boolean): {
-  GROK_MANAGED_MCPS_ENABLED?: "false";
+  GROK_MANAGED_MCPS_ENABLED: "true" | "false";
   GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "true" | "false";
 } {
   // Review of #943 (point 5): only on the person's own xAI sign-in
@@ -139,8 +148,9 @@ export function grokCloudConnectorEnv(toolScope: unknown, withholdHostTools?: bo
   if (toolScope !== undefined || withholdHostTools !== true || ownAccount !== true) {
     return { GROK_MANAGED_MCPS_ENABLED: "false", GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "false" };
   }
-  // set, never left to an environment variable the server inherited
-  return { GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "true" };
+  // set, never left to an environment variable the server inherited nor to
+  // grok's own default (off since 2026-10-30, see above)
+  return { GROK_MANAGED_MCPS_ENABLED: "true", GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "true" };
 }
 
 /** The xAI cloud connectors this turn could reach through use_tool, named
@@ -355,9 +365,10 @@ const REACH_PROBE_TIMEOUT_MS = 45_000;
  * reads it), or null. No prompt is sent; the process is killed after.
  * Measured on grok 1.0.70: about one second for 488 gateway tools. */
 export async function probeGrokReach(cli: string, env: Record<string, string | undefined>): Promise<unknown> {
-  const probeEnv: Record<string, string | undefined> = { ...env, GROK_AGENT: "grok-build", GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "true", SAGAX_GROK_REACH_PROBE: "1" };
+  // both variables, as an own-account turn sets them (grokCloudConnectorEnv):
+  // the gateway one alone brings no managed server since 2026-10-30
+  const probeEnv: Record<string, string | undefined> = { ...env, GROK_AGENT: "grok-build", ...grokCloudConnectorEnv(undefined, true, true), SAGAX_GROK_REACH_PROBE: "1" };
   delete probeEnv.XAI_API_KEY;
-  delete probeEnv.GROK_MANAGED_MCPS_ENABLED;
   const home = grokHome(probeEnv);
   if (!existsSync(join(home, "auth.json"))) return null;
   return engineStartGate.run("probe", `${cli} agent (reach)`, () => new Promise<unknown>((done) => {
@@ -1099,8 +1110,7 @@ const support: AcpSupport = {
     // alike. A tool selection or someone else's account still turns them off
     // (grokCloudConnectorEnv).
     const cloud = grokCloudConnectorEnv(toolScope, withholdHostTools === true, accountConnectors === true);
-    if (cloud.GROK_MANAGED_MCPS_ENABLED) env.GROK_MANAGED_MCPS_ENABLED = cloud.GROK_MANAGED_MCPS_ENABLED;
-    else delete env.GROK_MANAGED_MCPS_ENABLED;
+    env.GROK_MANAGED_MCPS_ENABLED = cloud.GROK_MANAGED_MCPS_ENABLED;
     env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED = cloud.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED;
     if (withholdHostTools === true || (toolScope !== undefined && narrowsNativeTools(toolScope))) {
       if (env.GROK_AGENT && env.GROK_AGENT !== "grok-build") {

@@ -77,6 +77,9 @@ export interface GrokReachFact {
   /** 2026-10-29: the person's other Grok sign-in that carries connectors,
    * named as run_with_engine takes it ("Grok (personal account)"). */
   elsewhere?: { engine: string; connectors: readonly string[] };
+  /** 2026-10-30: what that sign-in is (grok's `principal_type`), so a card
+   * says which account the connector goes on. */
+  account?: "personal" | "team";
 }
 
 interface Shared {
@@ -190,9 +193,11 @@ export function createConnectorSetupInternalRoutes(deps: Shared & {
       status: "waiting",
       owner,
       createdAt: now(),
+      ...(route.route === "grok" && reach?.account ? { account: reach.account } : {}),
     };
     deps.post({ botId: capability.botId, threadId: capability.threadId, view, text: connectorSetupText(view, parsed.data.language ?? "en") });
-    return json(res, 200, { ok: true, route: route.route, label: target.label, status: view.status, card: "posted" });
+    return json(res, 200, { ok: true, route: route.route, label: target.label, status: view.status, card: "posted",
+      ...(view.account ? { note: `The card asks the person to connect ${target.label} on grok.com with their ${view.account} Grok account, the one signed in here: a connector added under their other xAI account or workspace is not seen by this one. Say so in one sentence.` } : {}) });
   };
 }
 

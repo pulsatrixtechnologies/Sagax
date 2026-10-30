@@ -855,10 +855,13 @@ function handle(msg: any) {
     case "_x.ai/mcp/list": {
       // FAKE_ACP_MCP_LIST_FILE: the managed servers of a real answer
       // (grok-gateway-mcp-list.json), shown only when the turn turned the
-      // gateway on, as grok does (GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED)
+      // gateway on, as grok does: since 2026-10-30 grok fetches the managed
+      // configs only with GROK_MANAGED_MCPS_ENABLED=true (its own default is
+      // off), and exposes the gateway with GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED
       const listFile = process.env.FAKE_ACP_MCP_LIST_FILE;
       const recorded = listFile ? JSON.parse(readFileSync(listFile, "utf8")) as { servers?: Array<{ type?: string }> } : null;
-      const servers = (recorded?.servers ?? []).filter((server) => server.type !== "managedGateway" || process.env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED === "true");
+      const managed = process.env.GROK_MANAGED_MCPS_ENABLED === "true" && process.env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED === "true";
+      const servers = (recorded?.servers ?? []).filter((server) => server.type !== "managedGateway" || managed);
       result(msg.id, { result: { servers, sessionMcpResolved: true } });
       break;
     }

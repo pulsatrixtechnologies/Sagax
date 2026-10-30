@@ -1865,8 +1865,9 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(seen.env.GROK_HOME).toBe(join(homeA, ".grok"));
     expect(seen.env.XAI_API_KEY).toBeUndefined();
     expect(seen.env.GROK_AGENT).toBe("grok-build");
-    expect(seen.env.GROK_MANAGED_MCPS_ENABLED).toBeUndefined();
-    // the person's own grok.com connectors (Outlook, Teams) ride the managed gateway
+    // the person's own grok.com connectors (Outlook, Teams) ride the managed
+    // gateway, which grok lists only once it fetched the managed configs
+    expect(seen.env.GROK_MANAGED_MCPS_ENABLED).toBe("true");
     expect(seen.env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED).toBe("true");
     const profile = JSON.parse(readFileSync(`${dump}.session.json`, "utf8"))._meta.agentProfile;
     expect(profile).toMatchObject({
@@ -1980,6 +1981,48 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(prompt).not.toMatch(/Connectable but not connected yet[^\n]*(Microsoft Teams|Outlook)/);
     expect(prompt).toMatch(/Connectable but not connected yet[^\n]*Gmail/);
     // what this sign-in brings is known now (setup card, connector switch)
+    expect(grokAccountReach(home)).toMatchObject({ gateway: true, connectors: ["microsoft-teams", "outlook"] });
+  });
+
+  it("brings a team account's Outlook and Teams to the person's Grok turn: managed configs on, one server per connector (2026-10-30)", async () => {
+    // Organization server, Sagax 0.8.18: Outlook and Teams active on grok.com, and the bot
+    // said "Grok sees no connector on this turn". Grok fetches the managed
+    // configs only with GROK_MANAGED_MCPS_ENABLED=true; with the gateway
+    // variable alone its list held no managed server. The fake CLI answers
+    // like grok 1.0.46 on a team account: nothing managed unless both are
+    // true, then `managed_gateway:outlook`, `:microsoft_teams`, `:outlook_calendar`.
+    const dump = join(scratch, "grok-gateway-team.json");
+    process.env.FAKE_ACP_DUMP = dump;
+    process.env.FAKE_ACP_DUMP_PROMPT = "1";
+    process.env.FAKE_ACP_MCP_LIST_FILE = fileURLToPath(new URL("../../testing/grok-gateway-team-mcp-list.json", import.meta.url));
+    onTestFinished(() => { delete process.env.FAKE_ACP_MCP_LIST_FILE; });
+    await create(GrokAgentDriver);
+    const rules = "Standing rules. " + randomUUID();
+    const home = join(scratch, "person-gateway-team");
+    const { turnId } = await instance.adapter.sendTurn({
+      threadId: "t-grok-gateway-team-" + randomUUID(),
+      text: "Les connecteurs de Grok ne fonctionnent pas ?",
+      model: "grok-4.7",
+      system: rules,
+      systemStable: rules,
+      systemVolatile: "",
+      withholdHostTools: true,
+      grokCloudConnectors: true,
+      access: { via: "subscription", identity: "subscription:a", engineHome: home },
+      integrations: { agents: { command: "node", args: ["/fixture/agents-proxy.mjs"], env: {} } },
+    });
+    await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
+    const seen = JSON.parse(readFileSync(dump, "utf8")) as { env: Record<string, string> };
+    expect(seen.env.GROK_MANAGED_MCPS_ENABLED).toBe("true");
+    expect(seen.env.GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED).toBe("true");
+    const prompt = (JSON.parse(readFileSync(`${dump}.prompt.json`, "utf8")) as Array<{ type: string; text: string }>)
+      .map((part) => part.text ?? "").join("\n");
+    expect(prompt).toContain("Connected on this xAI account through grok.com");
+    expect(prompt).toMatch(/Microsoft Teams \(10 tools, e\.g\. microsoft_teams__(list|get|search)_/);
+    // Outlook mail and Outlook Calendar are one connector on the card
+    expect(prompt).toMatch(/Outlook \(Exchange\) \(17 tools, e\.g\. outlook/);
+    expect(prompt).not.toContain("Grok returned no grok.com connector at all");
+    expect(prompt).not.toMatch(/Connectable but not connected yet[^\n]*(Microsoft Teams|Outlook)/);
     expect(grokAccountReach(home)).toMatchObject({ gateway: true, connectors: ["microsoft-teams", "outlook"] });
   });
 
@@ -3732,7 +3775,8 @@ describe("grokCloudConnectorEnv", () => {
   it("lets an organization turn on the person's own xAI sign-in fetch the account connectors, gateway connectors included", () => {
     // 2026-10-28: Outlook and Microsoft Teams of grok.com are gateway connectors;
     // with the gateway off the person's own Grok turn had no Teams at all
-    expect(grokCloudConnectorEnv(undefined, true, true)).toEqual({ GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "true" });
+    // 2026-10-30: and the managed configs explicitly, grok's own default is off
+    expect(grokCloudConnectorEnv(undefined, true, true)).toEqual({ GROK_MANAGED_MCPS_ENABLED: "true", GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED: "true" });
   });
 
   it("keeps them off when the account is not the person's own (review of #943: payer is not the speaker)", () => {
