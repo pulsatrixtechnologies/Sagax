@@ -972,6 +972,13 @@ export class BotPlugins {
     });
   }
 
+  /** One installed plugin's folder (what a turn loads) and whether it is
+   * there: the capabilities list (server/capabilities.ts) reads it. */
+  installedFolder(botId: string, plugin: { marketplace: string; name: string }): { dir: string; present: boolean } {
+    const dir = this.pluginDir(botId, plugin.marketplace, plugin.name);
+    return { dir, present: existsSync(dir) };
+  }
+
   /** Enabled plugin folders. Claude loads them with `--plugin-dir`. */
   pluginDirs(botId: string): string[] {
     if (!BOT_ID.test(botId)) return [];

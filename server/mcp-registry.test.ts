@@ -43,7 +43,11 @@ describe("custom MCP registry", () => {
       expect(mcpServerNameError(name), name).toMatch(/reserved/);
       expect(parseStoredMcpServer(name, { command: "x" }), name).toMatchObject({ ok: false });
     }
-    for (const name of ["mcp-github", "mcpx", "my_data", "notes_2", "sagaxy"]) expect(mcpServerNameError(name), name).toBeNull();
+    for (const name of ["my_data", "notes_2", "github-mcp", "claude-ai"]) expect(mcpServerNameError(name), name).toBeNull();
+    // 2026-10-30: one rule for every server (shared/mcp-reserved-names.ts),
+    // the strictest one a person's own servers already had: the families
+    // need no separator any more
+    for (const name of ["mcp-github", "mcpx", "sagaxy", "perspicaxx", "claude-ai-x"]) expect(mcpServerNameError(name), name).toMatch(/reserved/);
   });
 
   it("2026-10-17 (#695 follow-up): a saved server under a reserved name is listed apart, with a free name to offer", () => {
@@ -55,11 +59,12 @@ describe("custom MCP registry", () => {
       "mcp-server": { command: "y" },
     };
     // never in the mounted listing
-    expect(listMcpServers(saved).map((server) => server.name)).toEqual(["notes", "mcp-server"]);
+    expect(listMcpServers(saved).map((server) => server.name)).toEqual(["notes"]);
     expect(reservedMcpServers(saved)).toEqual([
-      { name: "mcp", suggestedName: "mcp-2" },
+      { name: "mcp", suggestedName: "server" },
       { name: "sagax-tools", suggestedName: "tools" },
       { name: "a__b", suggestedName: "a_b" },
+      { name: "mcp-server", suggestedName: "server" },
     ]);
     expect(reservedMcpServerName("notes")).toBe(false);
     expect(reservedMcpServerName("Bad.Name")).toBe(false);
@@ -291,7 +296,7 @@ describe("parseMcpServersImport", () => {
     expect(parseMcpServersImport("[]")).toMatchObject({ ok: false });
     expect(parseMcpServersImport("https://mcp.example.com/mcp")).toEqual({
       ok: true,
-      servers: { "mcp-example-com": { type: "http", url: "https://mcp.example.com/mcp", headers: {}, enabled: false } },
+      servers: { "example-com": { type: "http", url: "https://mcp.example.com/mcp", headers: {}, enabled: false } },
     });
     expect(parseMcpServersImport("https://h/x/foo")).toEqual({
       ok: true,

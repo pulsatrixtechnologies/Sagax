@@ -470,6 +470,14 @@ export class OrgFlowPlugins {
     return this.status();
   }
 
+  /** The installed copy of one declared plugin (the folder dirsFor hands a
+   * turn), or undefined: the capabilities list reads it. */
+  loadedDir(name: string): string | undefined {
+    if (!this.read().loaded[name]) return undefined;
+    const dir = this.loadDir(name);
+    return existsSync(join(dir, ".claude-plugin", "plugin.json")) ? dir : undefined;
+  }
+
   /** The organization's plugin folders for a Claude turn of a bot owned by
    * `owner`, after the bot's own (`own`, loaded first): none for a person
    * who is not an active member, none when it is off or Perspicax does not

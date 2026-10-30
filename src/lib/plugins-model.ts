@@ -2,6 +2,7 @@
 // person added, the reviewed plugin catalog and local skills, read as rows
 // of one kind. Pure functions only, so the three views and their tests share
 // the same sorting, search and sections.
+import { appKey } from "../../shared/readable-name";
 
 export type PluginKind = "app" | "mcp" | "featured" | "skill" | "plugin";
 /** The chips in the row, in the reference order, then the ones under More. */
@@ -84,15 +85,7 @@ export function categoryFromTags(tags: ReadonlyArray<string | null | undefined> 
 /** The sections of the main view, in the chip order. */
 export const CATEGORY_ORDER: PluginCategory[] = [...MAIN_CATEGORIES, ...MORE_CATEGORIES];
 
-/** One app's key across sources: "Asana", "asana" and "Asana MCP" match. */
-export function appKey(name: string): string {
-  return name
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/\((?:mcp|beta)\)|\bmcp\b|\bserver\b/g, "")
-    .replace(/[^a-z0-9]/g, "");
-}
+export { appKey };
 
 interface McpListing {
   name: string;
