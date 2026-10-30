@@ -1,12 +1,15 @@
-// Perspicax `sagax_integrations` (migration 0046): who manages a person's
-// plugins, skills and MCP servers. The routes' refusals with `off`, their
-// listings, and the engine commands refused in the person's environment.
+// A person manages their own plugins, skills and MCP servers; the only rule
+// is the Sagax permission `apps.ownIntegrations` (the Perspicax field
+// `sagax_integrations` is ignored since 2026-10-30). The routes' refusals
+// without the permission, their listings, and the engine commands refused in
+// the person's environment.
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { json, readBody } from "./harness/http.ts";
-import { effectiveIntegrationRights, engineIntegrationCommand, enginePluginCommandRefusal, INTEGRATIONS_ADMIN_ONLY, INTEGRATIONS_ADMIN_ONLY_COMMAND, integrationsPaused } from "./person-integrations.ts";
+import { permissionRefusal } from "../shared/permissions.ts";
+import { engineIntegrationCommand, enginePluginCommandRefusal, PLUGIN_ACT_COMMAND } from "./person-integrations.ts";
 import { handleDesktopBridgeMcp } from "./desktop-bridge-tools.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import { createBotPluginRoutes } from "./routes/bot-plugins.ts";
@@ -44,10 +47,14 @@ const send = async (base: string, method: string, path: string, body?: unknown) 
   return { status: res.status, body: await res.json() as Record<string, unknown> };
 };
 
-function connectionRoutes(locked: Set<string>, calls: string[]): RouteHandler {
+const REFUSAL = permissionRefusal("apps.ownIntegrations");
+const refusalFor = (denied: Set<string>) => (auth: RequestAuth) =>
+  (auth.kind === "session" && denied.has(auth.session.principalId ?? "") ? { ...REFUSAL } : null);
+
+function connectionRoutes(denied: Set<string>, calls: string[]): RouteHandler {
   return createPersonConnectionRoutes({
     organization: () => true,
-    managedByAdmin: (auth) => auth.kind === "session" && locked.has(auth.session.principalId ?? ""),
+    ownIntegrationsRefusal: refusalFor(denied),
     sandboxConfigured: () => true,
     github: {
       status: () => ({ state: "none", deviceFlow: true }),
@@ -66,13 +73,13 @@ function connectionRoutes(locked: Set<string>, calls: string[]): RouteHandler {
   });
 }
 
-describe("Mes connexions with sagax_integrations", () => {
-  it("off: the listing says so and every change is refused, a sign-in again is not", async () => {
+describe("Mes connexions and apps.ownIntegrations", () => {
+  it("without the permission: the listing reads, every change is refused, a sign-in again is not", async () => {
     const calls: string[] = [];
     const base = await serve([connectionRoutes(new Set(["pr_rita"]), calls)], member("pr_rita"));
     const listed = await send(base, "GET", "/api/me/connections");
     expect(listed.status).toBe(200);
-    expect(listed.body.managedByAdmin).toBe(true);
+    expect(listed.body.managedByAdmin).toBeUndefined();
     expect((listed.body.servers as unknown[]).length).toBe(1);
     for (const [method, path, body] of [
       ["POST", "/api/me/github/device", {}],
@@ -85,7 +92,7 @@ describe("Mes connexions with sagax_integrations", () => {
     ] as const) {
       const refused = await send(base, method, path, body);
       expect(refused.status, `${method} ${path}`).toBe(403);
-      expect(refused.body).toEqual({ ...INTEGRATIONS_ADMIN_ONLY });
+      expect(refused.body).toEqual({ ...REFUSAL });
     }
     expect(calls).toEqual([]);
     // signing in again keeps an existing server working
@@ -93,10 +100,10 @@ describe("Mes connexions with sagax_integrations", () => {
     expect(calls).toEqual(["signin"]);
   });
 
-  it("manage: the person does it all without an admin, and the listing says nothing", async () => {
+  it("with the permission: the person does it all without an admin, and the listing says nothing", async () => {
     const calls: string[] = [];
     const base = await serve([connectionRoutes(new Set(["pr_rita"]), calls)], member("pr_bob"));
-    expect((await send(base, "GET", "/api/me/connections")).body.managedByAdmin).toBe(false);
+    expect((await send(base, "GET", "/api/me/connections")).body.managedByAdmin).toBeUndefined();
     expect((await send(base, "POST", "/api/me/github/device", {})).status).toBe(200);
     expect((await send(base, "POST", "/api/me/github/token", { token: "ghp_x" })).status).toBe(200);
     expect((await send(base, "POST", "/api/me/mcp/servers", { name: "gh", url: "https://api.githubcopilot.com/mcp/", auth: "github" })).status).toBe(201);
@@ -107,10 +114,10 @@ describe("Mes connexions with sagax_integrations", () => {
   });
 });
 
-describe("a bot's plugins with sagax_integrations", () => {
+describe("a bot's plugins and apps.ownIntegrations", () => {
   type Bot = { id: string; owner: string };
   const BOTS: Record<string, Bot> = { scout: { id: "scout", owner: "pr_rita" } };
-  function pluginRoutes(locked: Set<string>, calls: string[]): RouteHandler {
+  function pluginRoutes(denied: Set<string>, calls: string[]): RouteHandler {
     const plugins = {
       listMarketplaces: () => [],
       listPlugins: () => [{ key: "reviewer@acme-tools", name: "reviewer", marketplace: "acme-tools", enabled: true }],
@@ -128,18 +135,19 @@ describe("a bot's plugins with sagax_integrations", () => {
       // the owner changes them
       mayChange: (auth, bot) => auth.kind === "session" && auth.session.principalId === bot.owner,
       actor: (auth) => (auth.kind === "session" ? auth.session.principalId : undefined),
-      managedByAdmin: (auth) => auth.kind === "session" && locked.has(auth.session.principalId ?? ""),
+      ownIntegrationsRefusal: refusalFor(denied),
       policy: () => undefined,
       engineLoadsPlugins: () => true,
     });
   }
 
-  it("off: read-only on their own bot, every change refused with org_integrations_admin_only", async () => {
+  it("without the permission: read-only on their own bot, every change refused", async () => {
     const calls: string[] = [];
     const base = await serve([pluginRoutes(new Set(["pr_rita"]), calls)], member("pr_rita"));
     const listed = await send(base, "GET", "/api/bots/scout/plugins");
     expect(listed.status).toBe(200);
-    expect(listed.body).toMatchObject({ canChange: false, managedByAdmin: true });
+    expect(listed.body.canChange).toBe(false);
+    expect(listed.body.managedByAdmin).toBeUndefined();
     expect((listed.body.plugins as unknown[]).length).toBe(1);
     for (const [method, path, body] of [
       ["POST", "/api/bots/scout/plugins/marketplaces", { source: "acme/tools" }],
@@ -151,12 +159,12 @@ describe("a bot's plugins with sagax_integrations", () => {
     ] as const) {
       const refused = await send(base, method, path, body);
       expect(refused.status, `${method} ${path}`).toBe(403);
-      expect(refused.body.code).toBe("org_integrations_admin_only");
+      expect(refused.body.permission).toBe("apps.ownIntegrations");
     }
     expect(calls).toEqual([]);
   });
 
-  it("manage: the owner adds a marketplace and installs without an admin", async () => {
+  it("with the permission: the owner adds a marketplace and installs without an admin", async () => {
     const calls: string[] = [];
     const base = await serve([pluginRoutes(new Set(), calls)], member("pr_rita"));
     const listed = await send(base, "GET", "/api/bots/scout/plugins");
@@ -165,18 +173,6 @@ describe("a bot's plugins with sagax_integrations", () => {
     expect((await send(base, "POST", "/api/bots/scout/plugins/marketplaces", { source: "acme/tools" })).status).toBe(201);
     expect((await send(base, "POST", "/api/bots/scout/plugins/install", { marketplace: "acme-tools", plugin: "reviewer" })).status).toBe(201);
     expect(calls).toEqual(["market", "install"]);
-  });
-});
-
-describe("sagax_integrations off pauses use and does not delete", () => {
-  it("pauses a member whose right is off, and never an admin", () => {
-    expect(integrationsPaused({ rights: "off", orgAdmin: false })).toBe(true);
-    expect(integrationsPaused({ rights: "off", orgAdmin: true })).toBe(false);
-    expect(integrationsPaused({ rights: "manage", orgAdmin: false })).toBe(false);
-    expect(effectiveIntegrationRights(false, "off")).toBe("off");
-    expect(effectiveIntegrationRights(true, "off")).toBe("manage");
-    expect(effectiveIntegrationRights(false, undefined)).toBe("manage");
-    expect(effectiveIntegrationRights(false, "manage")).toBe("manage");
   });
 });
 
@@ -212,31 +208,30 @@ describe("engine plugin and MCP commands in the person's environment", () => {
     const exec = {
       exec: async (input: { argv: string[] }) => { ran.push(input.argv); return { stdout: "ok", stderr: "", exitCode: 0, truncated: false, timedOut: false }; },
       overQuota: async () => false,
-      commandRefusal: (command: string) => (engineIntegrationCommand(command) ? INTEGRATIONS_ADMIN_ONLY_COMMAND : null),
+      commandRefusal: (command: string) => enginePluginCommandRefusal(command),
     };
     const refused = await callUserSandboxTool("run_command", { command: "claude plugin install x@y" }, exec as never);
-    expect(refused).toEqual({ content: [{ type: "text", text: INTEGRATIONS_ADMIN_ONLY_COMMAND }], isError: true });
+    expect(refused).toEqual({ content: [{ type: "text", text: PLUGIN_ACT_COMMAND }], isError: true });
     expect(ran).toEqual([]);
     const allowed = await callUserSandboxTool("run_command", { command: "ls" }, exec as never);
     expect(allowed.isError).toBeUndefined();
     expect(ran).toEqual([["bash", "-lc", "ls"]]);
   });
 
-  it("tells every person to install through Sagax, and keeps the administrator sentence when integrations are off", async () => {
+  it("tells every person to install through Sagax", async () => {
     for (const command of ["claude plugin install x@y", "grok plugin install x", "codex plugin install x"]) {
-      const text = enginePluginCommandRefusal(false, command);
+      const text = enginePluginCommandRefusal(command);
       expect(text, command).toContain("Sagax");
       expect(text, command).toContain("act");
       expect(text, command).not.toMatch(/Claude Code only/i);
     }
-    expect(enginePluginCommandRefusal(true, "claude plugin install x@y")).toBe(INTEGRATIONS_ADMIN_ONLY_COMMAND);
-    expect(enginePluginCommandRefusal(false, "ls")).toBeNull();
+    expect(enginePluginCommandRefusal("ls")).toBeNull();
 
     const ran: string[][] = [];
     const exec = {
       exec: async (input: { argv: string[] }) => { ran.push(input.argv); return { stdout: "ok", stderr: "", exitCode: 0, truncated: false, timedOut: false }; },
       overQuota: async () => false,
-      commandRefusal: (command: string) => enginePluginCommandRefusal(false, command),
+      commandRefusal: (command: string) => enginePluginCommandRefusal(command),
     };
     const refused = await callUserSandboxTool("run_command", { command: "grok plugin install x" }, exec as never);
     expect(JSON.stringify(refused)).toContain("Sagax");
@@ -247,14 +242,14 @@ describe("engine plugin and MCP commands in the person's environment", () => {
     const desktop = await handleDesktopBridgeMcp("tools/call", { name: "run_command", arguments: { command: "grok plugin install x" } }, async () => {
       calls.push("called");
       return { content: [{ type: "text", text: "ran" }] };
-    }, { commandRefusal: (command) => enginePluginCommandRefusal(false, command) });
+    }, { commandRefusal: (command) => enginePluginCommandRefusal(command) });
     expect(calls).toEqual([]);
     expect(JSON.stringify(desktop)).toContain("Sagax");
     expect(JSON.stringify(desktop)).not.toMatch(/Claude Code only/i);
     const vm = await handleDesktopBridgeMcp("tools/call", { name: "local_vm", arguments: { action: "run", command: "codex plugin install x" } }, async () => {
       calls.push("vm");
       return { content: [{ type: "text", text: "ran" }] };
-    }, { commandRefusal: (command) => enginePluginCommandRefusal(false, command) });
+    }, { commandRefusal: (command) => enginePluginCommandRefusal(command) });
     expect(calls).toEqual([]);
     expect(JSON.stringify(vm)).toContain("Sagax");
   });

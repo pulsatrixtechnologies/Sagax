@@ -129,10 +129,6 @@ struct PhoneBotPlugins: View {
     var body: some View {
         VStack(spacing: 0) {
             if let listing {
-                if listing.managedByAdmin {
-                    ProfileFooter(text: "An administrator manages your plugins.")
-                        .padding(.bottom, 12)
-                }
                 if !listing.loadsPlugins {
                     ProfileFooter(text: "This bot's engine does not load Claude Code plugins.")
                         .padding(.bottom, 12)

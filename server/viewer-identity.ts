@@ -25,10 +25,6 @@ export interface ViewerIdentity {
   /** Why (2026-10-09): `permission` when their profile lacks bots.create;
    * absent when the person sheet says use only. */
   botsReadOnlyReason?: "permission";
-  /** Organization server: a Perspicax admin manages this person's plugins,
-   * skills and MCP servers (`sagax_integrations: off`); what they have stays
-   * usable, read-only (server/person-integrations.ts). */
-  integrationsManagedByAdmin?: true;
   /** The operator's display name, for lines the operator sent without a
    * named sender. Only set for someone who is not the operator. */
   operatorName?: string;

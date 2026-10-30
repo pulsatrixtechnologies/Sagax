@@ -14,8 +14,8 @@
 //   their bots, their routines, their own connections) are added to any
 //   list, so a member never waits on an admin for what is theirs;
 // - the person sheet still narrows on top, whatever the sets grant:
-//   `sagax_bots: use` takes every key about owning bots, `sagax_integrations:
-//   off` takes apps.ownIntegrations.
+//   `sagax_bots: use` takes every key about owning bots. (`sagax_integrations`
+//   is ignored since 2026-10-30: `apps.ownIntegrations` is the only rule.)
 //
 // Pure: index.ts gathers the facts and asks here.
 import {
@@ -39,8 +39,8 @@ export interface EffectivePermissions extends PermissionPrincipal {
   permissions: ReadonlySet<PermissionKey>;
   /** Where the list came from. */
   source: PermissionSource;
-  /** Person sheet narrowings applied on top (`sagax_bots`, `sagax_integrations`). */
-  narrowedBy: Array<"sagax_bots" | "sagax_integrations">;
+  /** Person sheet narrowings applied on top (`sagax_bots`). */
+  narrowedBy: Array<"sagax_bots">;
 }
 
 export function effectivePermissions(input: {
@@ -49,8 +49,6 @@ export function effectivePermissions(input: {
   fromDirectory: readonly PermissionKey[] | null;
   /** The person sheet says `sagax_bots: use`. */
   botsUseOnly?: boolean;
-  /** The person sheet says `sagax_integrations: off`. */
-  integrationsOff?: boolean;
   /** A local service (a bot's shell), not a person: it holds exactly the
    * list, never the keys about a person's own things. */
   service?: boolean;
@@ -66,10 +64,6 @@ export function effectivePermissions(input: {
   if (input.botsUseOnly) {
     for (const key of BOT_OWNER_PERMISSIONS) held.delete(key);
     narrowedBy.push("sagax_bots");
-  }
-  if (input.integrationsOff) {
-    held.delete("apps.ownIntegrations");
-    narrowedBy.push("sagax_integrations");
   }
   return { admin: false, permissions: held, source: input.fromDirectory ? "perspicax" : "defaults", narrowedBy };
 }

@@ -2065,7 +2065,6 @@
   "personPanel.connections.loading": "正在載入連線…",
   "personPanel.connections.empty": "沒有連線。",
   "personPanel.connections.error": "無法載入連線。",
-  "personPanel.connections.paused": "已儲存，未在使用。管理員已關閉此人自己的連線。",
   "personPanel.connections.pending": "等待連線",
   "personPanel.connections.remove": "移除",
   "personPanel.connections.removeAll": "全部移除",

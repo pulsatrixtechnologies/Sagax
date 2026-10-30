@@ -4,7 +4,7 @@
 //
 // The directory (server/perspicax-link.ts) is re-read every
 // SAGAX_PERSPICAX_DIRECTORY_SECONDS (300 by default), so a rights change in
-// Perspicax (a permission set, `sagax_bots`, `sagax_integrations`, a team, a
+// Perspicax (a permission set, `sagax_bots`, a team, a
 // profile) reached Sagax up to five minutes later. Perspicax calls this
 // route after such a change and the directory is fetched now.
 //

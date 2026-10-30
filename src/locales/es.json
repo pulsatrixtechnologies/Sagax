@@ -1261,7 +1261,6 @@
   "personPanel.connections.loading": "Cargando conexiones…",
   "personPanel.connections.empty": "No hay conexiones.",
   "personPanel.connections.error": "No se pudieron cargar las conexiones.",
-  "personPanel.connections.paused": "Guardadas, sin uso. Un administrador desactivó las conexiones propias de esta persona.",
   "personPanel.connections.pending": "Esperando la conexión",
   "personPanel.connections.remove": "Quitar",
   "personPanel.connections.removeAll": "Quitar todas",

@@ -47,7 +47,7 @@ function setup() {
     revokeConnections: async (_principalId, body) => (body && typeof body === "object" && "all" in body
       ? { status: 200, body: { removed: [{ kind: "mcp", name: "gh" }] }, removed: [{ kind: "mcp", name: "gh" }] }
       : { status: 400, body: { error: "Send { all: true } or one connection.", code: "invalid_body" }, removed: [] }),
-    connectionListing: (principalId) => ({ principalId, paused: false, connections: [] }),
+    connectionListing: (principalId) => ({ principalId, connections: [] }),
   };
   return { deps, disabled, resets, console: fakeConsole(peopleRoutes(deps), () => NOW) };
 }

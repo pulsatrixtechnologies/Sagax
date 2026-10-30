@@ -1279,7 +1279,6 @@
   "personPanel.connections.loading": "Verbindungen werden geladen…",
   "personPanel.connections.empty": "Keine Verbindungen.",
   "personPanel.connections.error": "Die Verbindungen konnten nicht geladen werden.",
-  "personPanel.connections.paused": "Gespeichert, nicht in Verwendung. Eine Administration hat die eigenen Verbindungen dieser Person ausgeschaltet.",
   "personPanel.connections.pending": "Wartet auf die Verbindung",
   "personPanel.connections.remove": "Entfernen",
   "personPanel.connections.removeAll": "Alle entfernen",

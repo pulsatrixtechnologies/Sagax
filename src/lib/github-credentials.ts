@@ -19,7 +19,6 @@ export interface GithubCredentialsView {
   canManageOrg: boolean;
   /** the organization's GitHub OAuth App is set: Connect GitHub runs the device flow */
   deviceFlow: boolean;
-  managedByAdmin?: boolean;
 }
 
 export type GithubCredentialChange =

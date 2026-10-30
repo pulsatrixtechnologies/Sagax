@@ -73,15 +73,8 @@ struct YourConnectionsSection: View {
     @ViewBuilder
     private var content: some View {
         if let data = model.data {
-            let locked = data.managedByAdmin == true
-            if locked {
-                Text(String(localized: "Your administrator manages plugins and MCP servers."))
-                    .font(.footnote)
-                    .foregroundStyle(Theme.textSecondary)
-                    .accessibilityIdentifier("your-connections-managed")
-            }
             if part == .github {
-                github(data, locked: locked)
+                github(data)
             } else {
                 if data.servers.isEmpty {
                     Text(String(localized: "No MCP server of your own yet."))
@@ -90,7 +83,7 @@ struct YourConnectionsSection: View {
                         .accessibilityIdentifier("your-connections-none")
                 }
                 ForEach(data.servers) { server in
-                    row(server, locked: locked)
+                    row(server)
                 }
             }
             if let error = model.error {
@@ -110,7 +103,7 @@ struct YourConnectionsSection: View {
     // MARK: GitHub
 
     @ViewBuilder
-    private func github(_ data: MyConnections, locked: Bool) -> some View {
+    private func github(_ data: MyConnections) -> some View {
         let github = data.github
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
@@ -127,12 +120,12 @@ struct YourConnectionsSection: View {
                     .foregroundStyle(Theme.textSecondary)
                 }
                 Spacer(minLength: 8)
-                if github.state == "connected", !locked {
+                if github.state == "connected" {
                     Button(String(localized: "Disconnect"), role: .destructive) { disconnectingGithub = true }
                         .buttonStyle(.borderless)
                         .disabled(model.busy != nil)
                         .accessibilityIdentifier("your-connections-github-disconnect")
-                } else if github.state != "connected", github.state != "pending", github.deviceFlow, !locked {
+                } else if github.state != "connected", github.state != "pending", github.deviceFlow {
                     Button(String(localized: "Connect GitHub")) {
                         Task { await model.run("gh-device") { try await $0.startGithubDevice() } }
                     }
@@ -180,7 +173,7 @@ struct YourConnectionsSection: View {
         }
     }
 
-    private func row(_ server: MyConnections.Server, locked: Bool) -> some View {
+    private func row(_ server: MyConnections.Server) -> some View {
         let busy = model.busy != nil
         let place = server.isRemote ? (server.domain ?? "") : String(format: AppStrings.localized("%@ in your server environment"), server.command ?? "")
         return VStack(alignment: .leading, spacing: 6) {
@@ -199,18 +192,14 @@ struct YourConnectionsSection: View {
                     }
                 }
                 Spacer(minLength: 8)
-                if locked {
-                    if !server.enabled { Text(String(localized: "Off")).font(.footnote).foregroundStyle(Theme.textSecondary) }
-                } else {
-                    Toggle(isOn: Binding(get: { server.enabled }, set: { on in
-                        Task { await model.run("toggle:\(server.name)") { try await $0.setPersonalServerEnabled(name: server.name, enabled: on) } }
-                    })) {
-                        Text(String(localized: "Use \(server.name)"))
-                    }
-                    .labelsHidden()
-                    .disabled(busy)
-                    .accessibilityIdentifier("your-connections-toggle.\(server.name)")
+                Toggle(isOn: Binding(get: { server.enabled }, set: { on in
+                    Task { await model.run("toggle:\(server.name)") { try await $0.setPersonalServerEnabled(name: server.name, enabled: on) } }
+                })) {
+                    Text(String(localized: "Use \(server.name)"))
                 }
+                .labelsHidden()
+                .disabled(busy)
+                .accessibilityIdentifier("your-connections-toggle.\(server.name)")
             }
             HStack(spacing: 16) {
                 if server.offersSignIn {
@@ -224,18 +213,16 @@ struct YourConnectionsSection: View {
                     .disabled(busy)
                     .accessibilityIdentifier("your-connections-sign-in.\(server.name)")
                 }
-                if !locked, server.offersSignOut {
+                if server.offersSignOut {
                     Button(String(localized: "Sign out")) {
                         Task { await model.run("out:\(server.name)") { try await $0.disconnectPersonalServer(name: server.name) } }
                     }
                     .disabled(busy)
                     .accessibilityIdentifier("your-connections-sign-out.\(server.name)")
                 }
-                if !locked {
-                    Button(String(localized: "Remove"), role: .destructive) { removing = server.name }
-                        .disabled(busy)
-                        .accessibilityIdentifier("your-connections-remove.\(server.name)")
-                }
+                Button(String(localized: "Remove"), role: .destructive) { removing = server.name }
+                    .disabled(busy)
+                    .accessibilityIdentifier("your-connections-remove.\(server.name)")
             }
             .buttonStyle(.borderless)
             .font(.footnote)

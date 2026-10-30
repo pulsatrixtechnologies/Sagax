@@ -1359,7 +1359,7 @@ import { createRoutineWatchCheckRoutes } from "./routes/routine-watch-check.ts";
 import { createThreadFilePinRoutes } from "./routes/thread-file-pins.ts";
 import { remoteComputerForTurn, sandboxPrincipalForTurn, screenVisibleToPrincipal, USER_SANDBOX_MCP_NAME } from "./user-sandbox-routing.ts";
 import { handleUserSandboxMcp } from "./user-sandbox-tools.ts";
-import { INTEGRATIONS_ADMIN_ONLY, enginePluginCommandRefusal } from "./person-integrations.ts";
+import { enginePluginCommandRefusal } from "./person-integrations.ts";
 import { SANDBOX_CONTROL_REFUSAL, SandboxControlHolds } from "./sandbox-control.ts";
 import { DesktopBridges, resolveBotWorkplace, type DesktopBridgeOperation, type WorkplaceDecision } from "./desktop-bridge.ts";
 import { DesktopLocalModels } from "./desktop-local-models.ts";
@@ -8022,10 +8022,9 @@ function personGithub(principalId: string | null | undefined) {
   if (!principalId) return undefined;
   try { return personConnections.github(principalId.trim().toLowerCase()); } catch { return undefined; }
 }
-/** The connection a turn, a clone or a private skill may use. `sagax_integrations: off`
- * keeps the saved token (the person still sees it) and hands none of it out. */
+/** The connection a turn, a clone or a private skill may use. */
 function usablePersonGithub(principalId: string | null | undefined) {
-  if (!principalId || personIntegrationsOff(principalId)) return undefined;
+  if (!principalId) return undefined;
   return personGithub(principalId);
 }
 /** The organization's GitHub OAuth App for the device flow (Settings >
@@ -8055,12 +8054,6 @@ async function syncGithubForTurn(principalId: string, generation: string, botId?
   if (githubSyncedGenerations.has(key)) return;
   githubSyncedGenerations.add(key);
   if (githubSyncedGenerations.size > 2_000) githubSyncedGenerations.delete(githubSyncedGenerations.values().next().value!);
-  // Off: take the token out of the environment once per turn. The saved
-  // connection stays, so turning the cap back on puts it back.
-  if (personIntegrationsOff(principalId)) {
-    await syncGithubToSandbox(principalId, null, botId, personGithub(principalId));
-    return;
-  }
   const connection = personGithub(principalId);
   if (connection) await syncGithubToSandbox(principalId, connection, botId);
 }
@@ -8162,16 +8155,14 @@ function githubCredentialsFor(actor: string | null | undefined, repoOwner?: stri
   const connection = usablePersonGithub(actor);
   const person = connection?.token;
   const credentials: GithubCredential[] = person ? [{ token: person, via: "person", ...(connection.login ? { login: connection.login } : {}) }] : [];
-  if (!personIntegrationsOff(actor)) {
-    const owner = credentialOwner(actor);
-    try {
-      if (owner) for (const entry of githubCredentials.automatic(owner)) credentials.push({ token: entry.token, via: "own", label: entry.label, id: entry.id });
-      if (IDENTITY.kind === "perspicax") {
-        for (const entry of githubCredentials.automatic(ORG_OWNER)) credentials.push({ token: entry.token, via: "organization", label: entry.label, id: entry.id });
-      }
-    } catch {
-      // an unreadable list leaves the person's own connection
+  const owner = credentialOwner(actor);
+  try {
+    if (owner) for (const entry of githubCredentials.automatic(owner)) credentials.push({ token: entry.token, via: "own", label: entry.label, id: entry.id });
+    if (IDENTITY.kind === "perspicax") {
+      for (const entry of githubCredentials.automatic(ORG_OWNER)) credentials.push({ token: entry.token, via: "organization", label: entry.label, id: entry.id });
     }
+  } catch {
+    // an unreadable list leaves the person's own connection
   }
   const wanted = repoOwner?.trim().toLowerCase();
   if (!wanted) return credentials;
@@ -8352,12 +8343,6 @@ async function mountPersonalMcp(
 ): Promise<void> {
   if (IDENTITY.kind !== "perspicax" || !input.customMcp || !input.principal) return;
   const principalId = input.principal.trim().toLowerCase();
-  // Saved servers stay; an admin turned use off, so this turn mounts none
-  // and a child already running for them stops.
-  if (personIntegrationsOff(principalId)) {
-    stdioRelay.closePerson(principalId);
-    return;
-  }
   let servers: Record<string, PersonalMcpServer>;
   try { servers = personConnections.servers(principalId); } catch { return; }
   const github = personGithub(principalId);
@@ -8673,7 +8658,7 @@ ROUTES.push(createGithubCredentialRoutes({
   organization: () => IDENTITY.kind === "perspicax",
   canManageOrg: (auth) => orgAdminCaller(auth) || callerCan(auth, "server.settings"),
   deviceFlow: () => Boolean(githubClientId()),
-  managedByAdmin: integrationsLocked,
+  ownIntegrationsRefusal,
   ready: migrateGithubCredentials,
   auditOrg: (auth, row) => orgAudit({
     category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["githubTokens"],
@@ -8682,7 +8667,7 @@ ROUTES.push(createGithubCredentialRoutes({
 }));
 ROUTES.push(createPersonConnectionRoutes({
   organization: () => IDENTITY.kind === "perspicax",
-  managedByAdmin: integrationsLocked,
+  ownIntegrationsRefusal,
   sandboxConfigured: () => Boolean(userSandbox),
   github: {
     status: (principalId) => githubConnect.status(principalId, personGithub(principalId)),
@@ -8730,22 +8715,20 @@ function botLoadsPlugins(bot: { modelSelection: { instanceId: string } }): boole
   // enabled skills and commands in the turn prompt.
   return kind !== undefined && supportsWorkspaceFiles(kind);
 }
-/** Enabled plugin folders for a Claude turn (`--plugin-dir`). Empty for every other engine, and when that person's integrations are off. */
+/** Enabled plugin folders for a Claude turn (`--plugin-dir`). Empty for every other engine. */
 function pluginDirsFor(bot: { id: string; ownerUserId?: unknown }, instance: { driverKind: string }): { pluginDirs?: string[] } {
   const owner = effectiveBotOwner(bot);
-  const own = claudePluginDirs(instance.driverKind, personIntegrationsOff(owner), botPlugins.pluginDirs(bot.id));
-  // The organization's Flow plugins (an admin's choice in Perspicax, so they
-  // load even when an admin manages this person's integrations), after the
-  // bot's own and never twice.
+  const own = claudePluginDirs(instance.driverKind, botPlugins.pluginDirs(bot.id));
+  // The organization's Flow plugins (an admin's choice in Perspicax), after
+  // the bot's own and never twice.
   const org = instance.driverKind === "claudeAgent" ? orgFlowPlugins.dirsFor(owner, own) : [];
   const dirs = [...own, ...org];
   return dirs.length ? { pluginDirs: dirs } : {};
 }
-/** The same enabled skills and commands, for a workspace engine that is not Claude. Claude uses --plugin-dir instead, and integrations off lists nothing. */
+/** The same enabled skills and commands, for a workspace engine that is not Claude. Claude uses --plugin-dir instead. */
 function pluginSkillsForTurn(bot: { id: string; ownerUserId?: unknown }, instance: { driverKind: string } | undefined): string {
   if (!instance || instance.driverKind === "claudeAgent" || !supportsWorkspaceFiles(instance.driverKind)) return "";
-  if (personIntegrationsOff(effectiveBotOwner(bot))) return "";
-  return pluginTurnPrompt({ driverKind: instance.driverKind, integrationsOff: false, files: pluginTurnFiles(botPlugins.pluginDirs(bot.id)) });
+  return pluginTurnPrompt({ driverKind: instance.driverKind, files: pluginTurnFiles(botPlugins.pluginDirs(bot.id)) });
 }
 // "Create a Team Bot from this conversation" (routes/team-bot-from-thread.ts):
 // the draft by the conversation's bot model, and the opt-in memory carry-over.
@@ -8828,7 +8811,7 @@ ROUTES.push(createBotPluginRoutes<BotRecord>({
   actor: (auth) => sessionPrincipal(auth) ?? undefined,
   viewer: marketplaceViewer,
   mayShareOrgWide: mayShareMarketplaceOrgWide,
-  managedByAdmin: integrationsLocked,
+  ownIntegrationsRefusal,
   mayManageMarketplaces: (auth) => mayManageMarketplaces(auth),
   policy: pluginMarketplacePolicy,
   engineLoadsPlugins: botLoadsPlugins,
@@ -30704,7 +30687,7 @@ function turnConnectorsFor(bot: BotRecord, instance: Parameters<typeof withholdH
   });
   let personalServers: string[] = [];
   const person = principal?.trim().toLowerCase();
-  if (IDENTITY.kind === "perspicax" && person && customMcp && !personIntegrationsOff(person)) {
+  if (IDENTITY.kind === "perspicax" && person && customMcp) {
     try {
       personalServers = Object.entries(personConnections.servers(person)).filter(([, server]) => server.enabled).map(([name]) => name);
     } catch { /* unreadable: none listed */ }
@@ -32206,8 +32189,8 @@ ROUTES.push(createBotRulesRoutes({
 }));
 /** Who may read (change false) or change a bot's skills: on an
  * organization server, a person who may use the bot reads them and its
- * owner, a manager or an organization admin changes them (#65 rights);
- * never while an admin manages this person's integrations. */
+ * owner, a manager or an organization admin changes them (#65 rights),
+ * with the permission `apps.ownIntegrations`. */
 function botSkillsRefusal(auth: RequestAuth, botId: string, change: boolean): { status: number; body: Record<string, unknown> } | null {
   const target = store.bot(botId);
   if (!target) return { status: 404, body: { error: "no such bot" } };
@@ -32215,8 +32198,8 @@ function botSkillsRefusal(auth: RequestAuth, botId: string, change: boolean): { 
   const level = viewerBotLevel(auth, target);
   if (level === null && !orgAdminCaller(auth)) return { status: 404, body: { error: "no such bot" } };
   if (change && level !== "owner" && level !== "manage" && !orgAdminCaller(auth)) return { status: 403, body: { error: "Only the bot's owner, or someone who manages it, can change its skills.", code: "skills_owner_only" } };
-  // Perspicax `sagax_integrations: off`: an admin manages their skills.
-  if (change && integrationsLocked(auth)) return { status: 403, body: integrationsRefusal(auth) };
+  const integrationsRefusal = change ? ownIntegrationsRefusal(auth) : null;
+  if (integrationsRefusal) return { status: 403, body: integrationsRefusal };
   return null;
 }
 // Skills > Upload (server/routes/bot-skill-upload.ts): SKILL.md files and
@@ -37346,7 +37329,6 @@ function principalPermissions(principalId: string | undefined | null, options: {
     admin: false,
     fromDirectory: sub ? perspicaxDirectory?.permissionsOf(sub) ?? null : null,
     botsUseOnly: personSheetBotsUseOnly(person.id),
-    integrationsOff: personIntegrationsOff(person.id),
   });
 }
 /** The permissions of a request's caller; undefined is the operator at
@@ -37423,31 +37405,14 @@ function memberBotFieldRefusal(auth: RequestAuth, body: unknown): { field: strin
   }
   return null;
 }
-/** Organization server: a Perspicax admin manages this person's plugins,
- * skills and MCP servers (`sagax_integrations: off` in the directory,
- * Perspicax migration 0046; server/person-integrations.ts). Never an
- * organization admin, the operator, or anyone on a solo server. */
-// 2026-10-26: a person's own plugins, skills, MCP servers and GitHub
-// account work in their own environment, so the sheet's
-// `sagax_integrations: off` no longer takes them: nothing an admin switches
-// off here. Kept as a function for its callers.
-function personIntegrationsOff(_principalId: string | undefined | null): boolean {
-  return false;
-}
-/** A signed-in person whose plugins, skills and MCP servers an admin
- * manages: every change to them answers 403 `org_integrations_admin_only`.
- * An organization admin session is never narrowed. */
-function integrationsLocked(auth: RequestAuth): boolean {
-  if (auth.kind !== "session" || orgAdminCaller(auth)) return false;
-  if (personIntegrationsOff(auth.session.principalId)) return true;
-  return IDENTITY.kind === "perspicax" && !callerCan(auth, "apps.ownIntegrations");
-}
-/** The refusal integrationsLocked answers: the person sheet's words, or
- * the missing permission. */
-function integrationsRefusal(auth: RequestAuth): Record<string, unknown> {
-  return auth.kind === "session" && !personIntegrationsOff(auth.session.principalId)
-    ? { ...INTEGRATIONS_ADMIN_ONLY, ...permissionRefusal("apps.ownIntegrations") }
-    : { ...INTEGRATIONS_ADMIN_ONLY };
+/** A person's own plugins, skills, MCP servers and GitHub account: the
+ * Sagax permission `apps.ownIntegrations` is the only rule (the Perspicax
+ * field `sagax_integrations` is ignored since 2026-10-30). The 403 body for
+ * a signed-in member without it, else null. An organization admin session,
+ * the operator and anyone on a solo server are never refused. */
+function ownIntegrationsRefusal(auth: RequestAuth): Record<string, unknown> | null {
+  if (auth.kind !== "session" || orgAdminCaller(auth) || IDENTITY.kind !== "perspicax") return null;
+  return callerCan(auth, "apps.ownIntegrations") ? null : permissionRefusal("apps.ownIntegrations");
 }
 /** A chat-scoped session acting on a bot it owns (and may still create
  * bots): the only non-admin case that edits or deletes a bot. */
@@ -37542,7 +37507,6 @@ function viewerIdentity(auth: RequestAuth): ViewerIdentity | null {
     // sync), else the address, else the login
     operator: false, principalId, email, name: personDisplayName({ ...person, email }), role, canCreateBots, capabilities, ...permissionFields,
     ...(personBotsReadOnly(principalId) ? { botsReadOnly: true as const, ...(principalId && !personSheetBotsUseOnly(principalId) ? { botsReadOnlyReason: "permission" as const } : {}) } : {}),
-    ...(personIntegrationsOff(principalId) ? { integrationsManagedByAdmin: true as const } : {}),
     operatorName: cfg.profile?.name?.trim() || "",
     ...managed,
     ...(avatarUrl ? { avatarUrl } : {}),
@@ -38164,7 +38128,6 @@ const orgPersonConnectionDeps: OrgPersonConnectionsDeps = {
     const found = principals.byId(id);
     return found ? { id: found.id } : null;
   },
-  paused: personIntegrationsOff,
   githubStatus: (id) => githubConnect.status(id, personGithub(id)),
   servers: (id) => personConnections.servers(id),
   lastUsed: (id, server) => stdioRelay.lastUsed(id, server),
@@ -39550,15 +39513,6 @@ if (IDENTITY.kind === "perspicax" && oidcRp && idpSessions && process.env.SAGAX_
       const ended = routineConsents?.reconcile(present, fetchStartedAt) ?? 0;
       if (ended) console.log(`perspicax directory: ${ended} routine delegation(s) ended in Perspicax`);
     },
-    // sagax_integrations flipped. Off (#1107) no longer cuts the person's
-    // own connections: their running servers and their GitHub in their own
-    // environment stay; saved connections are not deleted. Manage puts
-    // GitHub back. MCP and plugins mount on the next turn.
-    onIntegrationRights: (principalId, rights) => {
-      if (rights === "off") return;
-      const connection = personGithub(principalId);
-      if (connection) void syncGithubToSandbox(principalId, connection);
-    },
     // Membership is the trigger of the Flow plugins: the first directory,
     // an invitation accepted, a declaration changed in Perspicax.
     onDirectory: () => { void orgFlowPlugins.sync("directory").catch(() => undefined); },
@@ -39853,12 +39807,11 @@ const orgPeopleDeps: PeopleDeps = {
     });
   },
   connections: (principalId) => {
-    const paused = personIntegrationsOff(principalId);
     return {
       engines: personEngineAccess(principalId),
       mcpServers: Object.entries(personConnections.servers(principalId)).sort(([a], [b]) => a.localeCompare(b)).map(([name, server]) => ({
         id: name, name, transport: server.kind === "stdio" ? "stdio" as const : "remote" as const,
-        state: paused ? "paused" as const : server.enabled ? "enabled" as const : "disabled" as const,
+        state: server.enabled ? "enabled" as const : "disabled" as const,
       })),
     };
   },
@@ -39877,7 +39830,7 @@ const orgPeopleDeps: PeopleDeps = {
   },
   revokeConnections: (principalId, body) => revokeOrgConnections(orgPersonConnectionDeps, principalId, body),
   connectionListing: (principalId) => orgConnectionListing({
-    principalId, paused: personIntegrationsOff(principalId), github: githubConnect.status(principalId, personGithub(principalId)),
+    principalId, github: githubConnect.status(principalId, personGithub(principalId)),
     servers: personConnections.servers(principalId), lastUsed: (name) => stdioRelay.lastUsed(principalId, name), plugins: orgPersonConnectionDeps.plugins(principalId),
   }),
 };
@@ -43622,9 +43575,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             // the command variables the person exposed to this bot (credential-command-env.ts)
             exec: (input) => userSandbox.exec(ownerId, withCommandVariables(input, commandVariablesFor(internalCapability.botId, internalCapability.threadId, ownerId)), internalCapability.botId),
             overQuota: () => userSandbox.workspaceOverQuota(ownerId, internalCapability.botId),
-            // An admin manages this person's plugins and MCP servers: the
-            // engines' own plugin and MCP commands do not run for them.
-            commandRefusal: (command) => enginePluginCommandRefusal(personIntegrationsOff(ownerId), command)
+            // The engines' own plugin and MCP commands do not run: the bot
+            // installs through Sagax `act`.
+            commandRefusal: (command) => enginePluginCommandRefusal(command)
               ?? misuseTextRefusal(command, ownerId, "shell", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "run_command" }),
             pathRefusal: (path) => misusePathRefusal(path, { ...misuseActor(ownerId), botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "read_file" })?.message ?? null,
             textRefusal: (value) => misuseTextRefusal(value, ownerId, "shell", { botId: internalCapability.botId, threadId: internalCapability.threadId }),
@@ -43689,11 +43642,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             review: safetyReviewer(internalCapability.botId),
           });
           if (personalHeld) return json(res, 200, answerError(personalHeld));
-        }
-        if (personIntegrationsOff(person)) {
-          stdioRelay.closePerson(person, name);
-          await syncGithubForTurn(person, internalCapability.generation, internalCapability.botId);
-          return json(res, 200, answerError("This MCP server is paused. An administrator turned this person's own connections off."));
         }
         let server: PersonalMcpServer | undefined;
         try { server = personConnections.servers(person)[name]; } catch { server = undefined; }
@@ -43778,7 +43726,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               throw error;
             }
           }, {
-            commandRefusal: (command) => enginePluginCommandRefusal(personIntegrationsOff(person), command)
+            commandRefusal: (command) => enginePluginCommandRefusal(command)
               ?? misuseTextRefusal(command, person, "shell", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "run_command" }),
             payloadRefusal: (value) => misuseTextRefusal(value, person, "shell", { botId: internalCapability.botId, threadId: internalCapability.threadId, tool: "desktop" }),
             // 2026-10-27: the person's own computer gets the API keys they
@@ -46383,14 +46331,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // environment): on an organization server add_mcp_server adds to the
         // speaking person's own servers (Settings > Connections): a remote URL
         // of theirs, or a command run in their own environment. The server's
-        // shared list stays an admin's. A person whose integrations an admin
-        // manages is refused as their Connections screen is.
+        // shared list stays an admin's. A person without the permission
+        // `apps.ownIntegrations` is refused as their Connections screen is.
         const threadId = internalCapability.threadId;
         if (!connectorThread(internalSender.id, threadId)) return json(res, 403, { error: "source conversation does not belong to sender" });
         const principalId = vaultPrincipalForThread(threadId);
         if (!principalId) return json(res, 403, { error: "No person is behind this turn, so there is no server list to add to." });
-        if (personIntegrationsOff(principalId) || (!principalIsOrgAdmin(principalId) && !principalCan(principalId, "apps.ownIntegrations"))) {
-          return json(res, 403, { ...INTEGRATIONS_ADMIN_ONLY });
+        if (!principalIsOrgAdmin(principalId) && !principalCan(principalId, "apps.ownIntegrations")) {
+          return json(res, 403, permissionRefusal("apps.ownIntegrations"));
         }
         const input = personalMcpInputFromAgent(await readInternalBody());
         if (typeof input === "string") return json(res, 400, { error: input });
@@ -46472,9 +46420,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         const speaker = turnSpeaker.principalId || (IDENTITY.kind !== "perspicax" ? localPrincipalId() : "");
         if (!speaker) return json(res, 403, { error: "GitHub is connected by a signed-in person." });
         const principalId = speaker.trim().toLowerCase();
-        if (personIntegrationsOff(principalId)) return json(res, 200, { state: "integrations_off" });
-        // The same door as Connect apps (integrationsLocked): a person whose
-        // integrations an admin manages does not bind a GitHub account here either.
+        // The same door as Connect apps (ownIntegrationsRefusal): a person
+        // without `apps.ownIntegrations` does not bind a GitHub account here either.
         if (IDENTITY.kind === "perspicax" && !principalCan(principalId, "apps.ownIntegrations")) return json(res, 200, { state: "admin_only" });
         const current = personGithub(principalId);
         const status = githubConnect.status(principalId, current);

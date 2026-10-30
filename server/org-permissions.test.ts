@@ -32,16 +32,15 @@ describe("effectivePermissions", () => {
     expect(permissionList(effectivePermissions({ admin: false, fromDirectory: [], service: true }))).toEqual([]);
   });
 
-  it("the person sheet narrows on top of the profiles", () => {
+  it("the person sheet narrows on top of the profiles (sagax_integrations is ignored)", () => {
     const sheet = effectivePermissions({
       admin: false,
       fromDirectory: ["bots.create", "bots.tools", "sharing.grants", "apps.ownIntegrations", "usage.view"],
       botsUseOnly: true,
-      integrationsOff: true,
     });
     // the clients.* keys about their own conversations and routines stay
     // the folder of their own groups too (#1098); their bots' folder goes with sagax_bots
-    expect(permissionList(sheet)).toEqual(["folders.roomWorkingFolder", "usage.view", "clients.botsRead", "clients.botsMessage", "clients.routinesRun", "clients.routinesRead", "clients.agentsCreate"]);
-    expect(sheet.narrowedBy).toEqual(["sagax_bots", "sagax_integrations"]);
+    expect(permissionList(sheet)).toEqual(["apps.ownIntegrations", "folders.roomWorkingFolder", "usage.view", "clients.botsRead", "clients.botsMessage", "clients.routinesRun", "clients.routinesRead", "clients.agentsCreate"]);
+    expect(sheet.narrowedBy).toEqual(["sagax_bots"]);
   });
 });

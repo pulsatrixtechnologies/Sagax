@@ -1263,7 +1263,6 @@
   "personPanel.connections.loading": "接続を読み込み中…",
   "personPanel.connections.empty": "接続はありません。",
   "personPanel.connections.error": "接続を読み込めませんでした。",
-  "personPanel.connections.paused": "保存されていますが、使われていません。管理者がこの人の接続をオフにしました。",
   "personPanel.connections.pending": "接続待ち",
   "personPanel.connections.remove": "削除",
   "personPanel.connections.removeAll": "すべて削除",

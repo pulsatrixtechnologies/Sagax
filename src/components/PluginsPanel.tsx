@@ -82,7 +82,7 @@ import {
   isRemoteMcpListing,
   useMcpServers,
 } from "./McpServersPanel";
-import { IntegrationsManagedNotice, MyGithubConnection, MyGithubSummary, MyMcpServers } from "./settings/MyConnectionsSettings";
+import { MyGithubConnection, MyGithubSummary, MyMcpServers } from "./settings/MyConnectionsSettings";
 import { useServerMode } from "./ServerModeSettings";
 import { ConnectAppsView, connectAppsTabLabel, connectedCounts, isProvidersLink, normalizeConnectAppsTab, type ConnectAppsTab } from "./plugins/ConnectAppsView";
 import type { Crumb } from "./Breadcrumb";
@@ -778,12 +778,11 @@ export function PluginsPanel() {
         {botsTab ? t("connectApps.scope.botsNote") : accountsTab ? t("connectApps.scope.accountsNote") : scope === "bot" ? (
           <>
             {t("connectApps.scope.botNote", { name: scopeBot.name })}
-            {botView && !botView.canChange && !botView.managedByAdmin && <> {t("plugins.readOnly")}</>}
+            {botView && !botView.canChange && <> {t("plugins.readOnly")}</>}
           </>
         ) : t("connectApps.scope.workspaceNote")}
       </p>
       <div className={cn(accountsTab && "invisible")} aria-hidden={accountsTab || undefined}>
-        {scope === "bot" && botView?.managedByAdmin && <div className="mt-2"><IntegrationsManagedNotice /></div>}
         {scope === "bot" && botView && botView.marketplaces.length === 0 && (
           <p className="mt-2 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary" data-plugins-scope-empty>{t("connectApps.scope.noMarketplaces")}</p>
         )}

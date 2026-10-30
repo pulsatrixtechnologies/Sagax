@@ -58802,28 +58802,6 @@
         }
       }
     },
-    "An administrator manages your plugins.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "An administrator manages your plugins."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Un administrateur gère vos plugins."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Um administrador gerencia seus plugins."
-          }
-        }
-      }
-    },
     "This bot's engine does not load Claude Code plugins.": {
       "localizations": {
         "en": {
@@ -59018,28 +58996,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Só o dono do bot, ou alguém que o gerencia, pode alterar os plugins dele."
-          }
-        }
-      }
-    },
-    "Your administrator manages plugins and MCP servers.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your administrator manages plugins and MCP servers."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Votre administrateur gère les plugins et les serveurs MCP."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Seu administrador gerencia os plugins e os servidores MCP."
           }
         }
       }

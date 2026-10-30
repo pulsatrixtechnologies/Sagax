@@ -14,7 +14,6 @@ export type OrgConnection =
 
 export interface OrgPersonConnections {
   principalId: string;
-  paused: boolean;
   connections: OrgConnection[];
 }
 
@@ -111,9 +110,6 @@ export function PersonConnectionsSection({ principalId, initial }: { principalId
   return (
     <section className="flex flex-col gap-2" data-person-section="connections">
       <h3 className="text-[13px] text-ink-secondary">{t("personPanel.connections.title")}</h3>
-      {data?.paused && (
-        <p role="note" data-connections-paused className="rounded-lg bg-raised/60 px-3 py-2 text-[12.5px] text-ink-secondary">{t("personPanel.connections.paused")}</p>
-      )}
       {loading && <p className="text-[12.5px] text-ink-secondary">{t("personPanel.connections.loading")}</p>}
       {error && <p role="alert" className="text-[12.5px] text-danger">{error}</p>}
       {!loading && !error && connections.length === 0 && <p className="text-[12.5px] text-ink-secondary">{t("personPanel.connections.empty")}</p>}

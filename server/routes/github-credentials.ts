@@ -11,12 +11,10 @@
 // A person manages their own credentials, with no admin (member scope,
 // CLIENT_ALLOW). The organization's (scope "org") are shared with every
 // member, so changing them stays with an organization admin, as before.
-// When Perspicax says an admin manages this person's integrations, their
-// changes answer 403 `org_integrations_admin_only` like their other
-// connections. No answer carries a token: a label and the last 4 characters.
+// A person without the Sagax permission `apps.ownIntegrations` gets that
+// 403 on a change to their own, like their other connections. No answer carries a token: a label and the last 4 characters.
 import type { GithubCredentialPublic } from "../../shared/github-credentials.ts";
 import { GithubCredentialsError, ORG_OWNER, parseCredentialChange, type CredentialChange } from "../github-credentials.ts";
-import { INTEGRATIONS_ADMIN_ONLY } from "../person-integrations.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
@@ -35,7 +33,8 @@ export interface GithubCredentialRouteDeps {
   canManageOrg: (auth: RequestAuth) => boolean;
   /** The GitHub OAuth App is configured (Connect GitHub runs the device flow). */
   deviceFlow: () => boolean;
-  managedByAdmin?: (auth: RequestAuth) => boolean;
+  /** The 403 body when this caller lacks `apps.ownIntegrations`, else null. */
+  ownIntegrationsRefusal?: (auth: RequestAuth) => Record<string, unknown> | null;
   /** Before any read: the former files are moved in. */
   ready?: () => void;
   /** One audit row for a change to the organization's list (never the token). */
@@ -57,7 +56,6 @@ export function createGithubCredentialRoutes(deps: GithubCredentialRouteDeps): R
       credentials: deps.store.list(owner, { org }),
       canManageOrg,
       deviceFlow: deps.deviceFlow(),
-      ...(deps.managedByAdmin?.(auth) ? { managedByAdmin: true } : {}),
     });
     try {
       if (method === "GET") return json(res, 200, listing());
@@ -73,7 +71,8 @@ export function createGithubCredentialRoutes(deps: GithubCredentialRouteDeps): R
       if (target === ORG_OWNER && !canManageOrg) {
         return json(res, 403, { error: "Only an organization admin can change the organization's credentials.", code: "org_credentials_admin_only" });
       }
-      if (target !== ORG_OWNER && deps.managedByAdmin?.(auth)) return json(res, 403, { ...INTEGRATIONS_ADMIN_ONLY });
+      const integrationsRefusal = target !== ORG_OWNER ? deps.ownIntegrationsRefusal?.(auth) ?? null : null;
+      if (integrationsRefusal) return json(res, 403, integrationsRefusal);
       const before = target === ORG_OWNER ? deps.store.list(ORG_OWNER, { org: false }) : [];
       deps.store.change(target, change);
       if (target === ORG_OWNER) {

@@ -8,10 +8,8 @@
 // through this server, or their GitHub account; or a command that runs in
 // their server environment). Same routes, same storage. Only for them:
 // no other person's bot turn ever gets these
-// (server/routes/person-connections.ts). When an admin manages them
-// (Perspicax `sagax_integrations: off`), each part is read-only under a short
-// notice: what the person has stays saved and is not usable, and only a
-// sign-in again to one of their servers is offered.
+// (server/routes/person-connections.ts). The person manages them with no
+// admin (the Sagax permission `apps.ownIntegrations`).
 import { copyText } from "@/lib/copy-text";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -71,7 +69,6 @@ export function MyGithubConnection({ initial }: { initial?: MyConnections }) {
   if (!data) return <Loading error={error} />;
   return (
     <div className="flex flex-col gap-3" data-my-github>
-      {data.managedByAdmin && <IntegrationsManagedNotice />}
       <GithubCard data={data} onChanged={refresh} />
     </div>
   );
@@ -94,25 +91,13 @@ export function MyMcpServers({ initial }: { initial?: MyConnections }) {
   return (
     <div className="flex flex-col gap-3" data-my-connections>
       <p className="text-[13px] leading-relaxed text-ink-secondary">{t("myConnections.intro")}</p>
-      {data.managedByAdmin && <IntegrationsManagedNotice />}
       <ServersCard data={data} onChanged={refresh} />
     </div>
   );
 }
 
-/** Perspicax `sagax_integrations: off`: one short line, no admin prompt
- * otherwise. Shared with the bot panel's Library. */
-export function IntegrationsManagedNotice() {
-  return (
-    <p role="note" className="rounded-lg bg-inset px-3 py-2 text-[12.5px] leading-relaxed text-ink-secondary" data-integrations-managed>
-      {t("integrations.managedByAdmin")}
-    </p>
-  );
-}
-
 function GithubCard({ data, onChanged }: { data: MyConnections; onChanged: () => Promise<void> }) {
   const github = data.github;
-  const locked = data.managedByAdmin === true;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tokenOpen, setTokenOpen] = useState(false);
@@ -134,7 +119,7 @@ function GithubCard({ data, onChanged }: { data: MyConnections; onChanged: () =>
         {github.state === "connected" && (
           <div className="flex items-center justify-between gap-3">
             <span className="text-ink">{t("myConnections.github.connectedAs", { login: github.login })}</span>
-            {!locked && <button type="button" className="ui-button" disabled={busy} onClick={() => void run(disconnectGithub)}>{t("myConnections.github.disconnect")}</button>}
+            <button type="button" className="ui-button" disabled={busy} onClick={() => void run(disconnectGithub)}>{t("myConnections.github.disconnect")}</button>
           </div>
         )}
         {github.state === "connected" && github.orgAccessUrl && (
@@ -154,8 +139,7 @@ function GithubCard({ data, onChanged }: { data: MyConnections; onChanged: () =>
             <span className="text-[12px] text-ink-secondary">{t("myConnections.github.waiting")}</span>
           </div>
         )}
-        {locked && github.state !== "connected" && <p className="text-[12px] text-ink-secondary">{t("myConnections.github.notConnected")}</p>}
-        {!locked && (github.state === "none" || github.state === "error") && (
+        {(github.state === "none" || github.state === "error") && (
           <>
             {github.state === "error" && <p role="alert" className="text-[12px] text-danger">{github.error}</p>}
             <div className="flex flex-wrap gap-2">
@@ -169,7 +153,7 @@ function GithubCard({ data, onChanged }: { data: MyConnections; onChanged: () =>
             </div>
           </>
         )}
-        {!locked && tokenOpen && github.state !== "connected" && (
+        {tokenOpen && github.state !== "connected" && (
           <form
             className="flex flex-col gap-2"
             onSubmit={(event) => {
@@ -208,7 +192,6 @@ function ServersCard({ data, onChanged }: { data: MyConnections; onChanged: () =
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const locked = data.managedByAdmin === true;
   const run = async (key: string, work: () => Promise<unknown>) => {
     setBusy(key);
     setError(null);
@@ -244,21 +227,16 @@ function ServersCard({ data, onChanged }: { data: MyConnections; onChanged: () =
                 {server.kind === "remote" && server.auth === "oauth" && server.authState !== "connected" && (
                   <button type="button" className="ui-button" disabled={busy !== null} onClick={() => void signIn(server.name)}>{t("myConnections.servers.signIn")}</button>
                 )}
-                {!locked && server.kind === "remote" && server.auth === "oauth" && server.authState === "connected" && (
+                {server.kind === "remote" && server.auth === "oauth" && server.authState === "connected" && (
                   <button type="button" className="ui-button" disabled={busy !== null} onClick={() => void run(`out:${server.name}`, () => disconnectPersonalServer(server.name))}>{t("myConnections.servers.signOut")}</button>
                 )}
-                {!locked && (
-                  <>
-                    <Switch checked={server.enabled} disabled={busy !== null} aria-label={t("myConnections.servers.enabled", { name: server.name })} onClick={() => void run(`toggle:${server.name}`, () => setPersonalServerEnabled(server.name, !server.enabled))} />
-                    <button type="button" className="ui-button" disabled={busy !== null} onClick={() => void run(`rm:${server.name}`, () => removePersonalServer(server.name))}>{t("myConnections.servers.remove")}</button>
-                  </>
-                )}
-                {locked && !server.enabled && <span className="text-[11.5px] text-ink-secondary">{t("myConnections.servers.off")}</span>}
+                <Switch checked={server.enabled} disabled={busy !== null} aria-label={t("myConnections.servers.enabled", { name: server.name })} onClick={() => void run(`toggle:${server.name}`, () => setPersonalServerEnabled(server.name, !server.enabled))} />
+                <button type="button" className="ui-button" disabled={busy !== null} onClick={() => void run(`rm:${server.name}`, () => removePersonalServer(server.name))}>{t("myConnections.servers.remove")}</button>
               </div>
             ))}
           </div>
         )}
-        {locked ? null : adding
+        {adding
           ? <AddServerForm data={data} onDone={async () => { setAdding(false); await onChanged(); }} onCancel={() => setAdding(false)} />
           : <div><button type="button" className="ui-button ui-button-primary" onClick={() => setAdding(true)}>{t("myConnections.servers.add")}</button></div>}
         {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}

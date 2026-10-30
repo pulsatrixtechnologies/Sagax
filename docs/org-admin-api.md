@@ -299,10 +299,11 @@ The row above, plus:
 `source` is `admin` (every key), `perspicax` (the list the directory sent,
 unknown and admin-only keys dropped) or `defaults` (Perspicax sent none: the
 member defaults). `narrowedBy` names the person sheet settings applied on top
-(`sagax_bots` when it says use only, `sagax_integrations` when off).
+(`sagax_bots` when it says use only). The Perspicax field
+`sagax_integrations` is ignored since 2026-10-30: `apps.ownIntegrations` is
+the only rule for a person's own plugins, skills and MCP servers.
 
-`mcpServers[].state` is `paused` while Perspicax `sagax_integrations` is off
-for the person.
+`mcpServers[].state` is `enabled` or `disabled`.
 
 ### `POST people/{principal}/disable`
 
@@ -1157,8 +1158,8 @@ Authorization: Bearer pxat1.<link token>
 
 Sagax re-reads the directory (`GET /api/v1/pulsabot/directory`) every
 `SAGAX_PERSPICAX_DIRECTORY_SECONDS` (300 by default), so a rights change
-made in Perspicax (a permission set or its assignment, `sagax_bots`,
-`sagax_integrations`, a team, a profile, a role) reached Sagax up to five
+made in Perspicax (a permission set or its assignment, `sagax_bots`, a
+team, a profile, a role) reached Sagax up to five
 minutes later. Perspicax calls this route right after such a change, and
 Sagax fetches the directory at once. Call it once per change; no body.
 

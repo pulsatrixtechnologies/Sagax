@@ -86,18 +86,16 @@ public struct BotPluginsListing: Decodable, Hashable, Sendable {
     public var marketplaces: [BotPluginMarketplace]
     public var plugins: [BotInstalledPlugin]
     public var canChange: Bool
-    public var managedByAdmin: Bool
     /// The bot's engine loads plugins (Claude Code); others keep them unused.
     public var loadsPlugins: Bool
 
     private struct Engine: Decodable { var loadsPlugins: Bool? }
-    private enum CodingKeys: String, CodingKey { case marketplaces, plugins, canChange, managedByAdmin, engine }
+    private enum CodingKeys: String, CodingKey { case marketplaces, plugins, canChange, engine }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         marketplaces = (try? c.decode([BotPluginMarketplace].self, forKey: .marketplaces)) ?? []
         plugins = (try? c.decode([BotInstalledPlugin].self, forKey: .plugins)) ?? []
         canChange = (try? c.decode(Bool.self, forKey: .canChange)) ?? false
-        managedByAdmin = (try? c.decode(Bool.self, forKey: .managedByAdmin)) ?? false
         loadsPlugins = (try? c.decode(Engine.self, forKey: .engine))?.loadsPlugins ?? true
     }
 }
@@ -235,7 +233,6 @@ public struct BotPluginsView: Codable, Equatable, Sendable {
     public var policy: Policy
     public var engine: Engine
     public var canChange: Bool
-    public var managedByAdmin: Bool?
 }
 
 public enum BotPluginRules {

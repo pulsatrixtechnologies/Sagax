@@ -20,7 +20,6 @@ import { lstatSync, readFileSync } from "node:fs";
 import { z } from "zod";
 
 import { normalizePermissions, type PermissionKey } from "../shared/permissions.ts";
-import { effectiveIntegrationRights } from "./person-integrations.ts";
 import type { Principal } from "./principals.ts";
 
 export const LINK_FILE_MAX_BYTES = 4 * 1024;
@@ -128,10 +127,9 @@ const personSchema = z.object({
    * their own Sagax bots (`manage`, the default) or only use the bots
    * shared with them (`use`). Absent from an older Perspicax: manage. */
   sagax_bots: z.enum(["manage", "use"]).optional().catch(undefined),
-  /** Perspicax migration 0046: whether this person manages their own
-   * plugins, skills and MCP servers in Sagax (`manage`, the default) or an
-   * admin does (`off`). Absent from an older Perspicax: manage. */
-  sagax_integrations: z.enum(["manage", "off"]).optional().catch(undefined),
+  // `sagax_integrations` (Perspicax migration 0046) is no longer read
+  // (2026-10-30): an older Perspicax may still send it, and it is dropped
+  // here. The Sagax permission `apps.ownIntegrations` is the only rule.
   /** Perspicax migration 0063 (2026-10-16): the engine instance ids this
    * person may run on the accounts the organization provides (the org key
    * of Settings > Connections). [] = none, the default for every member.
@@ -391,13 +389,6 @@ export interface PerspicaxDirectoryOptions {
    * holds a routine delegation (undefined: unknown), and when the fetch
    * started (RoutineConsents.reconcile). */
   onDelegations?: (present: (sub: string) => boolean | undefined, fetchStartedAt: number) => void;
-  /** `sagax_integrations` changed for an active person (effective right:
-   * an admin stays `manage`). Informational for the person's own
-   * connections: `off` must not close or remove them (2026-10-26). Not
-   * fired on a 304, and not again while the right stays the same. The new
-   * right is passed in: `integrationRights` still reads the previous
-   * directory until this answer is stored. */
-  onIntegrationRights?: (principalId: string, rights: "manage" | "off") => void;
   /** A new directory body was applied (not called on 304). */
   onDirectory?: (directory: Directory) => void;
   /** The token that says which person a link call acts for: their live
@@ -563,15 +554,6 @@ export class PerspicaxDirectory {
   botRights(sub: string): "manage" | "use" {
     const person = this.data?.people.find((entry) => entry.sub === sub);
     return person?.sagax_bots === "use" ? "use" : "manage";
-  }
-
-  /** Whether this subject manages their own plugins, skills and MCP servers
-   * (Perspicax `sagax_integrations`): `off` only when the last directory
-   * says so, else `manage` (the default, an older Perspicax, or before the
-   * first directory). */
-  integrationRights(sub: string): "manage" | "off" {
-    const person = this.data?.people.find((entry) => entry.sub === sub);
-    return person?.sagax_integrations === "off" ? "off" : "manage";
   }
 
   /** 2026-10-16: the engine instance ids this subject may run on the
@@ -1471,7 +1453,6 @@ export class PerspicaxDirectory {
       // fetch started is newer than this answer and stays.
       if (after.disabledAt !== undefined) this.options.principals.markEnabled?.(iss, person.sub, fetchStartedAt);
       if (before?.orgRole === "admin" && orgRole !== "admin") this.options.onRoleNarrowed(after.id);
-      this.reportIntegrationRights(person, before, after.id, orgRole);
     }
     for (const sub of this.absentSince.keys()) if (listed.has(sub)) this.absentSince.delete(sub);
     for (const [sub, principal] of known) {
@@ -1488,25 +1469,6 @@ export class PerspicaxDirectory {
     }
   }
 
-  /** Tell the server when an active person's effective `sagax_integrations`
-   * changed. Since 2026-10-26 `off` no longer takes a person's own MCP
-   * servers, plugins, skills or GitHub account (they work in the person's
-   * own environment), so the server's handler must leave those alone on
-   * `off`. A disabled person is logged out instead. */
-  private reportIntegrationRights(person: DirectoryPerson, before: Principal | undefined, principalId: string, orgRole: "admin" | "member"): void {
-    if (!this.options.onIntegrationRights) return;
-    const next = effectiveIntegrationRights(orgRole === "admin", person.sagax_integrations);
-    const previousListed = this.data?.people.find((entry) => entry.sub === person.sub);
-    const seenBefore = before !== undefined || previousListed !== undefined;
-    const previousRole = before ? before.orgRole === "admin" : previousListed?.role === "admin";
-    const previous = seenBefore ? effectiveIntegrationRights(previousRole, previousListed?.sagax_integrations) : "manage";
-    if (next === previous) return;
-    try {
-      this.options.onIntegrationRights(principalId, next);
-    } catch (error) {
-      this.log(`perspicax directory: integration rights could not be applied: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
 }
 
 /** SAGAX_PERSPICAX_DIRECTORY_SECONDS: an integer from 5 to 3600, default 300. */

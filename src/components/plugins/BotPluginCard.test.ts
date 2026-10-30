@@ -79,13 +79,6 @@ describe("For <bot> on a plugin's page", () => {
     expect(html).not.toContain("data-bot-plugin-install=\"");
     expect(html).not.toContain("data-bot-plugin-uninstall");
   });
-
-  it("says an admin manages the plugins (Perspicax sagax_integrations off)", () => {
-    const html = card({ ...view, canChange: false, managedByAdmin: true });
-    expect(html).toContain("Your administrator manages plugins and MCP servers.");
-    expect(html).not.toContain("Only the bot&#x27;s owner");
-    expect(html).not.toContain("data-bot-plugin-install=\"");
-  });
 });
 
 describe("one marketplace list, two scopes", () => {

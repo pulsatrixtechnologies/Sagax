@@ -104,7 +104,6 @@ function harness(initial: Directory, extra: { subjectToken?: (sub: string) => Pr
   const resolveCalls: Array<{ sub: string; provider: string; authorization: string; subject?: string }> = [];
   const teamNames: Array<Array<{ id: string; name: string }>> = [];
   const delegationCalls: Array<{ present: (sub: string) => boolean | undefined; at: number }> = [];
-  const integrationRights: Array<{ id: string; rights: "manage" | "off" }> = [];
   const fetcher = (async (input: string | URL | Request, init?: RequestInit) => {
     const headers = Object.fromEntries(Object.entries((init?.headers ?? {}) as Record<string, string>));
     if (String(input).endsWith("/api/v1/pulsabot/provider-keys/resolve")) {
@@ -137,7 +136,6 @@ function harness(initial: Directory, extra: { subjectToken?: (sub: string) => Pr
     onPersonOut: (iss, sub) => { out.push(sub); principals.markDisabled(iss, sub); },
     onRoleNarrowed: (id) => narrowed.push(id),
     onDelegations: (present, at) => delegationCalls.push({ present, at }),
-    onIntegrationRights: (id, rights) => integrationRights.push({ id, rights }),
     version: "0.1.89",
     teamNames: { replaceFromDirectory: (teams) => { teamNames.push([...teams]); return true; } },
     now: () => clock.now,
@@ -147,7 +145,7 @@ function harness(initial: Directory, extra: { subjectToken?: (sub: string) => Pr
     ...extra,
   });
   return {
-    sync, principals, out, narrowed, requests, queue, linkFile, keys, resolveCalls, teamNames, clock, delegationCalls, integrationRights,
+    sync, principals, out, narrowed, requests, queue, linkFile, keys, resolveCalls, teamNames, clock, delegationCalls,
     setDirectory: (next: Directory) => { directory = next; },
     rotate: (token: string) => { validToken = token; },
   };
@@ -373,20 +371,15 @@ describe("PerspicaxDirectory, slice 4: teams and owner keys", () => {
     expect(h.sync.profilePermissions("P1")).toBeNull();
   });
 
-  it("reads sagax_integrations per person: off only when said, manage otherwise (Perspicax 0046)", async () => {
+  it("ignores sagax_integrations an older Perspicax still sends (removed 2026-10-30)", async () => {
     const h = harness(withTeams([
-      person("ALICE", { sagax_integrations: "off" }),
-      person("BOB", { sagax_integrations: "manage" }),
-      person("CAROL"),
-      person("DAN", { sagax_integrations: "bogus" as never }),
+      person("ALICE", { sagax_integrations: "off" } as never),
+      person("BOB", { sagax_integrations: "bogus" } as never),
     ], []));
-    expect(h.sync.integrationRights("ALICE")).toBe("manage");
     await h.sync.refresh();
-    expect(h.sync.integrationRights("ALICE")).toBe("off");
-    expect(h.sync.integrationRights("BOB")).toBe("manage");
-    expect(h.sync.integrationRights("CAROL")).toBe("manage");
-    expect(h.sync.integrationRights("DAN")).toBe("manage");
-    expect(h.sync.integrationRights("NOBODY")).toBe("manage");
+    expect(h.principals.bySubject(ISSUER, "ALICE")).toBeDefined();
+    expect(h.principals.bySubject(ISSUER, "BOB")).toBeDefined();
+    expect("integrationRights" in h.sync).toBe(false);
   });
 
   it("reads sagax_server_engines per person: the list, [] for none, null when not sent (Perspicax 0063)", async () => {
@@ -404,31 +397,6 @@ describe("PerspicaxDirectory, slice 4: teams and owner keys", () => {
     // a malformed list is dropped (null: none for a member), never fatal
     expect(h.sync.serverEngines("DAN")).toBeNull();
     expect(h.sync.serverEngines("NOBODY")).toBeNull();
-  });
-
-  it("reports sagax_integrations only when the effective right changes, never for an admin", async () => {
-    const h = harness(directoryOf([
-      person("RITA", { sagax_integrations: "off" }),
-      person("ALICE", { role: "admin", sagax_integrations: "off" }),
-      person("BOB"),
-    ]));
-    await h.sync.refresh();
-    const rita = h.principals.bySubject(ISSUER, "RITA")!.id;
-    expect(h.integrationRights).toEqual([{ id: rita, rights: "off" }]);
-    await h.sync.refresh();
-    expect(h.integrationRights).toEqual([{ id: rita, rights: "off" }]);
-    h.setDirectory(directoryOf([
-      person("RITA", { sagax_integrations: "manage" }),
-      person("ALICE", { role: "admin", sagax_integrations: "off" }),
-      person("BOB", { sagax_integrations: "off" }),
-    ]));
-    await h.sync.refresh();
-    const bob = h.principals.bySubject(ISSUER, "BOB")!.id;
-    expect(h.integrationRights).toEqual([
-      { id: rita, rights: "off" },
-      { id: rita, rights: "manage" },
-      { id: bob, rights: "off" },
-    ]);
   });
 
   it("botRights is use only when the last directory says so, else manage", async () => {

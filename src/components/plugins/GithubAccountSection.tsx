@@ -88,19 +88,17 @@ function GithubCredentialList() {
       ? <p role="alert" className="text-[12px] text-danger">{loadError}</p>
       : <p className="text-[12px] text-ink-secondary">{t("myConnections.loading")}</p>;
   }
-  const locked = view.managedByAdmin === true;
-  const mayChange = (entry: GithubCredentialPublic) => (entry.owner === "org" ? view.canManageOrg : !locked);
+  const mayChange = (entry: GithubCredentialPublic) => (entry.owner === "org" ? view.canManageOrg : true);
   const mine = view.credentials.filter((entry) => entry.owner === "mine").length;
   const org = view.credentials.filter((entry) => entry.owner === "org").length;
   const full = addScope === "org" ? org >= MAX_ORG_GITHUB_TOKENS : mine >= MAX_PERSON_GITHUB_CREDENTIALS;
-  const canAdd = !locked || view.canManageOrg;
 
   return (
     <div className="flex flex-col gap-2" data-github-credentials={view.credentials.length ? "list" : "empty"}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <span className="text-[12.5px] font-medium text-ink">{t("sources.github.credentials")}</span>
-        {canAdd && !adding && (
-          <button type="button" className="ui-button" disabled={busy} data-github-credential-add-open onClick={() => { close(); setAdding(true); setAddScope(locked ? "org" : "mine"); }}>
+        {!adding && (
+          <button type="button" className="ui-button" disabled={busy} data-github-credential-add-open onClick={() => { close(); setAdding(true); setAddScope("mine"); }}>
             {t("sources.github.add")}
           </button>
         )}
@@ -176,9 +174,7 @@ function GithubCredentialList() {
           {view.canManageOrg && (
             <div role="radiogroup" aria-label={t("sources.github.whose")} className="flex flex-wrap items-center gap-3 text-[12.5px]" data-github-credential-scope={addScope}>
               <span className="text-ink-secondary">{t("sources.github.whose")}</span>
-              {!locked && (
-                <label className="flex items-center gap-1.5"><input type="radio" name="github-credential-scope" checked={addScope === "mine"} onChange={() => setAddScope("mine")} />{t("sources.github.whoseMine")}</label>
-              )}
+              <label className="flex items-center gap-1.5"><input type="radio" name="github-credential-scope" checked={addScope === "mine"} onChange={() => setAddScope("mine")} />{t("sources.github.whoseMine")}</label>
               <label className="flex items-center gap-1.5"><input type="radio" name="github-credential-scope" checked={addScope === "org"} onChange={() => setAddScope("org")} />{t("sources.github.whoseOrg")}</label>
             </div>
           )}

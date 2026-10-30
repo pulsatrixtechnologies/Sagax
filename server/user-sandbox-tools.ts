@@ -109,8 +109,8 @@ const MAX_PATH = 4096;
 export interface ToolExec {
   exec(input: SandboxExecInput): Promise<SandboxExecOutput>;
   overQuota(): Promise<boolean>;
-  /** A refusal for a shell command, or null to run it (an admin who
-   * manages this person's plugins and MCP servers: person-integrations.ts). */
+  /** A refusal for a shell command, or null to run it (an engine's own
+   * plugin or MCP command: person-integrations.ts). */
   commandRefusal?(command: string): string | null;
   /** A refusal for a file path, or null to use it (misuse guardrail). */
   pathRefusal?(path: string): string | null;

@@ -161,14 +161,13 @@ export function pluginTurnFiles(dirs: readonly string[]): PluginTurnFile[] {
   return files.slice(0, MAX_FILES);
 }
 
-/** Claude loads the folders themselves. Other engines get the file index.
- * Integrations off loads nothing. */
-export function pluginFilesForDriver(input: { driverKind: string; integrationsOff: boolean; files: readonly PluginTurnFile[] }): PluginTurnFile[] {
-  if (input.driverKind === "claudeAgent" || input.integrationsOff) return [];
+/** Claude loads the folders themselves. Other engines get the file index. */
+export function pluginFilesForDriver(input: { driverKind: string; files: readonly PluginTurnFile[] }): PluginTurnFile[] {
+  if (input.driverKind === "claudeAgent") return [];
   return [...input.files];
 }
 
-export function pluginTurnPrompt(input: { driverKind: string; integrationsOff: boolean; files: readonly PluginTurnFile[] }): string {
+export function pluginTurnPrompt(input: { driverKind: string; files: readonly PluginTurnFile[] }): string {
   const files = pluginFilesForDriver(input);
   if (!files.length) return "";
   const lines: string[] = [];
@@ -182,8 +181,8 @@ export function pluginTurnPrompt(input: { driverKind: string; integrationsOff: b
   return lines.length ? block(lines) : "";
 }
 
-/** `--plugin-dir` stays Claude only, and empty when integrations are off. */
-export function claudePluginDirs(driverKind: string, integrationsOff: boolean, dirs: readonly string[]): string[] {
-  if (driverKind !== "claudeAgent" || integrationsOff) return [];
+/** `--plugin-dir` stays Claude only. */
+export function claudePluginDirs(driverKind: string, dirs: readonly string[]): string[] {
+  if (driverKind !== "claudeAgent") return [];
   return [...dirs];
 }
