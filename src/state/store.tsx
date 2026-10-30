@@ -49,6 +49,7 @@ import { VOICE_CALL_ENDED_EVENT } from "@/lib/voice-mode/call-end";
 import type { MascotBodyId } from "../../shared/mascot-bodies";
 import type { MascotSkinId } from "../../shared/mascot-skins";
 import type { QuestionRequestCardData } from "../../shared/ask-question";
+import { proactiveProposalAccepts } from "../../shared/proactive-proposal";
 import type { ProfileRequestCardData } from "../../shared/profile-request";
 import type { ModelRequestCardData } from "../../shared/model-request";
 import type { RoutineRequestCardData } from "../../shared/routine-request";
@@ -138,6 +139,9 @@ export interface OptionCardData {
   title: string;
   subtitle: string;
   options: string[];
+  /** 2026-10-30: a proactive proposal; answered through its own route
+   * (shared/proactive-proposal.ts), options[0] accepts. */
+  proactiveProposal?: { id: string };
   /** Organization server: only an organization admin can answer this card
    * (a server command asked by a member's bot). */
   adminApproval?: boolean;
@@ -2735,8 +2739,10 @@ function reduce(state: AppState, action: Action): AppState {
       return withMascotMotion(
         patchCard(state, action.botId, action.messageId, {
           answered: action.answer,
-          // talking past the first-run quiz hides it; live asks stay until resolved
-          ...(card?.requestId ? {} : { dismissed: true }),
+          // talking past the first-run quiz hides it; live asks and a
+          // proactive proposal stay, with the pick marked
+          ...(card?.requestId || card?.proactiveProposal ? {} : { dismissed: true }),
+          ...(card?.proactiveProposal ? { answeredText: action.answer } : {}),
         }),
         action.botId,
         "working",
@@ -4908,6 +4914,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
         case "answerCard": {
           const { host, card, inRoom } = cardTarget(action);
+          // 2026-10-30: a proactive proposal answers on its own route: yes
+          // starts the bot's wake, no closes the card; never a typed message
+          if (card?.proactiveProposal && !inRoom) {
+            api(`/api/bots/${action.botId}/proactive/${card.proactiveProposal.id}`, {
+              method: "POST",
+              body: JSON.stringify({ accept: proactiveProposalAccepts(card, action.answer) }),
+            }).catch(showError);
+            break;
+          }
           void waitForExecutionSettings(executionBotsBeforeAction, action.threadId)
             .then(() => {
               if (card?.requestId && host) {

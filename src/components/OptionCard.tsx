@@ -14,7 +14,8 @@ const OTHER_ROW = "\u0000other";
 
 /** First-run quiz, not a live provider ask (those carry requestId). */
 export function isOnboardingCard(message: Message): boolean {
-  return message.kind === "options" && !!message.card && !message.card.requestId;
+  // a proactive proposal (2026-10-30) stays until answered, like a live ask
+  return message.kind === "options" && !!message.card && !message.card.requestId && !message.card.proactiveProposal;
 }
 
 /** Hide the quiz once they have talked past it — picked an option, typed in
@@ -77,16 +78,16 @@ export function OptionCard({
       type: "answerCard", botId, threadId, messageId: message.id, answer: text.trim(), groupId,
       ...(picked ? { terminalDestination: picked } : {}),
     });
-    if (card.requestId) returnFocusToComposer();
+    if (card.requestId || card.proactiveProposal) returnFocusToComposer();
   };
 
-  const dismiss = canDismissOptionCard(card)
+  const dismiss = canDismissOptionCard(card) && !card.proactiveProposal
     ? () => dispatch({ type: "dismissCard", botId, threadId, messageId: message.id, groupId })
     : undefined;
 
   // A live ask that has been answered keeps its card: what was picked is
   // marked and the rest dimmed. The first-run quiz never gets here, it hides.
-  const settled = Boolean(card.requestId && card.answered);
+  const settled = Boolean((card.requestId || card.proactiveProposal) && card.answered);
   // `answered` is the verdict for a permission-shaped ask and the picked
   // label for a flat one; a deny or a run that ended is no answer at all.
   const closed = settled && !card.answeredText && (card.answered === "deny" || card.answered === "unavailable");
@@ -98,9 +99,9 @@ export function OptionCard({
     ...options.map((label) => ({ label })),
     // a permission ask has no free-text answer: the broker only accepts
     // allow/deny, so typing here used to fail silently
-    ...(!settled && !card.tool ? [{ label: t("question.other"), id: OTHER_ROW }] : []),
+    ...(!settled && !card.tool && !card.proactiveProposal ? [{ label: t("question.other"), id: OTHER_ROW }] : []),
   ];
-  const fieldOpen = !settled && !card.tool && (other || options.length === 0);
+  const fieldOpen = !settled && !card.tool && !card.proactiveProposal && (other || options.length === 0);
   const pick = (id: string) => {
     if (id === OTHER_ROW) {
       setOther((open) => !open);

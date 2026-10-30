@@ -1011,6 +1011,11 @@ export interface OptionCardData {
    * on cards from older computers. */
   outboundRequest?: { tool: string; app: string | null; calls?: Array<{ app: string | null; label: string }> };
   teamMemoryRequest?: { section: string; entryId: string; kind: string };
+  /** 2026-10-30: a proactive proposal (server/proactive-wake.ts): the bot
+   * offers to handle an event; the person's click answers it through
+   * POST /api/bots/:id/proactive/:id (options[0] accepts, options[1]
+   * declines), never as a typed message. */
+  proactiveProposal?: { id: string };
   title: string;
   subtitle: string;
   options: string[];

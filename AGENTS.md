@@ -24,6 +24,39 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Proactive bots, wired for real (2026-10-30)
+
+A bot's proactive mode (`proactiveMode`, Edit bot > Permissions > Proactive,
+`sagax_settings` `bot.proactiveMode`, default `follow-rules` since #1742) now
+acts on the events Sagax already receives (`server/proactive-wake.ts`,
+`ProactiveWaker`), none invented: a bot email no routine took (the mail
+route's `unhandled`), a one-bot calendar entry coming due
+(`deliverCalendarCall`), a failed routine or webhook run (`onRunFailed`),
+another bot's post in a room that names the bot (post_to_room), and a
+webhook that posts to the chat (`delivery: "post"`). off: nothing. propose:
+a proposal card in the bot's one conversation (`card.proactiveProposal`, no
+model call), answered on `POST /api/bots/:id/proactive/:proposalId` (server/routes/proactive-proposals.ts)
+`{accept}` (client-scoped, companion-allowed; options[0] accepts,
+`shared/proactive-proposal.ts`), the yes starting the wake at the bot's
+level; proposals in `proactive-proposals.json` (0600, 3 days). read-auto and
+follow-rules: a background run (`RoutineManager.enqueueProactive`,
+`run.proactive {mode, hops, sources, confined?, accepted?}`, its own hidden
+task, reported into the one conversation only when it has something,
+`routineEffectivePostResults`); read-auto runs at Ask unless the bot is
+Full (`proactiveReadAutoTurn` in `approvalModeForTurn`); a mail wake is
+confined like a mail-woken run (`botmailConfined`) with `BOTMAIL_RUN_RULES`.
+Guards: the simple filter `proactiveRelevance` (a successful run, a post
+that does not name the bot: no model), the wake on the fast model when there
+is one (`voicePickForTurn`, #1694), never on its own wake (`ownWake`), a
+chain of bots stops at `PROACTIVE_MAX_HOPS` (3), events within 30 s make one
+wake and a wake is at most every 2 min and 12 an hour
+(`PROACTIVE_WAKE_BUDGET`), one Events line per wake (`runtime.notice`, the
+labels and the reason, never the content). Every turn's system prompt has a
+"Proactive" section (`proactivePrompt`). Tests: `server/proactive-wake.test.ts`,
+`server/proactive-wake.e2e.test.ts` (`SAGAX_PROACTIVE_GATHER_MS`),
+`server/bot-inbound-mail.test.ts`, `src/components/OptionCard.test.ts`,
+`shared/proactive-proposal.test.ts`.
+
 ## A reply shows as it is written (2026-10-29)
 
 Settings > Appearance > Conversation > "Show replies as they are written"

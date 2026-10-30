@@ -448,6 +448,7 @@ export const TOOL_POLICY_ROWS: readonly ToolPolicy[] = [
   {"method":"PUT","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/perspicax$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"ANY","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/plugins(?:\\/(marketplaces|install)(?:\\/([A-Za-z0-9][A-Za-z0-9._-]{0,63})(?:\\/(update|credential))?)?|\\/([A-Za-z0-9][A-Za-z0-9._-]{0,63}@[A-Za-z0-9][A-Za-z0-9._-]{0,63})(\\/config)?)?$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/primary$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
+  {"method":"POST","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/proactive\\/([\\w-]+)$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"PATCH","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/profile$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},
   {"method":"DELETE","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/projects(?:\\/([\\w-]+))?$","tier":"admin","readOnly":false,"scope":"bots:admin","defaultEnabled":false,"destructive":true},
   {"method":"PATCH","kind":"pattern","route":"^\\/api\\/bots\\/([\\w-]+)\\/projects(?:\\/([\\w-]+))?$","tier":"write","readOnly":false,"scope":"bots:write","defaultEnabled":true},

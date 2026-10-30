@@ -307,6 +307,7 @@ function token(sub: string, actor: ConsoleAssertion["actor"] = "perspicax-mail")
 let state: ReturnType<typeof manager>;
 let owners: Map<string, { principalId: string; sub: string | null; active: boolean }>;
 let rows: Array<Record<string, unknown>>;
+let unhandled: Array<{ botId: string; subject: string }>;
 let identity: "solo" | "perspicax" = "perspicax";
 const deps: BotMailRouteDeps = {
   identity: () => identity,
@@ -323,6 +324,7 @@ const deps: BotMailRouteDeps = {
   owner: (id) => owners.get(id) ?? null,
   triggers: (botId) => state.hooks.list().filter((hook) => hook.enabled && hook.botId === botId && hook.source?.type === "botmail").map((hook) => hook.id),
   ingest: (id, event, key) => state.hooks.ingest(id, event, key),
+  unhandled: (botId, mail) => { unhandled.push({ botId, subject: mail.subject }); },
   record: (row) => rows.push(row as unknown as Record<string, unknown>),
 };
 
@@ -350,6 +352,7 @@ beforeEach(() => {
     ["bot_local", { principalId: "pr_local", sub: null, active: true }],
   ]);
   rows = [];
+  unhandled = [];
   identity = "perspicax";
 });
 
@@ -433,6 +436,21 @@ describe(`POST ${BOT_MAIL_PATH}`, () => {
     const audit = JSON.stringify(rows);
     expect(audit).not.toContain("Facture");
     expect(audit).not.toContain("voici");
+  });
+
+  it("2026-10-30: an email no trigger ran goes to the bot's proactive mode; one a routine took, a retry, or a rate refusal does not", async () => {
+    // no trigger at all
+    expect((await post(mail(), token("u_123"))).body).toMatchObject({ reason: "no_trigger" });
+    expect(unhandled).toEqual([{ botId: "bot_abc", subject: expect.any(String) }]);
+    // a trigger whose filters pass on it
+    state.hooks.create(botmailTrigger({ source: { type: "botmail", events: [], filters: { subject: ["novembre"] } } }));
+    expect((await post(mail({ dedupeKey: "b".repeat(64) }), token("u_123"))).body).toMatchObject({ delivered: 0, ignored: 1 });
+    expect(unhandled).toHaveLength(2);
+    // a routine took it: nothing more, and its retry neither
+    state.hooks.create(botmailTrigger());
+    expect((await post(mail({ dedupeKey: "c".repeat(64) }), token("u_123"))).body).toMatchObject({ delivered: 1 });
+    expect((await post(mail({ dedupeKey: "c".repeat(64) }), token("u_123"))).body).toMatchObject({ delivered: 0, duplicate: 1 });
+    expect(unhandled).toHaveLength(2);
   });
 
   it("202 duplicate on the same dedupe key (v2, F6), whatever the message id", async () => {

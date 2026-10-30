@@ -212,6 +212,10 @@ export interface BotMailRouteDeps {
   triggers(botId: string): string[];
   /** WebhookManager.ingest: throws an Error with `status` on a refusal. */
   ingest(triggerId: string, event: NormalizedTriggerEvent, dedupeKey: string): WebhookReceiveResult | null;
+  /** 2026-10-30: an accepted email that no trigger ran (none, or every one
+   * passed on it): the bot's proactive mode may take it. Not called for a
+   * retry (duplicate) nor while a trigger refused it on its rate. */
+  unhandled?(botId: string, mail: InboundMail): void;
   record(row: BotMailDeliveryRow): void;
   now?(): number;
 }
@@ -325,6 +329,9 @@ export function createBotInboundMailRoute(deps: BotMailRouteDeps): (req: Incomin
         }
       }
       if (rateLimited === triggers.length) return send(res, 429, { error: "rate_limited" });
+    }
+    if (delivered === 0 && duplicate === 0 && rateLimited === 0) {
+      try { deps.unhandled?.(bot.id, mail); } catch { /* never the delivery's answer */ }
     }
     deps.record({
       botId: bot.id,
