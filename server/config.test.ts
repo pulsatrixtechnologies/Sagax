@@ -1502,11 +1502,12 @@ describe("onboarding engine key migration", () => {
     mkdirSync(DATA_DIR, { recursive: true });
     rmSync(path, { force: true });
     rmSync(join(DATA_DIR, "onboarding-engine-keys.enc"), { force: true });
+    rmSync(join(DATA_DIR, "provider-keys.enc"), { force: true });
     rmSync(join(DATA_DIR, "mcp-oauth.key"), { force: true });
     delete process.env.SAGAX_IDENTITY;
   });
   afterEach(() => {
-    for (const name of ["config.json", "onboarding-engine-keys.enc", "mcp-oauth.key"]) rmSync(join(DATA_DIR, name), { force: true });
+    for (const name of ["config.json", "onboarding-engine-keys.enc", "provider-keys.enc", "mcp-oauth.key"]) rmSync(join(DATA_DIR, name), { force: true });
     delete process.env.SAGAX_IDENTITY;
     vi.restoreAllMocks();
   });
@@ -1524,8 +1525,8 @@ describe("onboarding engine key migration", () => {
     expect(readDisk().instances["api-0a1b2c3d"].config).toEqual({ url: "https://x.test/v1", model: "m" });
     expect(readFileSync(path, "utf8")).not.toContain(SECRET);
     // …the sealed store does, and the running driver gets it back…
-    expect(readFileSync(join(DATA_DIR, "onboarding-engine-keys.enc"), "utf8")).not.toContain(SECRET);
-    if (process.platform !== "win32") expect(statSync(join(DATA_DIR, "onboarding-engine-keys.enc")).mode & 0o777).toBe(0o600);
+    expect(readFileSync(join(DATA_DIR, "provider-keys.enc"), "utf8")).not.toContain(SECRET);
+    if (process.platform !== "win32") expect(statSync(join(DATA_DIR, "provider-keys.enc")).mode & 0o777).toBe(0o600);
     const live = instanceConfigs(loadConfig())["api-0a1b2c3d"]!.config as { key?: string };
     expect(live.key).toBe(SECRET);
     // …the log says what moved, never the value…

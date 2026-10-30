@@ -421,7 +421,6 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Purchases waiting for the person (read only; sagax_approvals answers them) | Settings > Vault > Purchases | `sagax_settings` get, set `credentials.purchases` | simple |
 | Add an item of the person's 1Password to the vault as a reference ({vaultId, itemId, name?, domains?}; get lists names, vaults and sites, never a value) | Settings > Vault > 1Password | `sagax_settings` get, set `credentials.onePassword` | secret |
 | The person's own voice keys ({<elevenlabs/fish/xai>: {key}}, key null removes; get says which are saved, never a key) | Settings > Voice > Your voice keys | `sagax_settings` get, set `models.myVoiceKeys` | secret |
-| Remove the OpenAI Live key (value true) | Settings > Voice > Live calls | `sagax_settings` set `models.liveKeyRemove` | suppression; organisation : suppression + organisation |
 
 ### Serveur
 
