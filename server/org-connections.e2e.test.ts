@@ -16,9 +16,9 @@
 //   OC-5  plugins: a marketplace and a plugin on the owner's bot, loaded with
 //         --plugin-dir, hooks stripped; use is read-only; the admin's list
 //   OC-6  skills: a member adds a skill to their own bot
-//   OC-7  Perspicax sagax_integrations manage (the default): a member does
-//         the whole flow with no admin, on a bot someone shared at manage
-//   OC-8  sagax_integrations off (ignored since 2026-10-26): the member
+//   OC-7  a member does the whole flow with no admin, on a bot someone
+//         shared at manage
+//   OC-8  sagax_integrations off from an older Perspicax (ignored): the member
 //         still manages everything and what they saved stays usable
 //   OC-9  an organization admin lists and revokes a person's connections;
 //         a member and an unsigned loopback are refused; no secret is returned
@@ -469,7 +469,7 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     expect((await api("DELETE", `/api/bots/${bobBot.id}/skills/greet`, uma)).status).toBe(403);
   });
 
-  it("OC-7: sagax_integrations manage: a member does the whole flow with no admin, on a bot shared with them at manage", async () => {
+  it("OC-7: a member does the whole flow with no admin, on a bot shared with them at manage", async () => {
     expect((await api("GET", "/api/config", uma)).body.viewer.integrationsManagedByAdmin).toBeUndefined();
     // GitHub by a pasted token, then the GitHub MCP with it and a token server
     const connected = await api("POST", "/api/me/github/token", uma, { token: GITHUB_TOKEN });
@@ -480,7 +480,7 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     const tok = await api("POST", "/api/me/mcp/servers", uma, { name: "tracker", url: `${oauth.base}/tracker-mcp`, auth: "token", token: "t-uma-000" });
     expect(tok.status, tok.text).toBe(201);
     const mine = await api("GET", "/api/me/connections", uma);
-    expect(mine.body.managedByAdmin).toBe(false);
+    expect(mine.body.managedByAdmin).toBeUndefined();
     expect(mine.body.servers.map((server: { name: string }) => server.name).sort()).toEqual(["github", "tracker"]);
     // Bob lets Uma manage his bot: she adds the marketplace, installs, adds a skill
     expect((await api("PUT", `/api/bots/${bobBot.id}/grants`, bob, { target: `user:${ids.uma}`, level: "manage" })).status).toBe(200);
@@ -499,9 +499,9 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
 
   // 2026-10-26 (owner, no admin gating): a person's own plugins, skills, MCP
   // servers and GitHub account work in their own environment. The Perspicax
-  // person sheet's `sagax_integrations: off` no longer takes them (it was a 403
-  // `org_integrations_admin_only` before): she keeps managing everything, and
-  // what she saved stays usable.
+  // person sheet's `sagax_integrations` is no longer read (removed
+  // 2026-10-30; an older Perspicax may still send it): she keeps managing
+  // everything, and what she saved stays usable.
   it("OC-8: sagax_integrations off changes nothing: she still manages her own connections, and they stay usable", async () => {
     const ritaBot = await createBot(rita, "Rita's");
     const own = await api("POST", "/api/me/mcp/servers", rita, { name: "ritas", url: `${oauth.base}/rita-mcp`, auth: "token", token: "t-rita-000" });
@@ -524,7 +524,7 @@ posixOnly("organization: a person's own GitHub, MCP servers, plugins and skills"
     expect(config.body.viewer.integrationsManagedByAdmin).toBeUndefined();
     const listed = await api("GET", "/api/me/connections", rita);
     expect(listed.status).toBe(200);
-    expect(listed.body.managedByAdmin).toBe(false);
+    expect(listed.body.managedByAdmin).toBeUndefined();
     expect(listed.body.servers.map((server: { name: string }) => server.name)).toEqual(["ritas"]);
     expect(await api("GET", `/api/bots/${ritaBot.id}/plugins`, rita).then((res) => res.body)).toMatchObject({ canChange: true });
     expect((await api("PATCH", "/api/me/mcp/servers/ritas", rita, { enabled: true })).status).toBe(200);

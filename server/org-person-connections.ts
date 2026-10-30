@@ -2,7 +2,7 @@
 // (Settings > the person panel, Connexions):
 //
 //   GET  /api/org/people/<principalId>/connections
-//        { principalId, paused, connections: [github | mcp | plugin] }
+//        { principalId, connections: [github | mcp | plugin] }
 //   POST /api/org/people/<principalId>/connections/revoke
 //        { all: true } | { kind: "mcp", name } | { kind: "github" }
 //        | { kind: "plugin", botId, key }
@@ -28,8 +28,6 @@ export type OrgConnection =
 
 export interface OrgConnectionListing {
   principalId: string;
-  /** Saved, not mounted: Perspicax `sagax_integrations` is off for this person. */
-  paused: boolean;
   connections: OrgConnection[];
 }
 
@@ -52,8 +50,6 @@ export interface OrgPersonConnectionsDeps {
   organization: boolean;
   isAdmin(auth: RequestAuth): boolean;
   person(principalId: string): { id: string } | null;
-  /** Their own connections are saved and not usable. */
-  paused(principalId: string): boolean;
   githubStatus(principalId: string): GithubStatus;
   servers(principalId: string): Record<string, PersonalMcpServer>;
   /** A live stdio session's last frame, when one is still open. */
@@ -86,7 +82,6 @@ function remoteDetail(url: string): string {
 /** Names, kind and dates only. A token, env value, argument, device code or path never leaves here. */
 export function orgConnectionListing(input: {
   principalId: string;
-  paused: boolean;
   github: GithubStatus;
   servers: Record<string, PersonalMcpServer>;
   lastUsed: (name: string) => number | undefined;
@@ -124,7 +119,7 @@ export function orgConnectionListing(input: {
       marketplace: plugin.marketplace, createdAt: plugin.installedAt, enabled: plugin.enabled,
     });
   }
-  return { principalId: input.principalId, paused: input.paused, connections };
+  return { principalId: input.principalId, connections };
 }
 
 export function createOrgPersonConnectionRoutes(deps: OrgPersonConnectionsDeps): RouteHandler {
@@ -146,7 +141,7 @@ export function createOrgPersonConnectionRoutes(deps: OrgPersonConnectionsDeps):
     if (!revoke) {
       try {
         return json(res, 200, orgConnectionListing({
-          principalId, paused: deps.paused(principalId), github: deps.githubStatus(principalId),
+          principalId, github: deps.githubStatus(principalId),
           servers: deps.servers(principalId), lastUsed: (name) => deps.lastUsed(principalId, name), plugins: deps.plugins(principalId),
         }));
       } catch {

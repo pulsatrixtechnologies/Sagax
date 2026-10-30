@@ -66,7 +66,6 @@ public struct MyConnections: Decodable, Equatable, Sendable {
     public var github: GitHub
     public var servers: [Server]
     public var sandbox: Bool
-    public var managedByAdmin: Bool?
 
     /// A GitHub code or a server sign-in waits: ask again every two seconds.
     public var waiting: Bool { github.state == "pending" || servers.contains { $0.isRemote && $0.authPending == true } }

@@ -10,7 +10,6 @@ import { t } from "@/lib/i18n";
 import type { BotPluginsView } from "@/lib/my-connections";
 import type { BotPluginState } from "@/lib/plugin-scope";
 import { Switch } from "../SettingsPrimitives";
-import { IntegrationsManagedNotice } from "../settings/MyConnectionsSettings";
 import { PluginCard } from "./PluginParts";
 import { PluginConfigForm } from "./PluginConfigForm";
 
@@ -72,9 +71,7 @@ export function BotPluginCard({ botName, view, plugin, busy, onInstall, onToggle
         {installed?.config && installed.config.fields.length > 0 && (
           <PluginConfigForm config={installed.config} canChange={change && Boolean(onSaveConfig)} onSave={(values) => onSaveConfig ? onSaveConfig(values) : Promise.resolve()} />
         )}
-        {view.managedByAdmin
-          ? <div className="mt-2"><IntegrationsManagedNotice /></div>
-          : !change && <p className="mt-2 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("plugins.readOnly")}</p>}
+        {!change && <p className="mt-2 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink-secondary">{t("plugins.readOnly")}</p>}
         {change && !(installInHeader && !installed) && (
           <div className="mt-3 flex flex-wrap items-center gap-1.5">
             <button type="button" data-bot-plugin-install disabled={busy !== null} onClick={onInstall} className={installed ? "ui-button flex items-center gap-1.5 text-[12px]" : "ui-button ui-button-primary flex items-center gap-1.5 text-[12px]"}>

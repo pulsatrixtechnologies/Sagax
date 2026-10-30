@@ -2055,7 +2055,6 @@
   "personPanel.connections.loading": "正在加载连接…",
   "personPanel.connections.empty": "没有连接。",
   "personPanel.connections.error": "无法加载连接。",
-  "personPanel.connections.paused": "已保存，未在使用。管理员已关闭此人自己的连接。",
   "personPanel.connections.pending": "等待连接",
   "personPanel.connections.remove": "移除",
   "personPanel.connections.removeAll": "全部移除",

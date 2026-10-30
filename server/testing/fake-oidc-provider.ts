@@ -70,8 +70,8 @@ export interface FakeDirectoryPerson {
   /** Perspicax 1.8.6: "use" when an admin made this person read-only in
    * Sagax (shared bots only); absent from an older Perspicax. */
   sagax_bots?: "manage" | "use";
-  /** Perspicax migration 0046: "off" when an admin manages this person's
-   * plugins, skills and MCP servers; absent from an older Perspicax. */
+  /** An older Perspicax (migration 0046) may still send it; Sagax ignores
+   * it since 2026-10-30 (`apps.ownIntegrations` is the only rule). */
   sagax_integrations?: "manage" | "off";
   /** Perspicax migration 0063: the engines this person may run on the
    * organization's key. Absent here: `["*"]` (every engine), so fixtures

@@ -82,13 +82,6 @@ struct DesktopMyConnectionsSettings: View {
                     DesktopText(Text("Your own accounts and MCP servers. Only your conversations and your routines use them; nobody else's turn ever gets them."),
                                 line: 21, color: \.inkSecondary)
                 }
-                if data.managedByAdmin == true {
-                    DesktopText(Text("Your administrator manages plugins and MCP servers."), size: 12.5, line: 20, color: \.inkSecondary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(theme.inset, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                }
                 if part == .github {
                     AnyView(MyConnectionsGitHubCard(data: data, model: model))
                 } else {
@@ -147,8 +140,6 @@ private struct MyConnectionsGitHubCard: View {
     @State private var token = ""
 
     private var github: MyConnections.GitHub { data.github }
-    private var locked: Bool { data.managedByAdmin == true }
-
     var body: some View {
         DesktopSettingsCard(
             Text("GitHub"),
@@ -174,9 +165,7 @@ private struct MyConnectionsGitHubCard: View {
             HStack(spacing: 12) {
                 DesktopText(Text("Connected as @\(github.login ?? "")"))
                 Spacer(minLength: 0)
-                if !locked {
-                    pill("Disconnect") { Task { await model.run("gh-off") { try await $0.disconnectGithub() } } }
-                }
+                pill("Disconnect") { Task { await model.run("gh-off") { try await $0.disconnectGithub() } } }
             }
         case "pending":
             VStack(alignment: .leading, spacing: 8) {
@@ -198,25 +187,21 @@ private struct MyConnectionsGitHubCard: View {
                 DesktopText(Text("Waiting for GitHub…"), size: 12, line: 17, color: \.inkSecondary)
             }
         default:
-            if locked {
-                DesktopText(Text("GitHub is not connected."), size: 12, line: 17, color: \.inkSecondary)
-            } else {
-                VStack(alignment: .leading, spacing: 10) {
-                    if github.state == "error", let error = github.error {
-                        DesktopText(verbatim: error, size: 12, line: 17, color: \.danger)
-                    }
-                    HStack(spacing: 8) {
-                        if github.deviceFlow {
-                            pill("Connect GitHub", primary: true) { Task { await model.run("gh-device") { try await $0.startGithubDevice() } } }
-                        }
-                        pill("Use a token") { tokenOpen.toggle() }
-                    }
-                    if !github.deviceFlow {
-                        DesktopText(Text("Your administrator has not set up a GitHub OAuth App for this server (Settings > Organization). Paste a personal access token instead."),
-                                    size: 12, line: 19.5, color: \.inkSecondary)
-                    }
-                    if tokenOpen { AnyView(tokenForm) }
+            VStack(alignment: .leading, spacing: 10) {
+                if github.state == "error", let error = github.error {
+                    DesktopText(verbatim: error, size: 12, line: 17, color: \.danger)
                 }
+                HStack(spacing: 8) {
+                    if github.deviceFlow {
+                        pill("Connect GitHub", primary: true) { Task { await model.run("gh-device") { try await $0.startGithubDevice() } } }
+                    }
+                    pill("Use a token") { tokenOpen.toggle() }
+                }
+                if !github.deviceFlow {
+                    DesktopText(Text("Your administrator has not set up a GitHub OAuth App for this server (Settings > Organization). Paste a personal access token instead."),
+                                size: 12, line: 19.5, color: \.inkSecondary)
+                }
+                if tokenOpen { AnyView(tokenForm) }
             }
         }
     }
@@ -286,8 +271,6 @@ private struct MyConnectionsServersCard: View {
     @ObservedObject var model: MyConnectionsModel
     @State private var adding = false
 
-    private var locked: Bool { data.managedByAdmin == true }
-
     var body: some View {
         DesktopSettingsCard(
             Text("My MCP servers"),
@@ -310,12 +293,10 @@ private struct MyConnectionsServersCard: View {
                     }
                     .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(theme.hairline.opacity(0.4), lineWidth: 1))
                 }
-                if !locked {
-                    if adding {
-                        AnyView(MyConnectionsAddForm(data: data, model: model) { adding = false })
-                    } else {
-                        MyConnectionsPill(title: "Add an MCP server", primary: true) { adding = true }
-                    }
+                if adding {
+                    AnyView(MyConnectionsAddForm(data: data, model: model) { adding = false })
+                } else {
+                    MyConnectionsPill(title: "Add an MCP server", primary: true) { adding = true }
                 }
             }
         }
@@ -355,20 +336,16 @@ private struct MyConnectionsServersCard: View {
                     }
                 }
             }
-            if !locked {
-                if server.offersSignOut {
-                    MyConnectionsPill(title: "Sign out", disabled: busy) {
-                        Task { await model.run("out:\(server.name)") { try await $0.disconnectPersonalServer(name: server.name) } }
-                    }
+            if server.offersSignOut {
+                MyConnectionsPill(title: "Sign out", disabled: busy) {
+                    Task { await model.run("out:\(server.name)") { try await $0.disconnectPersonalServer(name: server.name) } }
                 }
-                DesktopSwitch(isOn: server.enabled, label: Text("Use \(server.name)"), disabled: busy) {
-                    Task { await model.run("toggle:\(server.name)") { try await $0.setPersonalServerEnabled(name: server.name, enabled: !server.enabled) } }
-                }
-                MyConnectionsPill(title: "Remove", disabled: busy) {
-                    Task { await model.run("rm:\(server.name)") { try await $0.removePersonalServer(name: server.name) } }
-                }
-            } else if !server.enabled {
-                Text("Off").font(theme.font(11.5)).foregroundStyle(theme.inkSecondary)
+            }
+            DesktopSwitch(isOn: server.enabled, label: Text("Use \(server.name)"), disabled: busy) {
+                Task { await model.run("toggle:\(server.name)") { try await $0.setPersonalServerEnabled(name: server.name, enabled: !server.enabled) } }
+            }
+            MyConnectionsPill(title: "Remove", disabled: busy) {
+                Task { await model.run("rm:\(server.name)") { try await $0.removePersonalServer(name: server.name) } }
             }
         }
         .padding(.horizontal, 12)

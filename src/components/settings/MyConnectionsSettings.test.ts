@@ -83,24 +83,14 @@ describe("Mes connexions", () => {
     expect(html).toContain("npx in your server environment");
   });
 
-  it("an admin manages them (Perspicax sagax_integrations off): a notice, the servers listed, no change offered", () => {
-    setLocale("fr");
+  it("the person manages them with no admin, even when an older server still sends managedByAdmin", () => {
     const html = renderToStaticMarkup(createElement(MyConnectionsSettings, { initial: { ...base, managedByAdmin: true, github: { state: "connected", deviceFlow: true, login: "octo", via: "device", connectedAt: 1 }, servers: [
       { name: "notes", kind: "remote", type: "http", url: "https://mcp.notion.com/mcp", domain: "mcp.notion.com", auth: "oauth", tokenConfigured: false, enabled: true, addedAt: 1, authState: "connected" },
-    ] } }));
-    expect(html).toContain("data-integrations-managed");
-    expect(html).toContain("Votre administrateur gère les plugins et les serveurs MCP");
+    ] } as never }));
+    expect(html).not.toContain("administrator");
     expect(html).toContain('data-personal-server="notes"');
     expect(html).toContain("@octo");
-    expect(html).not.toContain("Déconnecter</button>");
-    expect(html).not.toContain("Ajouter un serveur MCP");
-    expect(html).not.toContain('role="switch"');
-  });
-
-  it("asks nothing of an admin when the person manages them", () => {
-    const html = renderToStaticMarkup(createElement(MyConnectionsSettings, { initial: { ...base, managedByAdmin: false } }));
-    expect(html).not.toContain("data-integrations-managed");
-    expect(html).not.toContain("administrator");
+    expect(html).toContain('role="switch"');
     expect(html).toContain("Add an MCP server");
   });
 

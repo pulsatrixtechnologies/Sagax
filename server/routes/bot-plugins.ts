@@ -20,11 +20,9 @@
 // organization admin too). A refusal from the git host answers its real
 // cause (`code`: private_needs_token, bad_token, sso_required, rate_limited,
 // not_found_or_no_access, forbidden) and `fix`, never a token. Member scope (request-auth.ts CLIENT_ALLOW).
-// Perspicax `sagax_integrations: off` (server/person-integrations.ts): the
-// listing says `managedByAdmin: true` with `canChange: false`, and every
-// change answers 403 `org_integrations_admin_only`, even on their own bot.
+// A person without the Sagax permission `apps.ownIntegrations` reads the
+// listing with `canChange: false`, and every change answers that 403.
 import type { BotPluginError, BotPlugins, MarketplacePolicy } from "../bot-plugins.ts";
-import { INTEGRATIONS_ADMIN_ONLY } from "../person-integrations.ts";
 import type { MarketplaceViewer, MarketplaceVisibility } from "../plugin-marketplaces.ts";
 import type { RequestAuth } from "../request-auth.ts";
 import { PASS, type RouteHandler } from "./table.ts";
@@ -42,8 +40,9 @@ export interface BotPluginRouteDeps<B extends { id: string }> {
   /** May this caller share a marketplace with the whole organization? Org-wide
    * is admins only (mirror of routes/marketplaces.ts); absent: allowed. */
   mayShareOrgWide?: (auth: RequestAuth) => boolean;
-  /** An admin manages this person's plugins (never an organization admin). */
-  managedByAdmin?: (auth: RequestAuth) => boolean;
+  /** The 403 body when this caller lacks `apps.ownIntegrations` (never an
+   * organization admin), else null. Absent: never refused. */
+  ownIntegrationsRefusal?: (auth: RequestAuth) => Record<string, unknown> | null;
   /** May remove a marketplace from the one list (the workspace's managers). */
   mayManageMarketplaces?: (auth: RequestAuth) => boolean;
   policy: () => MarketplacePolicy | undefined;
@@ -74,7 +73,7 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
     const bot = deps.bot(botId!);
     if (!bot || !deps.mayRead(auth, bot)) return json(res, 404, { error: "no such bot" });
     res.setHeader("cache-control", "private, no-store");
-    const managedByAdmin = deps.managedByAdmin?.(auth) === true;
+    const integrationsRefusal = deps.ownIntegrationsRefusal?.(auth) ?? null;
     const marketViewer = deps.viewer?.(auth) ?? { seesAll: true };
     /** A private marketplace that is not this viewer's does not exist to them. */
     const marketplaceUnreachable = (marketName: string) =>
@@ -84,14 +83,13 @@ export function createBotPluginRoutes<B extends { id: string }>(deps: BotPluginR
       plugins: deps.plugins.listPlugins(bot.id),
       policy: deps.policy() ?? { mode: "any" },
       engine: { loadsPlugins: deps.engineLoadsPlugins(bot) },
-      canChange: !managedByAdmin && deps.mayChange(auth, bot),
-      ...(managedByAdmin ? { managedByAdmin: true } : {}),
+      canChange: !integrationsRefusal && deps.mayChange(auth, bot),
     });
     if (!section && !key) {
       if (method !== "GET") return json(res, 405, { error: "GET only" });
       return json(res, 200, listing());
     }
-    if (managedByAdmin) return json(res, 403, { ...INTEGRATIONS_ADMIN_ONLY });
+    if (integrationsRefusal) return json(res, 403, integrationsRefusal);
     if (!deps.mayChange(auth, bot)) return json(res, 403, { error: "Only the bot's owner, or someone who manages it, can change its plugins.", code: "plugins_owner_only" });
     const body = method === "DELETE" || update === "update" ? null : await (async () => {
       if (!/^application\/json\b/i.test(String(req.headers["content-type"] ?? ""))) return undefined;

@@ -23,10 +23,6 @@ export interface MyConnections {
   servers: PersonalServer[];
   /** This server gives each person a server environment (commands run there). */
   sandbox: boolean;
-  /** Perspicax `sagax_integrations: off`: an admin manages this person's
-   * connections. They stay saved and are not usable (only a sign-in again,
-   * which does not mount the server until an admin turns use back on). */
-  managedByAdmin?: boolean;
 }
 
 export const GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/";
@@ -147,9 +143,6 @@ export interface BotPluginsView {
   policy: { mode: "any" } | { mode: "list"; allow: string[] };
   engine: { loadsPlugins: boolean };
   canChange: boolean;
-  /** Perspicax `sagax_integrations: off`: an admin manages this person's
-   * plugins (canChange is then false). */
-  managedByAdmin?: boolean;
   /** after a remove from this bot: the marketplace also left the one list */
   sharedRemoved?: boolean;
 }

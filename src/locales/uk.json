@@ -1777,7 +1777,6 @@
   "personPanel.connections.loading": "Завантаження з’єднань…",
   "personPanel.connections.empty": "Немає з’єднань.",
   "personPanel.connections.error": "Не вдалося завантажити з’єднання.",
-  "personPanel.connections.paused": "Збережено, не використовуються. Адміністратор вимкнув власні з’єднання цієї людини.",
   "personPanel.connections.pending": "Очікує на з’єднання",
   "personPanel.connections.remove": "Вилучити",
   "personPanel.connections.removeAll": "Вилучити всі",

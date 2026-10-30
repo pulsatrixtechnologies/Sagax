@@ -116,12 +116,11 @@ final class BotLibraryViewTests: XCTestCase {
     }
 
     func testPluginsListingDecodesAndToleratesMissingFields() throws {
-        let json = #"{"marketplaces":[{"name":"acme","source":"acme/tools","addedAt":1,"updatedAt":2,"plugins":[{"name":"lint","installed":true,"external":false},{"name":"fmt"}]}],"plugins":[{"key":"lint@acme","name":"lint","marketplace":"acme","enabled":true,"removed":[],"declaredMcpServers":[]}],"policy":{"mode":"any"},"engine":{"loadsPlugins":false},"canChange":true}"#
+        let json = #"{"marketplaces":[{"name":"acme","source":"acme/tools","addedAt":1,"updatedAt":2,"plugins":[{"name":"lint","installed":true,"external":false},{"name":"fmt"}]}],"plugins":[{"key":"lint@acme","name":"lint","marketplace":"acme","enabled":true,"removed":[],"declaredMcpServers":[]}],"policy":{"mode":"any"},"engine":{"loadsPlugins":false},"canChange":true,"managedByAdmin":true}"#
         let listing = try JSONDecoder().decode(BotPluginsListing.self, from: Data(json.utf8))
         XCTAssertEqual(listing.marketplaces.first?.plugins.map(\.installed), [true, false])
         XCTAssertEqual(listing.plugins.first?.key, "lint@acme")
         XCTAssertTrue(listing.canChange)
-        XCTAssertFalse(listing.managedByAdmin)
         XCTAssertFalse(listing.loadsPlugins)
     }
 

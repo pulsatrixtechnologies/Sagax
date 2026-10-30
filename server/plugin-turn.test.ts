@@ -60,20 +60,18 @@ describe("plugin skills and commands on a turn", () => {
     symlinkSync("/etc/passwd", join(enabled[0]!, "skills/review/outside"));
     const files = pluginTurnFiles(enabled);
     expect(files.map((file) => file.path).sort()).toEqual([command, skill].sort());
-    const grok = pluginTurnPrompt({ driverKind: "grokAgent", integrationsOff: false, files });
+    const grok = pluginTurnPrompt({ driverKind: "grokAgent", files });
     expect(grok).toContain(JSON.stringify(skill));
     expect(grok).toContain(JSON.stringify(command));
     expect(grok).toContain("Sagax");
     expect(grok).not.toContain("Body");
-    expect(claudePluginDirs("grokAgent", false, enabled)).toEqual([]);
-    expect(pluginTurnPrompt({ driverKind: "claudeAgent", integrationsOff: false, files })).toBe("");
-    expect(claudePluginDirs("claudeAgent", false, enabled)).toEqual(enabled);
-    expect(claudePluginDirs("claudeAgent", true, enabled)).toEqual([]);
-    expect(pluginTurnPrompt({ driverKind: "grokAgent", integrationsOff: true, files })).toBe("");
-    expect(claudePluginDirs("pi", true, enabled)).toEqual([]);
+    expect(claudePluginDirs("grokAgent", enabled)).toEqual([]);
+    expect(pluginTurnPrompt({ driverKind: "claudeAgent", files })).toBe("");
+    expect(claudePluginDirs("claudeAgent", enabled)).toEqual(enabled);
+    expect(claudePluginDirs("pi", enabled)).toEqual([]);
     plugins.setEnabled("bot-1", "reviewer@acme-tools", false);
     expect(plugins.pluginDirs("bot-1")).toEqual([]);
-    expect(pluginTurnPrompt({ driverKind: "grokAgent", integrationsOff: false, files: pluginTurnFiles(plugins.pluginDirs("bot-1")) })).toBe("");
+    expect(pluginTurnPrompt({ driverKind: "grokAgent", files: pluginTurnFiles(plugins.pluginDirs("bot-1")) })).toBe("");
   });
 
   it("reads a skill with no frontmatter and skips a commands readme", () => {

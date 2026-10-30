@@ -48,7 +48,6 @@ function harness(overrides: Partial<OrgPersonConnectionsDeps> = {}) {
       return auth.kind === "session" && auth.session.principalId === ADMIN;
     },
     person: (id) => (id === PERSON ? { id } : null),
-    paused: () => false,
     githubStatus: () => (github === "connected"
       ? { state: "connected", deviceFlow: true, login: "bob-gh", via: "device", connectedAt: 5, scopes: ["repo"] }
       : github === "pending"
@@ -103,7 +102,7 @@ describe("admin list and revoke of a person's connections", () => {
     const out = await h.call(path, admin);
     expect(out.status).toBe(200);
     expect(out.body).toMatchObject({
-      principalId: PERSON, paused: false,
+      principalId: PERSON,
       connections: [
         { kind: "github", state: "connected", login: "bob-gh", via: "device", createdAt: 5 },
         { kind: "mcp", name: "notes", mcpKind: "remote", detail: "mcp.example.test", auth: "token", createdAt: 10, enabled: true },
@@ -116,11 +115,11 @@ describe("admin list and revoke of a person's connections", () => {
 
   it("a pending GitHub sign-in is listed without its device code", () => {
     const listing = orgConnectionListing({
-      principalId: PERSON, paused: true,
+      principalId: PERSON,
       github: { state: "pending", deviceFlow: true, userCode: USER_CODE, verificationUri: "https://github.com/login/device", expiresAt: 99 },
       servers: {}, lastUsed: () => undefined, plugins: [],
     });
-    expect(listing).toEqual({ principalId: PERSON, paused: true, connections: [{ kind: "github", state: "pending" }] });
+    expect(listing).toEqual({ principalId: PERSON, connections: [{ kind: "github", state: "pending" }] });
     expect(JSON.stringify(listing)).not.toContain(USER_CODE);
   });
 

@@ -13,7 +13,7 @@ final class BotPluginsClientTests: XCTestCase {
         {"marketplaces":[{"name":"acme","source":"acme/plugins","addedAt":1,"updatedAt":2,
           "plugins":[{"name":"lint","description":"Lints","version":"1.0.0","installed":true,"external":false}]}],
          "plugins":[{"key":"lint@acme","name":"lint","marketplace":"acme","enabled":true,"removed":["hooks"],"declaredMcpServers":[]}],
-         "policy":{"mode":"list","allow":["acme"]},"engine":{"loadsPlugins":true},"canChange":true}
+         "policy":{"mode":"list","allow":["acme"]},"engine":{"loadsPlugins":true},"canChange":true,"managedByAdmin":true}
         """#
         let view = try JSONDecoder().decode(BotPluginsView.self, from: Data(json.utf8))
         XCTAssertEqual(view.marketplaces.first?.plugins.first?.installed, true)
@@ -21,7 +21,8 @@ final class BotPluginsClientTests: XCTestCase {
         XCTAssertEqual(view.plugins.first?.removed, ["hooks"])
         XCTAssertTrue(view.policy.isList)
         XCTAssertEqual(view.policy.allow, ["acme"])
-        XCTAssertNil(view.managedByAdmin)
+        // an older server may still send managedByAdmin: ignored
+        XCTAssertTrue(view.canChange)
     }
 
     func testRequestsMatchTheServerRoutes() throws {

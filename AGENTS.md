@@ -3831,8 +3831,8 @@ named permission (`shared/permissions.ts`, spec
 - A refusal is `403 { error: "forbidden", permission, message }`; the app
   shows "Your profile does not include <label>. Ask an admin to add it in
   Perspicax." (`src/lib/permissions.ts`, mapped in `api()`).
-- The person sheet still narrows on top (`sagax_bots: use`,
-  `sagax_integrations: off`).
+- The person sheet still narrows on top (`sagax_bots: use`). The field
+  `sagax_integrations` is ignored (removed 2026-10-30).
 - `GET /api/org/admin/capabilities` (api 3) returns the catalogue for the
   Perspicax matrix; `GET /api/org/admin/people/{principal}` returns the
   person's effective keys. Covered by `server/org-permissions.e2e.test.ts`
@@ -6047,36 +6047,20 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
 - Library tab: Files | Skills (`bot-settings/LibraryTab.tsx`) and a link that
   opens Connect apps on that bot (`togglePlugins` with `botId`); there is no
   Plugins tab any more (`src/components/plugins/BotPluginCard.test.ts`).
-- Who manages them comes from Perspicax (migration 0046,
-  `sagax_integrations` on each directory person, set by an admin on the
-  person's Sagax tab; default and absent mean `manage`;
-  `server/person-integrations.ts`, `personIntegrationsOff`,
-  `integrationsLocked`, `effectiveIntegrationRights`). `manage`: everything
-  above, with no admin. `off`: the same change routes answer 403
-  `org_integrations_admin_only`, even on their own bot; only a sign-in again
-  to a server they already have passes (`oauth/start` does not mount it).
-  Use stops at once and the saved credentials stay, so turning the cap back
-  to `manage` mounts them on the next turn: `mountPersonalMcp` closes that
-  person's stdio sessions and adds nothing, `syncGithubForTurn` and
-  `usablePersonGithub` drop the token from the environment and from Sagax's
-  own fetches, and `pluginDirsFor` passes no `--plugin-dir` and the turn
-  prompt lists no plugin skill or command. Skills already on a bot still load.
-  The directory callback `onIntegrationRights` fires
-  only when the effective right changes (an organization admin stays
-  `manage` even when the field is `off`; a disabled person is skipped; a 304
-  does not re-fire) and closes stdio and clears or restores the GitHub
-  sandbox token. The person's own screen still reads `managedByAdmin` on
-  `/api/me/connections` and on the plugins listing (`canChange: false`),
-  `viewer.integrationsManagedByAdmin`, edit controls hidden under "Votre
-  administrateur gère les plugins et les serveurs MCP"
-  (`integrations.managedByAdmin`). `run_command` in their environment and on
-  their desktop refuses the engines' plugin, MCP and extension subcommands
-  (`enginePluginCommandRefusal`). The tool result tells the bot to install
-  through Sagax `act` plugin actions. When integrations are off, the
-  administrator sentence stays. The check is a courtesy: a turn loads only
-  what Sagax keeps. `/plugin` and `/mcp` are managed for everyone. An
-  organization admin is never narrowed and changes a person's bot plugins
-  and skills for them.
+- Who manages them: the person, with no admin. The Sagax permission
+  `apps.ownIntegrations` is the only rule (`ownIntegrationsRefusal` in
+  `server/index.ts`: a member without it reads, and every change answers
+  `403 { error: "forbidden", permission: "apps.ownIntegrations" }`; plugins
+  listing `canChange: false`). The Perspicax field `sagax_integrations` is
+  ignored if an older Perspicax still sends it (removed 2026-10-30: no
+  `managedByAdmin`, no `viewer.integrationsManagedByAdmin`, no notice).
+  `run_command` in their environment and on their desktop refuses the
+  engines' plugin, MCP and extension subcommands
+  (`enginePluginCommandRefusal`, `server/person-integrations.ts`). The tool
+  result tells the bot to install through Sagax `act` plugin actions. The
+  check is a courtesy: a turn loads only what Sagax keeps. `/plugin` and
+  `/mcp` are managed for everyone. An organization admin changes a person's
+  bot plugins and skills for them.
 - An organization admin lists and removes another person's connections
   (`GET /api/org/people/<principalId>/connections` and
   `POST .../connections/revoke`, `server/org-person-connections.ts`): admin

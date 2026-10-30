@@ -1079,9 +1079,6 @@ export interface ConfigViewer {
   /** Why (2026-10-09): `permission` when their profile lacks bots.create;
    * absent when the person sheet says use only. */
   botsReadOnlyReason?: "permission";
-  /** Organization server: a Perspicax admin manages this person's plugins,
-   * skills and MCP servers (Perspicax `sagax_integrations: off`). */
-  integrationsManagedByAdmin?: true;
   /** The operator's name, for their lines that carry no sender. */
   operatorName?: string;
   /** Organization server: Perspicax owns this person's name and email

@@ -1533,7 +1533,6 @@
   "personPanel.connections.kind.plugin": "Plugin",
   "personPanel.connections.lastUsed": "Último uso {date}",
   "personPanel.connections.loading": "Carregando conexões…",
-  "personPanel.connections.paused": "Salvas, sem uso. Um administrador desativou as conexões desta pessoa.",
   "personPanel.connections.pending": "Aguardando a conexão",
   "personPanel.connections.remove": "Remover",
   "personPanel.connections.removeAll": "Remover todas",

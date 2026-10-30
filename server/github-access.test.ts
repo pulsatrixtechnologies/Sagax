@@ -353,12 +353,12 @@ describe("a bot's own plugins in its turns", () => {
     expect(dirs).toHaveLength(1);
     const files = pluginTurnFiles(dirs);
     expect(files.map((file) => [file.kind, file.name])).toEqual([["skill", "review"], ["command", "ship"], ["agent", "critic"]]);
-    const prompt = pluginTurnPrompt({ driverKind: "codex", integrationsOff: false, files });
+    const prompt = pluginTurnPrompt({ driverKind: "codex", files });
     expect(prompt).toContain("agent critic: A strict code critic.");
     expect(prompt).toContain("skill review: Review code.");
     expect(prompt).not.toContain("hooks");
     // Claude loads the folder itself (--plugin-dir); another bot has none
-    expect(pluginTurnPrompt({ driverKind: "claudeAgent", integrationsOff: false, files })).toBe("");
+    expect(pluginTurnPrompt({ driverKind: "claudeAgent", files })).toBe("");
     expect(store.pluginDirs("bot-2")).toEqual([]);
   });
 });

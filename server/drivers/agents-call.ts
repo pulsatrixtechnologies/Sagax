@@ -1935,9 +1935,7 @@ export function githubConnectText(r: Record<string, unknown>): string {
     case "not_person":
       return "GitHub is connected only on the person's own request in their 1:1 conversation, never from a routine, an automation or another bot's turn. Tell them to ask you directly or to use Connect apps > GitHub.";
     case "admin_only":
-      return "An administrator manages this person's integrations: they cannot connect GitHub themselves. Tell them to ask an administrator.";
-    case "integrations_off":
-      return "The person has turned off their integrations for bots (Connect apps). Say so; never ask for a token.";
+      return "This person's Sagax profile does not include managing their own plugins, skills and MCP servers, so they cannot connect GitHub themselves. Tell them to ask an administrator to add it in Perspicax.";
     case "no_device_flow":
       return `This server has no GitHub OAuth App for the device flow yet.${login ? ` GitHub is connected as @${login} with a token that may not cover their organizations.` : ""} Tell the person to connect in Connect apps > GitHub with a classic personal access token with the repo and read:org scopes (a fine-grained token reaches one owner only), and an administrator to add the OAuth App's client id in Settings > Organization.`;
     default:

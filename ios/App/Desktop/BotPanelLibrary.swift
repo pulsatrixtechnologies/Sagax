@@ -213,9 +213,7 @@ struct BotPanelPlugins: View {
             if !view.engine.loadsPlugins {
                 notice("Plugins load only when this bot runs on Claude Code.")
             }
-            if view.managedByAdmin == true {
-                notice("Your administrator manages plugins and MCP servers.")
-            } else if !view.canChange {
+            if !view.canChange {
                 notice("Only the bot's owner, or someone who manages it, can change its plugins.")
             }
             AnyView(installed(view))

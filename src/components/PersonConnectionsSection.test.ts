@@ -8,7 +8,6 @@ import { connectionConfirmCopy, PersonConnectionsSection, revokeBody, type OrgPe
 const TOKEN = "t-secret-token-000";
 const listing: OrgPersonConnections = {
   principalId: "pr_ada",
-  paused: true,
   connections: [
     { kind: "github", state: "connected", login: "ada-gh", via: "device", createdAt: 1_700_000_000_000 },
     { kind: "mcp", name: "notes", mcpKind: "remote", detail: "mcp.example.test", createdAt: 1_700_000_100_000, enabled: true, auth: "token", lastUsedAt: 1_700_000_200_000 },
@@ -25,7 +24,7 @@ describe("PersonConnectionsSection", () => {
     expect(html).toContain("notes");
     expect(html).toContain("mcp.example.test");
     expect(html).toContain("reviewer");
-    expect(html).toContain("data-connections-paused");
+    expect(html).not.toContain("data-connections-paused");
     expect(html).toContain('data-connection-remove="notes"');
     expect(html).toContain('data-connection-remove="rex:reviewer@acme-tools"');
     expect(html).toContain("data-connection-remove-all");
@@ -35,7 +34,7 @@ describe("PersonConnectionsSection", () => {
   });
 
   it("says when there is nothing to remove", () => {
-    const html = renderToStaticMarkup(createElement(PersonConnectionsSection, { principalId: "pr_ada", initial: { principalId: "pr_ada", paused: false, connections: [] } }));
+    const html = renderToStaticMarkup(createElement(PersonConnectionsSection, { principalId: "pr_ada", initial: { principalId: "pr_ada", connections: [] } }));
     expect(html).toContain("No connections.");
     expect(html).not.toContain("data-connection-remove-all");
   });

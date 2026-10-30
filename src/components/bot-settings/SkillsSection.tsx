@@ -12,8 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import { useStore, type Bot } from "@/state/store";
 import { useBotEditor } from "./BotEditorContext";
 import { skillAuthoringEnabled, skillsLibraryEnabled } from "@/lib/feature-flags";
-import { viewerBotsReadOnly, viewerIntegrationsManagedByAdmin } from "@/lib/viewer";
-import { IntegrationsManagedNotice } from "../settings/MyConnectionsSettings";
+import { viewerBotsReadOnly } from "@/lib/viewer";
 import { DIALOG, DialogCloseButton, PILL, PillSelect, PRIMARY_PILL, Switch } from "../SettingsPrimitives";
 import { inputCls } from "./field";
 import { cn } from "@/lib/cn";
@@ -292,12 +291,10 @@ export function SkillsSection({ bot }: { bot: Bot }) {
   const { state, dispatch } = useStore();
   const featureEnabled = skillAuthoringEnabled(state.config);
   const libraryOn = skillsLibraryEnabled(state.config);
-  // Perspicax `sagax_integrations: off`: an admin manages this person's
-  // skills. A read-only person is capped at use, so a skill change is 403.
-  // The list stays. Team or section manage is not on the viewer, so those
-  // writes stay visible and the server still refuses a person who lacks them.
-  const integrationsLocked = viewerIntegrationsManagedByAdmin(state.config);
-  const skillWrites = !integrationsLocked && !viewerBotsReadOnly(state.config);
+  // A read-only person is capped at use, so a skill change is 403. The list
+  // stays. Team or section manage is not on the viewer, so those writes stay
+  // visible and the server still refuses a person who lacks them.
+  const skillWrites = !viewerBotsReadOnly(state.config);
   const {
     skills, staged, loading, working, setWorking, error, setError, reviewing, setReviewing, refresh, toggle, enableReviewed,
     libraryPool, addFromLibrary, setAddFromLibrary, assignmentBusy, putAssignments, addToBot,
@@ -415,9 +412,7 @@ export function SkillsSection({ bot }: { bot: Bot }) {
     <div className="flex flex-col gap-5">
       <PaneSection title={t("botPanel.skills.title")} help={<>{featureEnabled ? t("skills.learned.hintOn") : t("skills.learned.hintOff")} {t("botPanel.skills.whenRelevant")}.</>}>
 
-        {integrationsLocked ? (
-          <IntegrationsManagedNotice />
-        ) : skillWrites && libraryOn ? (
+        {skillWrites && libraryOn ? (
           <div className="flex flex-col gap-1.5">
             {libraryPool.length > 0 ? (
               <div className="flex items-center gap-2">

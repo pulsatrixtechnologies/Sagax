@@ -19,7 +19,7 @@ afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: tru
 
 const session = (principalId: string) => ({ kind: "session", via: "bearer", scopes: ["client"], session: { principalId } }) as unknown as RequestAuth;
 
-function setup(options: { managed?: boolean } = {}) {
+function setup(options: { denied?: boolean } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "sagax-gh-cred-route-"));
   dirs.push(dir);
   const store = new GithubCredentials(dir, () => ({ kind: "key", key: Buffer.alloc(32, 9) }));
@@ -30,7 +30,7 @@ function setup(options: { managed?: boolean } = {}) {
     organization: () => true,
     canManageOrg: (auth) => auth.kind === "session" && (auth.session as { principalId?: string }).principalId === "p-admin",
     deviceFlow: () => false,
-    managedByAdmin: () => options.managed === true,
+    ownIntegrationsRefusal: () => (options.denied ? { error: "forbidden", permission: "apps.ownIntegrations" } : null),
     auditOrg: (_auth, row) => audits.push(row),
   });
   const call = async (method: string, body: unknown, auth: RequestAuth) => {
@@ -91,9 +91,13 @@ describe("/api/me/github/credentials", () => {
     expect((await call("POST", { op: "remove", id: bobs.id }, session("p-alice"))).status).toBe(404);
   });
 
-  it("an admin-managed person reads but does not change their own", async () => {
-    const { call } = setup({ managed: true });
-    expect((await call("GET", undefined, session("p-alice"))).status).toBe(200);
-    expect((await call("POST", { op: "add", label: "Mine", token: MINE }, session("p-alice"))).status).toBe(403);
+  it("a person without apps.ownIntegrations reads but does not change their own", async () => {
+    const { call } = setup({ denied: true });
+    const listed = await call("GET", undefined, session("p-alice"));
+    expect(listed.status).toBe(200);
+    expect((listed.body as Record<string, unknown>).managedByAdmin).toBeUndefined();
+    const refused = await call("POST", { op: "add", label: "Mine", token: MINE }, session("p-alice"));
+    expect(refused.status).toBe(403);
+    expect((refused.body as Record<string, unknown>).permission).toBe("apps.ownIntegrations");
   });
 });
