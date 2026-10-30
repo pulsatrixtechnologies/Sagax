@@ -873,7 +873,7 @@ const serverSupervisor = createServerSupervisor({
     // Who owns this computer in their organization (name, address, avatar).
     void ownerIdentitySync.serverReady();
     ownerIdentitySync.start();
-    void machineWorker.start();
+    void machineWorker.start().catch((error) => slog(`machine worker stopped: ${error?.message ?? error}`));
     // A restarted runtime has no library catalog until main sends it again.
     orgLibrary?.runtimeReady();
     if (managedDesktop) void managedDesktop.refresh().catch(() => {});
@@ -898,6 +898,7 @@ const serverSupervisor = createServerSupervisor({
   onUnavailable() {
     serverReady = false;
     serverProc = null;
+    void machineWorker.stop();
     companyBackupSchedule?.reconcile();
     // nothing to hold for while the scheduler is down; polling resumes on ready
     routineWake.stop();
@@ -5815,6 +5816,7 @@ process.once("SIGTERM", requestSignalQuit);
 
 app.on("before-quit", (e) => {
   desktopShutdownStarted = true;
+  const stoppingWorker = machineWorker.stop();
   retroAssistantWindow.close();
   floatingBotWindows.closeAll();
   dataWindows.closeAll();
@@ -5854,6 +5856,7 @@ app.on("before-quit", (e) => {
     new Promise((resolve) => setTimeout(resolve, CUA_STOP_TIMEOUT_MS).unref()),
   ]);
   const cleanup = Promise.all([
+    stoppingWorker.catch(() => {}),
     ownedHelperCleanup,
     // The organization sign-in cookie is on disk before the process ends.
     flushSessionCookies(session.defaultSession, { log: slog }),

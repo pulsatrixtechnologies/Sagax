@@ -6165,6 +6165,12 @@ process and never on an organization server's own host
 
 ## Desktop bridge (organization mode)
 
+The machine-hosted engine worker (`electron/machine-worker.mjs`) stops and
+cancels its requests when the local server becomes unavailable or the app
+quits, then restarts when the server is ready. A claimed turn whose local
+request or reply stream fails receives a failed result on its organization
+server; failure delivery has its own bounded cancellation signal.
+
 In server mode the desktop app is the bridge between the organization server
 and the person's PC (`electron/desktop-bridge.mjs`, `electron/desktop-tunnel.mjs`,
 `server/desktop-bridge*.ts`, `server/desktop-egress.ts`). Bots working for a

@@ -172,3 +172,77 @@ test("removing an origin drops its retry state", async () => {
   await worker.cycle();
   assert.equal(attempts, 2, "a newly reconnected origin retries immediately");
 });
+
+function localTurnFixture(fetchLocal) {
+  const notices = [];
+  const worker = createMachineWorker({
+    origins: () => ["https://example.test"], localOrigin: () => "http://127.0.0.1:8799",
+    identity: () => ({ deviceId: "laptop", name: "Studio" }), engines: async () => [],
+    fetchLocal,
+    fetchOrg: async (url, options) => {
+      if (url.endsWith("/pull")) return json({ turns: [{ messageId: "m1", botId: "desk" }] });
+      if (url.includes("/turns/m1") && options?.method !== "POST") return json({ prompt: "Hello", model: {}, botId: "desk" });
+      if (url.includes("/turns/m1") && options?.method === "POST") {
+        assert.equal(options.signal.aborted, false, "failure delivery outlives the stopped local request");
+        notices.push(JSON.parse(options.body));
+      }
+      return json({});
+    },
+  });
+  return { worker, notices };
+}
+
+for (const failure of ["connection", "stream", "empty", "status"]) {
+  test(`a local ${failure} failure settles the claimed organization turn`, async () => {
+    const { worker, notices } = localTurnFixture(async () => {
+      if (failure === "connection") throw new Error("local server is down");
+      if (failure === "status") return { ok: false, status: 503 };
+      if (failure === "empty") return new Response("");
+      return new Response(new ReadableStream({ start(controller) { controller.error(new Error("local server restarted")); } }));
+    });
+    await worker.cycle();
+    assert.deepEqual(notices.map((notice) => notice.kind), ["failed"]);
+    assert.match(notices[0].text, /could not finish/);
+  });
+}
+
+test("stopping cancels a local turn and an immediate restart waits for its failure delivery", async () => {
+  let entered;
+  let active = new Promise((resolve) => { entered = resolve; });
+  const signals = [];
+  const { worker, notices } = localTurnFixture(async (_url, options) => {
+    signals.push(options.signal);
+    entered();
+    return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
+  });
+  const first = worker.start();
+  await active;
+  const stopping = worker.stop();
+  active = new Promise((resolve) => { entered = resolve; });
+  const restarted = worker.start();
+  await stopping;
+  await active;
+  assert.equal(signals[0].aborted, true);
+  assert.equal(signals[1].aborted, false);
+  await worker.stop();
+  await Promise.all([first, restarted]);
+  assert.deepEqual(notices.map((notice) => notice.kind), ["failed", "failed"]);
+});
+
+test("a newer stop cancels a restart queued while an interrupted turn settles", async () => {
+  let entered;
+  const active = new Promise((resolve) => { entered = resolve; });
+  let starts = 0;
+  const { worker } = localTurnFixture(async (_url, options) => {
+    starts++;
+    entered();
+    return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(options.signal.reason), { once: true }));
+  });
+  const first = worker.start();
+  await active;
+  void worker.stop();
+  const restarted = worker.start();
+  await worker.stop();
+  await Promise.all([first, restarted]);
+  assert.equal(starts, 1);
+});
