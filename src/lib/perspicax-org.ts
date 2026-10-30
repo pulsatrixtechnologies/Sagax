@@ -232,6 +232,10 @@ export interface MyEngine {
   subscription: { supported: boolean; signedIn: boolean; expired?: boolean };
   /** The person's own key for this engine's provider is in Perspicax. */
   myKey: boolean;
+  /** 2026-10-30: where the person's own key that serves this engine lives:
+   * Perspicax, or sealed for them on this server (engine-api-keys.enc).
+   * Absent with no key of their own, and on an older server. */
+  keyWhere?: "perspicax" | "server";
   /** The server has a key for this engine (the organization's key) and it
    * serves this person. */
   orgKey: boolean;

@@ -15,7 +15,6 @@ import { endCall, startCall, useOnCall } from "@/lib/call";
 import { t } from "@/lib/i18n";
 import { refreshVoiceMode, useVoiceModeCheck, type VoiceModeCheck } from "@/lib/voice-mode/api";
 import { useMenuMotion } from "../MenuMotion";
-import { requestSettingsCard } from "../SettingsPrimitives";
 import { openProviderKeyDialog } from "../settings/ProviderKeys";
 import { voiceAccessCardText } from "./VoiceModeBar";
 
@@ -151,8 +150,7 @@ export function VoiceModeCallButton({ targetId, targetName, botId, group, onStar
                   data-voice-action="open-connections"
                   onClick={() => {
                     setOpen(false);
-                    requestSettingsCard("engines.keys");
-                    dispatch({ type: "toggleAppSettings", open: true, section: "engines" });
+                    dispatch({ type: "toggleAppSettings", open: true, section: "providers" });
                     // Grok voice runs on the xAI key (2026-10-14): open its row.
                     openProviderKeyDialog("xai");
                   }}

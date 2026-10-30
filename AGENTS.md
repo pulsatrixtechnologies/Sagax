@@ -24,6 +24,33 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Settings > Providers (2026-10-30)
+
+Lot 1 of "Providers, models and voice". One page, section id `providers`
+(`src/components/settings/ProvidersSettings.tsx`), lists every account, key,
+server and model of this computer that pays for a turn or a voice, read
+from the stores as they are (`src/lib/provider-rows.ts`, pure, tested in
+`provider-rows.test.ts`): who pays (me, the organization, this computer),
+where the key lives (Perspicax, the Sagax server, a signed-in session,
+none), its state (Connected, Reconnect, Key missing, Turned off by the
+admin, Offline; not connected yet waits under "To connect") and what it
+brings. Each engine the page offers lands in exactly one row; a row opens
+in place on the engine's own controls (`EngineRow` `bare`), the key's
+dialog, the server's form. A visited detail stays mounted while folded,
+preserving sign-in polling and unsaved fields when another row opens.
+The claude.ai connectors moved from under Auto
+to the Claude row. "Add a provider" is one flow (an account, a key, a
+server). `GET /api/me/engines` says where a person's own key lives
+(`keyWhere`: `perspicax` or `server`), so "Pays with" no longer says
+Perspicax for a key sealed on the server. An organization admin has "View
+as a member" (`src/lib/view-as-member.ts`, a view only, no right changes;
+`useModelsVoiceAccess` reads it). Models keeps Auto, web search, image
+generation and the online computers; the former Engines and Keys groups
+stay there folded under "Former view" (`LEGACY_CARD`, `engines.legacy`)
+until lot 5. Sign-in and key links (`engines.keys`, `connections`, "Add in
+Providers") open Providers (`CARD_HOME`, `MERGED` in
+`src/lib/settings-sections.ts`).
+
 ## Providers the admin turns off are off for everyone (2026-10-30)
 
 Lot 0 of "Providers, models and voice" (the maintainer's decisions). What an

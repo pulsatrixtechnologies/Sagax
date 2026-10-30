@@ -19,10 +19,11 @@ const SECTION_LABEL = {
   // (2026-10-14, "Models and voice" until 2026-10-28, when Voice became a
   // page of its own); Privacy and Memory are cards of Notifications and
   // Organization. A pointer names the page that shows them.
-  connections: "settings.section.models",
+  connections: "settings.section.providers",
   connectedApps: "settings.section.models",
   decisionModel: "settings.section.models",
   engines: "settings.section.models",
+  providers: "settings.section.providers",
   voice: "settings.section.voice",
   // Pair devices, Activity and Email are hidden (2026-10-14), People and
   // Installations too (2026-10-15): a pointer names the page an old link opens.
@@ -75,10 +76,10 @@ export function openSettings(dispatch: SettingsDispatch, section: AppSettingsSec
   if (card) requestSettingsCard(card);
 }
 
-/** Settings > Models, at the list of keys: where a model that
- * cannot run gets its key (New bot's "no model works" line, 2026-10-14). */
+/** Settings > Providers (2026-10-30; Models > Keys until then): where a
+ * model that cannot run gets its key (New bot's "no model works" line). */
 export function openModelKeysSettings(dispatch: SettingsDispatch): void {
-  openSettings(dispatch, "engines", "engines.keys");
+  openSettings(dispatch, "providers", "providers.list");
 }
 
 export type SettingsLinkPart = { kind: "text"; text: string } | { kind: "link"; name: string };

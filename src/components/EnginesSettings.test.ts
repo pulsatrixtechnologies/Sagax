@@ -1,10 +1,14 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Bot, InstanceInfo } from "@/state/store";
-import { EnginesSettings } from "./EnginesSettings";
+import { requestSettingsCard } from "./SettingsPrimitives";
+import { LEGACY_CARD, EnginesSettings } from "./EnginesSettings";
 import { ClaudeAccountForm } from "./ClaudeAccountSettings";
 import { AntigravityFreeSpace, formatDiskSize } from "./AntigravityFreeSpace";
+
+// 2026-10-30: the engine cards and keys are the former view on Models (Providers, lot 1)
+beforeEach(() => requestSettingsCard(LEGACY_CARD));
 
 const fixture = vi.hoisted(() => ({ instances: [] as InstanceInfo[], bots: [] as Bot[] }));
 vi.mock("@/state/store", async (importOriginal) => ({

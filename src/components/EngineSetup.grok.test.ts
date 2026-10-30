@@ -104,7 +104,7 @@ describe("Grok cannot run here: an xAI key instead", () => {
   it("opens Settings → Models and accounts", () => {
     render(missing, undefined);
     host.querySelector("button")!.click();
-    expect(dispatch).toHaveBeenCalledExactlyOnceWith({ type: "toggleAppSettings", open: true, section: "engines" });
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({ type: "toggleAppSettings", open: true, section: "providers" });
   });
 
   it("has no button on a paired desktop, whose Settings hide the keys", () => {

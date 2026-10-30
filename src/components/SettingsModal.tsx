@@ -4,7 +4,7 @@
 // machine your bots can borrow.
 import { useRetroSkin } from "./RetroChromeHost";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Archive, AudioLines, Bell, Coins, Download, FileText, FlaskConical, Import, KeyRound, Monitor, Palette, Search, ShieldCheck, Terminal, User, X, Building2 } from "lucide-react";
+import { Archive, AudioLines, Bell, Coins, Download, FileText, FlaskConical, Import, KeyRound, Monitor, Palette, Plug, Search, ShieldCheck, Terminal, User, X, Building2 } from "lucide-react";
 import { api, useStore, type AppSettingsSection } from "@/state/store";
 import { decisionModelEnabled } from "@/lib/feature-flags";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
@@ -22,6 +22,7 @@ import { GeneralAdvancedSettings, generalAdvancedShown, isSoloDesktop } from "./
 import { useUpdaterState } from "@/lib/updater";
 import { openUpdatePrompt, requestUpdateCheck } from "@/lib/update-prompt";
 import { EnginesSettings, VoiceSettingsPage } from "./EnginesSettings";
+import { ProvidersSettings } from "./settings/ProvidersSettings";
 import { LocalComputerSection } from "./LocalComputerSection";
 import { peopleListServed, readMembership } from "../lib/membership";
 import { useOwnerOrAdmin } from "@/lib/use-owner-or-admin";
@@ -111,7 +112,9 @@ export const SECTIONS: Array<{
   // Models (2026-10-14 as Models and voice: Integrations and Models and
   // accounts in one page; Connected apps and Decision model are cards of
   // it). 2026-10-28: Voice is a page of its own; every key stays in Models.
-  { id: "engines", group: "ai", labelKey: "settings.section.models", icon: Terminal, keywords: ["models", "modèles", "model providers", "engines", "claude", "codex", "grok", "providers", "cli", "sign in", "subscription", "keys", "api", "api key", "api keys", "connections", "integrations", "intégrations", "clés", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "elevenlabs", "fish audio", "image", "avatar", "box", "vps", "cursor", "cloud agents", "decision", "jev", "typesafe", "routing", "auto", "who answers", "auto model", "modèle auto", "moteurs", "needs setup", "à configurer", "image provider", "fournisseur d'images", "génération d'images", "cloud coding agents", "web search", "recherche web", "brave", "exa", "firecrawl", "searxng"] },
+  // 2026-10-30: Providers, every account, key and server in one list (lot 1 of "Providers, models and voice")
+  { id: "providers", group: "ai", labelKey: "settings.section.providers", icon: Plug, keywords: ["providers", "fournisseurs", "model providers", "accounts", "comptes", "claude", "codex", "grok", "cli", "sign in", "connexion", "subscription", "abonnement", "keys", "clés", "api", "api key", "api keys", "xai", "mistral", "cerebras", "router", "openrouter", "base url", "openai", "anthropic", "groq", "opencode", "provider", "fournisseur", "elevenlabs", "fish audio", "azure", "foundry", "compatible", "server", "serveur", "local models", "modèles locaux", "this computer", "cet ordinateur", "needs setup", "à configurer", "to connect", "à connecter", "view as a member", "voir comme un membre", "connectors", "connecteurs", "claude.ai"] },
+  { id: "engines", group: "ai", labelKey: "settings.section.models", icon: Terminal, keywords: ["models", "modèles", "engines", "moteurs", "former view", "ancien affichage", "connections", "integrations", "intégrations", "image", "avatar", "box", "vps", "cursor", "cloud agents", "decision", "jev", "typesafe", "routing", "auto", "who answers", "auto model", "modèle auto", "image provider", "fournisseur d'images", "génération d'images", "cloud coding agents", "web search", "recherche web", "brave", "exa", "firecrawl", "searxng"] },
   { id: "voice", group: "ai", labelKey: "settings.section.voice", icon: AudioLines, keywords: ["voice", "voix", "tts", "speech", "parole", "elevenlabs", "fish", "fish audio", "chatterbox", "grok voice", "voice engine", "moteur de voix", "live call", "live calls", "appels en direct", "read replies", "hang up", "gpt-live", "voice keys", "clés de voix", "microphone", "micro", "audio", "input device", "entrée audio"] },
   // 2026-10-14: Memory is a card of this page (it was its own section).
   { id: "organization", group: "workspace", labelKey: "settings.section.organization", icon: Building2, keywords: ["company", "organization", "organisation", "sign in", "enroll", "managed", "models", "disconnect", "workspace", "cloud", "hosted", "vps", "server", "servers", "connect", "pair", "switch", "local", "memory", "obsidian", "vault", "sync", "git", "perspicax", "mémoire", "cache", "pending", "domain", "dns", "caddy", "full access", "accès complet", "approvals", "approbations", "waiting for an admin", "en attente", "people from before", "rattacher", "invite", "inviter", "invitation", "people", "personnes", "this computer", "cet ordinateur", "serveurs", "oublier", "forget", ...ORGANIZATION_ADVANCED_KEYWORDS] },
@@ -146,8 +149,7 @@ const CARD_KEYWORDS: Record<string, string[]> = {
   "organization.mcpCalls": ["mcp", "timeout", "tool call"],
   "connections.integrations": ["box", "vps"],
   "connections.image": ["image", "avatar", "gpt image"],
-  "engines.moreProviders": ["openrouter", "mistral", "opencode", "base url", "compatible", "cursor", "cloud agent", "elevenlabs", "fish audio", "image key"],
-  "engines.setup": ["needs setup", "kimi", "droid", "qwen", "hermes", "cline", "antigravity"],
+  "providers.toConnect": ["needs setup", "à configurer", "to connect", "à connecter", "kimi", "droid", "qwen", "hermes", "cline", "antigravity"],
   "voice.advanced": ["live call", "read replies", "hang up", "gpt-live"],
   "companion.domain": ["domain", "dns", "caddy"],
   "engines.decisionModel": ["decision", "jev", "typesafe"],
@@ -876,6 +878,9 @@ export function SettingsModal() {
             {section === "appearance" && <AppearanceSettings />}
 
             {section === "experimental" && <ExperimentalSettings />}
+
+            {/* Providers (2026-10-30) */}
+            {section === "providers" && <ProvidersSettings />}
 
             {section === "engines" && (
               <div className="flex min-w-0 flex-col gap-6">

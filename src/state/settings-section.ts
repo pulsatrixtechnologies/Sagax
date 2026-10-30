@@ -23,6 +23,9 @@ export type AppSettingsSection =
   | "connections"
   | "connectedApps"
   | "decisionModel"
+  /** Providers (2026-10-30): every account, key, server and model of this
+   * computer that pays for a turn or a voice, in one list. */
+  | "providers"
   /** Models (2026-10-28; "Models and voice" until then): engines, keys,
    * web search, image generation. */
   | "engines"
