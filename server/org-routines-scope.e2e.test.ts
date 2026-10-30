@@ -9,6 +9,8 @@
 //   flags    someone else's routine is read-only and withheld
 //   clear    Clear logs removes the caller's own runs, or every run in
 //            scope with routines.viewAll and scope=all
+//   seen     Mark all as read stamps only the caller's own runs and answers
+//            with their ids; stopping a run takes the Run now rule
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -220,5 +222,39 @@ posixOnly("Automations page: routine scope", () => {
       expect(cleared.status, cleared.text).toBe(200);
       expect(cleared.body.removed).toEqual([]);
     }
+  });
+
+  it("Mark all as read: only the caller's own runs, answered by id; stopping a run takes the Run now rule", async () => {
+    const past = () => ({ type: "once", at: Date.now() - 13 * 3_600_000 });
+    const missedRun = async (login: string) => {
+      const made = await api("POST", "/api/routines", auth[login], { name: `${login} stale`, botId: botOf[login], prompt: `${login} stale work`, schedule: past() });
+      expect(made.status, made.text).toBe(201);
+      const routineId = made.body.routine.id as string;
+      return waitFor(async () => {
+        const runs = (await api("GET", "/api/routines", auth[login])).body.runs as Array<{ id: string; routineId: string; status: string; seenAt?: number }>;
+        return runs.find((run) => run.routineId === routineId && run.status === "missed") ?? null;
+      });
+    };
+    const bobs = await missedRun("bob");
+    const daves = await missedRun("dave");
+
+    const seen = await api("POST", "/api/routine-runs/seen-all", auth.bob);
+    expect(seen.status, seen.text).toBe(200);
+    expect(Object.keys(seen.body).sort()).toEqual(["count", "ids", "runs", "seenAt"]);
+    expect(seen.body.ids).toEqual([bobs.id]);
+    expect(seen.body.count).toBe(1);
+    expect(seen.body.runs).toEqual([]);
+    expect(seen.text).not.toContain("dave");
+    const daveRuns = (await api("GET", "/api/routines", auth.dave)).body.runs as Array<{ id: string; seenAt?: number }>;
+    expect(daveRuns.find((run) => run.id === daves.id)?.seenAt).toBeUndefined();
+
+    // With the right to run Dave's bot, Bob still may not stop Dave's run:
+    // neither the bot's owner nor the person it runs as.
+    expect((await api("PUT", `/api/bots/${botOf.dave}/grants`, auth.dave, { target: `user:${ids.bob}`, level: "run" })).status).toBe(200);
+    const stop = await api("POST", `/api/routine-runs/${daves.id}/cancel`, auth.bob);
+    expect(stop.status, stop.text).toBe(403);
+    expect(stop.body).toMatchObject({ code: "run_now_not_allowed" });
+    // Dave keeps the hand on his own run (no longer active: not found, never refused)
+    expect((await api("POST", `/api/routine-runs/${daves.id}/cancel`, auth.dave)).status).toBe(404);
   });
 });

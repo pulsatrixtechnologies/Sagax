@@ -3179,7 +3179,7 @@ describe("RoutineManager", () => {
     h.emitted.length = 0;
     const stampAt = new Date(2026, 7, 18, 8, 0).getTime();
     h.setNow(stampAt);
-    const stamped = h.manager.markAllSeen();
+    const stamped = h.manager.markAllSeen(() => true);
     expect([...stamped].sort((a, b) => a.routineName.localeCompare(b.routineName))).toMatchObject([
       { routineName: "Broken report", seenAt: stampAt },
       { routineName: "Stale check", seenAt: stampAt },
@@ -3192,10 +3192,35 @@ describe("RoutineManager", () => {
     expect(frames).toHaveLength(2);
     expect(frames.map((frame) => frame.run.seenAt)).toEqual([stampAt, stampAt]);
 
-    expect(h.manager.markAllSeen()).toEqual([]);
+    expect(h.manager.markAllSeen(() => true)).toEqual([]);
     const reloadedByName = new Map(new RoutineManager(h.options).listRuns().map((run) => [run.routineName, run]));
     expect(reloadedByName.get("Broken report")!.seenAt).toBe(stampAt);
     expect(reloadedByName.get("Stale check")!.seenAt).toBe(stampAt);
+  });
+
+  it("marks seen only the runs the predicate allows", async () => {
+    const h = harness();
+    const at = new Date(2026, 7, 17, 8, 1).getTime();
+    const kept = h.manager.create({ name: "Visible report", prompt: "Write it", botId: "maus-1", schedule: { type: "once", at } });
+    const other = h.manager.create({ name: "Other report", prompt: "Write it", botId: "maus-2", schedule: { type: "once", at } });
+    h.setNow(at);
+    await h.manager.tick();
+    for (const [eventId, threadId] of [["first", "thread-1"], ["second", "thread-2"]] as const) {
+      h.manager.handleRuntimeEvent({
+        eventId, provider: "fake", threadId,
+        createdAt: new Date().toISOString(), type: "turn.completed", ok: false, stopReason: "provider crashed",
+      });
+    }
+    const byRoutine = () => new Map(h.manager.listRuns().map((run) => [run.routineId, run]));
+    expect([byRoutine().get(kept.id)?.status, byRoutine().get(other.id)?.status]).toEqual(["failed", "failed"]);
+
+    h.emitted.length = 0;
+    const stamped = h.manager.markAllSeen((run) => run.botId === "maus-1");
+    expect(stamped.map((run) => run.routineId)).toEqual([kept.id]);
+    expect(byRoutine().get(kept.id)!.seenAt).toBeTypeOf("number");
+    expect(byRoutine().get(other.id)!.seenAt).toBeUndefined();
+    expect(h.emitted.filter((frame) => frame.kind === "routine.run").map((frame) => frame.run.routineId)).toEqual([kept.id]);
+    expect(h.manager.markAllSeen((run) => run.botId === "maus-1")).toEqual([]);
   });
 
   it("rolls the mark-all sweep back when its save fails", async () => {
@@ -3216,7 +3241,7 @@ describe("RoutineManager", () => {
 
     h.emitted.length = 0;
     const save = vi.spyOn(h.manager as unknown as { save(): void }, "save").mockImplementationOnce(() => { throw new Error("fixture disk full"); });
-    expect(() => h.manager.markAllSeen()).toThrow("fixture disk full");
+    expect(() => h.manager.markAllSeen(() => true)).toThrow("fixture disk full");
     expect(h.manager.listRuns()[0].seenAt).toBeUndefined();
     expect(h.emitted).toHaveLength(0);
     const persisted = new RoutineManager(h.options).listRuns().find((run) => run.routineName === routine.name);
@@ -3225,7 +3250,7 @@ describe("RoutineManager", () => {
     save.mockRestore();
     const stampAt = new Date(2026, 7, 18, 8, 0).getTime();
     h.setNow(stampAt);
-    expect(h.manager.markAllSeen()).toMatchObject([{ routineName: routine.name, seenAt: stampAt }]);
+    expect(h.manager.markAllSeen(() => true)).toMatchObject([{ routineName: routine.name, seenAt: stampAt }]);
   });
 
   it("clears only the saved runs the caller may see and never one in progress", async () => {

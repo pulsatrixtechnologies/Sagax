@@ -770,8 +770,8 @@ struct TasksRoutinesView: View {
     }
 
     private func markAllSeen() async {
-        let updated = await session.markAllRoutineRunsSeen()
-        runs = RoutineRunLog.replacing(runs, with: updated)
+        let seen = await session.markAllRoutineRunsSeen()
+        runs = RoutineRunLog.stamping(runs, with: seen)
     }
 }
 

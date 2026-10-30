@@ -464,7 +464,7 @@ private final class RunCallStub: URLProtocol {
     override func startLoading() {
         Self.requests.append(request)
         let run = #"{"id":"run-1","routineId":"r","routineName":"N","botId":"b","runOn":"maus","scheduledFor":1,"status":"cancelled","manual":false,"createdAt":1,"seenAt":2}"#
-        let body = request.url?.path.hasSuffix("seen-all") == true ? #"{"runs":[\#(run)]}"# : #"{"run":\#(run)}"#
+        let body = request.url?.path.hasSuffix("seen-all") == true ? #"{"ids":["run-1"],"count":1,"seenAt":2,"runs":[]}"# : #"{"run":\#(run)}"#
         let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
                                        headerFields: ["Content-Type": "application/json"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
@@ -486,9 +486,30 @@ final class RoutineRunCallsTests: XCTestCase {
         XCTAssertEqual(cancelled.status, "cancelled")
         _ = try await client.markRoutineRunSeen(id: "run-1")
         let all = try await client.markAllRoutineRunsSeen()
+        XCTAssertEqual(all.ids, ["run-1"])
         XCTAssertEqual(all.count, 1)
+        XCTAssertEqual(all.seenAt, 2)
         XCTAssertEqual(RunCallStub.requests.map { "\($0.httpMethod ?? "") \($0.url?.path ?? "")" }, [
             "POST /api/routine-runs/run-1/cancel", "POST /api/routine-runs/run-1/seen", "POST /api/routine-runs/seen-all",
         ])
+    }
+}
+
+final class RoutineRunsSeenTests: XCTestCase {
+    private func run(_ id: String, seenAt: Double? = nil) -> RoutineRun {
+        let json = #"{"id":"\#(id)","routineId":"r","routineName":"N","botId":"b","runOn":"maus","scheduledFor":1,"status":"failed","manual":false,"createdAt":1\#(seenAt.map { ",\"seenAt\":\($0)" } ?? "")}"#
+        return try! JSONDecoder().decode(RoutineRun.self, from: Data(json.utf8))
+    }
+
+    func testStampingMarksOnlyTheNamedRuns() {
+        let runs = [run("a"), run("b"), run("c", seenAt: 1)]
+        let stamped = RoutineRunLog.stamping(runs, with: RoutineRunsSeen(ids: ["a", "c"], count: 2, seenAt: 5))
+        XCTAssertEqual(stamped.map(\.seenAt), [5, nil, 1])
+    }
+
+    func testDecodesAnAnswerWithoutIds() throws {
+        let seen = try JSONDecoder().decode(RoutineRunsSeen.self, from: Data(#"{"runs":[]}"#.utf8))
+        XCTAssertEqual(seen.ids, [])
+        XCTAssertEqual(seen.count, 0)
     }
 }

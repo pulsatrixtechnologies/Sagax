@@ -11856,22 +11856,24 @@ describe("bot memory API", () => {
 
       const sweep = await api("POST", "/api/routine-runs/seen-all");
       expect(sweep.status).toBe(200);
-      const stampedIds = new Set<string>();
-      for (const run of sweep.body.runs as Array<{ id: string; routineId: string; seenAt?: number }>) {
-        if ([missedRoutineId, failingRoutineId].includes(run.routineId)) {
-          stampedIds.add(run.id);
-          expect(run.seenAt).toBeTypeOf("number");
-        }
-      }
+      // the answer names the runs by id, with a count and the stamp, nothing more
+      expect(Object.keys(sweep.body).sort()).toEqual(["count", "ids", "runs", "seenAt"]);
+      expect(sweep.body.runs).toEqual([]);
+      expect(sweep.body.count).toBe(sweep.body.ids.length);
+      expect(sweep.body.seenAt).toBeTypeOf("number");
+      const stampedIds = new Set<string>(sweep.body.ids as string[]);
       const snapshot = (await api("GET", "/api/routines")).body;
       const problems = [...mine(snapshot, missedRoutineId), ...mine(snapshot, failingRoutineId)]
         .filter((run) => ["failed", "missed"].includes(run.status));
       expect(problems).toHaveLength(2);
-      for (const run of problems) expect(stampedIds.has(run.id)).toBe(true);
+      for (const run of problems) {
+        expect(stampedIds.has(run.id)).toBe(true);
+        expect(run.seenAt).toBe(sweep.body.seenAt);
+      }
 
       const again = await api("POST", "/api/routine-runs/seen-all");
       expect(again.status).toBe(200);
-      expect((again.body.runs as Array<{ id: string }>).filter((run) => stampedIds.has(run.id))).toEqual([]);
+      expect((again.body.ids as string[]).filter((id) => stampedIds.has(id))).toEqual([]);
     } finally {
       if (missedRoutineId) await api("DELETE", `/api/routines/${missedRoutineId}`).catch(() => undefined);
       if (failingRoutineId) await api("DELETE", `/api/routines/${failingRoutineId}`).catch(() => undefined);

@@ -3418,11 +3418,11 @@ final class Session: ObservableObject {
         catch { actionError = error.localizedDescription; return nil }
     }
 
-    /// "Mark all as read" (AU9): the runs it changed.
-    func markAllRoutineRunsSeen() async -> [RoutineRun] {
-        guard let client else { return [] }
+    /// "Mark all as read" (AU9): the ids of the runs it changed.
+    func markAllRoutineRunsSeen() async -> RoutineRunsSeen {
+        guard let client else { return RoutineRunsSeen() }
         do { return try await client.markAllRoutineRunsSeen() }
-        catch { actionError = error.localizedDescription; return [] }
+        catch { actionError = error.localizedDescription; return RoutineRunsSeen() }
     }
 
     /// A routine attachment (AU14): the file goes to the computer, the
