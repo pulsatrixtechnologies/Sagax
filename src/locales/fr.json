@@ -920,7 +920,7 @@
   "botPanel.permissions.approvalDraft": "S'applique à toutes les conversations du nouveau bot : routines, travail délégué et travail qu'un autre bot ou un client IA envoie ici.",
   "botPanel.permissions.approvalHelp": "S'applique à toutes les conversations de ce bot d'un coup : routines, travail délégué et travail qu'un autre bot ou un client IA envoie ici. Une conversation garde son propre niveau seulement si vous l'y avez choisi ; Actualiser les permissions la ramène à ce niveau.",
   "botPanel.permissions.proactive": "Proactif",
-  "botPanel.permissions.proactiveHelp": "Si ce bot peut agir de lui-même : remarquer quelque chose (un nouveau courriel, une réunion à venir, une exécution terminée) et commencer du travail sans qu'on le lui demande. Une écriture, un envoi, un paiement ou le contact d'une vraie personne passe toujours d'abord par une carte d'approbation avec essai à blanc; l'observation en lecture seule est libre. Désactivé par défaut.",
+  "botPanel.permissions.proactiveHelp": "Si ce bot peut agir de lui-même : remarquer quelque chose (un nouveau courriel, une réunion à venir, une exécution terminée) et commencer du travail sans qu'on le lui demande. Une écriture, un envoi, un paiement ou le contact d'une vraie personne passe toujours d'abord par une carte d'approbation avec essai à blanc; l'observation en lecture seule est libre. Suivre les règles d'approbation par défaut.",
   "botPanel.permissions.proactive.off": "Désactivé",
   "botPanel.permissions.proactive.propose": "Proposer seulement",
   "botPanel.permissions.proactive.read-auto": "Lire seul, carte pour agir",

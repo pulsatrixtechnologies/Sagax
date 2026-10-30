@@ -1881,6 +1881,19 @@ describe("harness HTTP API", () => {
     expect(after.body.groups).toHaveLength(before.body.groups.length);
   });
 
+  // 0.8.19: a new bot is proactive, and an "off" the person picks is stored
+  // as "off" so it stays off when the store reads absent as the default.
+  it("creates a proactive bot and keeps an off the person picks", async () => {
+    const bot = (await api("POST", "/api/bots")).body.bot;
+    expect(bot.proactiveMode).toBe("follow-rules");
+    const off = await api("PATCH", `/api/bots/${bot.id}`, { proactiveMode: "off" });
+    expect(off.status).toBe(200);
+    expect(off.body.bot.proactiveMode).toBe("off");
+    const listed = (await api("GET", "/api/bots?messages=0")).body.bots.find((candidate: { id: string }) => candidate.id === bot.id);
+    expect(listed.proactiveMode).toBe("off");
+    await api("DELETE", `/api/bots/${bot.id}`);
+  });
+
   it("adds and removes room members through PATCH", async () => {
     const [first, second, third] = await Promise.all([
       api("POST", "/api/bots"),

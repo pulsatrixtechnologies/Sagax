@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { z } from "zod";
 
 import { writeFileAtomic, writeFileAtomicIfChanged } from "./atomic.ts";
+import { PROACTIVE_MODE_DEFAULT } from "../shared/proactive-mode.ts";
 import { commitBotChange, keptRevocation, saveBotsFor } from "./bots-save.ts";
 import { applyHumanIds } from "./channel-membership.ts";
 import { parseToolScope, toolScopeWidens } from "../shared/tool-scope.ts";
@@ -902,6 +903,16 @@ export class Store {
       const host = recordedBotHost(b.host);
       if (JSON.stringify(host) !== JSON.stringify(b.host)) {
         b.host = host;
+        botsMigrated = true;
+      }
+    }
+    // 0.8.19: every bot is proactive by default. A record that never stored
+    // a mode (the person never chose one: before 0.8.19 "off" was stored as
+    // nothing) takes the default, written once so every client reads it. A
+    // mode the person chose, "off" included since 0.8.19, is kept.
+    for (const b of this.bots) {
+      if (b.proactiveMode === undefined || b.proactiveMode === null) {
+        b.proactiveMode = PROACTIVE_MODE_DEFAULT;
         botsMigrated = true;
       }
     }
@@ -2222,6 +2233,8 @@ export class Store {
       modelSelection: this.newBotSelection(profile.modelSelection),
       approvalMode: startMode,
       autoApprove: startMode === "auto",
+      // 0.8.19: proactive by default (shared/proactive-mode.ts)
+      proactiveMode: PROACTIVE_MODE_DEFAULT,
       resumeCursors: {},
       createdAt: Date.now(),
       host: { kind: "fleet" },
