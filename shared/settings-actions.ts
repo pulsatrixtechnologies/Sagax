@@ -256,6 +256,12 @@ add({
   classes: always("rule-change"),
   approvalTo: (v) => String(v),
 });
+// 2026-10-30: how the bot acts on emails, calendar entries, failed runs,
+// bots' posts and webhooks on its own (server/proactive-wake.ts). Absent
+// reads as follow-rules; a wider mode is a wider "runs without asking".
+botField("bot.proactiveMode", "proactiveMode", "enum:off|propose|read-auto|follow-rules",
+  "Proactive mode (off, propose = a proposal card, read-auto = reads and prepares on its own, follow-rules = acts at its approval level and rules; absent = follow-rules)",
+  "Bot editor > Permissions > Proactive", always("rule-change"));
 add({
   key: "bot.primary", family: "bot", target: "bot", value: "boolean", label: "Primary Bot", where: "Bot editor > Permissions > Primary Bot",
   read: botRead("chiefOfStaff"),

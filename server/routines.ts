@@ -27,6 +27,7 @@ import { awayDecision, awayReportDue, loadAwaySkips, recordAwaySkip, type AwayVe
 import type { GroupGoalRunStatus } from "../shared/group-goal-run.ts";
 import type { RoutineRequestOperation } from "../shared/routine-request.ts";
 import { normalizeCronSchedule, nextCronRuns, type RoutineCronSchedule } from "../shared/routine-schedule.ts";
+import type { ProactiveMode } from "../shared/proactive-mode.ts";
 import {
   applyTiming,
   cappedWindow,
@@ -346,8 +347,21 @@ export interface RoutineRun {
   memoryHint?: RoutineMemoryHint;
   /** 2026-10-26: this failure paused its routine (failed runs in a row). */
   autoPaused?: { failures: number };
+  /** 2026-10-30: a proactive wake (server/proactive-wake.ts), not a routine:
+   * the mode it was started in (read-auto runs at Ask), the hops of the
+   * chain that led to it, confined when an email woke it, accepted when the
+   * person said yes to its proposal. */
+  proactive?: RoutineRunProactive;
   createdAt: number;
   seenAt?: number;
+}
+
+export interface RoutineRunProactive {
+  mode: ProactiveMode;
+  hops: number;
+  sources: string[];
+  confined?: true;
+  accepted?: true;
 }
 
 /** Similar work the organization memory knew of before a run (organization
@@ -833,6 +847,7 @@ function cloneRun(run: RoutineRun): RoutineRun {
     attachments: cloneAttachments(run.attachments),
     denials: run.denials ? [...run.denials] : undefined,
     ...(run.memoryHint ? { memoryHint: structuredClone(run.memoryHint) } : {}),
+    ...(run.proactive ? { proactive: { ...run.proactive, sources: [...run.proactive.sources] } } : {}),
   };
 }
 
@@ -2250,6 +2265,44 @@ export class RoutineManager {
       // may be awaiting rather than replacing them with cloned snapshots.
       this.runs = previousRuns;
       this.webhookRunReceipts = previousReceipts;
+      throw error;
+    }
+    this.emitRun(run);
+    queueMicrotask(() => this.tickInBackground());
+    return cloneRun(run);
+  }
+
+  /** 2026-10-30: a proactive wake (server/proactive-wake.ts) through the
+   * same dispatcher as a webhook's run: its own hidden task, reported into
+   * the bot's one conversation only when it has something for the person. */
+  enqueueProactive(input: { botId: string; name: string; prompt: string; proactive: RoutineRunProactive }): { id: string } {
+    this.assertWritable();
+    if (this.options.botState(input.botId) === "missing") {
+      throw Object.assign(new Error("The assigned MAUS no longer exists"), { status: 410 });
+    }
+    const now = this.now();
+    const run: RoutineRun = {
+      id: randomUUID(),
+      routineId: `proactive:${input.botId}`,
+      routineName: input.name,
+      prompt: input.prompt,
+      target: "bot",
+      botId: input.botId,
+      runOn: "maus",
+      scheduledFor: now,
+      status: "queued",
+      manual: false,
+      // outside data, like a webhook's: fenced, unattended
+      triggerSource: "webhook",
+      attachments: [],
+      proactive: { ...input.proactive, sources: [...input.proactive.sources] },
+      createdAt: now,
+    };
+    const previousRuns = this.runs.slice();
+    this.runs.push(run);
+    try { this.save(); }
+    catch (error) {
+      this.runs = previousRuns;
       throw error;
     }
     this.emitRun(run);

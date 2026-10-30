@@ -385,6 +385,8 @@ export function verificationServerEnvironment(parentEnv: NodeJS.ProcessEnv, data
   // HTTP API (Workspace is always Auto otherwise, the owner 2026-10-18) opts in
   // with this test seam; nothing else turns it on.
   if (parentEnv.SAGAX_TEST_FIXED_WORKSPACE === "1") Object.assign(childEnv, { SAGAX_TEST_FIXED_WORKSPACE: "1", SAGAX_TEST_SEAMS: "1" });
+  // Proactive wakes gather events for 30 s; a suite shortens the window.
+  if (/^\d+$/.test(parentEnv.SAGAX_PROACTIVE_GATHER_MS ?? "")) childEnv.SAGAX_PROACTIVE_GATHER_MS = parentEnv.SAGAX_PROACTIVE_GATHER_MS;
   // The fake engine's own knobs (mode, replies, tool calls) are the one thing
   // a caller may script into the child: FAKE_CLAUDE_* crosses, nothing else.
   for (const [key, value] of Object.entries(parentEnv)) {

@@ -129,3 +129,28 @@ describe("canDismissOptionCard", () => {
     })).toBe(true);
   });
 });
+
+describe("a proactive proposal (2026-10-30)", () => {
+  const proposal = msg({
+    id: "prop",
+    kind: "options",
+    card: {
+      title: "Nova offers to handle this",
+      subtitle: "alex@example.com: Invoice 4. Shall I handle it?",
+      options: ["Yes, handle it", "No thanks"],
+      proactiveProposal: { id: "p1" },
+    },
+  });
+  const user = msg({ id: "u1", role: "user", kind: "text", text: "Something else" });
+
+  it("stays while the person talks about something else, until it is answered", () => {
+    expect(shouldHideOnboardingCard(proposal, [proposal, user])).toBe(false);
+  });
+
+  it("offers its two choices and no free-text row", () => {
+    const html = renderToStaticMarkup(createElement(StoreProvider, null, createElement(OptionCard, { botId: "b", threadId: "t", message: proposal })));
+    expect(html).toContain("Yes, handle it");
+    expect(html).toContain("No thanks");
+    expect(html).not.toContain(t("question.other"));
+  });
+});

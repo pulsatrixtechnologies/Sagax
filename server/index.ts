@@ -103,7 +103,8 @@ import {
   type AppliedApprovalLevel,
   type ApprovalMode,
 } from "../shared/approval-mode.ts";
-import { isProactiveMode } from "../shared/proactive-mode.ts";
+import { isProactiveMode, proactiveModeFor } from "../shared/proactive-mode.ts";
+import { ProactiveProposals, ProactiveWaker, proactivePrompt, textNamesBot, proactiveWakePrompt, proposalCardWords, type ProactiveEvent, type ProactiveSource, type ProactiveWakeBatch } from "./proactive-wake.ts";
 import { actorForTurn, botActFrameAllowed, fillPluginBot, type RouteTarget, type TurnFacts } from "../shared/bot-act.ts";
 import { createBotActService, type BotActAnswerer, type BotActResult, type BotActService, type PerformActor } from "./bot-act.ts";
 import { askedBotChange, createSettingsActions } from "./settings-actions.ts";
@@ -1079,7 +1080,7 @@ import { gzipTunnelReplies, json, onJsonBody, parsedBodyOf, readBody } from "./h
 import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotInboundMailReadRoutes } from "./routes/bot-inbound-mail.ts";
-import { BOT_MAIL_ASSERTION_ACTORS, botmailConfinedInternalRefusal, botmailRunConfined, createBotInboundMailRoute } from "./bot-inbound-mail.ts";
+import { BOT_MAIL_ASSERTION_ACTORS, botmailConfinedInternalRefusal, botmailEvent, botmailRunConfined, createBotInboundMailRoute, senderDomain } from "./bot-inbound-mail.ts";
 import { TELEPHONY_ASSERTION_ACTORS, createBotInboundTelephonyRoute } from "./bot-inbound-telephony.ts";
 import { SmsConversation } from "./sms-conversation.ts";
 import { isRelaySource } from "../shared/trigger-sources.ts";
@@ -9173,6 +9174,10 @@ const approvalModeForTurn = (bot: BotRecord, peerInitiated = false, threadId = b
   if (cloudGuestDriven(threadId)) return "ask";
   // A mail-woken routine run (bot email, S2): Ask, whatever the bot's level.
   if (botmailConfined(threadId)) return "ask";
+  // 2026-10-30: a proactive wake in "read and prepare on my own" reads by
+  // itself and cards every write: Ask, unless the bot is in Full, where the
+  // ordinary approval path answers (proactiveGate).
+  if (proactiveReadAutoTurn(threadId) && stored !== "full") return "ask";
   const mode = approvalModeForOrigin(approvalModeFor(bot), { peerInitiated });
   if (!supportsApprovalMode(bot.modelSelection, mode)) {
     return "ask";
@@ -21600,6 +21605,13 @@ async function startTurn(
     // the call expired without a hang-up: its session is gone with it
     voiceSessions.end(threadId);
   }
+  // 2026-10-30: a proactive wake runs on the fast model when there is one,
+  // the same pick as a call turn (#1694): most wakes are a quick look.
+  // Auto keeps its own pick; a request that needed a connector keeps it.
+  if (!voiceTurnPick && !autoTurn && !connectorSwitch && !opts?.warmOnly && opts?.automationSource === "webhook" && activeRoutineRunForThread(threadId)?.proactive) {
+    const wakePick = voicePickForTurn(bot, autoBaseSelection, resolveTurnSpeaker({ speaker: opts?.speaker, automationSource: opts?.automationSource }), botmailConfined(threadId));
+    if (wakePick) bot = { ...bot, modelSelection: wakePick.selection };
+  }
   // Routines and legacy peer delivery already have their own completion
   // owners. Only ordinary chats opt into this scheduler; its child turns
   // carry an exact node id rather than inheriting a routine's lifetime.
@@ -23203,6 +23215,8 @@ async function startTurn(
         { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(liveBot ?? bot, instance, speaker, { level: promptApprovalLevel, relay: Boolean(integrations.agents) && commsDepth === 0 }) },
         // the level this turn really runs at (approvalModeForTurn), so Full never asks for a typed GO
         { id: "approval-level", label: "Approval level", text: approvalLevelPrompt(promptApprovalLevel) },
+        // 2026-10-30: the bot knows it is proactive, and how (server/proactive-wake.ts)
+        { id: "proactive", label: "Proactive", text: proactivePrompt(proactiveModeFor(liveBot ?? bot)) },
         // what this turn reaches, in one line: "what connectors do you have" needs no tool call (server/turn-reach.ts)
         { id: "reach", label: "Reach", text: turnReachPrompt(liveBot ?? bot, instance, speaker, threadId, integrations, Boolean(mountedComputer)) },
         { id: "browser", label: "Browser", text: integrations.browser ? BUILT_IN_BROWSER_SYSTEM_PROMPT + myChromePromptFor(bot, threadId) : "" },
@@ -23926,7 +23940,9 @@ function routineRunNeedsPerson(run: RoutineRun): boolean {
  * (2026-10-22): the routine's own choice, else the installation default
  * (features.routinesInConversation). A deleted routine falls back to the
  * default. Approvals, questions and errors surface regardless. */
-function routineEffectivePostResults(run: Pick<RoutineRun, "routineId">): boolean {
+function routineEffectivePostResults(run: Pick<RoutineRun, "routineId" | "proactive">): boolean {
+  // a proactive wake reports whenever it has something (quiet otherwise)
+  if (run.proactive) return true;
   const own = routines?.getRoutine(run.routineId)?.postResults;
   return own ?? routinesInConversationEnabled(cfg);
 }
@@ -24626,6 +24642,13 @@ routines = new RoutineManager({
     const detail = said ? `${run.routineName}: ${said}` : run.routineName;
     const notificationBot = routineSourceOwner(run)?.bot ?? bot;
     notify(deliverableNotification("routine-failed", notificationBot, routineSourceThread(run) ?? run.threadId ?? bot.threadId, detail));
+    // 2026-10-30: the bot may look into its own failed run (never a failed wake of its own)
+    offerProactive({
+      botId: bot.id, source: "run", key: `run:${run.id}`, failed: true,
+      label: `${run.webhookId ? "Webhook run" : "Routine"} failed: ${redactSecretsInText(run.routineName).slice(0, 80)}`,
+      detail: `Run ${run.id} of "${redactSecretsInText(run.routineName)}" failed: ${redactSecretsInText(said ?? "no reason given")}`,
+      ...(run.proactive ? { ownWake: true, hops: run.proactive.hops } : {}),
+    });
     reportIncident({ kind: "routine-failed", bot, threadId: run.threadId ?? bot.threadId, detail, routine: { routineId: run.routineId, ...(run.runAs ? { runAs: run.runAs } : {}) } });
   },
   onRunDeferred: (run, alert) => {
@@ -24648,6 +24671,136 @@ routines = new RoutineManager({
       { title: "Routines skipped while you were away" }));
   },
 });
+// ── proactive wakes (2026-10-30, server/proactive-wake.ts) ───────────
+// The events Sagax already receives wake the bot they concern, per its
+// proactive mode: a proposal card (propose), or a background run that
+// reports into its one conversation only when it has something (read-auto,
+// follow-rules). One line in that conversation's Events tab per wake.
+const proactiveProposals = new ProactiveProposals(process.env.VITEST ? null : join(DATA_DIR, "proactive-proposals.json"));
+const proactiveWaker = new ProactiveWaker({
+  bot: (botId) => {
+    const bot = store.bot(botId);
+    // a hidden or temporary bot has no conversation to act in
+    return bot && !bot.hidden && !bot.temporary ? bot : undefined;
+  },
+  log: (botId, line) => proactiveEventsLine(botId, line),
+  wake: (batch) => startProactiveWake(batch),
+  propose: (batch) => postProactiveProposal(batch),
+  // the verification fixtures shorten the gathering window
+  ...(Number(process.env.SAGAX_PROACTIVE_GATHER_MS) > 0 ? { gatherMs: Number(process.env.SAGAX_PROACTIVE_GATHER_MS) } : {}),
+});
+
+/** A wake in "read and prepare on my own" runs at Ask (approvalModeForTurn). */
+function proactiveReadAutoTurn(threadId: string): boolean {
+  const wake = activeRoutineRunForThread(threadId)?.proactive;
+  return wake?.mode === "read-auto" && wake.accepted !== true;
+}
+
+/** One event for one bot; never throws into the path that saw it. */
+function offerProactive(event: ProactiveEvent): void {
+  try {
+    proactiveWaker.offer(event);
+  } catch (error) {
+    console.warn(`[proactive] offer failed: ${error instanceof Error ? error.name : "error"}`);
+  }
+}
+
+/** A bot's post in a room, offered to the room's other bots: it concerns
+ * one of them when it names it (@name or the name). */
+function offerRoomPostToBots(room: GroupRecord, poster: BotRecord, text: string, messageId: string, hops: number): void {
+  for (const memberId of room.memberIds) {
+    if (memberId === poster.id) continue;
+    const member = store.bot(memberId);
+    if (!member) continue;
+    const mentionsBot = textNamesBot(text, member.name);
+    offerProactive({
+      botId: member.id, source: "bot", key: `room-post:${messageId}`, fromBotId: poster.id, hops, mentionsBot,
+      label: `Post by ${poster.name} in ${room.name}`,
+      detail: `Room: ${room.name} (id ${room.id})\nFrom: ${poster.name}\n\n${text}`,
+    });
+  }
+}
+
+/** The Events line of a wake, in the bot's one conversation. */
+function proactiveEventsLine(botId: string, line: string): void {
+  const bot = store.bot(botId);
+  const threadId = bot ? botMainThread(bot.id) ?? bot.threadId : undefined;
+  if (threadId) publishVoiceNotice(threadId, line);
+}
+
+const PROACTIVE_RUN_NAMES: Record<ProactiveSource, string> = {
+  mail: "email",
+  calendar: "calendar",
+  run: "failed run",
+  bot: "bot post",
+  webhook: "webhook",
+};
+
+/** read-auto and follow-rules (or a proposal the person accepted): a
+ * background run of the bot, like a webhook's run. */
+function startProactiveWake(batch: ProactiveWakeBatch, accepted = false): void {
+  if (!routines) return;
+  const sources = [...new Set(batch.events.map((event) => event.source))];
+  routines.enqueueProactive({
+    botId: batch.botId,
+    name: `Proactive: ${sources.map((source) => PROACTIVE_RUN_NAMES[source]).join(", ")}`,
+    prompt: proactiveWakePrompt(batch, { accepted }),
+    proactive: {
+      mode: batch.mode,
+      hops: batch.hops,
+      sources,
+      ...(batch.confined ? { confined: true as const } : {}),
+      ...(accepted ? { accepted: true as const } : {}),
+    },
+  });
+}
+
+/** propose: one card in the bot's conversation, no model call. The person's
+ * yes starts the wake at the bot's level (POST /api/bots/:id/proactive/:id). */
+function postProactiveProposal(batch: ProactiveWakeBatch): void {
+  const bot = store.bot(batch.botId);
+  if (!bot || bot.hidden) return;
+  const threadId = conversationOrStart(bot);
+  if (!threadId || store.isConfidentialThread(threadId)) return;
+  const owner = effectiveBotOwner(bot);
+  const words = proposalCardWords(bot.name, batch.events, batch.more, languageOfPerson(owner && isPrincipalId(owner) ? owner : undefined));
+  const proposal = proactiveProposals.add({
+    botId: bot.id, threadId, messageId: "", events: batch.events, more: batch.more, hops: batch.hops, confined: batch.confined,
+  });
+  const message = store.appendMessage(threadId, {
+    role: "bot",
+    kind: "options",
+    text: words.subtitle,
+    card: { title: words.title, subtitle: words.subtitle, options: [words.accept, words.decline], proactiveProposal: { id: proposal.id } },
+  });
+  proactiveProposals.setMessage(proposal.id, message.id);
+  store.patchTask(bot.id, threadId, { unread: true });
+  notify(deliverableNotification("question", bot, threadId, words.subtitle, { title: words.title }));
+}
+
+/** The person's answer to a proposal card: accept runs it, at the bot's own
+ * level and rules (their yes is the request), decline closes the card. */
+function answerProactiveProposal(bot: BotRecord, proposalId: string, accept: boolean): { status: number; body: Record<string, unknown> } {
+  const open = proactiveProposals.get(proposalId);
+  if (!open || open.botId !== bot.id) return { status: 404, body: { error: "no such proposal" } };
+  // the caller must be able to write in that conversation (throws 404)
+  routeThreadId(bot, open.threadId);
+  const proposal = proactiveProposals.answer(proposalId, accept ? "accepted" : "declined");
+  if (!proposal) return { status: 409, body: { error: "this proposal was already answered" } };
+  const message = store.messagesFor(proposal.threadId).find((row) => row.id === proposal.messageId);
+  if (message?.card) {
+    const picked = (accept ? message.card.options[0] : message.card.options[1]) ?? (accept ? "accept" : "decline");
+    store.patchMessage(proposal.threadId, message.id, { card: { ...message.card, answered: picked, answeredText: picked } });
+  }
+  if (accept) {
+    startProactiveWake({
+      botId: bot.id, mode: proactiveModeFor(bot), events: proposal.events, more: proposal.more, hops: proposal.hops,
+      confined: proposal.confined, reasons: [],
+    }, true);
+  }
+  return { status: 200, body: { ok: true, accepted: accept } };
+}
+
 // A Cloud home is personal (server/cloud-owner.ts): every stored session
 // without admin scope is revoked and what it opened or wrote is nobody's;
 // once (and after a restore) the earlier keys are settled. Before anything
@@ -25785,10 +25938,12 @@ const webhooks = new WebhookManager({
   // that bot's selection, including a live conversation.
   post: (botId, threadId, text) => {
     if (!store.bot(botId)) return;
-    store.appendMessage(threadId, { role: "bot", kind: "text", text, webhookPost: true });
+    const posted = store.appendMessage(threadId, { role: "bot", kind: "text", text, webhookPost: true });
     // News in its own thread like any reply: unread, so an activity row
     // reaches it while threads are hidden.
     store.patchTask(botId, threadId, { unread: true });
+    // 2026-10-30: no run of its own, so the bot may act on the news
+    offerProactive({ botId, source: "webhook", key: `webhook-post:${posted.id}`, label: "Webhook post", detail: text });
   },
   // Create-on-first-use, never activated (so it never steals the bot's
   // live selection the way POST /api/bots/:id/tasks does), reused forever
@@ -28199,7 +28354,18 @@ function ensureCalendarCallRoom(call: CalendarCall): GroupRecord {
 function deliverCalendarCall(call: CalendarCall, scheduledFor: number): void {
   // A one-bot calendar entry remains a reminder that opens that bot's chat.
   // Multi-bot entries are rooms and begin with the shared event prompt.
-  if (call.botIds.length < 2) return;
+  // 2026-10-30: the one bot may act on it (its proactive mode).
+  if (call.botIds.length < 2) {
+    const botId = call.botIds[0];
+    if (botId) {
+      offerProactive({
+        botId, source: "calendar", key: `calendar:${call.id}:${scheduledFor}`,
+        label: "Calendar entry due", summary: call.name,
+        detail: [`Entry: ${call.name}`, `Starts: ${new Date(scheduledFor).toISOString()}`, `Length: ${call.durationMinutes} minutes`, call.description.trim() ? `Description: ${call.description.trim()}` : ""].filter(Boolean).join("\n"),
+      });
+    }
+    return;
+  }
   let group: GroupRecord;
   try {
     group = ensureCalendarCallRoom(call);
@@ -31672,6 +31838,8 @@ function botMailResync(): void {
  * trigger's owner turned on full tools. */
 function botmailConfined(threadId: string): boolean {
   try {
+    // 2026-10-30: a proactive wake an email started is confined the same way
+    if (activeRoutineRunForThread(threadId)?.proactive?.confined) return true;
     return botmailRunConfined(activeRoutineRunForThread(threadId), (id) => webhooks.list().find((hook) => hook.id === id) ?? null);
   } catch {
     return false;
@@ -31692,6 +31860,18 @@ const inboundMail = createBotInboundMailRoute({
   owner: (id) => botMailOwner(id),
   triggers: (botId) => webhooks.list().filter((hook) => hook.enabled && hook.botId === botId && hook.source?.type === "botmail").map((hook) => hook.id),
   ingest: (id, event, key) => webhooks.ingest(id, event, key),
+  // 2026-10-30: an email no routine took wakes the bot (its proactive
+  // mode), confined like a mail-woken run
+  unhandled: (botId, mail) => {
+    const event = botmailEvent(mail);
+    const domain = senderDomain(mail.from.address);
+    offerProactive({
+      botId, source: "mail", key: `mail:${mail.dedupeKey}`, confined: true,
+      label: `Email from ${domain || "an unknown domain"}`,
+      summary: `${mail.from.address}: ${mail.subject.trim() || "(no subject)"}`,
+      detail: `Subject: ${mail.subject.trim() || "(no subject)"}\n${event.text ?? ""}`,
+    });
+  },
   record: (row) => appendAdminAction(DATA_DIR, {
     category: "webhook",
     action: "bot-mail.delivered",
@@ -45463,6 +45643,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         };
         if (owner.group) chip.from = { botId: poster.id, name: poster.name, color: poster.color };
         store.appendMessage(fromThreadId, chip);
+        // 2026-10-30: the room's other bots may act on a post that names
+        // them; a chain of bots waking each other stops at the hop limit.
+        offerRoomPostToBots(room, poster, message, posted.id, (activeRoutineRunForThread(fromThreadId)?.proactive?.hops ?? 0) + 1);
         return json(res, 201, { ok: true, messageId: posted.id, roomName: room.name, attachedVoiceNote });
       }
       // start_thread: a bot opens a real thread — on itself for separate
@@ -50588,6 +50771,18 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       handoffs.stoppedByPerson(threadId);
       await interruptDirectThread(m[1], threadId);
       return json(res, 200, { ok: true, outcome: "stopped" });
+    }
+    // 2026-10-30: the person's one click on a proactive proposal card
+    m = path.match(/^\/api\/bots\/([\w-]+)\/proactive\/([\w-]+)$/);
+    if (m && method === "POST") {
+      const bot = store.bot(m[1]);
+      if (!bot) return json(res, 404, { error: "no such bot" });
+      const body = await readBody(req);
+      if (!body || typeof body !== "object" || typeof (body as { accept?: unknown }).accept !== "boolean") {
+        return json(res, 400, { error: "accept must be true or false" });
+      }
+      const answer = answerProactiveProposal(bot, m[2], (body as { accept: boolean }).accept);
+      return json(res, answer.status, answer.body);
     }
     m = path.match(/^\/api\/bots\/([\w-]+)\/messages(?:\/(guarded))?$/);
     if (m && method === "POST") {
