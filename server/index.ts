@@ -46612,6 +46612,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           if (!mayCancelRoutineRun(auth, existing, target)) return json(res, 403, { error: "Only the bot's owner, the person this routine runs as or an admin can stop this run.", code: "run_now_not_allowed", permission: "routines.runNowAny" });
         }
       }
+      if (runMatch[2] === "seen") {
+        // Same rule as the listing and Mark all as read: a run the caller may
+        // not see answers like a missing one.
+        const target = routines!.listRuns().find((candidate) => candidate.id === runMatch[1]);
+        if (!target || !routineScopeDeps(auth, visible, viewerId).mine(target)) return json(res, 404, { error: "no such run" });
+      }
       const run = runMatch[2] === "cancel"
         ? await routines!.cancelRun(runMatch[1])
         : routines!.markSeen(runMatch[1]);

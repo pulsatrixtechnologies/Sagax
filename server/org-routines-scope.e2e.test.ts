@@ -248,6 +248,16 @@ posixOnly("Automations page: routine scope", () => {
     const daveRuns = (await api("GET", "/api/routines", auth.dave)).body.runs as Array<{ id: string; seenAt?: number }>;
     expect(daveRuns.find((run) => run.id === daves.id)?.seenAt).toBeUndefined();
 
+    // Marking one run seen follows the listing's visibility: another person's
+    // run answers 404 and stays unchanged; one's own run is stamped.
+    const foreign = await api("POST", `/api/routine-runs/${daves.id}/seen`, auth.bob);
+    expect(foreign.status, foreign.text).toBe(404);
+    expect(foreign.text).not.toContain("dave");
+    expect((await api("POST", "/api/routine-runs/no-such-run/seen", auth.bob)).status).toBe(404);
+    const daveAfter = (await api("GET", "/api/routines", auth.dave)).body.runs as Array<{ id: string; seenAt?: number }>;
+    expect(daveAfter.find((run) => run.id === daves.id)?.seenAt).toBeUndefined();
+    expect((await api("POST", `/api/routine-runs/${daves.id}/seen`, auth.dave)).status).toBe(200);
+
     // With the right to run Dave's bot, Bob still may not stop Dave's run:
     // neither the bot's owner nor the person it runs as.
     expect((await api("PUT", `/api/bots/${botOf.dave}/grants`, auth.dave, { target: `user:${ids.bob}`, level: "run" })).status).toBe(200);
