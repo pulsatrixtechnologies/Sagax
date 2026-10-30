@@ -44,7 +44,7 @@ export const PROVIDER_VOICE_ID = /^[\w.-]{1,64}$/;
 /** Installed voice names can contain spaces, accents and parentheses. */
 export function isProviderVoiceId(provider: VoiceProviderId, value: string): boolean {
   return provider === "system" || provider === "chatterbox"
-    ? /^[^\x00-\x1f\x7f,:]{1,128}$/.test(value)
+    ? value.length > 0 && value.length <= 128 && !/[\p{Cc},:]/u.test(value)
     : PROVIDER_VOICE_ID.test(value);
 }
 

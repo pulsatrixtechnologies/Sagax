@@ -15,7 +15,7 @@ describe("Mistral provider", () => {
     const sent: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (url, init) => {
       if (String(url).endsWith("/models")) return Response.json({ data: [] });
-      sent.push((init?.headers as Record<string, string>).authorization);
+      sent.push((init?.headers as Record<string, string> | undefined)?.authorization ?? "");
       return new Response('data: {"choices":[{"delta":{"content":"Hello"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n', { headers: { "content-type": "text/event-stream" } });
     }));
     const instance = await create();
