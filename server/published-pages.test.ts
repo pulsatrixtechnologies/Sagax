@@ -3,12 +3,12 @@
 // ownership by the conversation's person, the wrapper and its sandboxed
 // frame, each access level, revocation, expiry, versions, caps and storage,
 // the separate pages origin, and a person's own pages only.
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createAgentCard, type AgentCardStore } from "./chat-widgets.ts";
 import { json, readBody } from "./harness/http.ts";
@@ -51,6 +51,55 @@ function proposed(pages: PublishedPages, ownerId?: string, extra: { botId?: stri
   if (!result.ok) throw new Error(result.error);
   return result;
 }
+
+describe("unreadable published-page registries", () => {
+  it.each(["{truncated", "null", '{"version":2,"pages":{}}', '{"version":2,"pages":[{"id":"bad"}]}'])("keeps a broken index intact and recovers after repair: %s", (broken) => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { pages, dir } = store();
+      pages.setPolicy({ linkSharing: false });
+      const { page } = proposed(pages);
+      const file = join(dir, "published-pages.json");
+      const saved = readFileSync(file, "utf8");
+      writeFileSync(file, broken);
+      expect(() => proposed(pages)).toThrow(/Repair published-pages.json/);
+      expect(() => pages.setPolicy({ linkSharing: true })).toThrow(/Repair published-pages.json/);
+      expect(() => pages.remove(page.id)).toThrow(/Repair published-pages.json/);
+      expect(readFileSync(file, "utf8")).toBe(broken);
+      expect(logged).toHaveBeenCalledTimes(1);
+      expect(logged.mock.calls.flat().join(" ")).not.toContain(broken);
+      writeFileSync(file, saved);
+      expect(pages.get(page.id)?.id).toBe(page.id);
+      expect(pages.policy().linkSharing).toBe(false);
+      expect(proposed(pages).page.id).not.toBe(page.id);
+    } finally { logged.mockRestore(); }
+  });
+
+  it("refuses a read error instead of treating the index as missing", () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { pages, dir } = store();
+      const file = join(dir, "published-pages.json");
+      mkdirSync(file);
+      expect(() => proposed(pages)).toThrow(/Repair published-pages.json/);
+      expect(statSync(file).isDirectory()).toBe(true);
+    } finally { logged.mockRestore(); }
+  });
+
+  it.each(["{truncated", "null", '{"version":1,"looks":[]}'])("does not overwrite unreadable looks and retries after repair: %s", (broken) => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { pages, dir } = store();
+      const file = join(dir, "published-pages-looks.json");
+      const look = { light: { "--color-panel": "#ffffff" } };
+      writeFileSync(file, broken);
+      expect(() => pages.setLook("pr_alice", look)).toThrow(/Repair published-pages-looks.json/);
+      expect(readFileSync(file, "utf8")).toBe(broken);
+      writeFileSync(file, '{"version":1,"looks":{}}');
+      expect(pages.setLook("pr_alice", look)).toMatchObject(look);
+    } finally { logged.mockRestore(); }
+  });
+});
 
 type Answer = { status: number; headers: Record<string, unknown>; body: string };
 function request(path: string, method = "GET", headers: Record<string, string> = {}): { req: IncomingMessage; res: ServerResponse; done: Promise<Answer> } {

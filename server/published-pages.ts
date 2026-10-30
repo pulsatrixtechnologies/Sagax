@@ -162,6 +162,8 @@ export class PublishedPages {
   /** Each person's look (src/lib/page-look.ts), kept apart from the index. */
   private readonly looksFile: string;
   private looksCache: Record<string, PageLook> | null = null;
+  private indexUnreadable = false;
+  private looksUnreadable = false;
 
   constructor(dataDir: string, clock: () => number = Date.now) {
     this.clock = clock;
@@ -221,7 +223,9 @@ export class PublishedPages {
     let stat: { mtimeMs: number; size: number };
     try {
       stat = statSync(this.file);
-    } catch {
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") this.refuseUnreadable("index");
+      this.indexUnreadable = false;
       this.cached = null;
       return [];
     }
@@ -229,10 +233,10 @@ export class PublishedPages {
     let pages: PageRecord[] = [];
     let policy: PagesPolicy = { ...DEFAULT_PAGES_POLICY };
     try {
-      const raw = JSON.parse(readFileSync(this.file, "utf8")) as { version?: unknown; pages?: unknown; policy?: unknown };
-      if (raw.version === 2 && Array.isArray(raw.pages)) {
-        pages = raw.pages.filter((page): page is PageRecord => isRecord(page) && typeof page.id === "string" && PAGE_ID.test(page.id) && Array.isArray(page.versions));
-      }
+      const raw: unknown = JSON.parse(readFileSync(this.file, "utf8"));
+      if (!isRecord(raw) || raw.version !== 2 || !Array.isArray(raw.pages)) throw new Error("invalid index");
+      pages = raw.pages.filter((page): page is PageRecord => isRecord(page) && typeof page.id === "string" && PAGE_ID.test(page.id) && Array.isArray(page.versions));
+      if (pages.length !== raw.pages.length || (raw.policy !== undefined && !isRecord(raw.policy))) throw new Error("invalid index");
       if (isRecord(raw.policy)) {
         policy = {
           linkSharing: typeof raw.policy.linkSharing === "boolean" ? raw.policy.linkSharing : DEFAULT_PAGES_POLICY.linkSharing,
@@ -240,8 +244,9 @@ export class PublishedPages {
         };
       }
     } catch {
-      pages = [];
+      this.refuseUnreadable("index");
     }
+    this.indexUnreadable = false;
     this.cached = { mtimeMs: stat.mtimeMs, size: stat.size, pages, policy };
     return pages;
   }
@@ -251,17 +256,29 @@ export class PublishedPages {
     const out: Record<string, PageLook> = {};
     try {
       const raw = JSON.parse(readFileSync(this.looksFile, "utf8")) as unknown;
-      if (isRecord(raw) && isRecord(raw.looks)) {
-        for (const [key, value] of Object.entries(raw.looks)) {
-          const look = sanitizePageLook(value);
-          if (look) out[key] = look;
-        }
+      if (!isRecord(raw) || raw.version !== 1 || !isRecord(raw.looks)) throw new Error("invalid looks");
+      for (const [key, value] of Object.entries(raw.looks)) {
+        const look = sanitizePageLook(value);
+        if (!look) throw new Error("invalid look");
+        out[key] = look;
       }
-    } catch {
-      // none yet: every page draws in the default look
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") this.refuseUnreadable("looks");
     }
+    this.looksUnreadable = false;
     this.looksCache = out;
     return out;
+  }
+
+  /** Never turn an unreadable registry into an empty one. Keep failures
+   * uncached so repairing the file lets the next request read it again. */
+  private refuseUnreadable(kind: "index" | "looks"): never {
+    const file = kind === "index" ? "published-pages.json" : "published-pages-looks.json";
+    const reported = kind === "index" ? this.indexUnreadable : this.looksUnreadable;
+    if (!reported) console.error(`published-pages: unreadable ${file}; keeping the file unchanged until it is repaired.`);
+    if (kind === "index") this.indexUnreadable = true;
+    else this.looksUnreadable = true;
+    throw Object.assign(new Error(`Saved published pages could not be read. Repair ${file} before using them.`), { status: 503 });
   }
 
   /** A person's look, as their app last sent it (2026-10-29): what a

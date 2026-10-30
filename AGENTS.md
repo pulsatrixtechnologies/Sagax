@@ -8551,6 +8551,12 @@ Parity with the reference design (audit items 10, 11, 14 and the emoji picker). 
 
 ## Published pages (2026-10-16, the reference design canvases)
 
+The page index and looks registry fail explicitly (503) when a saved file
+cannot be read or validated (#1731). Only ENOENT means no saved data. Never
+replace an unreadable registry with an empty one; the next request retries
+the read so repairing the file restores access without a restart. Log the
+file name once per failure, never its contents.
+
 A bot proposes a page (HTML, Markdown or a small one-file static app) with
 the agents tool `propose_page`; the person publishes it from its card
 (`shared/published-pages.ts`, store `server/published-pages.ts`, renderer
