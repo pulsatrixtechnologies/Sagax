@@ -184,7 +184,7 @@ export function createPersonalPluginRoutes(deps: Omit<BotPluginRouteDeps<{ id: s
   person: (auth: RequestAuth) => string | null;
 }): RouteHandler {
   return async (context) => {
-    if (context.path !== "/api/me/plugins" && !context.path.startsWith("/api/me/plugins/")) return PASS;
+    if (!/^\/api\/me\/plugins(?:\/|$)/.test(context.path)) return PASS;
     const person = deps.person(context.auth);
     if (!person) return context.json(context.res, 403, { error: "Sign in to manage your own capabilities.", code: "person_required" });
     const handler = createBotPluginRoutes({
