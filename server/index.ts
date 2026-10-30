@@ -24462,6 +24462,22 @@ const routineWatchDeps: RoutineWatchDeps = {
   now: () => Date.now(),
 };
 const routineWatchEvaluator = createRoutineWatchEvaluator(routineWatchDeps);
+// Recovery can synchronously offer failed-run events from the constructor.
+// Keep the waker ready so those events join its usual batch.
+const proactiveProposals = new ProactiveProposals(process.env.VITEST ? null : join(DATA_DIR, "proactive-proposals.json"));
+const proactiveWaker = new ProactiveWaker({
+  bot: (botId) => {
+    const bot = store.bot(botId);
+    // a hidden or temporary bot has no conversation to act in
+    return bot && !bot.hidden && !bot.temporary ? bot : undefined;
+  },
+  log: (botId, line) => proactiveEventsLine(botId, line),
+  wake: (batch) => startProactiveWake(batch),
+  propose: (batch) => postProactiveProposal(batch),
+  // the verification fixtures shorten the gathering window
+  ...(Number(process.env.SAGAX_PROACTIVE_GATHER_MS) > 0 ? { gatherMs: Number(process.env.SAGAX_PROACTIVE_GATHER_MS) } : {}),
+});
+
 routines = new RoutineManager({
   evaluateWatch: (routine, watch) => routineWatchEvaluator(routine, watch),
   forgetWatch: (routineId) => routineWatchStates.forget(routineId),
@@ -24786,19 +24802,7 @@ routines = new RoutineManager({
 // proactive mode: a proposal card (propose), or a background run that
 // reports into its one conversation only when it has something (read-auto,
 // follow-rules). One line in that conversation's Events tab per wake.
-const proactiveProposals = new ProactiveProposals(process.env.VITEST ? null : join(DATA_DIR, "proactive-proposals.json"));
-const proactiveWaker = new ProactiveWaker({
-  bot: (botId) => {
-    const bot = store.bot(botId);
-    // a hidden or temporary bot has no conversation to act in
-    return bot && !bot.hidden && !bot.temporary ? bot : undefined;
-  },
-  log: (botId, line) => proactiveEventsLine(botId, line),
-  wake: (batch) => startProactiveWake(batch),
-  propose: (batch) => postProactiveProposal(batch),
-  // the verification fixtures shorten the gathering window
-  ...(Number(process.env.SAGAX_PROACTIVE_GATHER_MS) > 0 ? { gatherMs: Number(process.env.SAGAX_PROACTIVE_GATHER_MS) } : {}),
-});
+
 
 /** A wake in "read and prepare on my own" runs at Ask (approvalModeForTurn). */
 function proactiveReadAutoTurn(threadId: string): boolean {
