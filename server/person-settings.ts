@@ -20,6 +20,7 @@ import {
   PERSONAL_BROWSER_PROFILE_PREFIX,
   type PersonalFeature,
 } from "../shared/person-settings.ts";
+import { cleanDisabledModels } from "../shared/offered-models.ts";
 import { writeFileAtomic } from "./atomic.ts";
 
 export const PERSON_SETTINGS_FILE = "person-settings.json";
@@ -30,6 +31,10 @@ export interface PersonalBrowserProfile { id: string; name: string }
 export interface PersonSettings {
   features: Partial<Record<PersonalFeature, boolean>>;
   browserProfiles: PersonalBrowserProfile[];
+  /** 2026-10-30 (lot 2): the models this person turned off for their own
+   * bots, Auto and voice, as `<engine>/<model>` (shared/offered-models.ts).
+   * Absent when none. */
+  disabledModels?: string[];
 }
 
 export class PersonSettingsError extends Error {
@@ -78,7 +83,8 @@ function parse(value: unknown): PersonSettings {
     seen.add(id);
     browserProfiles.push({ id, name });
   }
-  return { features, browserProfiles };
+  const disabledModels = cleanDisabledModels(raw.disabledModels);
+  return { features, browserProfiles, ...(disabledModels.length ? { disabledModels } : {}) };
 }
 
 export class PersonSettingsStore {
@@ -122,6 +128,15 @@ export class PersonSettingsStore {
       else throw new PersonSettingsError(`${key} must be true, false or null.`);
     }
     return this.save(principalId, { ...current, features });
+  }
+
+  /** 2026-10-30: the person's own model switches, the whole list. */
+  setDisabledModels(principalId: string, list: unknown): PersonSettings {
+    if (!Array.isArray(list)) throw new PersonSettingsError("disabledModels must be a list.");
+    const current = this.get(principalId);
+    const { disabledModels: _, ...rest } = current;
+    const next = cleanDisabledModels(list);
+    return this.save(principalId, { ...rest, ...(next.length ? { disabledModels: next } : {}) });
   }
 
   /** The whole list: an entry with no id is a new profile; an id must be one

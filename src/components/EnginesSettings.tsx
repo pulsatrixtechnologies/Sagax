@@ -29,6 +29,7 @@ import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
 import { DescribedRow, FIELD, FoldRow, HelpTip, PILL, PillSelect, SettingsGroup, requestSettingsCard, useSettingsCardOpen } from "./SettingsPrimitives";
 import { KeyList, ProviderKeyDialog } from "./settings/ProviderKeys";
 import { OpenAiCompatServers } from "./settings/OpenAiCompatServers";
+import { ModelSwitchesSettings } from "./settings/ModelSwitchesSettings";
 import { CloudAgentProvidersSettings, useCloudAgentProviders } from "./settings/CloudAgentProvidersSettings";
 import { VoiceProviderSettings } from "./settings/VoiceProviderSettings";
 import { PersonalVoiceKeys } from "./settings/PersonalVoiceKeys";
@@ -488,6 +489,8 @@ export function EnginesSettings() {
           Providers; the former Engines and Keys groups stay here, folded
           under "Former view", until the Models page replaces them. */}
       <ProvidersMovedNotice />
+      {/* 2026-10-30 (lot 2): one switch per model, two levels */}
+      <ModelSwitchesSettings />
       {legacyOpen && (
         <>
           <EnginesSection
