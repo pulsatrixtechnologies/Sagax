@@ -778,10 +778,13 @@ export function createProxyHandler(options: ProxyOptions) {
         socket.end("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
         return;
       }
-      if (!device.cloudDesktopAccess) {
+      // The stream is held under its device so that revoking the device, or
+      // its cloud desktop access, closes it (disconnectDevice below).
+      if (!device.cloudDesktopAccess || !device.id) {
         socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
         return;
       }
+      const viewerOwner = device.id;
       const mutationToken = options.mutationToken?.();
       if (options.mutationToken && !mutationToken) {
         socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
@@ -808,9 +811,25 @@ export function createProxyHandler(options: ProxyOptions) {
         headers,
       });
       upstream.setTimeout(30_000, () => upstream.destroy(new Error("sandbox viewer upgrade timed out")));
+      let remoteSocket: Duplex | null = null;
+      const closeViewer = () => {
+        socket.destroy();
+        upstream.destroy();
+        remoteSocket?.destroy();
+      };
+      const open = capabilityStreams.get(viewerOwner) ?? new Set<() => void>();
+      open.add(closeViewer);
+      capabilityStreams.set(viewerOwner, open);
+      socket.once("close", () => {
+        const held = capabilityStreams.get(viewerOwner);
+        held?.delete(closeViewer);
+        if (held && held.size === 0) capabilityStreams.delete(viewerOwner);
+        remoteSocket?.destroy();
+      });
       upstream.once("upgrade", (response, remote, remoteHead) => {
         upstream.setTimeout(0);
         remote.setTimeout(0);
+        remoteSocket = remote;
         if (socket.destroyed) {
           remote.destroy();
           return;
@@ -841,9 +860,9 @@ export function createProxyHandler(options: ProxyOptions) {
   };
   handle.disconnectDevice = (deviceId: string): void => {
     viewers.closeDevice(deviceId);
-    // Revoking a capability has to reach the streams it already granted.
-    // `connected` only ever tracked /api/events, so without this a phone
-    // kept watching a signed-in browser after the grant was taken away.
+    // Revoking a capability has to reach the streams it already granted:
+    // a signed-in browser's live view and a sandbox viewer alike. `connected`
+    // only ever tracks /api/events.
     const open = capabilityStreams.get(deviceId);
     if (!open) return;
     capabilityStreams.delete(deviceId);
