@@ -50,13 +50,14 @@ const API: Record<string, unknown> = {
     live: { enabled: true, configured: false, voice: "", readTypedReplies: true, idleMinutes: 5 },
     imageGen: { configured: false },
     anthropic: { configured: true },
-    ...(params.get("org") ? { viewer: { role: "admin", operator: false, principalId: "p-1", email: "alex@example.com", name: "Alex Example", canCreateBots: true }, allowedEngines: ["claude", "codex", "grok", "compat-azure"] } : {}),
+    ...(params.get("org") ? { viewer: { role: "admin", operator: false, principalId: "p-1", email: "alex@example.com", name: "Alex Example", canCreateBots: true }, allowedEngines: ["claude", "codex", "grok", "compat-azure"], disabledModels: ["compat-azure/gpt-4o"] } : {}),
+    ...(params.get("providers") ? { myDisabledModels: ["compat-azure/o4-mini"] } : {}),
     ...(params.get("providers") ? { openai: { configured: true }, openaiCompatServers: [{ instanceId: "compat-azure", name: "Azure Foundry", url: "https://example-resource.openai.azure.com/openai/v1", configured: true }] } : {}),
     features: {},
     onboarding: { completedAt: NOW - 30 * DAY, launchMode: "solo" },
   },
   "/api/instances": { instances: [
-    { instanceId: "claude", displayName: "Claude", driverKind: "claudeAgent", cliDefault: "claude", access: "subscription", snapshot: { state: "available", authenticated: true }, models: { default: "sonnet", options: [] } },
+    { instanceId: "claude", displayName: "Claude", driverKind: "claudeAgent", cliDefault: "claude", access: "subscription", snapshot: { state: "available", authenticated: true }, models: { default: "sonnet", options: params.get("providers") ? [{ id: "opus", label: "Claude Opus 4.1" }, { id: "sonnet", label: "Claude Sonnet 4.5" }, { id: "haiku", label: "Claude Haiku 4.5" }] : [] } },
     // ?providers=1 (2026-10-30): a fuller set for Providers and Models
     ...(params.get("providers") ? [
       { instanceId: "codex", displayName: "Codex", driverKind: "codex", cliDefault: "codex", access: "subscription", snapshot: { state: "available", authenticated: false }, models: { default: "", options: [] } },

@@ -6,7 +6,8 @@
 // Solo: every engine, unchanged.
 import { useMemo } from "react";
 import { useStore, type ConfigStatus, type InstanceInfo } from "@/state/store";
-import { offeredEngines, type EngineOfferContext } from "../../shared/offered-engines";
+import type { EngineOfferContext } from "../../shared/offered-engines";
+import { offeredModels, type ModelSwitches } from "../../shared/offered-models";
 import { useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
 
 /** The offer context for this viewer: an organization server once its
@@ -16,15 +17,23 @@ export function engineOfferContext(config: ConfigStatus | null | undefined, orga
   return { organization, allowedEngines: config?.allowedEngines ?? null, ownAccountsOutsideList: config?.ownAccountsOutsideList === true, mine };
 }
 
-/** `state.instances` as offered to this person. */
+/** 2026-10-30 (lot 2): the models turned off, by the organization and by the person. */
+export function modelSwitches(config: ConfigStatus | null | undefined): ModelSwitches {
+  return { org: config?.disabledModels ?? null, mine: config?.myDisabledModels ?? null };
+}
+
+/** `state.instances` as offered to this person: the engines, then on each
+ * only the models still on ("pick"; "settings" keeps every model). */
 export function useOfferedInstances(purpose: "pick" | "settings" = "pick"): InstanceInfo[] {
   const { state } = useStore();
   const org = usePerspicaxOrg();
   const mine = useMyEngines();
   const context = engineOfferContext(state.config, org !== null, mine);
+  const disabledOrg = state.config?.disabledModels;
+  const disabledMine = state.config?.myDisabledModels;
   return useMemo(
-    () => offeredEngines(state.instances, context, purpose),
+    () => offeredModels(state.instances, context, { org: disabledOrg, mine: disabledMine }, purpose),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state.instances, context.organization, context.allowedEngines, context.ownAccountsOutsideList, mine, purpose],
+    [state.instances, context.organization, context.allowedEngines, context.ownAccountsOutsideList, mine, purpose, disabledOrg, disabledMine],
   );
 }

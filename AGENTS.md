@@ -24,6 +24,32 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Models switched one by one (2026-10-30)
+
+Lot 2 of "Providers, models and voice". Each model has a stable id
+`<engine>/<model>` (`shared/offered-models.ts` `modelKey`, only the first
+slash splits) and a switch at two levels: the organization's
+(`cfg.organization.disabledModels`, set in Perspicax through `POST
+/api/org/admin/settings` `disabledModels`, off for everyone, admins
+included) and the person's (`principals/<id>/person-settings.json`
+`disabledModels` on an organization server, `cfg.disabledModels` on a solo
+one; `GET/PUT /api/me/models`, `server/routes/model-switches.ts`; Settings >
+Models > Active models, `ModelSwitchesSettings`). The app reads both in its
+config (`disabledModels`, `myDisabledModels`): `offeredModels` (engines
+first, then the models still on) is what `useOfferedInstances` answers, and
+the picker's catalog drops a model off (the one picked stays visible). The
+server refuses a model off by name (`modelSwitchRefusal`: 403 on a choice,
+409 `model_turned_off` on a turn), keeps it out of Auto's and
+`run_with_engine`'s candidates (the bot owner's switches), and moves a bot on
+it to Auto on the same engine (`applyModelSwitches`). Tests:
+`shared/offered-models.test.ts`, `server/routes/model-switches.test.ts`,
+`server/org-admin-ops.test.ts`, `ModelSwitchesSettings.test.ts`. Native iOS
+`ConfigStatus` carries both disabled lists into `ModelMenu.sections`; a
+disabled model stays out of provider, current, search, favorite and follow-bot
+rows. Auto's fast choices use the same switches: disabled choices are refused
+on save and removed from stored bot/thread selections when switches change.
+Covered by `ModelMenuTests` and `model-switches.e2e.test.ts` too.
+
 ## Settings > Providers (2026-10-30)
 
 Lot 1 of "Providers, models and voice". One page, section id `providers`
