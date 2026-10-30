@@ -31,6 +31,15 @@ export type EngineAccessRefusal = "engine_missing" | "no_access";
  *     started, directly or through other hops: from slice 6 it reaches
  *     Perspicax only through the routine delegation of the person it speaks
  *     for, never through a sign-in. */
+/** A server-created reference to the routine authorizing an unattended turn.
+ * It identifies permission lineage, never the trust of event data. */
+export interface RoutineOwnerAuthorization {
+  runId: string;
+  routineId: string;
+  botId: string;
+  principalId: string;
+}
+
 export type TurnSpeaker =
   /** `groupId`: the group the person writes in, whose "who pays" override
    * for the bot applies (shared/turn-payer.ts). */
@@ -39,7 +48,7 @@ export type TurnSpeaker =
   | { origin: "owner-routine"; principalId?: string }
   /** `routineTrigger`: what started the routine a `routine` hop descends
    * from ("schedule", "manual", "webhook"), when known. */
-  | { origin: "peer"; fromBotId?: string; principalId?: string; routine?: true; routinePayer?: string; routineTrigger?: string };
+  | { origin: "peer"; fromBotId?: string; principalId?: string; routine?: true; routinePayer?: string; routineTrigger?: string; routineOwnerAuthorization?: RoutineOwnerAuthorization };
 
 /** A turn a routine or other automation started, directly or through hops. */
 export function routineLineage(speaker: TurnSpeaker): boolean {

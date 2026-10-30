@@ -293,15 +293,23 @@ describe("delegatedApprovalMode", () => {
     expect(delegationInheritsFullAccess({ senderIsChief: true, senderHasFullAccess: true, sameBot: false, recipientDriverKind: "claudeAgent", recipientMemberOwned: true })).toBe(false);
     expect(delegationInheritsFullAccess({ senderIsChief: true, senderHasFullAccess: true, sameBot: false, recipientDriverKind: "claudeAgent", recipientMemberOwned: false })).toBe(true);
   });
-  it("never answers a Sagax approval-gate card, even in Full", () => {
-    for (const mode of ["full", "auto", "custom", "edits", "ask"] as const) {
+  it("Full answers a Sagax approval-gate card; other levels keep the native decision", () => {
+    expect(autoVerdict("full", "other", { sagaxGate: true }).source).toBe("full-access");
+    for (const mode of ["auto", "custom", "edits", "ask"] as const) {
       expect(autoVerdict(mode, "other", { sagaxGate: true }).approve).toBeNull();
     }
+  });
+  it("keeps explicit organization asks, denies, holds and security keys ahead of Full at the gate", () => {
+    for (const behavior of ["ask", "deny"] as const) {
+      expect(autoVerdict("full", "other", { sagaxGate: true, customRule: { behavior, id: "orule_required" } }).source).toBe(`custom-rule-${behavior}`);
+    }
+    expect(autoVerdict("full", "other", { sagaxGate: true, safetyHold: true }).approve).toBeNull();
+    expect(autoVerdict("full", "other", { sagaxGate: true, stepUpRequired: ["destructive"] }).approve).toBeNull();
   });
   it("answers a gate card only from the person's own saved Allow rule", () => {
     for (const mode of ["full", "auto", "custom", "edits", "ask"] as const) {
       expect(autoVerdict(mode, "other", { sagaxGate: true, ruleAllowed: true }).source).toBe("allow-rule");
-      expect(autoVerdict(mode, "other", { sagaxGate: true, ruleAllowed: false }).approve).toBeNull();
+      expect(Boolean(autoVerdict(mode, "other", { sagaxGate: true, ruleAllowed: false }).approve)).toBe(mode === "full");
     }
   });
 });
