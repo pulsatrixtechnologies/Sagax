@@ -662,7 +662,7 @@ function isSagaxWorkplaceProxy(name: string, server: McpServerSpec): boolean {
 
 /** Perspicax profiles are harness-created mounts in integrations.custom,
  * not third-party commands. A name or environment marker alone proves nothing. */
-function isSagaxPerspicaxBridge(server: McpServerSpec): server is StdioMcpSpec {
+function isSagaxPerspicaxBridge(server: McpServerSpec): boolean {
   return !("url" in server) && server.command === process.execPath
     && server.args.length === 1 && server.args[0] === SPAWNED_PROXIES.perspicax
     && Boolean(server.env.SAGAX_PERSPICAX_PROFILE) && Boolean(server.env.SAGAX_PERSPICAX_TOKEN);
