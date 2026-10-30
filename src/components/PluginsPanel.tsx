@@ -323,7 +323,8 @@ export function PluginsPanel() {
   };
   // the bot's one resolved list (lot 1b): its engine, its organization Flow
   // and Roles for Installed, read again after each change of its plugins
-  const botCapabilities = useBotCapabilities(scopeBotId, { revision: botView });
+  const capabilityRevision = useMemo(() => ({ botView, personalView, skills, marketplaces }), [botView, personalView, skills, marketplaces]);
+  const botCapabilities = useBotCapabilities(scopeBotId, { revision: capabilityRevision });
   const [botBusy, setBotBusy] = useState<string | null>(null);
 
   const loadFeatured = useCallback(() => api("/api/plugins/search")
@@ -689,10 +690,13 @@ export function PluginsPanel() {
     if (item.source === "grok") return null;
     if (item.kind === "plugin") {
       const at = item.id.lastIndexOf("@");
-      if (scope === "bot") {
-        const contents = botView ? botPluginState(botView, item.id)?.contents : undefined;
-        return contents ? { form: "plugin", parts: { skills: contents.skills.length > 0, commands: contents.commands.length > 0, agents: contents.agents.length > 0 } } : null;
+      if (scope !== "workspace") {
+        const plugin = botPluginState(scopedPluginView, item.id);
+        const contents = plugin?.contents;
+        return contents ? { form: "plugin", parts: { mcp: Boolean(plugin?.installed?.declaredMcpServers.length), skills: contents.skills.length > 0, commands: contents.commands.length > 0, agents: contents.agents.length > 0 } } : null;
       }
+      const received = botCapabilities.data?.items.find((row) => row.key === `plugin:installation:${item.id}`)?.brings;
+      if (received) return { form: "plugin", parts: { mcp: received.mcpServers.length > 0, skills: received.skills.length > 0, commands: received.commands.length > 0, agents: received.agents.length > 0 } };
       const entry = marketplaces?.find((market) => market.name === item.id.slice(at + 1))?.plugins.find((candidate) => candidate.name === item.id.slice(0, at));
       return entry ? { form: "plugin", parts: { mcp: entry.servers.length > 0, skills: entry.skills.length > 0, indexOnly: true } } : null;
     }

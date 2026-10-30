@@ -145,6 +145,9 @@ describe("personal and complete plugin capabilities", () => {
       expect(byKey(list, "plugin:bot:alpha@market")).toMatchObject({ state: "off", reason: "name_taken" });
       expect(turnDirs(input)).toContain("/me/alpha");
       expect(turnDirs(input)).not.toContain("/plugins/alpha");
+      const readOnlyBot = resolveBotCapabilities(input, { principalId: "p1", mayChange: false });
+      expect(byKey(readOnlyBot, "plugin:me:alpha@market")?.canToggle).toBe(true);
+      expect(byKey(readOnlyBot, "plugin:bot:alpha@market")?.canToggle).toBe(false);
     }
   });
 

@@ -203,7 +203,7 @@ export function resolveBotCapabilities(inputs: CapabilityInputs, viewer: Capabil
       scope,
       state,
       enabled: plugin.enabled,
-      canToggle: scope === "bot" && viewer.mayChange,
+      canToggle: scope === "me" || viewer.mayChange,
       ...(plugin.updateAvailable ? { updateAvailable: true } : {}),
       brings: { skills: plugin.contents.skills, commands: plugin.contents.commands, agents: plugin.contents.agents, mcpServers: plugin.declaredMcpServers },
       // MCP receipts are completed below using the actual selected mounts.
