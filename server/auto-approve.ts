@@ -393,8 +393,8 @@ export function autoVerdict(
   // Full is separately consent-gated by the bot PATCH endpoint, and the
   // request.opened caller invokes this for permissions only, never questions.
   if (context?.sagaxGate && context.ruleAllowed) return { approve: `approved ${tool} (your Allow rule)`, source: "allow-rule" };
+  if (mode === "full" && !(context?.sagaxGate && context.stepUpRequired?.length)) return { approve: `approved ${tool} (full access)`, source: "full-access" };
   if (context?.sagaxGate) return { approve: null, source: mode === "auto" || mode === "custom" ? "native-approval" : "no-grant" };
-  if (mode === "full") return { approve: `approved ${tool} (full access)`, source: "full-access" };
   if (context?.requiresExplicitApproval) return { approve: null, source: "explicit-approval-block" };
   if (isOutboundTool(tool) || context?.outbound === true || ((context?.sagaxInternal || context?.ownEnvironment) && sendsOut)) return { approve: null, source: "outbound-guard" };
   if (context?.commandAllowed) return { approve: `approved ${tool} (saved command)`, source: "command-allowlist" };

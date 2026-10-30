@@ -61,3 +61,24 @@ The first recipe verifies server and MCP behavior, not the rendered review UI,
 desktop permission-grant gesture, or real-model instruction following. The
 test starts from fixture-only saved grants; it does not test granting Full
 Access through the desktop.
+
+## Webhook and email routines
+
+`pnpm exec vitest run server/routine-full-approval.e2e.test.ts` starts an
+isolated real server, seeds confirmed Full only while its fixture is stopped,
+and relays one fixture email through WebhookManager and RoutineManager. With
+misuse guardrails in enforce, the actual Outlook `outlook__move_message`
+permission reaches the broker at Full and is allowed. A real authenticated
+webhook then runs its owner's ordinary write at Auto and passes the same
+authorization through an internal same-owner teammate call. Email and event
+content remains in the UNTRUSTED prompt blocks. The evidence file
+`<server-log>.routine-full.json` contains only the selected levels and broker
+answers, without capabilities or webhook credentials. Provider planning and
+mail delivery are synthetic; no live mailbox changes.
+
+The classifier control on the same fixture, before the mailbox-move fix,
+reached Full but denied the Outlook move as an outbound send in enforce.
+Explicit organization Ask/Deny, unrelated persons and invalidated routine
+references are checked separately in the adjacent approval and authorization
+tests. Perspicax Flow policy elicitation still asks, since its GO is an
+explicit policy decision rather than a generic tool confirmation.

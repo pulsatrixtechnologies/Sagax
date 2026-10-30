@@ -40,8 +40,9 @@
 //   2026-10-26: the person's own routine on their own bot (run as
 //   themselves, scheduled or by hand) and a hop between two of their own
 //   bots from their own words count as their own turn
-//   (ownEnvironmentTurnOrigin); a webhook, an email, a typed trigger, a
-//   guest or another person still get the reads only;
+//   (ownEnvironmentTurnOrigin). The owner's configured webhook routine
+//   counts too when the server verifies its live authorization; its email
+//   or event data remains untrusted. A guest or another person grants nothing;
 // - the person's own deny and ask rules, the safety review and the grant
 //   guard run first (server/index.ts request.opened), on every engine: the
 //   Grok gate holds these calls and sends them there (grok-approval-gate.ts).
@@ -133,8 +134,9 @@ export function ownEnvironmentSensitiveRead(input: string | undefined): boolean 
  * names the bot's owner (`botOwnerPrincipalId`): their routine (run as
  * themselves, scheduled or started by hand) or a hop between two of their
  * own bots that carries their own words (owner-autonomy.ts
- * ownerLineageOrigin). "other" for a webhook or typed trigger, an email,
- * any other automation, a hop from a routine, a room without a known
+ * ownerLineageOrigin). An owner-written webhook routine needs separate
+ * live authorization, never inferred from email/event data. "other" for
+ * an unverified trigger, any other automation, a room without a known
  * person, a guest, another person, someone else's bot, or anything
  * unknown. */
 export function ownEnvironmentTurnOrigin(input: {
@@ -154,6 +156,8 @@ export function ownEnvironmentTurnOrigin(input: {
   /** What started the request when it was an automation: a routine's
    * trigger ("schedule", "manual", "webhook") or another source. */
   automationTrigger?: string;
+  /** A live owner-written webhook routine, verified separately from event data. */
+  routineAuthorized?: boolean;
   /** The owner of the bot a peer hop comes from, when that bot exists. */
   peerFromOwner?: string;
 }): "owner" | "other" {
@@ -178,9 +182,9 @@ function ownLineageTurn(input: Parameters<typeof ownEnvironmentTurnOrigin>[0]): 
   const botOwner = input.botOwnerPrincipalId?.trim().toLowerCase();
   if (!owner || !botOwner || botOwner !== owner || !input.speaker) return false;
   const trigger = input.automationTrigger;
-  const ownTrigger = trigger === "schedule" || trigger === "manual";
-  // an automation is the person's only when it is their routine's schedule
-  // or a manual run; a webhook, a typed trigger or an unknown source is not
+  const ownTrigger = trigger === "schedule" || trigger === "manual" || (trigger === "webhook" && input.routineAuthorized === true);
+  // A webhook counts only through a separately verified owner routine;
+  // neither the trigger name nor its payload establishes that authorization.
   if ((input.automation || input.unattended) && !ownTrigger) return false;
   if (trigger !== undefined && !ownTrigger) return false;
   // 2026-10-27 (#1098): a hop between the person's own bots from their own
@@ -192,6 +196,7 @@ function ownLineageTurn(input: Parameters<typeof ownEnvironmentTurnOrigin>[0]): 
     ...(input.peerFromOwner !== undefined ? { peerFromOwner: input.peerFromOwner } : {}),
     ...(trigger !== undefined ? { automation: trigger } : {}),
     unattended: false,
+    routineAuthorized: input.routineAuthorized,
   }) === "owner";
 }
 

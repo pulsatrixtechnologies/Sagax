@@ -13,6 +13,20 @@ Before claiming a server or conversation change works, follow
 [`docs/verification/README.md`](docs/verification/README.md). Always launch an
 isolated fixture; never verify mutations against the user's live app or data.
 
+## Routine authorization and untrusted event data (2026-10-30)
+
+An owner's configured webhook routine uses the bot's chosen approval level.
+`routine-authorization.ts` binds its active run, routine, current root and
+receiving bot owners, run-as person and owned trigger. Peer turns carry only
+that server-created reference and revalidate it; another person's bot or a
+completed/deleted root grants nothing. Pausing future runs does not cancel
+an active grant. Event and email content remains UNTRUSTED in the prompt.
+Confirmed Full on that owner's routine supersedes the legacy botmail tools
+confinement, and Full answers Sagax gate calls after explicit Ask/Deny and
+holds. The real Perspicax Flow policy GO remains a person's answer, including
+at Full. Regression: `routine-full-approval.e2e.test.ts` exercises the real
+ingress, dispatcher, broker and a peer, in an isolated home.
+
 ## Where work goes
 
 All work stays in `pulsatrixtechnologies` repositories. Never open a pull
@@ -6553,9 +6567,15 @@ builds no Graph client, no Teams bot registration and no mailbox for this.
   settings), Teams posts and chats, events and meetings (create, insert,
   change, cancel), answering an invitation, every SharePoint, OneDrive or
   Google Drive write (upload, save, permissions, grant access). On an
-  engine connector server (`isEngineConnectorServer`) any call that is not
-  a read or a draft asks (fail closed). Reads, drafts and reply drafts do
-  not. Full access and the primary bot rule are unchanged.
+  engine connector server (`isEngineConnectorServer`), an unclassified
+  `other-write` follows the bot's level and explicit rules. Moving,
+  labeling, marking or deleting mail is not an outbound send and never
+  gets a draft/send hold, including with misuse guardrails in enforce.
+  Deletes and bulk operations keep their destructive classification;
+  organization Ask/Deny, isolation and sensitive paths still apply.
+  Reads, drafts and reply drafts send nothing. Full access and the primary
+  bot rule are unchanged. Regression: `server/safety-review.test.ts` uses
+  the measured Outlook catalog in `server/testing/`.
 - An outward card never offers "always for this session", and the ACP
   driver answers Grok's ask once, never `allow_always`
   (`server/drivers/acp/connector-ask.ts`). A Grok `use_tool` call to a

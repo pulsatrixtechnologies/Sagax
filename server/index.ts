@@ -1345,6 +1345,7 @@ import { createPerspicaxOrgRoutes, orgDirectoryEntries, type OrgSettings, type P
 import { createMemorySyncTokenRoute } from "./perspicax-memory-sync-token.ts";
 import { memberEnvironmentAutonomyAllowed, normalizedDestinationPath, ownAttachmentRead, ownComputerChoiceCall, ownDestinationCall, ownEnvironmentAutonomy, ownEnvironmentCall, ownEnvironmentSensitiveRead, ownEnvironmentTool, ownEnvironmentTurnOrigin } from "./member-environment.ts";
 import { lineageEnvironmentCall, ownerLineageOrigin, ownerModeForTurn, perspicaxSelfAnswer, perspicaxSelfAnswerAt } from "./owner-autonomy.ts";
+import { routineOwnerAuthorization } from "./routine-authorization.ts";
 import { runPermissionModeMigration } from "./approval-level-migration.ts";
 import { MEMBER_AUTO_NOT_ALLOWED, memberAutoApprovalAllowed, memberAutoChangeRefused, memberAutoLevelResets, memberAutoResetPending, memberAutoSettle, memberRoomTurnLevel, memberTurnLevel, type MemberAutoReset } from "./member-auto-approval.ts";
 import { newConversationFullAllowed, ORG_FULL_ACCESS_DEFAULT_MARKER, orgFullAccessAllowed, orgFullAccessGrandfathered, orgFullAccessGrantRefusal, orgFullAccessHolds, orgNewBotApprovalMode, ORG_FULL_ACCESS_DISABLED, parseOrgFullAccessBody, threadFollowsFullGrant, trustedChannelFullRefusal } from "./org-full-access.ts";
@@ -30141,7 +30142,9 @@ function peerSpeaker(fromBotId: string, fromThreadId?: string): TurnSpeaker {
   const routine = fromThreadId ? turnRoutineLineage.has(fromThreadId) : false;
   const routinePayer = routine && fromThreadId ? turnRoutinePayers.get(fromThreadId) : undefined;
   const routineTrigger = routine && fromThreadId ? routineTriggerOf(fromThreadId) : undefined;
-  return { origin: "peer", fromBotId, ...(principalId !== undefined ? { principalId } : {}), ...(routine ? { routine: true as const } : {}), ...(routinePayer ? { routinePayer } : {}), ...(routineTrigger ? { routineTrigger } : {}) };
+  const sourceBot = store.bot(fromBotId);
+  const authorization = routine && sourceBot && fromThreadId ? routineOwnerAuthorizationFor(sourceBot, fromThreadId) : null;
+  return { origin: "peer", fromBotId, ...(principalId !== undefined ? { principalId } : {}), ...(routine ? { routine: true as const } : {}), ...(routinePayer ? { routinePayer } : {}), ...(routineTrigger ? { routineTrigger } : {}), ...(authorization ? { routineOwnerAuthorization: authorization } : {}) };
 }
 /** On an organization server, words may join a running turn only when they
  * speak for the same principal as that turn: anyone else's words wait for a
@@ -32056,14 +32059,18 @@ function botMailResync(): void {
     /* before start-up finished: the first read syncs */
   }
 }
-/** v2 (S2): a routine run woken by bot email is confined (no shell, a card
- * for every write or outbound call, no Always-allow or Full) unless its
- * trigger's owner turned on full tools. */
+/** Bot email keeps the trigger's tool confinement except when the current
+ * owner explicitly runs their own configured routine at confirmed Full.
+ * The inbound email remains untrusted in either case. */
 function botmailConfined(threadId: string): boolean {
   try {
     // 2026-10-30: a proactive wake an email started is confined the same way
     if (activeRoutineRunForThread(threadId)?.proactive?.confined) return true;
-    return botmailRunConfined(activeRoutineRunForThread(threadId), (id) => webhooks.list().find((hook) => hook.id === id) ?? null);
+    const run = activeRoutineRunForThread(threadId);
+    const bot = run ? botForThread(run.botId, threadId) : null;
+    const authorizedFull = Boolean(bot && approvalModeFor(bot) === "full" && !orgDeniesFull(bot)
+      && supportsApprovalMode(bot.modelSelection, "full") && routineOwnerAuthorizationFor(bot, threadId));
+    return botmailRunConfined(run, (id) => webhooks.list().find((hook) => hook.id === id) ?? null, authorizedFull);
   } catch {
     return false;
   }
@@ -35963,12 +35970,13 @@ function memberHostToolPlace(bot: BotRecord, threadId: string): MemberHostToolPl
     botRoots: [join(realpathSync(DATA_DIR), "task-workspaces", bot.id), workspaceDir(bot.id)],
   };
 }
-function ownLineageFields(bot: BotRecord, threadId: string): { botOwnerPrincipalId: string; automationTrigger?: string; peerFromOwner?: string } {
+function ownLineageFields(bot: BotRecord, threadId: string): { botOwnerPrincipalId: string; automationTrigger?: string; peerFromOwner?: string; routineAuthorized: boolean } {
   const speaker = turnSpeakers.get(threadId);
   const trigger = routineTriggerOf(threadId);
   const peerFromOwner = speaker ? peerOwnerPrincipal(speaker) : undefined;
   return {
     botOwnerPrincipalId: effectiveBotOwner(bot),
+    routineAuthorized: routineOwnerAuthorizationFor(bot, threadId) !== null,
     ...(trigger ? { automationTrigger: trigger } : {}),
     ...(peerFromOwner ? { peerFromOwner } : {}),
   };
@@ -35996,9 +36004,32 @@ function sameOwnerRosterMember(bot: BotRecord): (member: { id: string }) => bool
   };
 }
 /** 2026-10-19 (owner setup, server/owner-autonomy.ts): whether this turn
- * is the owner's own work through their own bots or their own scheduled or
- * manual routine (never a webhook, an email, another person or an unknown
- * source). */
+ * is the owner's own work through their own bots or their own routine.
+ * A webhook routine needs live server-owned authorization; its event data
+ * never supplies permission or changes another person's rights. */
+/** Permission lineage of an owner's webhook routine. References carried by
+ * peers are rechecked against live records and current bot owners. */
+function routineOwnerAuthorizationFor(bot: BotRecord, threadId: string): ReturnType<typeof routineOwnerAuthorization> {
+  const speaker = turnSpeakers.get(threadId);
+  const carried = speaker?.origin === "peer" ? speaker.routineOwnerAuthorization : undefined;
+  if (speaker?.origin === "peer" && !carried) return null;
+  if (speaker && speaker.origin !== "owner-routine" && speaker.origin !== "peer") return null;
+  const run = carried ? routines?.listRuns().find((entry) => entry.id === carried.runId) ?? null : activeRoutineRunForThread(threadId);
+  if (!run) return null;
+  const rootBot = store.bot(run.botId);
+  const routine = routines?.getRoutine(run.routineId) ?? null;
+  const hook = run.webhookId ? webhooks.list().find((entry) => entry.id === run.webhookId) : undefined;
+  const grant = routineOwnerAuthorization({
+    run, routine,
+    rootBotOwner: rootBot ? effectiveBotOwner(rootBot) : "",
+    receivingBotOwner: effectiveBotOwner(bot),
+    webhookRoutineId: hook?.routineId,
+  });
+  if (!grant || (carried && (carried.routineId !== grant.routineId || carried.botId !== grant.botId || carried.principalId !== grant.principalId))) return null;
+  if (speaker?.origin === "peer" && peerOwnerPrincipal(speaker)?.trim().toLowerCase() !== grant.principalId) return null;
+  return grant;
+}
+
 function ownerLineageFor(bot: BotRecord, threadId: string): "owner" | "other" {
   const speaker = turnSpeakers.get(threadId);
   const automation = directRequestOwners.get(threadId)?.automation;
@@ -36008,6 +36039,7 @@ function ownerLineageFor(bot: BotRecord, threadId: string): "owner" | "other" {
     ...(speaker ? { peerFromOwner: peerOwnerPrincipal(speaker) } : {}),
     ...(automation !== undefined ? { automation } : {}),
     unattended: automation === "webhook",
+    routineAuthorized: routineOwnerAuthorizationFor(bot, threadId) !== null,
   });
 }
 /** The lineage the bot's one approval level is read under (ownerModeForTurn).

@@ -84,12 +84,13 @@ export function isOutboundTool(name: string): boolean {
   // A draft, a reply draft included, sends nothing until it is sent.
   if (tokens.includes("DRAFT") && !tokens.includes("SEND") && !tokens.includes("SENDS")) return false;
   if (tokens.some((token) => SEND_VERBS.has(token))) return true;
-  // A mail, Teams, calendar or file connector acts as the person outside the
-  // app: an event mails its attendees, a SharePoint write lands in a shared
-  // site, and an engine's own connector server fails closed on any call that
-  // is not a read or a draft (shared/engine-connectors.ts). Same reading for
-  // an MCP tool and an engine connector slug (GOOGLECALENDAR_CREATE_EVENT).
-  if (connectorWriteKind(name)) return true;
+  // A known outward connector action reaches other people (an invitation,
+  // a Teams post, a shared-file write). An unclassified connector write is
+  // not evidence of a send: moving, labeling or deleting owned mail also
+  // returns other-write. Its approval still follows the bot's level and
+  // rules; it must never become an outbound draft/send hold.
+  const connector = connectorWriteKind(name);
+  if (connector && connector !== "other-write") return true;
   if (tokens.includes("DRAFT")) return false;
   return tokens.some((token) => CREATE_VERBS.has(token)) && tokens.some((token) => SENT_NOUNS.has(token));
 }
