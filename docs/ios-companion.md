@@ -380,8 +380,7 @@ with a sentence for the families below and "no route" for the rest):
   (`/api/companion/*`, `/api/devices/*`, `/api/auth/pairing`, `/api/auth/sessions`).
 - The Local VM (`/api/local-computer/*`, `/api/computers/*`), backups
   (`/api/workspace-backup/*`), people, mail, activity and fleet screens.
-- Webhook management (`/api/webhooks*`), whole-service connector removal
-  (`DELETE /api/connectors/:slug`), connector tool grants, single-routine
+- Webhook management (`/api/webhooks*`), single-routine
   reads and anything else under `/api/routines/:id` beyond `PATCH`, `DELETE`
   and `/run` ("this routine operation is only available on your computer").
 - Team import/export, the template library and team computers (`/api/teams/*`,
@@ -402,9 +401,9 @@ with a sentence for the families below and "no route" for the rest):
 - Internal peer-agent routes, and new harness routes that have not been
   reviewed for device access.
 
-Routines (list, create, edit, delete, run, cancel, seen, seen-all) and
-Connected apps (catalog, connected accounts, authorize, removing one account)
-cross since the routines and multi-account work; webhooks stay refused.
+Routines (list, create, edit, delete, run, cancel, seen, seen-all) cross
+since the routines work; webhooks stay refused. The third-party connected
+apps catalog is retired: there is no `/api/connectors` route any more.
 
 ### Same surface as the desktop remote client
 
@@ -579,7 +578,6 @@ mode, folder, computer, MCP servers and access stay refused, as does
 
 | Route | Who |
 |---|---|
-| `POST /api/bots/:id/connector-cards/:messageId/authorize` | the bot's owner on a personal server, or this computer's own person; never a member on an organization server (it signs an account into the server's own connected apps); a Cloud guest only in a conversation it started |
 | `GET /api/bots/:id/command-allowlist`, `DELETE /api/bots/:id/command-allowlist/:ruleId` | the bot's owner, or this computer's own person; adding a rule stays admin |
 | `POST /api/plugins/install` | an admin, or this computer's own person |
 | `GET /api/bots/:id/overview` | the bot's owner (or edit grant on an organization server), or an admin |

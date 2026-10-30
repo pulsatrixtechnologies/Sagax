@@ -1,6 +1,6 @@
-// Connect apps in a bot's scope: the scope toggle, the "For <bot>" card on a
+// Capabilities in a bot's scope: the scope toggle, the "For <bot>" card on a
 // plugin's detail page, the marketplace rows' remove rule, and the bot
-// panel's Library without its old Plugins tab (rerouted to Connect apps).
+// panel's Library without its old Plugins tab (rerouted to Capabilities).
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -75,7 +75,7 @@ describe("For <bot> on a plugin's page", () => {
   it("is read-only for a person who only uses the bot", () => {
     const html = card({ ...view, canChange: false, engine: { loadsPlugins: false } });
     expect(html).toContain("Only the bot&#x27;s owner, or someone who manages it");
-    expect(html).toContain("Sagax installs the plugin and its skills and commands are there for every engine.");
+    expect(html).toContain("This engine does not load plugins itself.");
     expect(html).not.toContain("data-bot-plugin-install=\"");
     expect(html).not.toContain("data-bot-plugin-uninstall");
   });
@@ -121,7 +121,7 @@ describe("one marketplace list, two scopes", () => {
 });
 
 describe("bot panel > Library", () => {
-  it("opens Connect apps on that bot's scope", () => {
+  it("opens Capabilities on that bot's scope", () => {
     const dispatch = vi.fn();
     openBotPlugins(dispatch, "maya");
     expect(dispatch).toHaveBeenCalledWith({ type: "togglePlugins", open: true, botId: "maya" });

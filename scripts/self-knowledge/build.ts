@@ -226,7 +226,7 @@ function settingsSections(root: string): KnowledgeSection[] {
         kind: "setting",
         title: `${title.english}${title.french ? ` (${title.french})` : ""}`,
         where: prefix === "myConnections"
-          ? `the sidebar's Connect apps (Connecter des applications) > Manage > ${title.english}`
+          ? `the sidebar's Capabilities (Capacités) > ${title.english}`
           : page
           ? `Settings > ${pageLabel!.english} > ${title.english}${pageLabel!.french ? ` (FR: Réglages > ${pageLabel!.french} > ${title.french || title.english})` : ""}`
           : `a bot's settings (open the bot, then its settings) > ${title.english}`,

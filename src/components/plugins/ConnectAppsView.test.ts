@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Connect apps, one page with four tabs (2026-10-27; Manage plugins and
+// Capabilities, one page with four tabs (2026-10-27; Manage plugins and
 // skills of 2026-10-26 moved up): one line per installed thing with a "..."
 // menu, every empty section hidden, the connectors of the person's engine
 // accounts listed by engine with a pill per service, no "What your engines
@@ -48,7 +48,7 @@ const ManageView = InstalledView;
 beforeEach(() => setLocale("en"));
 afterEach(() => setLocale("en"));
 
-describe("Connect apps tabs", () => {
+describe("Capabilities tabs", () => {
   const shell = (tab: "installed" | "discover" | "pages" | "sources") => renderToStaticMarkup(createElement(ConnectAppsView, {
     tab, onTab: noop, refreshing: false, onRefresh: noop,
     installed: createElement(InstalledView, props()), discover: "D", pages: "G", sources: "S",
@@ -70,9 +70,9 @@ describe("Connect apps tabs", () => {
     expect(html).not.toMatch(/data-plugins-tab="discover"[^>]*>[\s\S]*?data-plugins-tab-count[\s\S]*?data-plugins-tab="installed"/);
   });
 
-  it("has five tabs on the Connect Apps page itself, and no Advanced zone", () => {
+  it("has five tabs on the Capabilities page itself, and no Advanced zone", () => {
     const html = shell("installed");
-    expect(html).toMatch(/id="plugins-title"[^>]*>Connect Apps</);
+    expect(html).toMatch(/id="plugins-title"[^>]*>Capabilities</);
     const tabs = [...html.matchAll(/role="tab"[^>]*data-plugins-tab="([a-z]+)"[^>]*><span data-plugins-tab-label="[^"]*">([^<]+)</g)].map((match) => [match[1], match[2]]);
     expect(tabs).toEqual([["discover", "Discover"], ["bots", "Bots"], ["installed", "Installed"], ["pages", "Pages"], ["sources", "Sources"]]);
     expect(html).not.toContain("data-plugins-advanced");
@@ -189,7 +189,7 @@ describe("Providers: the engines' connectors", () => {
     expect(html).toContain("gstatic.com/images/branding/product/2x/calendar_2020q4_48dp.png");
     expect(html).toMatch(/data-harness-connector="claude:Gmail"[\s\S]*?data-harness-status="connected"[^>]*>Connected</);
     expect(html).toMatch(/data-harness-connector="claude:Canva"[\s\S]*?data-harness-status="needs_auth"/);
-    expect(html).toMatch(/data-harness-connector="grok:X"[\s\S]*?data-harness-status="managed"[^>]*>Managed on Grok</);
+    expect(html).toMatch(/data-harness-connector="grok:X"[\s\S]*?data-harness-status="managed"[^>]*>Not verifiable: Grok catalog</);
     expect(html).toContain("Manage on Claude");
     expect(html).toContain("Manage on Grok");
     // 2026-10-27: no "What your engines reach" panel; each card names its service

@@ -45,7 +45,7 @@ export interface PluginListing {
   /** Featured: the provider's own site (notion.com, not mcp.notion.com), for
    * its icon. */
   site?: string;
-  /** Featured: the Connect apps category from the catalog. */
+  /** Featured: the Capabilities category from the catalog. */
   category?: string;
   /** The provider's data centers, `url` being the default one. */
   regions?: PluginRegion[];

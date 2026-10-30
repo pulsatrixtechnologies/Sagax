@@ -2174,7 +2174,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         // model call in the session then re-reads all of it.
         // Each flag only on a CLI that accepts it: an unknown flag is an
         // argument error that would fail every turn (CLAUDE_FLAG_FLOORS).
-        // The MCP half has a switch (Plugins → MCP servers → "Also use my
+        // The MCP half has a switch (Capabilities > Installed → "Also use my
         // Claude Code MCP servers"): with it on, the CLI loads the servers
         // and connectors from the person's own Claude Code config — the way
         // Codex reads its own config.toml — while skills, hooks and the

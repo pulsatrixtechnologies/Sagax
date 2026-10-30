@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// Connect apps, 2026-10-28 regressions:
+// Capabilities, 2026-10-28 regressions:
 //   - the install scope stays under the title on every tab (it vanished on
 //     Providers and the tabs jumped up); on Providers it shows turned
 //     off, with the reason;
@@ -78,7 +78,7 @@ describe("the header and the tab row", () => {
     expect(CONNECT_APPS_TABS).toEqual(["discover", "bots", "installed", "pages", "sources"]);
     const html = view("discover", { counts: { installed: 6 } });
     expect(html).not.toContain("data-plugins-connected");
-    expect(html).toMatch(/<header[^>]*><h2 id="plugins-title"[^>]*>Connect Apps<\/h2><div class="[^"]*" data-plugins-scope-row="true"><div class="shrink-0" data-plugins-scope-slot/);
+    expect(html).toMatch(/<header[^>]*><h2 id="plugins-title"[^>]*>Capabilities<\/h2><div class="[^"]*" data-plugins-scope-row="true"><div class="shrink-0" data-plugins-scope-slot/);
   });
 
   it("a click on a tab with a counter opens that tab", () => {
@@ -99,7 +99,7 @@ describe("the header and the tab row", () => {
 describe("a plugin's page in its tab", () => {
   it("keeps the title, the scope and the tabs; the tab it came from stays marked", () => {
     const html = view("installed", { page: createElement("div", { "data-test-page": "" }, "PAGE") });
-    expect(html).toMatch(/id="plugins-title"[^>]*>Connect Apps<\/h2>[\s\S]*?data-test-scope[\s\S]*?role="tablist"[\s\S]*?data-plugins-subpage[\s\S]*?data-test-page/);
+    expect(html).toMatch(/id="plugins-title"[^>]*>Capabilities<\/h2>[\s\S]*?data-test-scope[\s\S]*?role="tablist"[\s\S]*?data-plugins-subpage[\s\S]*?data-test-page/);
     expect(html).toMatch(/aria-selected="true"[^>]*aria-current="page"[^>]*data-plugins-tab="installed"/);
     // the tab's own list is not drawn under the page
     expect(html).not.toMatch(/>I</);

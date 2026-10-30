@@ -1,4 +1,4 @@
-// One list of GitHub (and other git host) credentials (Connect apps >
+// One list of GitHub (and other git host) credentials (Capabilities >
 // Sources > GitHub, 2026-10-28). It replaces three places that each kept
 // tokens of their own:
 //

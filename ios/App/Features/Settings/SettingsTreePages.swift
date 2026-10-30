@@ -88,7 +88,7 @@ struct SettingsTreeRow: View {
         case .bots:
             SettingsRow(title: "Bots", accessory: .chevron, height: 44.33, identifier: "settings-bots") { navigator.push(.bots) }
         case .connectApps:
-            SettingsRow(title: "Connect apps", subtitle: "Tools and skills for Sagax", accessory: .chevron,
+            SettingsRow(title: "Capabilities", subtitle: "Tools and skills for Sagax", accessory: .chevron,
                         identifier: "settings-plugins", textTop: 13.4) { navigator.push(.plugins) }
         case .publishedPages:
             SettingsRow(title: "Published pages", accessory: .chevron, height: 44, identifier: "settings-pages") { navigator.push(.pages) }

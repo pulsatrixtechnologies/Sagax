@@ -1,16 +1,31 @@
 ---
-title: Connected apps
-description: Give bots secure, user-authorized tools through engine-provided connectors and Pulsatrix MCP.
+title: Capabilities
+description: Everything a bot receives on top of its engine: plugins, skills, MCP servers, engine connectors, Perspicax roles and Pulsatrix Flow.
 icon: PlugZap
 ---
 
-Sagax gives bots tools in two ways: the connectors your agent engine provides, and Pulsatrix MCP servers your workspace mounts. Both complete their authorization in your normal browser or in the engine's own account, and no provider key is ever written into bot prompts or the renderer.
+A capability is anything a bot receives on top of its engine: a plugin, a skill, an MCP server, a connector of the engine account, a Perspicax role, or Pulsatrix Flow. Sagax manages them on one page, **Capabilities** (Discover, Installed, Providers, Sources), opened from the pill at the foot of the sidebar. Every capability is described the same way:
 
-<ProductScreenshot name="docs-connected-apps" alt="The clean Sagax connected-app marketplace" caption="Review every account and its status from the Connected tab." />
+- **Source**: where it comes from (a Git marketplace, Perspicax, the engine account of the person, a file of the person, the Sagax catalog).
+- **Scope**: who gets it. Today a plugin installs for one bot or for everyone on the server; the scopes This bot, Me and Organization are coming.
+- **State**: available, installed, on, to connect (an account or a key is missing), update offered, set by the organization, or not served by this engine.
+
+No provider key is ever written into bot prompts or the renderer.
+
+<ProductScreenshot name="docs-connected-apps" alt="The Sagax Capabilities page" caption="Review every capability and its status from the Installed tab." />
+
+## What each engine receives
+
+| Engine | Plugins | Skills and commands | MCP servers |
+|---|---|---|---|
+| Claude | the whole plugin, hooks left out | yes | yes |
+| Codex, Pi, OpenCode and other engines that work with files | skills and commands in the prompt, no agents | yes, in the prompt | yes |
+| Grok | not yet | not yet | through Sagax's tools |
+| API engines (OpenAI-compatible, Mistral, Groq...) | not yet | not yet | not yet |
 
 ## Engine-provided connectors
 
-A Claude bot uses the connectors on the person's own Claude subscription, and a bot on Grok uses the connectors managed on the person's own xAI account. You authorize each connector once with the engine, in the browser, and the bot can then use it:
+A Claude bot uses the connectors on the person's own Claude subscription, and a bot on Grok uses the connectors managed on the person's own xAI account. Sagax lists Grok's connectors from Grok's own catalog and cannot check whether they are connected, so they show as not verifiable. You authorize each connector once with the engine, in the browser, and the bot can then use it:
 
 1. Sign in to the engine the bot runs on (Claude or Grok/xAI).
 2. Authorize the connector you want on that account.

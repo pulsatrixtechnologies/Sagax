@@ -290,7 +290,7 @@ export function createBotCodeBranchRoutes(deps: BotCodeBranchRouteDeps): RouteHa
         return json(res, 200, { ok: true, sha, state: shown(await git.state()) });
       }
       if (action === "push") {
-        if (!publish) return json(res, 403, { error: "Connect your own GitHub account to push from here (Connect apps, Personal). The server's credentials are never used for you.", code: "github_not_connected" });
+        if (!publish) return json(res, 403, { error: "Connect your own GitHub account to push from here (the GitHub plugin's page, Capabilities > Sources > GitHub connection). The server's credentials are never used for you.", code: "github_not_connected" });
         if (organization && !repo) return json(res, 409, { error: "On this server, a branch is pushed only to an https GitHub remote, with your own GitHub connection.", code: "not_github" });
         const { remote } = await git.push(organization ? repo : undefined);
         deps.audit(auth, "code.branch.push", target, { remote });
@@ -298,7 +298,7 @@ export function createBotCodeBranchRoutes(deps: BotCodeBranchRouteDeps): RouteHa
       }
       if (action === "pr") {
         if (!repo) return json(res, 409, { error: "Pull requests are opened on GitHub only, and this repository's origin is not on GitHub.", code: "not_github" });
-        if (!publish) return json(res, 403, { error: "Connect your own GitHub account to open a pull request from here (Connect apps, Personal).", code: "github_not_connected" });
+        if (!publish) return json(res, 403, { error: "Connect your own GitHub account to open a pull request from here (the GitHub plugin's page, Capabilities > Sources > GitHub connection).", code: "github_not_connected" });
         const state = await git.state();
         if (state.isDefault) return json(res, 409, { error: "The default branch is not proposed from here.", code: "default_branch" });
         if (!state.pushed) return json(res, 409, { error: "Push the branch first: GitHub has no commits for it yet.", code: "not_pushed" });

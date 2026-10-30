@@ -45,10 +45,10 @@ export const GUIDES: Guide[] = [
   {
     id: "plugins",
     title: "Install a plugin for a bot",
-    where: "sidebar Connect apps (Connecter des applications), scope For <bot> (Pour <bot>)",
+    where: "sidebar Capabilities (Capacités), scope For <bot> (Pour <bot>)",
     access: "the bot's owner or someone who manages it; organization: a write waits for an admin, and an admin may limit marketplaces",
     keywords: "plugin plugins greffon installer install marketplace extension ajouter",
-    text: "Yes, a bot can install a plugin itself with the act tool and its plugins parameter: list, addMarketplace, install (also updates), setEnabled, uninstall, removeMarketplace. Each write waits for the person's Allow on a card unless the bot's approval mode is auto or full. On an organization server a write (install, enable, uninstall, a marketplace) still waits for an admin, who may also restrict marketplaces. Listing plugins on the member's own bot does not. Hooks, MCP servers, LSP and bin/ of a plugin are removed. The person can also do it in the sidebar's Connect apps, scope For <bot>.",
+    text: "Yes, a bot can install a plugin itself with the act tool and its plugins parameter: list, addMarketplace, install (also updates), setEnabled, uninstall, removeMarketplace. Each write waits for the person's Allow on a card unless the bot's approval mode is auto or full. On an organization server a write (install, enable, uninstall, a marketplace) still waits for an admin, who may also restrict marketplaces. Listing plugins on the member's own bot does not. Hooks, MCP servers, LSP and bin/ of a plugin are removed. The person can also do it in the sidebar's Capabilities, scope For <bot>.",
     refs: ["tool:act", "file:server/bot-plugins.ts", "file:shared/permissions.ts"],
   },
   {
@@ -110,10 +110,10 @@ export const GUIDES: Guide[] = [
   {
     id: "mcp-server",
     title: "Add an MCP server",
-    where: "sidebar Connect apps (Connecter des applications) > MCP servers (Serveurs MCP)",
+    where: "sidebar Capabilities (Capacités) > Installed (Installées)",
     access: "organization: admin tier; Perspicax admins may limit servers in Settings > Organisation > Allowed MCP servers",
     keywords: "mcp serveur server ajouter add connecteur connector outil tool",
-    text: "Partly: add_mcp_server saves the server switched off, only when the person asked. The bot cannot enable, test or edit it: the person turns it on in the sidebar's Connect apps > MCP servers. On an organization server it is an admin-tier action, and the Perspicax admin may limit which servers are allowed (Perspicax Settings > Organisation > Allowed MCP servers).",
+    text: "Partly: add_mcp_server saves the server switched off, only when the person asked. The bot cannot enable, test or edit it: the person turns it on in the sidebar's Capabilities > Installed. On an organization server it is an admin-tier action, and the Perspicax admin may limit which servers are allowed (Perspicax Settings > Organisation > Allowed MCP servers).",
     refs: ["tool:add_mcp_server", "card:myConnections.servers", "px:settings:org.mcp"],
   },
   {
@@ -204,9 +204,9 @@ export const GUIDES: Guide[] = [
   {
     id: "pages",
     title: "Publish a web page to share",
-    where: "bot tool propose_page; manage in Connect apps > Manage > Published pages (Pages publiées)",
+    where: "bot tool propose_page; manage in Capabilities > Pages (Capacités > Pages)",
     keywords: "page web publier publish partager share lien link site html canevas canvas",
-    text: "The bot proposes it with propose_page; the person reviews it on the card and decides whether to publish and who sees it (only them, the organization, or anyone with the link). Not available in rooms. Published pages are managed, shared or revoked in Connect apps > Manage > Published pages.",
+    text: "The bot proposes it with propose_page; the person reviews it on the card and decides whether to publish and who sees it (only them, the organization, or anyone with the link). Not available in rooms. Published pages are managed, shared or revoked in Capabilities > Pages.",
     refs: ["tool:propose_page"],
   },
   {

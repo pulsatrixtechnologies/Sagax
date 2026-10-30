@@ -1,7 +1,7 @@
 // Reading a private GitHub repository for a bot's plugins and skills.
 //
 // Which credential, in order: the one this marketplace picks on this bot
-// (the GitHub plugin's page in Connect apps, server/github-credentials.ts), then
+// (the GitHub plugin's page in Capabilities, server/github-credentials.ts), then
 // Automatic: the acting person's own GitHub connection
 // (server/github-connect.ts), their other credentials, then the
 // organization's. Before a clone, GET /repos/{owner}/{repo} on api.github.com
@@ -78,7 +78,7 @@ export function githubAccessFailure(
     const until = resetAt ? ` until ${new Date(resetAt).toISOString().slice(11, 16)} UTC` : "";
     return {
       code: "rate_limited", status: 429, fix: "wait", ...(resetAt ? { resetAt } : {}),
-      message: `GitHub's rate limit is reached (${status})${until}. Try again later${credential ? "" : ", or connect GitHub in Connect apps so requests use your own limit"}.`,
+      message: `GitHub's rate limit is reached (${status})${until}. Try again later${credential ? "" : ", or connect GitHub in Capabilities so requests use your own limit"}.`,
     };
   }
   const sso = headers.get("x-github-sso");
@@ -106,14 +106,14 @@ export function githubAccessFailure(
       : "the organization has not granted it access, or it lacks the read:org and repo scopes";
     return {
       code: "org_not_covered", status: 422, fix: "reconnect_with_orgs", organization: owner,
-      message: `Your GitHub token does not cover the organization ${owner} (GitHub answered ${status} for ${repo}): ${why}. Reconnect GitHub with access to organizations (Connect apps > GitHub), or check the address.`,
+      message: `Your GitHub token does not cover the organization ${owner} (GitHub answered ${status} for ${repo}): ${why}. Reconnect GitHub with access to organizations (the GitHub plugin's page (Capabilities > Sources > GitHub connection)), or check the address.`,
     };
   }
   if (status === 404) {
     if (!credential) {
       return {
         code: "private_needs_token", status: 422, fix: "connect_or_token",
-        message: `GitHub answered 404 for ${repo}: it is private, or it does not exist. Connect your GitHub account on the GitHub plugin's page (Connect apps > Sources > GitHub connection), ${context === "marketplace" ? "or add a credential there and pick it for this marketplace" : "or add a credential there for this repository's owner"}.`,
+        message: `GitHub answered 404 for ${repo}: it is private, or it does not exist. Connect your GitHub account on the GitHub plugin's page (Capabilities > Sources > GitHub connection), ${context === "marketplace" ? "or add a credential there and pick it for this marketplace" : "or add a credential there for this repository's owner"}.`,
       };
     }
     return {

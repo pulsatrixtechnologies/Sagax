@@ -10,7 +10,7 @@
  * - perspicax: a Perspicax profile of the bot, as the person speaking
  * - personal: the person's own MCP server (Settings, My connections)
  * - server: an MCP server of this Sagax server (the organization's on an
- *   organization server, Connect apps > MCP servers on a personal one)
+ *   organization server, Capabilities > Installed on a personal one)
  * - plugin: an installed plugin of the bot */
 export type TurnConnectorSource = "claude" | "grok" | "perspicax" | "personal" | "server" | "plugin";
 

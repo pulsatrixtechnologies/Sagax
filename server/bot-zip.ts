@@ -711,7 +711,7 @@ export async function previewBotZip(host: BotZipHost, inspected: InspectedBotZip
   }
   if (includes.plugins) created.push(line("plugins", `${includes.plugins} plugin(s)`, "plugins", { count: includes.plugins }));
   for (const market of manifest.marketplaces) {
-    if (market.needsToken) needsAction.push(line("marketplace", `${market.name} (${market.source}) was read with a token: add one in Connect apps for this bot (Manage > Marketplaces), then Update.`, "marketplaceToken", { name: market.name, source: market.source }));
+    if (market.needsToken) needsAction.push(line("marketplace", `${market.name} (${market.source}) was read with a token: add a credential on the GitHub plugin's page (Capabilities > Sources > GitHub connection), pick it for this source, then Update.`, "marketplaceToken", { name: market.name, source: market.source }));
   }
   if (manifest.marketplaces.length) created.push(line("marketplaces", manifest.marketplaces.map((market) => market.name).join(", "), "marketplaces", { names: manifest.marketplaces.map((market) => market.name).join(", ") }));
   const selection = settings.modelSelection as ModelSelection | undefined;
@@ -731,7 +731,7 @@ export async function previewBotZip(host: BotZipHost, inspected: InspectedBotZip
   } else {
     if (hostKeys.length) created.push(line("host", hostKeys.map((key) => HOST_LABELS[key] ?? key).join(", "), "host", { names: hostKeys.map((key) => HOST_LABELS[key] ?? key).join(", ") }));
     for (const server of manifest.mcpServers) {
-      if (!host.mcpServer(server.name)) needsAction.push(line("mcp", `MCP server ${server.name} is not installed here${server.url ? ` (${server.url})` : ""}: add it in Connect apps.`, "mcpMissing", { name: server.name }));
+      if (!host.mcpServer(server.name)) needsAction.push(line("mcp", `MCP server ${server.name} is not installed here${server.url ? ` (${server.url})` : ""}: add it in Capabilities.`, "mcpMissing", { name: server.name }));
     }
   }
   const profiles = (settings.perspicax as { profiles?: string[] } | undefined)?.profiles ?? [];

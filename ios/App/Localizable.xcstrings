@@ -1,6 +1,72 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Plugin type": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Plugin type" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Type de plugin" } }
+      }
+    },
+    "This plugin is no longer installed.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This plugin is no longer installed." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ce plugin n'est plus installé." } }
+      }
+    },
+    "Add a Claude Code plugin marketplace: a GitHub repository (owner/repo, optionally a branch), an https git address, or the address of its marketplace.json.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Add a Claude Code plugin marketplace: a GitHub repository (owner/repo, optionally a branch), an https git address, or the address of its marketplace.json." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajoutez une marketplace de plugins Claude Code : un dépôt GitHub (owner/repo, une branche au besoin), une adresse git https ou l'adresse de son marketplace.json." } }
+      }
+    },
+    "Show all %lld plugins": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Show all %lld plugins" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Afficher les %lld plugins" } }
+      }
+    },
+    "%lld plugins, %lld installed": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld plugins, %lld installed" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%lld plugins, %lld installés" } }
+      }
+    },
+    "Close plugins": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Close plugins" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Fermer les plugins" } }
+      }
+    },
+    "Connect them from Capabilities, on this device or on your computer.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Connect them from Capabilities, on this device or on your computer." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Connectez-les dans Capacités, sur cet appareil ou sur votre ordinateur." } }
+      }
+    },
+    "Capabilities": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Capabilities" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Capacités" } }
+      }
+    },
+    "Add, sign in, turn on or off: Capabilities > Providers.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Add, sign in, turn on or off: Capabilities > Providers." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ajouter, se connecter, activer ou désactiver : Capacités > Fournisseurs." } }
+      }
+    },
+    "Connect GitHub or a token: Capabilities > Sources.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Connect GitHub or a token: Capabilities > Sources." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Connecter GitHub ou un jeton : Capacités > Sources." } }
+      }
+    },
+    "Open in Capabilities": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Open in Capabilities" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir dans Capacités" } }
+      }
+    },
     "Proactive": {
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Proactive" } },
@@ -3566,24 +3632,6 @@
       "localizations": {
         "en": { "stringUnit": { "state": "translated", "value": "Everything in the catalog is already installed." } },
         "fr": { "stringUnit": { "state": "translated", "value": "Tout le catalogue est déjà installé." } }
-      }
-    },
-    "Open in Connect apps": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Open in Connect apps" } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Ouvrir dans Connecter des applications" } }
-      }
-    },
-    "Connect GitHub or a token: Connect apps > Sources.": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Connect GitHub or a token: Connect apps > Sources." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Connecter GitHub ou un jeton : Connecter des applications > Sources." } }
-      }
-    },
-    "Add, sign in, turn on or off: Connect apps > Installed > Providers.": {
-      "localizations": {
-        "en": { "stringUnit": { "state": "translated", "value": "Add, sign in, turn on or off: Connect apps > Installed > Providers." } },
-        "fr": { "stringUnit": { "state": "translated", "value": "Ajouter, se connecter, activer ou désactiver : Connecter des applications > Installés > Fournisseurs." } }
       }
     },
     "Mascots": {
@@ -8042,22 +8090,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Apps conectados"
-          }
-        }
-      }
-    },
-    "Connected apps need setup": {
-      "localizations": {
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Les apps connectées doivent être configurées"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Os apps conectados precisam de configuração"
           }
         }
       }
@@ -36062,28 +36094,6 @@
         }
       }
     },
-    "Connecting an app here does not hand it to a bot. Each bot has its own Connected apps switch under Settings → Access, and until it is on the bot does not know the app exists.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connecting an app here does not hand it to a bot. Each bot has its own Connected apps switch under Settings → Access, and until it is on the bot does not know the app exists."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connecter une app ici ne la donne pas à un bot. Chaque bot a son propre interrupteur Apps connectées sous Réglages → Accès, et tant qu'il est désactivé, le bot ne sait pas que l'app existe."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Conectar um app aqui não o entrega a um bot. Cada bot tem sua própria chave Apps conectados em Ajustes → Acesso e, enquanto ela estiver desligada, o bot não sabe que o app existe."
-          }
-        }
-      }
-    },
     "Allow %@": {
       "localizations": {
         "en": {
@@ -50886,28 +50896,6 @@
         }
       }
     },
-    "Connect apps in App Settings before giving this bot access.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connect apps in App Settings before giving this bot access."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connectez des apps dans les réglages avant de donner l'accès à ce bot."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Conecte apps nos ajustes antes de dar acesso a este bot."
-          }
-        }
-      }
-    },
     "Cloud backend": {
       "localizations": {
         "en": {
@@ -55920,94 +55908,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Criar e iniciar a VM local"
-          }
-        }
-      }
-    },
-    "Connected apps and MCP servers are managed by an admin of this server.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connected apps and MCP servers are managed by an admin of this server."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Les apps connectées et les serveurs MCP sont gérés par un admin de ce serveur."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Apps conectados e servidores MCP são gerenciados por um admin deste servidor."
-          }
-        }
-      }
-    },
-    "Connect apps and your own MCP tools.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connect apps and your own MCP tools."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connectez des apps et vos propres outils MCP."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Conecte apps e suas próprias ferramentas MCP."
-          }
-        }
-      }
-    },
-    "Close plugins": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Close plugins"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fermer les plugiciels"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fechar plugins"
-          }
-        }
-      }
-    },
-    "Plugin type": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Plugin type"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Type de plugiciel"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tipo de plugin"
           }
         }
       }
@@ -61808,28 +61708,6 @@
         }
       }
     },
-    "Connect apps": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connect apps"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connecter des applications"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Conectar apps"
-          }
-        }
-      }
-    },
     "Created locally": {
       "localizations": {
         "en": {
@@ -62842,28 +62720,6 @@
         }
       }
     },
-    "%lld plugins, %lld installed": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld plugins, %lld installed"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld plugiciels, %lld installés"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld plugins, %lld instalados"
-          }
-        }
-      }
-    },
     "%lld skills": {
       "localizations": {
         "en": {
@@ -62908,28 +62764,6 @@
         }
       }
     },
-    "Show all %lld plugins": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Show all %lld plugins"
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Afficher les %lld plugiciels"
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mostrar todos os %lld plugins"
-          }
-        }
-      }
-    },
     "A label for the account, such as work or personal.": {
       "localizations": {
         "en": {
@@ -62952,28 +62786,6 @@
         }
       }
     },
-    "Add a Claude Code plugin marketplace: a GitHub repository (owner/repo, optionally a branch), an https git address, or the address of its marketplace.json.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Add a Claude Code plugin marketplace: a GitHub repository (owner/repo, optionally a branch), an https git address, or the address of its marketplace.json."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ajoutez une marketplace de plugiciels Claude Code : un dépôt GitHub (owner/repo, une branche au besoin), une adresse git https ou l'adresse de son marketplace.json."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Adicione um marketplace de plugins do Claude Code: um repositório GitHub (owner/repo, opcionalmente uma branch), um endereço git https ou o endereço do seu marketplace.json."
-          }
-        }
-      }
-    },
     "Delete the skill %@? Bots it is assigned to stop using it.": {
       "localizations": {
         "en": {
@@ -62992,50 +62804,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Excluir a habilidade %@? Os bots que a usam deixam de usá-la."
-          }
-        }
-      }
-    },
-    "Nothing is installed yet. Connect an app from Connect apps, or add an MCP server on your computer.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nothing is installed yet. Connect an app from Connect apps, or add an MCP server on your computer."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rien n'est installé pour l'instant. Connectez une application depuis Connecter des applications, ou ajoutez un serveur MCP sur votre ordinateur."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nada instalado ainda. Conecte um app em Conectar apps ou adicione um servidor MCP no seu computador."
-          }
-        }
-      }
-    },
-    "This plugin is no longer installed.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This plugin is no longer installed."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Ce plugiciel n'est plus installé."
-          }
-        },
-        "pt-BR": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Este plugin não está mais instalado."
           }
         }
       }
@@ -79551,22 +79319,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Connectez les apps avec lesquelles ce bot va travailler."
-          }
-        }
-      }
-    },
-    "Connect them from Connect apps, on this device or on your computer.": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connect them from Connect apps, on this device or on your computer."
-          }
-        },
-        "fr": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connectez-les dans Connect apps, sur cet appareil ou sur votre ordinateur."
           }
         }
       }

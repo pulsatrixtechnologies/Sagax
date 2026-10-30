@@ -1,6 +1,6 @@
-// Claude Code plugins on a bot (Connect apps, scope "For this bot"). The
+// Claude Code plugins on a bot (Capabilities, scope "For this bot"). The
 // marketplaces are the installation's one list (server/plugin-marketplaces.ts,
-// Connect apps > Sources > Marketplaces); Sagax copies the plugins
+// Capabilities > Sources > Marketplaces); Sagax copies the plugins
 // the owner picks from there into the bot's own folder. Claude loads each
 // enabled folder with `--plugin-dir`. Every other engine gets the same
 // enabled skills and commands in the turn prompt (server/plugin-turn.ts).
@@ -20,7 +20,7 @@
 //     plugin for everyone); a person's private marketplace serves their
 //     own bots whatever the list says.
 //   - A private marketplace is read with, in order: the credential this
-//     bot picks for it (the GitHub plugin's page in Connect apps, one list,
+//     bot picks for it (the GitHub plugin's page in Capabilities, one list,
 //     server/github-credentials.ts), else the one the installation picks
 //     (Everyone), then Automatic: the acting person's own GitHub connection
 //     (server/github-connect.ts), their other credentials, then the
@@ -451,7 +451,7 @@ export const runGit: GitRunner = (args, options) => new Promise((resolvePromise,
     if (!error) return resolvePromise();
     const detail = String(stderr ?? "");
     if (/Authentication failed|could not read Username|terminal prompts disabled|Repository not found|403/i.test(detail)) {
-      reject(new BotPluginError("The git host did not let Sagax read this repository. If it is private, connect GitHub on the GitHub plugin's page (Connect apps > Sources > GitHub connection), or add a credential there and pick it for this marketplace.", "repository_unreadable", 422, "connect_or_token"));
+      reject(new BotPluginError("The git host did not let Sagax read this repository. If it is private, connect GitHub on the GitHub plugin's page (Capabilities > Sources > GitHub connection), or add a credential there and pick it for this marketplace.", "repository_unreadable", 422, "connect_or_token"));
       return;
     }
     if (/Could not resolve host|unable to access|timed out|Connection refused/i.test(detail) || (error as { killed?: boolean }).killed) {
@@ -614,7 +614,7 @@ export class BotPlugins {
 
   private checkPolicy(source: GitSource): void {
     if (!marketplaceAllowed(this.options.policy(), source)) {
-      throw new BotPluginError(`Your organization does not allow plugins from ${source.id}. An administrator can add it in Settings > Organization > Marketplaces autorisés.`, "marketplace_not_allowed", 403);
+      throw new BotPluginError(`Your organization does not allow plugins from ${source.id}. An administrator can add it in Capabilities > Sources (allowed marketplaces).`, "marketplace_not_allowed", 403);
     }
   }
 
@@ -805,7 +805,7 @@ export class BotPlugins {
     return this.withLock(botId, async () => {
       const state = this.read(botId);
       const market = this.options.marketplaces.record(input.marketplace);
-      if (!market) throw new BotPluginError("Add the marketplace in Connect apps first.", "not_found", 404);
+      if (!market) throw new BotPluginError("Add the marketplace in Capabilities first.", "not_found", 404);
       const key = `${input.plugin}@${input.marketplace}`;
       if (!state.plugins[key] && Object.keys(state.plugins).length >= MAX_PLUGINS) throw new BotPluginError(`A bot can have at most ${MAX_PLUGINS} plugins.`, "too_many", 400);
       const marketRoot = this.options.marketplaces.repoPath(input.marketplace);
@@ -1070,7 +1070,7 @@ export class BotPlugins {
     return { marketplaces: [...new Set(moved.names.values())].sort(), plugins: Object.keys(moved.plugins).sort() };
   }
 
-  // The "Everyone" scope of Connect apps (server/routes/marketplaces.ts):
+  // The "Everyone" scope of Capabilities (server/routes/marketplaces.ts):
   // the installation's own token per marketplace, kept under the
   // `workspace` key. The same order as a bot: this token, then the acting
   // person's GitHub connection, then the organization's tokens.

@@ -16,10 +16,10 @@ describe("settings links", () => {
     expect(settingsSectionLabel("workspaces")).toBe("Account");
     expect(settingsSectionLabel("companion")).toBe("Account");
     expect(settingsSectionLabel("activity")).toBe("Account");
-    // Security and Vault are pages again (2026-10-28); Published pages are in Connect apps
+    // Security and Vault are pages again (2026-10-28); Published pages are in Capabilities
     expect(settingsSectionLabel("security")).toBe("Security");
     expect(settingsSectionLabel("credentials")).toBe("Vault");
-    expect(settingsSectionLabel("pages")).toBe("Connect Apps");
+    expect(settingsSectionLabel("pages")).toBe("Capabilities");
     expect(settingsSectionLabel("experimental")).toBe("Experimental");
     setLocale("fr");
     expect(settingsSectionLabel("engines")).toBe("Modèles");
@@ -61,7 +61,7 @@ describe("settings links", () => {
     expect(mergedSettingsCard("memory")).toBe("organization.memory");
     expect(mergedSettingsCard("mail")).toBeUndefined();
     expect(mergedSettingsCard("general")).toBeUndefined();
-    // deep links to the moved pages: Security and Vault, and Published pages in Connect apps
+    // deep links to the moved pages: Security and Vault, and Published pages in Capabilities
     const moved: unknown[] = [];
     openSettings((action) => moved.push(action), "security");
     openSettings((action) => moved.push(action), "credentials");

@@ -33,9 +33,9 @@ describe("Plugins panel views", () => {
     discover: createElement(DiscoverView, discoverProps), installed: "INSTALLED", pages: "PAGES", sources: "SOURCES", ...overrides,
   }));
 
-  it("one page: Connect Apps, then the five tabs (no Providers tab since 2026-10-29) with Discover first and open, the count on Installed", () => {
+  it("one page: Capabilities, then the five tabs (no Providers tab since 2026-10-29) with Discover first and open, the count on Installed", () => {
     const html = page();
-    expect(html).toMatch(/id="plugins-title"[^>]*>Connect Apps<\/h2>/);
+    expect(html).toMatch(/id="plugins-title"[^>]*>Capabilities<\/h2>/);
     expect(html).not.toContain("data-plugins-connected");
     // no breadcrumb and no "Manage plugins and skills" page
     expect(html).not.toContain("data-breadcrumb");
@@ -91,7 +91,7 @@ describe("Plugins panel views", () => {
       featured: [
         { id: "linear", name: "Linear", description: "Issues", url: "https://mcp.linear.app/mcp", domain: "linear.app", auth: "oauth" },
       ],
-      grok: { connectors: GROK_CLOUD_CONNECTORS, description: "Managed on Grok" },
+      grok: { connectors: GROK_CLOUD_CONNECTORS, description: "Not verifiable: Grok catalog" },
     });
     const keys = discoverItems(rows).map((item) => item.key);
     expect(keys).toContain("featured:linear");
@@ -137,7 +137,7 @@ describe("Plugins panel views", () => {
 
   it("xAI connectors are a catalog managed on Grok: no connect action or status, a Grok link, a separate row", () => {
     const withGrok = buildPluginItems({
-      grok: { connectors: GROK_CLOUD_CONNECTORS, description: "Managed on Grok" },
+      grok: { connectors: GROK_CLOUD_CONNECTORS, description: "Not verifiable: Grok catalog" },
     });
     const html = renderToStaticMarkup(createElement(DiscoverView, {
       items: withGrok, filter: "all", onFilter: noop, type: "any", onType: noop,
@@ -159,7 +159,7 @@ describe("Plugins panel views", () => {
     const detail = renderToStaticMarkup(createElement(PluginDetailView, {
       ...grokConnectorDetail(withGrok.find((item) => item.key === "grok:gmail")!), onBack: noop,
     }));
-    expect(detail).toContain("Managed on Grok");
+    expect(detail).toContain("Not verifiable: Grok catalog");
     expect(detail).toContain("Grok (xAI)");
     expect(detail).toContain("data-grok-manage");
     expect(detail).not.toContain("No account needed");

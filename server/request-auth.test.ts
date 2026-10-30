@@ -213,7 +213,6 @@ describe("scopes", () => {
   // each route reaches its handler, which checks the owner.
   it("lets a client session reach the owner routes of the iOS parity, and nothing beside them", () => {
     for (const [method, path] of [
-      ["POST", "/api/bots/x/connector-cards/m/authorize"],
       ["GET", "/api/bots/x/command-allowlist"], ["DELETE", "/api/bots/x/command-allowlist/rule-1"],
       ["POST", "/api/plugins/install"],
       ["GET", "/api/bots/x/overview"],

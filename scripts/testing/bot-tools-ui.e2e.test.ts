@@ -121,7 +121,7 @@ describe("bot setup and tools in the real renderer", () => {
 
     await openPersona("Access");
     await expect.poll(snapshot, { timeout: 10_000 }).toContain("No MCP servers added yet.");
-    await click("Manage in Connect apps");
+    await click("Manage in Capabilities");
     await expect.poll(() => evaluate("Boolean(document.querySelector('[data-plugins-tab=\"installed\"]'))"), { timeout: 10_000 }).toBe(true);
     await evaluate("document.querySelector('[data-plugins-tab=\"installed\"]')?.click(); true");
     await expect.poll(() => evaluate("Boolean(document.querySelector('[data-plugins-advanced]'))"), { timeout: 10_000 }).toBe(true);
@@ -143,7 +143,7 @@ describe("bot setup and tools in the real renderer", () => {
     // the fixture row so the workspace toggle is in the snapshot.
     if (!(await snapshot()).includes("Turn fixture on")) {
       await openPersona("Access");
-      await click("Manage in Connect apps");
+      await click("Manage in Capabilities");
       await expect.poll(() => evaluate("Boolean(document.querySelector('[data-plugins-tab=\"installed\"]'))"), { timeout: 10_000 }).toBe(true);
       await evaluate("document.querySelector('[data-plugins-tab=\"installed\"]')?.click(); true");
       await expect.poll(snapshot, { timeout: 10_000 }).toContain("fixture");

@@ -1,4 +1,4 @@
-// One list of GitHub (and other git host) credentials, Connect apps >
+// One list of GitHub (and other git host) credentials, Capabilities >
 // Sources > GitHub (2026-10-28). A person's own labeled tokens and the
 // organization's shared ones live together; each marketplace picks one of
 // them, or "Automatic". A client sees a label and a redacted hint, never the

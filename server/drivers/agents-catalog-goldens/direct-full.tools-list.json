@@ -1050,7 +1050,7 @@
     },
     {
       "name": "create_bot",
-      "description": "Create a specialist bot in your section. Primary Bot only. Below Full Access the user approves a card first, except on Approve for me when the user asked for it in their own message. instructions become its soul. Omit modelSelection to use the workspace default, or choose exact IDs from list_team_setup. Connected apps and automatic approvals start disabled. Assign work through delegate_bot. Maximum four new bots per turn.",
+      "description": "Create a specialist bot in your section. Primary Bot only. Below Full Access the user approves a card first, except on Approve for me when the user asked for it in their own message. instructions become its soul. Omit modelSelection to use the workspace default, or choose exact IDs from list_team_setup. MCP servers and automatic approvals start disabled. Assign work through delegate_bot. Maximum four new bots per turn.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -1425,7 +1425,7 @@
     },
     {
       "name": "open_connector_setup",
-      "description": "When the person asks to connect a connector (Microsoft Teams, Outlook, Gmail, Google Drive, OneDrive, SharePoint, Salesforce, X, ...): one call posts a card whose button opens the right sign-in page in their browser (grok.com or claude.ai for this engine's own connectors, else Sagax's Connect apps). Sagax detects the connection. Then answer in one short sentence in their language; no steps, no settings tour.",
+      "description": "When the person asks to connect a connector (Microsoft Teams, Outlook, Gmail, Google Drive, OneDrive, SharePoint, Salesforce, X, ...): one call posts a card whose button opens the right sign-in page in their browser (grok.com or claude.ai for this engine's own connectors, else Sagax's Capabilities). Sagax detects the connection. Then answer in one short sentence in their language; no steps, no settings tour.",
       "inputSchema": {
         "type": "object",
         "additionalProperties": false,
