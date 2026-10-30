@@ -572,6 +572,8 @@ import { NO_ENGINE_PERSON, engineProblem, namesEngine, noEngineError } from "./b
 import { sameModelSelection } from "../shared/thread-model.ts";
 import { allowedFallbackSelection, engineAllowed } from "../shared/org-allowed-engines.ts";
 import { offeredEngines, orgEngineMoveLine } from "../shared/offered-engines.ts";
+import { cleanDisabledModels, modelOffer, modelOn, type ModelSwitches } from "../shared/offered-models.ts";
+import { createModelSwitchRoutes } from "./routes/model-switches.ts";
 import { computerEngineMoveText, removedComputerInstanceIds, writeComputerEngineMoveLines } from "./computer-engine-removal.ts";
 import { cancelPeerApprovalsFor, cancelPeerApprovalsForThread, dismissStalePeerCards, peerApprovalFailure, requestPeerApproval, resolvePeerComms, type ApprovalBus } from "./peer-approval.ts";
 import { peerDeliveryReceipt, type PeerDeliveryReceipt } from "./peer-delivery.ts";
@@ -1492,6 +1494,9 @@ const IDENTITY = identityConfigFromEnv();
 setSharedHost(IDENTITY.kind === "perspicax");
 /** A model on an engine the organization's admin does not allow (allowedEngines). */
 const ORG_ENGINE_NOT_ALLOWED = "Your organization does not allow this model provider.";
+/** 2026-10-30 (lot 2): a model turned off, by the organization or by the person. */
+const MODEL_TURNED_OFF_BY_ORG = "Your organization turned this model off. Pick another model or Auto.";
+const MODEL_TURNED_OFF_BY_PERSON = "You turned this model off in Settings > Models. Turn it back on there, or pick another model.";
 /** Organization server: Perspicax owns each signed-in person's name and email. */
 const PROFILE_MANAGEMENT = profileManagement(IDENTITY);
 // Every stream frame and request rechecks email sessions against this list,
@@ -6813,6 +6818,12 @@ function checkedModelSelection(
   if ((!current || current.selection.instanceId !== selection.instanceId) && orgEngineAllowRefusal(selection.instanceId, payer)) {
     return { ok: false, status: 403, error: ORG_ENGINE_NOT_ALLOWED };
   }
+  // 2026-10-30 (lot 2): a model turned off is never picked by name (Auto
+  // then starts from a model still on); the one a bot already runs stays
+  // writable until applyModelSwitches moves it.
+  const modelRefusal = value.auto === true || (current && current.selection.instanceId === selection.instanceId && current.selection.model === selection.model)
+    ? undefined : modelSwitchRefusal(selection.instanceId, selection.model, payer);
+  if (modelRefusal) return { ok: false, status: 403, error: modelRefusal };
   // Auto (docs/plans/2026-10-08-auto-model.md): only true is stored.
   if (value.auto !== undefined && value.auto !== true && value.auto !== false) {
     return { ok: false, status: 400, error: "modelSelection.auto must be a boolean" };
@@ -21699,6 +21710,9 @@ async function startTurn(
     automationSource: opts?.automationSource,
   }));
   if (orgRefusal) throw Object.assign(new Error(orgRefusal), { status: 409, code: "engine_not_allowed" });
+  // 2026-10-30 (lot 2): a model turned off never runs a turn by name
+  const modelRefusal = bot.modelSelection.auto === true ? undefined : modelSwitchRefusal(instance.instanceId, bot.modelSelection.model, effectiveBotOwner(bot));
+  if (modelRefusal) throw Object.assign(new Error(modelRefusal), { status: 409, code: "model_turned_off" });
   const toolScope = toolScopeForTurn(bot.id);
   // On a Cloud home a guest's turn never gets a shell or reads outside its
   // own folder (docs/cloud-pro.md): an engine that cannot run it that way is
@@ -29569,6 +29583,9 @@ function configStatus() {
     membership: workspaceMembership(),
     // organization server: the model providers its admin allows (null: all)
     ...(IDENTITY.kind === "perspicax" ? { allowedEngines: orgAllowedEngines(), ownAccountsOutsideList: orgOwnAccountsOutsideList() } : {}),
+    // 2026-10-30 (lot 2): the models the organization turned off; on a solo
+    // server, the installation's own switches (a person's own come with configForPerson)
+    ...(IDENTITY.kind === "perspicax" ? { disabledModels: orgDisabledModels() } : { myDisabledModels: personDisabledModels(null) }),
     // organization server: new threads start confidential (server/confidential-threads.ts)
     ...(IDENTITY.kind === "perspicax" ? { confidentialThreadsByDefault: confidentialThreadsByDefault() } : {}),
   };
@@ -29587,6 +29604,8 @@ function configForPerson<T extends Parameters<typeof configForViewer>[0]>(status
   return {
     ...shown,
     personalSettings: true,
+    // 2026-10-30 (lot 2): the person's own model switches
+    myDisabledModels: own.disabledModels ?? [],
     features: { ...base.features, ...own.features },
     browserProfiles: [...(base.browserProfiles ?? []), ...own.browserProfiles.map((profile) => ({ ...profile, personal: true }))],
   };
@@ -30376,7 +30395,9 @@ function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = fa
       if (!plan.ok) continue;
       via = plan.via;
     }
-    const options = instance.models.options.filter((option) => !option.custom &&
+    // 2026-10-30 (lot 2): only models still on, for the organization and the bot's owner
+    const switches = modelSwitchesFor(effectiveBotOwner(bot));
+    const options = instance.models.options.filter((option) => !option.custom && modelOn(switches, instance.instanceId, option.id) &&
       (!hostedModels || hostedModels.allows({ instanceId: instance.instanceId, model: option.id })));
     // The bot's fast model (#1209): any row this engine lists, a local or
     // custom one included, when hosted models allow it.
@@ -30412,7 +30433,8 @@ function relayEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = f
     if (orgEngineTurnRefusal(bot, instance, speaker)) continue;
     if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") continue;
     let via: AutoEngine["via"] = "server";
-    const options = instance.models.options.filter((option) => !hostedModels || hostedModels.allows({ instanceId: instance.instanceId, model: option.id }));
+    const switches = modelSwitchesFor(effectiveBotOwner(bot));
+    const options = instance.models.options.filter((option) => modelOn(switches, instance.instanceId, option.id) && (!hostedModels || hostedModels.allows({ instanceId: instance.instanceId, model: option.id })));
     const entry = (patch: Partial<AutoEngine> = {}): AutoEngine => ({
       instanceId: instance.instanceId,
       driverKind: instance.driverKind,
@@ -38627,6 +38649,28 @@ ROUTES.push(createPersonSettingsRoutes({
     }
   },
 }));
+// 2026-10-30 (lot 2): the person's own model switches (Settings > Models)
+ROUTES.push(createModelSwitchRoutes({
+  org: () => orgDisabledModels(),
+  owner: (auth) => {
+    if (IDENTITY.kind === "perspicax") return personSettingsOwner(sessionPrincipal(auth));
+    return callerCan(auth, "server.settings") ? "installation" : null;
+  },
+  mine: (owner) => (owner === "installation" ? personDisabledModels(null) : personDisabledModels(owner)),
+  save: (owner, list) => {
+    if (owner === "installation") {
+      saveConfig({ disabledModels: list });
+      cfg.disabledModels = list;
+      applyModelSwitches();
+      broadcast({ kind: "config", ...configStatus() });
+    } else {
+      personSettings.setDisabledModels(owner, list);
+      applyModelSwitches(owner);
+      // each stream gets its own person's list (configForPerson)
+      broadcast({ kind: "config", ...configStatus() });
+    }
+  },
+}));
 ROUTES.push(createPersonVoiceKeysRoutes({
   store: personVoiceKeys,
   principal: (auth) => (IDENTITY.kind === "perspicax" ? personVoiceKeysPrincipal(sessionPrincipal(auth)) : null),
@@ -40517,6 +40561,10 @@ const orgOpsDeps: OpsDeps = {
         allowedMarketplaces: policy?.mode === "list" ? [...policy.allow] : null,
         allowedEngines: cfg.organization?.allowedEngines ? [...cfg.organization.allowedEngines] : null,
         ownAccountsOutsideList: cfg.organization?.ownAccountsOutsideList === true,
+        // 2026-10-30 (lot 2): per model, `<engine>/<model>`, and each engine's models to switch
+        disabledModels: orgDisabledModels(),
+        engineModels: Object.fromEntries(registry.instances().map((instance) => [instance.instanceId,
+          instance.models.options.filter((option) => !option.local).map((option) => ({ id: option.id, label: option.label || option.id }))])),
         defaults: { engine: selection?.instanceId ?? null, model: selection?.model ?? null, approvalMode: cfg.newBotDefaults?.profile.approvalMode ?? null },
       },
       backup,
@@ -40556,6 +40604,18 @@ const orgOpsDeps: OpsDeps = {
       orgAudit({ category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["allowedEngines"], before: { allowedEngines: before }, after: { allowedEngines: changes.allowedEngines }, actor });
       applyOrgEngineAllowList();
       // Every open picker lists the new set at once (config frame).
+      broadcast({ kind: "config", ...configStatus() });
+    }
+    if (changes.disabledModels !== undefined) {
+      // 2026-10-30 (lot 2): models off for everyone, admins included
+      const before = orgDisabledModels();
+      const organization = { ...cfg.organization };
+      if (changes.disabledModels.length) organization.disabledModels = changes.disabledModels;
+      else delete organization.disabledModels;
+      saveConfig({ organization });
+      cfg.organization = organization;
+      orgAudit({ category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["disabledModels"], before: { disabledModels: before }, after: { disabledModels: changes.disabledModels }, actor });
+      applyModelSwitches();
       broadcast({ kind: "config", ...configStatus() });
     }
     if (changes.ownAccountsOutsideList !== undefined) {
@@ -40729,6 +40789,59 @@ function saveOrgPluginMarketplaces(raw: unknown, actor: AdminActor): void {
  * until a list is set. */
 function consoleEngineAllowed(instanceId: string): boolean {
   return engineAllowed(orgAllowedEngines(), instanceId);
+}
+/** 2026-10-30 (lot 2): the models the organization turned off in Perspicax
+ * (`<engine>/<model>`, shared/offered-models.ts). Empty on a solo server. */
+function orgDisabledModels(): string[] {
+  return IDENTITY.kind === "perspicax" ? cleanDisabledModels(cfg.organization?.disabledModels) : [];
+}
+/** The models this person turned off (an organization server's person), or
+ * the installation's own list on a solo server. */
+function personDisabledModels(principalId: string | null | undefined): string[] {
+  if (IDENTITY.kind !== "perspicax") return cleanDisabledModels(cfg.disabledModels);
+  const owner = personSettingsOwner(principalId);
+  return owner ? personSettings.get(owner).disabledModels ?? [] : [];
+}
+/** Both levels for one person (a bot's owner, a turn's payer). */
+function modelSwitchesFor(principalId: string | null | undefined): ModelSwitches {
+  return { org: orgDisabledModels(), mine: personDisabledModels(principalId) };
+}
+/** Why this model may not be picked or run for this person, if it may not. */
+function modelSwitchRefusal(instanceId: string, model: string, principalId: string | null | undefined): string | undefined {
+  const offer = modelOffer(modelSwitchesFor(principalId), instanceId, model);
+  if (offer === "adminOff") return MODEL_TURNED_OFF_BY_ORG;
+  if (offer === "personOff") return MODEL_TURNED_OFF_BY_PERSON;
+  return undefined;
+}
+/** A bot on a model now off (the organization's switch, or its owner's own)
+ * moves to Auto on the same engine, from its first model still on; a
+ * thread's own model follows its bot. `owner`: only that person's bots. */
+function applyModelSwitches(owner?: string): void {
+  for (const { id } of store.bots) {
+    const bot = store.bot(id);
+    if (!bot) continue;
+    const botOwner = effectiveBotOwner(bot);
+    if (owner !== undefined && botOwner !== owner) continue;
+    const switches = modelSwitchesFor(botOwner);
+    const selection = bot.modelSelection;
+    const offer = modelOffer(switches, selection.instanceId, selection.model);
+    if (offer !== "on") {
+      const live = registry.get(selection.instanceId);
+      const next = live?.models.options.find((option) => !option.custom && modelOn(switches, selection.instanceId, option.id));
+      if (next) {
+        store.applyModelDefault(id, { instanceId: selection.instanceId, model: next.id, auto: true });
+        console.log(`[models] bot=${id} model ${selection.instanceId}/${selection.model} is turned off; now on Auto (${next.id})`);
+        if (offer === "adminOff" && bot.threadId) {
+          const move = { from: selection.model, to: orgEngineName(selection.instanceId) };
+          store.appendMessage(bot.threadId, { role: "bot", kind: "activity", tool: { name: `notice: ${orgEngineMoveLine(move)}`, ok: true, engineMove: move } });
+        }
+      }
+    }
+    const stray = (store.bot(id)?.tasks ?? [])
+      .filter((task) => task.modelSelection && !modelOn(switches, task.modelSelection.instanceId, task.modelSelection.model))
+      .map((task) => task.threadId);
+    if (stray.length) store.followBotModel(id, stray, (from, to) => hostedModels?.resetTask(from, to) ?? {});
+  }
 }
 /** 2026-10-30: the organization lets a person run an engine outside its
  * list on their own subscription or key (Perspicax, Model providers:

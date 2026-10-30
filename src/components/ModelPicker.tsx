@@ -15,7 +15,8 @@ import { api, useStore, type Bot, type ConfigStatus, type InstanceInfo, type Mod
 import type { ModelVariantOption } from "../../shared/runtime-events";
 import { isDesktopModelId, localModelRows, localRowUnavailable, refreshLocalModelsOnOpen, runsLoopbackModels } from "@/lib/local-models";
 import { engineOffer, ownAccountOnly } from "../../shared/offered-engines";
-import { engineOfferContext } from "@/lib/offered-instances";
+import { engineOfferContext, modelSwitches } from "@/lib/offered-instances";
+import { modelOn } from "../../shared/offered-models";
 import { configuredModelInstances, isClaudeAccount, SIGN_IN_FAMILY_LABEL, signInFamily, splitEngineRail, type SignInFamily } from "@/lib/engine-rail";
 import { useShowUnreadyProviders } from "@/lib/unready-providers-preference";
 import { InstanceProviderMark } from "./ProviderIcons";
@@ -766,6 +767,7 @@ export function ModelPicker({
   // (2026-10-18); one the organization pays for but has not given them,
   // that nothing of their own serves, is not offered (2026-10-16).
   const offerContext = engineOfferContext(state.config, orgMode, myEngines);
+  const switches = modelSwitches(state.config);
   const notAllowed = (instance: InstanceInfo) => engineOffer(offerContext, instance.instanceId) === "notAllowed";
   const notGiven = (instance: InstanceInfo) => engineOffer(offerContext, instance.instanceId) === "notGiven";
   // An organization server offers an engine only when that engine's own
@@ -1142,8 +1144,11 @@ export function ModelPicker({
     // (#1154): a model it cannot run is not offered, except the one already
     // picked, which stays and says so (modelRow's warning).
     const mine = orgMode ? accountModels.get(instance.instanceId) : undefined;
-    const runnable = (option: ModelOption) => !mine || option.custom || mine.has(option.id)
-      || (instance.instanceId === selection.instanceId && option.id === selection.model);
+    const runnable = (option: ModelOption) => (!mine || option.custom || mine.has(option.id)
+      || (instance.instanceId === selection.instanceId && option.id === selection.model))
+      // 2026-10-30 (lot 2): a model turned off (Settings > Models, or the
+      // organization in Perspicax) is listed nowhere, except the one picked
+      && (modelOn(switches, instance.instanceId, option.id) || (instance.instanceId === selection.instanceId && option.id === selection.model));
     const endpointList = instance.driverKind === "openai-compat";
     const offered = (orgMode ? options.filter((option) => !option.custom || isDesktopModelId(option.id)
       || (endpointList && !option.local && !option.id.includes("::"))) : options).filter(runnable);

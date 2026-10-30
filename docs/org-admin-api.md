@@ -932,6 +932,8 @@ never a message; a routine failure carries `routineId`.
     "allowedMarketplaces": null,
     "allowedEngines": ["claude", "codex"],
     "ownAccountsOutsideList": false,
+    "disabledModels": ["codex/gpt-4o"],
+    "engineModels": { "claude": [{ "id": "claude-opus-4-1", "label": "Claude Opus 4.1" }], "codex": [{ "id": "gpt-5", "label": "GPT-5" }, { "id": "gpt-4o", "label": "GPT-4o" }] },
     "defaults": { "engine": "claude", "model": "claude-opus-4-1", "approvalMode": "ask" }
   },
   "backup": { "enabled": true, "schedule": "daily 03:00 UTC", "lastAt": 1791472000000, "ok": true }
@@ -998,6 +1000,20 @@ account"; Auto still never picks it, and their bot stays on it when the
 list changes. Turning it off moves such bots to Auto at once, as a change
 of the list does. A sign-in the provider refused since (expired) never
 counts as the person's own account.
+
+`disabledModels` (2026-10-30, lot 2 of "Providers, models and voice"): the
+models the organization turned off, one by one, each named
+`<engine>/<model>` (the engine instance id, then the model id; only the
+first slash splits, so `openrouter/vendor/model` is OpenRouter's
+`vendor/model`). `POST settings` takes the whole list (`[]` turns every
+model back on). `engineModels` lists each engine's models for the switches.
+A model off is off for everyone, admins included, whoever pays: it leaves
+every list (the picker, New bot, a bot's backup model), Auto never picks it,
+a model choice naming it answers 403 and a turn on it 409
+`model_turned_off`; a bot on it moves to Auto on the same engine, from its
+first model still on. A model no list names is on: a new model an engine
+lists arrives on. Each person also has their own switches (Settings >
+Models, `GET/PUT /api/me/models`), for their own bots, Auto and voice.
 
 ## Computers
 

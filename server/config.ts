@@ -498,6 +498,9 @@ const appConfigSchema = z.object({
      * choice). Absent or false: an engine off the list is off for everyone,
      * admins included. */
     ownAccountsOutsideList: z.boolean().optional(),
+    /** 2026-10-30 (lot 2): models the organization turned off, as
+     * `<engine>/<model>` (shared/offered-models.ts). Off for everyone. */
+    disabledModels: z.array(z.string().max(300)).max(2000).optional(),
     /** #1098: folders of the server's disk an admin opened to members as
      * working folders, keyed by principal id or `*` for every member
      * (server/member-folders.ts). */
@@ -590,6 +593,9 @@ const appConfigSchema = z.object({
    * server's name and address live in its `instances` entry; only the key
    * is here, write-only, handed to that one instance. */
   openaiCompatServers: z.record(z.string().max(80), z.object({ key: optionalText }).strict()).optional(),
+  /** 2026-10-30 (lot 2): on a solo server, the models its person turned off
+   * (`<engine>/<model>`, shared/offered-models.ts). */
+  disabledModels: z.array(z.string().max(300)).max(2000).optional(),
   /** Historical config section name "box" (the persisted config.json key); the
    * provider is Boat now and the key is kept for compatibility. */
   box: z.object({ token: optionalText }).optional(),
@@ -778,6 +784,8 @@ export interface AppConfig {
     allowedEngines?: string[];
     /** 2026-10-30: own subscriptions and keys run engines outside the list. */
     ownAccountsOutsideList?: boolean;
+    /** 2026-10-30: models the organization turned off (`<engine>/<model>`). */
+    disabledModels?: string[];
     /** #1098: folders of the server's disk an admin opened to members as
      * working folders, by principal id or `*` (server/member-folders.ts). */
     memberFolders?: Record<string, string[]>;
@@ -829,6 +837,8 @@ export interface AppConfig {
   openaiCompat?: { key?: string; url?: string; model?: string; provider?: string };
   /** 2026-10-30: each named OpenAI-compatible server's key, by instance id. */
   openaiCompatServers?: Record<string, { key?: string }>;
+  /** 2026-10-30: a solo server's own model switches (`<engine>/<model>` off). */
+  disabledModels?: string[];
   /** Persisted under the historical config key "box" (ascii.dev renamed Box to Boat). */
   box?: { token?: string };
   /** A named host from the user's SSH config. Authentication stays with SSH. */
@@ -1878,6 +1888,7 @@ export function saveConfig(
   if (checkedPatch.organization !== undefined) disk.organization = checkedPatch.organization;
   // Replaced whole: removing a named server removes its key.
   if (checkedPatch.openaiCompatServers !== undefined) disk.openaiCompatServers = checkedPatch.openaiCompatServers;
+  if (checkedPatch.disabledModels !== undefined) disk.disabledModels = checkedPatch.disabledModels;
   if (checkedPatch.identityMigratedAt !== undefined) disk.identityMigratedAt = checkedPatch.identityMigratedAt;
   if (checkedPatch.privateThreadsMigratedAt !== undefined) disk.privateThreadsMigratedAt = checkedPatch.privateThreadsMigratedAt;
   if (checkedPatch.invites !== undefined) disk.invites = checkedPatch.invites;
