@@ -232,8 +232,11 @@ migrated and nothing a turn mounts changed: `resolveBotCapabilities`
 (`server/capabilities.ts`), served by `GET /api/bots/:id/capabilities`
 (`server/routes/bot-capabilities.ts`, member scope `orgDirectory`, the
 handler checks `viewerBotLevel`; `?engine=<instanceId>` previews another
-engine) and by the main bot's `sagax_settings` get `bot.capabilities`
-(read only). Every screen reads this list (Capabilities > Installed in the
+engine), by the console admin API's `GET bots/{id}/capabilities`
+(`server/org-admin-bots.ts`, lot 1d: the same list for the console person,
+manager in reach or the owner by `own-bot`, `docs/org-admin-api.md`) and by
+the main bot's `sagax_settings` get `bot.capabilities` (read only).
+Every screen reads this list (Capabilities > Installed in the
 bot's scope, Bot > Capabilities, the iPhone, the Perspicax console's bot
 sheet). Keep these rules, covered by `server/capabilities.test.ts`,
 `shared/capabilities.test.ts` and `server/routes/bot-capabilities.test.ts`:
