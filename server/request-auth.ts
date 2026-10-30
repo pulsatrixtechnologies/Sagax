@@ -544,6 +544,8 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   { methods: ["GET", "PATCH"], path: /^\/api\/me\/experimental$/ },
   { methods: ["GET"], path: /^\/api\/me\/voice-keys$/ },
   { methods: ["PUT", "DELETE"], path: /^\/api\/me\/voice-keys\/(?:elevenlabs|fish|xai|openai)$/ },
+  { methods: ["GET"], path: /^\/api\/me\/providers$/ },
+  { methods: ["PUT", "DELETE"], path: /^\/api\/me\/providers\/(?:keys|servers)\/[^/]{1,100}$/ },
   // The person's visit signature (server/routes/web-bot-auth.ts): on unless
   // they turn it off. No admin right. The private key is never answered.
   { methods: ["GET", "PUT"], path: /^\/api\/me\/web-bot-auth$/ },
@@ -923,6 +925,9 @@ export const CLIENT_ALLOW: ReadonlyArray<{ methods: readonly string[]; path: Reg
   // A person's own engines: what their own turns run on, and their own
   // subscription sign-in (server/principal-engine-logins.ts).
   { methods: ["GET"], path: /^\/api\/me\/engines$/, feature: "orgDirectory" },
+  // On an organization server this legacy form writes the person's own
+  // Perspicax key, without changing the shared engine configuration.
+  { methods: ["GET", "POST"], path: /^\/api\/instances\/[\w.-]+\/api-key$/, feature: "orgDirectory" },
   // A person's own usage ledger and their own per-job traces
   // (server/routes/usage.ts, 2026-10-15 / 2026-10-23): the handler keeps the
   // caller's own turns only, never another person's; the whole ledger and the
@@ -1019,7 +1024,6 @@ export const PERMISSION_ROUTES: ReadonlyArray<{ methods: readonly string[]; path
   { methods: ["PATCH", "DELETE"], path: /^\/api\/instances\/[\w.-]+$/, permission: "engines.manage" },
   { methods: ["PATCH"], path: /^\/api\/instances\/[\w.-]+\/icon$/, permission: "engines.manage" },
   { methods: ["GET"], path: /^\/api\/instances\/[\w.-]+\/auth\/status$/, permission: "engines.manage" },
-  { methods: ["GET", "POST"], path: /^\/api\/instances\/[\w.-]+\/api-key$/, permission: "engines.manage" },
   { methods: ["POST"], path: /^\/api\/instances\/[\w.-]+\/(?:refresh-models|install|auth\/start|auth\/complete|auth\/cancel|auth\/sign-out|claude-update)$/, permission: "engines.manage" },
   { methods: ["POST"], path: /^\/api\/instances\/(?:claude|chatgpt)-accounts$/, permission: "engines.manage" },
   // 2026-10-19: the four admin keys an admin may now give in Perspicax.

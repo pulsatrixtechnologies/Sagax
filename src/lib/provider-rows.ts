@@ -21,6 +21,7 @@ import type { LocalModelSettings } from "@/lib/desktop-local-models";
 import type { KeyRowId } from "@/components/settings/ProviderKeys";
 import type { PersonalVoiceKeyProvider, PersonalVoiceKeysView } from "../../shared/person-voice-keys";
 import { PERSONAL_VOICE_KEY_PROVIDERS } from "../../shared/person-voice-keys";
+import { PERSONAL_PROVIDER_NAMES, type ProviderAccountsView, type PersonalProviderServer } from "../../shared/provider-accounts";
 import { myTurnsReady } from "../../shared/org-engine-readiness";
 
 /** Who pays: the person, the organization, or nobody (a model of this computer). */
@@ -48,6 +49,8 @@ export interface ProviderRow {
   keyRow?: KeyRowId;
   /** The person's own voice key (voice-keys.enc). */
   voiceKey?: PersonalVoiceKeyProvider;
+  accountProvider?: string;
+  accountServer?: PersonalProviderServer;
   /** A named OpenAI-compatible server. */
   compatServerId?: string;
   /** A local model server of this computer. */
@@ -82,6 +85,7 @@ export interface ProviderInput {
   ready: (instance: InstanceInfo) => boolean;
   compatServers: ReadonlyArray<{ instanceId: string; name: string; configured: boolean }>;
   voiceKeys: PersonalVoiceKeysView | null;
+  accounts?: ProviderAccountsView | null;
   local: LocalModelSettings | null;
   /** Display names of the key rows (ProviderKeys keyRowName). */
   keyName: (id: KeyRowId) => string;
@@ -119,6 +123,7 @@ export function providerRows(input: ProviderInput): ProviderRow[] {
   }
 
   for (const instance of input.instances) {
+    if (instance.providerAccount?.serverId) continue;
     const server = compat.get(instance.instanceId);
     if (server) {
       rows.push({
@@ -213,6 +218,48 @@ export function providerRows(input: ProviderInput): ProviderRow[] {
 
   const order: Record<ProviderKind, number> = { account: 0, key: 1, server: 2, local: 3 };
   const all = [...rows, ...keyRows.values(), ...local];
+  if (input.accounts) {
+    const drivers: Record<string, string> = { claudeAgent: "anthropic", codex: "openai", grokAgent: "xai", grok: "xai", geminiAgent: "google", kimiAgent: "moonshot", mistral: "mistral", cerebras: "cerebras", groq: "groq", opencodeGo: "opencode", cursorAgent: "cursor", droidAgent: "factory", minimax: "minimax", hermesAgent: "openrouter" };
+    const providerOf = (row: ProviderRow) => {
+      const explicit = row.voiceKey ?? (row.keyRow === "fishAudio" ? "fish" : row.keyRow === "opencodeGo" ? "opencode" : row.keyRow);
+      if (explicit) return explicit;
+      const driver = input.instances.find((instance) => row.instanceIds.includes(instance.instanceId))?.driverKind ?? "";
+      if (driver === "piAgent") return ["anthropic", "openai", "xai", "google", "moonshot"].find((provider) => input.accounts!.keys.some((key) => key.provider === provider));
+      return drivers[driver];
+    };
+    for (const row of all) {
+      const provider = providerOf(row);
+      if (row.kind === "key" && row.payer === "me" && provider && provider in PERSONAL_PROVIDER_NAMES) {
+        row.accountProvider = provider;
+        row.voiceKey = undefined;
+        row.manage = true;
+      }
+    }
+    for (let index = all.length - 1; index >= 0; index--) {
+      const row = all[index]!;
+      if (!row.accountProvider) continue;
+      const earlier = all.find((candidate, at) => at < index && candidate.accountProvider === row.accountProvider && candidate.payer === "me");
+      if (!earlier) continue;
+      earlier.instanceIds = [...new Set([...earlier.instanceIds, ...row.instanceIds])];
+      earlier.brings = [...new Set([...earlier.brings, ...row.brings])];
+      if (row.state === "connected") earlier.state = "connected";
+      all.splice(index, 1);
+    }
+    for (const key of input.accounts.keys) {
+      if (key.provider.startsWith("compat:")) continue;
+      const matching = all.find((row) => row.payer === "me" && row.accountProvider === key.provider);
+      if (matching) continue;
+      all.push({ id: `personal-key:${key.provider}`, kind: "key", name: PERSONAL_PROVIDER_NAMES[key.provider as keyof typeof PERSONAL_PROVIDER_NAMES] ?? key.provider,
+        payer: "me", keyWhere: input.organization ? "perspicax" : "server", state: "connected", instanceIds: [],
+        brings: ["elevenlabs", "fish", "xai", "openai"].includes(key.provider) ? ["voice"] : [], accountProvider: key.provider, manage: true });
+    }
+    for (const server of input.accounts.servers) {
+      const instance = input.instances.find((entry) => entry.providerAccount?.serverId === server.instanceId);
+      all.push({ id: `personal-server:${server.instanceId}`, kind: "server", name: server.name, payer: "me",
+        keyWhere: input.organization ? "perspicax" : "server", state: instance ? "connected" : "offline", instanceIds: instance ? [instance.instanceId] : [],
+        brings: [{ models: instance?.models.options.length ?? server.models.length }], accountServer: server, manage: true });
+    }
+  }
   // a key row that serves no engine and brings nothing else stays when it is saved: the person sees it and can remove it
   return [...all.sort((a, b) => order[a.kind] - order[b.kind]), ...off];
 }

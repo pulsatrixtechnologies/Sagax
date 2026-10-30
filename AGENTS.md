@@ -24,6 +24,68 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Personal provider accounts and one voice path (2026-10-30)
+
+Lot 3 of "Providers, models and voice". A person manages all 17 personal
+provider keys and their own OpenAI or Anthropic compatible servers directly
+in Providers, without an admin (`GET /api/me/providers`,
+`PUT/DELETE /api/me/providers/keys/:provider` and `/servers/:id`,
+`server/routes/provider-accounts.ts`). Metadata alone returns. Organization
+accounts are stored in Perspicax using the Link and subject tokens; solo
+accounts use the server's existing provider config or `provider-keys.enc`.
+`ProviderAccounts` serializes imports per person and retires legacy encrypted
+files only after every remote import is acknowledged. Imports preserve an
+existing remote key. A deleted key cannot be reimported from an old file.
+
+`PersonalProviderInstances` gives each person's compatible endpoint a stable
+instance of its own. Its payer must own it, including when another person
+chooses the same server id; no organization key falls back onto it. Anonymous
+local endpoints also work. The shared OpenAI chat runtime handles both
+protocols; `drivers/anthropic-compat.ts` translates Messages, tools, images,
+usage and SSE while retaining the same approvals and tool loop. Its own
+model catalog replaces the built-in seeds.
+
+Voice-mode serves xAI, OpenAI, ElevenLabs, Fish, system voices and Chatterbox;
+speech recognition stays xAI or OpenAI. `/api/tts/prepare`, `/voices` and
+`/speak` delegate to this same pipeline. Each person's ElevenLabs and Fish
+organization grants are separate (`elevenlabsVoice`, `fishVoice`), like
+`xaiVoice`; their own key needs no grant. Fish streams 24 kHz PCM and installed
+WAV voices convert to it. Live uses the existing OpenAI key: old `live.key`
+is folded into `openai.key` when needed, and the retired Live key variable
+is no longer read. The verification launcher forwards `SAGAX_OPENAI_API_KEY`
+only with its fake loopback Live URL.
+
+Tests: `provider-keys.test.ts`, `provider-accounts.test.ts`,
+`routes/provider-accounts.test.ts`, `personal-provider-instances.test.ts`,
+`drivers/anthropic-compat.test.ts`, `provider-accounts.e2e.test.ts`,
+`provider-accounts-org.e2e.test.ts` (real two-person catalogs), the existing voice, credentials, Live and provider-row tests.
+
+## Models switched one by one (2026-10-30)
+
+Lot 2 of "Providers, models and voice". Each model has a stable id
+`<engine>/<model>` (`shared/offered-models.ts` `modelKey`, only the first
+slash splits) and a switch at two levels: the organization's
+(`cfg.organization.disabledModels`, set in Perspicax through `POST
+/api/org/admin/settings` `disabledModels`, off for everyone, admins
+included) and the person's (`principals/<id>/person-settings.json`
+`disabledModels` on an organization server, `cfg.disabledModels` on a solo
+one; `GET/PUT /api/me/models`, `server/routes/model-switches.ts`; Settings >
+Models > Active models, `ModelSwitchesSettings`). The app reads both in its
+config (`disabledModels`, `myDisabledModels`): `offeredModels` (engines
+first, then the models still on) is what `useOfferedInstances` answers, and
+the picker's catalog drops a model off (the one picked stays visible). The
+server refuses a model off by name (`modelSwitchRefusal`: 403 on a choice,
+409 `model_turned_off` on a turn), keeps it out of Auto's and
+`run_with_engine`'s candidates (the bot owner's switches), and moves a bot on
+it to Auto on the same engine (`applyModelSwitches`). Tests:
+`shared/offered-models.test.ts`, `server/routes/model-switches.test.ts`,
+`server/org-admin-ops.test.ts`, `ModelSwitchesSettings.test.ts`. Native iOS
+`ConfigStatus` carries both disabled lists into `ModelMenu.sections`; a
+disabled model stays out of provider, current, search, favorite and follow-bot
+rows. Auto's fast choices use the same switches: disabled choices are refused
+on save and removed from stored bot/thread selections when switches change.
+Covered by `ModelMenuTests` and `model-switches.e2e.test.ts` too.
+
 ## Settings > Providers (2026-10-30)
 
 Lot 1 of "Providers, models and voice". One page, section id `providers`
@@ -6410,6 +6472,21 @@ connectors and My MCP servers only.
   `src/components/PluginsPanel.gestures.test.ts`,
   `src/components/plugins/ConnectAppsView.test.ts`. Captures:
   `scripts/capture-github-plugin.mjs`, `docs/screenshots/github-plugin/`.
+
+## Capabilities on iPhone and iPad (lot 1c, 2026-10-30)
+
+Library > Capabilities opens the server's one resolved list on the iPhone
+and iPad (`BotCapabilityList`, `ios/Sources/CompanionCore/BotCapabilities.swift`).
+It shows scope, state, source and the engine's receipt summary, including
+skills omitted by the prompt index. Keys and bot ids never appear. Unknown
+future fields and values remain decodable. The view's identity follows the
+bot, so a different bot creates a fresh state model.
+
+`BotCapabilitiesModel` calls existing plugin, server, Role and skill routes
+for switches that `canToggle` allows. Skill enablement still opens the skill
+text for review. A disabled installation server and a library whose feature
+is off stay unchanged. Sidecar pairings use the existing bot-plugins surface
+gate. Tests: `ios/Tests/CompanionCoreTests/BotCapabilitiesTests.swift`.
 
 ## Capabilities: the same resolved list on desktop (lot 1b, 2026-10-30)
 

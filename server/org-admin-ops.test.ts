@@ -23,7 +23,7 @@ function setup() {
     test: async (kind, id) => (kind === "marketplace" ? null : id === "slow" ? new Promise(() => {}) : id === "boom" ? Promise.reject(new Error("refused by host")) : { ok: id === "claude", reason: id === "claude" ? null : "no_access", label: id === "claude" ? null : "No access" }),
     logs: (input) => ring.read(input),
     problems: () => [problem("p1", "failed", "rate_limited"), problem("p2", "refused", "no_access"), problem("p3", "stalled", "stalled")],
-    settings: () => ({ org: { allowFullAccess: true }, policies: { allowedMarketplaces: null, allowedEngines: null, ownAccountsOutsideList: false, defaults: { engine: "claude", model: "m", approvalMode: null } }, backup: { enabled: false, schedule: null, lastAt: null, ok: null } }),
+    settings: () => ({ org: { allowFullAccess: true }, policies: { allowedMarketplaces: null, allowedEngines: null, ownAccountsOutsideList: false, disabledModels: [], engineModels: { claude: [{ id: "m", label: "M" }] }, defaults: { engine: "claude", model: "m", approvalMode: null } }, backup: { enabled: false, schedule: null, lastAt: null, ok: null } }),
     saveSettings: (changes) => {
       if (changes.allowedEngines?.includes("ghost")) throw new ConsoleRefusal(400, "engine_not_installed", "No engine ghost.");
       saved.push(changes);
@@ -90,5 +90,9 @@ describe("ops", () => {
     expect((await console.call("POST", "settings", { body: { ownAccountsOutsideList: true } })).status).toBe(200);
     expect(saved.at(-1)).toEqual({ ownAccountsOutsideList: true });
     expect((await console.call("POST", "settings", { body: { ownAccountsOutsideList: "yes" } })).status).toBe(400);
+    // 2026-10-30 (lot 2): models off one by one, `<engine>/<model>`
+    expect((await console.call("POST", "settings", { body: { disabledModels: ["claude/opus", "claude/opus", "openrouter/vendor/model"] } })).status).toBe(200);
+    expect(saved.at(-1)).toEqual({ disabledModels: ["claude/opus", "openrouter/vendor/model"] });
+    expect((await console.call("POST", "settings", { body: { disabledModels: ["no-slash"] } })).status).toBe(400);
   });
 });

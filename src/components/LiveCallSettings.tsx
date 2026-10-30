@@ -1,13 +1,12 @@
 import { useCallback, useState } from "react";
 
-import { cn } from "@/lib/cn";
 import { LIVE_VOICE_OPTIONS } from "../../shared/live-call";
 import { t } from "@/lib/i18n";
 import { liveDisclosure } from "@/lib/call-mode";
-import { api, useStore, type ConfigStatus } from "@/state/store";
+import { api, useStore } from "@/state/store";
 import type { LiveSettings } from "../../shared/wire";
 import { SettingsText } from "./SettingsLink";
-import { PILL, PillSelect, SwitchRow } from "./SettingsPrimitives";
+import { PillSelect, SwitchRow } from "./SettingsPrimitives";
 
 const IDLE_CHOICES = [1, 2, 3, 5, 10, 15, 30, 60];
 
@@ -30,24 +29,8 @@ function useLiveSettingsEditor() {
     }
   };
 
-  // An empty value removes the key: Electron deletes it from the encrypted
-  // store and the harness clears it (the same call the API key settings use).
-  const removeKey = async () => {
-    setSaving(true);
-    setError(null);
-    try {
-      const status: ConfigStatus = window.ogb?.setCredential
-        ? await window.ogb.setCredential("openaiLiveKey", "")
-        : await api("/api/config", { method: "PUT", body: JSON.stringify({ live: { key: "" } }) });
-      dispatch({ type: "configStatus", config: status });
-    } catch (removeError) {
-      setError(removeError instanceof Error ? removeError.message : String(removeError));
-    } finally {
-      setSaving(false);
-    }
-  };
 
-  return { live, saving, error, save, removeKey };
+  return { live, saving, error, save };
 }
 
 /** The gear in the call bar. The next call's voice only. The key, idle
@@ -97,7 +80,7 @@ export function LiveCallSettings({ onClose }: { onClose: () => void }) {
 /** Key, silence limit and typed replies. Installation-wide, so they live in
  * Settings rather than on the call bar. */
 export function LiveCallInstallationSettings() {
-  const { live, saving, error, save, removeKey } = useLiveSettingsEditor();
+  const { live, saving, error, save } = useLiveSettingsEditor();
   const minutes = [...new Set([...IDLE_CHOICES, live.idleMinutes])].sort((a, b) => a - b);
 
   // 0.5.6: compact rows (the reference design's settings): a switch, a pill menu, the
@@ -121,18 +104,8 @@ export function LiveCallInstallationSettings() {
           options={minutes.map((value) => ({ value: String(value), label: t("call.live.idleMinutes", { minutes: value }) }))}
         />
       </div>
-      {/* One OpenAI key (2026-10-14): Live calls use the OpenAI key of the
-          Keys group. An older install's separate key still wins until it is
-          removed here. */}
-      <div className="flex items-center justify-between gap-2" data-live-key={live.separateKey ? "separate" : live.configured ? "openai" : "none"}>
-        <span className="text-[12px] leading-4 text-ink-secondary">
-          {live.separateKey ? t("call.live.separateKey") : live.configured ? t("call.live.usesOpenAiKey") : t("call.live.needsOpenAiKey")}
-        </span>
-        {live.separateKey && (
-          <button type="button" className={cn(PILL, "shrink-0 text-danger")} disabled={saving} onClick={() => void removeKey()}>
-            {t("call.live.keyRemove")}
-          </button>
-        )}
+      <div className="text-[12px] leading-4 text-ink-secondary" data-live-key={live.configured ? "openai" : "none"}>
+        {t(live.configured ? "call.live.usesOpenAiKey" : "call.live.needsOpenAiKey")}
       </div>
       <div className="text-[12px] leading-4 text-ink-secondary">{liveDisclosure()} {t("call.live.cost")}</div>
       {error && <div role="alert" className="text-[12px] text-danger">{error}</div>}

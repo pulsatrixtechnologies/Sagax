@@ -115,6 +115,9 @@ interface RuntimeOptions<Config> {
    * pays for that turn. */
   apiKey: string | ((turn?: SendTurnInput) => string);
   apiUrl: string;
+  allowNoKey?: boolean;
+  /** Another wire protocol can reuse the same tool loop and transcript. */
+  chatRequest?(payload: string, key: string, signal: AbortSignal): Promise<Response>;
   /** How the key is sent; default `Authorization: Bearer`. Azure takes
    * `api-key` on every route (shared/azure-openai.ts). */
   authHeaders?: (apiKey: string) => Record<string, string>;
@@ -393,8 +396,13 @@ function refusedToolCallFailure(error: RejectedToolCallError, earlierSteps: bool
 /** Shared runtime for the three providers that speak OpenAI chat completions. */
 export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>): ProviderInstance {
   const { input } = options;
-  const resolveKey = (turn?: SendTurnInput): string =>
-    (typeof options.apiKey === "function" ? options.apiKey(turn) : options.apiKey).trim();
+  const resolveKey = (turn?: SendTurnInput): string => {
+    if (turn?.access?.via === "owner-key" || turn?.access?.via === "speaker-key") {
+      if (turn.access.localKeyPrincipal && typeof options.apiKey === "function") return options.apiKey(turn).trim();
+      return turn.access.environment?.SAGAX_PERSONAL_PROVIDER_KEY?.trim() || "";
+    }
+    return (typeof options.apiKey === "function" ? options.apiKey(turn) : options.apiKey).trim();
+  };
   const listeners = new Set<RuntimeEventListener>();
   const active = new Map<string, {
     abort: AbortController;
@@ -695,7 +703,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
         ...(tools.length ? { tools } : {}),
         ...(typeof maxTokens === "number" ? { max_tokens: maxTokens } : {}),
       });
-      const response = await fetch(`${options.apiUrl}/chat/completions`, {
+      const response = options.chatRequest ? await options.chatRequest(payload, apiKey, activeSignal) : await fetch(`${options.apiUrl}/chat/completions`, {
         method: "POST",
         ...(messages.some(message => Array.isArray(message.content) && message.content.some(part => part.type === "image_url")) ? { redirect: "error" as const } : {}),
         headers: { ...auth(apiKey), "content-type": "application/json" },
@@ -927,7 +935,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
 
   const sendTurn = async (turn: SendTurnInput) => {
     const apiKey = resolveKey(turn);
-    if (!apiKey) throw new Error(options.missingKeyError);
+    if (!apiKey && !options.allowNoKey) throw new Error(options.missingKeyError);
     if (turn.warmOnly === true) {
       if (!turn.warmSignal?.aborted) {
         if (await pingModels(turn)) rememberWarm(turn.threadId);
@@ -1405,7 +1413,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
     ...(options.refreshModels ? { refreshModels: options.refreshModels } : {}),
     snapshot: async () => {
       const apiKey = resolveKey();
-      if (!apiKey) return { state: "unavailable", reason: options.unavailableReason };
+      if (!apiKey && !options.allowNoKey) return { state: "unavailable", reason: options.unavailableReason };
       if (keyRejected(options.apiUrl, apiKey)) return { state: "available", authenticated: false, reason: KEY_REJECTED_REASON, version: null };
       return { state: "available", authenticated: true, version: null, ...(options.billing ? { billing: options.billing } : {}) };
     },

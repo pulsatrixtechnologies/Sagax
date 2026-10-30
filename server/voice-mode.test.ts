@@ -200,7 +200,30 @@ describe("voice mode routes", () => {
 
   it("passes other paths", async () => {
     const { call } = harness();
-    expect((await call({ method: "GET", path: "/api/tts/voices" })).passed).toBe(true);
+    expect((await call({ method: "GET", path: "/api/something-else" })).passed).toBe(true);
+  });
+
+  it("routes legacy read aloud through the selected provider and its own key", async () => {
+    const synthesize = vi.fn(async () => ({ bytes: new Uint8Array([7, 8]), mime: "audio/mpeg" }));
+    const { call, xai, usage } = harness({
+      serverKey: () => undefined,
+      fish: { listVoices: async () => [{ id: "lab-voice", label: "Lab" }], synthesize },
+      legacyChoice: () => ({ provider: "fish", voice: "lab-voice" }),
+      providerKeys: (provider) => provider === "fish" ? [{ key: OWN_KEY, via: "speaker-key", source: "perspicax-key", last4: "c0Je", provider, payerPrincipalId: "p-ada" }] : [],
+    });
+    expect((await call({ method: "POST", path: "/api/tts/prepare", body: { text: "Bonjour" } })).body).toEqual({ ready: true, utterances: ["Bonjour"] });
+    expect((await call({ method: "GET", path: "/api/tts/voices" })).body.voices).toEqual([{ id: "lab-voice", label: "Lab" }]);
+    const out = await call({ method: "POST", path: "/api/tts/speak", body: { text: "Bonjour", voiceId: "other-voice" } });
+    expect(out.status).toBe(200);
+    expect(synthesize).toHaveBeenCalledWith("Bonjour", "other-voice", OWN_KEY, { speed: 1, language: "auto" });
+    expect(xai.synthesize).not.toHaveBeenCalled();
+    expect(usage[0]).toMatchObject({ provider: "fish", model: "fish-tts", payerPrincipalId: "p-ada" });
+    expect(leaks(out)).toBe(false);
+  });
+
+  it("legacy prepare says not ready when no provider serves the person", async () => {
+    const { call } = harness({ serverKey: () => undefined });
+    expect((await call({ method: "POST", path: "/api/tts/prepare", body: { text: "Bonjour" } })).body).toEqual({ ready: false, utterances: ["Bonjour"] });
   });
 
   it("only serves a signed-in person on an organization server", async () => {
