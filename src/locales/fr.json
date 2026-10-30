@@ -10419,6 +10419,8 @@
   "connectFromEngine.dismiss": "Masquer",
   "connectorSetup.connect": "Connecter {name}",
   "connectorSetup.where": "La connexion se fait sur {host}, avec votre propre compte. Sagax détectera la connexion.",
+  "connectorSetup.whereGrokTeam": "La connexion se fait sur {host}, avec votre compte Grok d'équipe, celui branché ici. Sagax détectera la connexion.",
+  "connectorSetup.whereGrokPersonal": "La connexion se fait sur {host}, avec votre compte Grok personnel, celui branché ici. Sagax détectera la connexion.",
   "connectorSetup.waiting": "En attente de votre connexion",
   "connectorSetup.done": "J'ai terminé",
   "connectorSetup.checking": "Vérification…",

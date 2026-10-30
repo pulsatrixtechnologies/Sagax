@@ -1,5 +1,5 @@
 {
-  "_comment": "_x.ai/mcp/list as grok 1.0.46 and 1.0.70 answer it on a signed-in xAI account whose grok.com connectors include Microsoft Teams and Outlook, with GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED=true (measured 2026-10-28; tools trimmed, the real account had 488). Without the variable the two managed_gateway servers are absent.",
+  "_comment": "_x.ai/mcp/list as grok 1.0.46 and 1.0.70 answer it on a signed-in xAI account whose grok.com connectors include Microsoft Teams and Outlook, with GROK_MANAGED_MCPS_ENABLED=true and GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED=true (measured 2026-10-28, both variables needed since 2026-10-30; tools trimmed, the real account had 488). Without them the two managed_gateway servers are absent.",
   "sessionMcpResolved": true,
   "servers": [
     {

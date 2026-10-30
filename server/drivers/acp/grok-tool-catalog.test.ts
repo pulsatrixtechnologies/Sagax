@@ -180,6 +180,22 @@ describe("grok's managed gateway (grok.com connectors)", () => {
     expect(gateway.tools).toHaveLength(10);
   });
 
+  it("reads a team account's one-server-per-connector gateway (grok 1.0.46, 2026-10-30)", () => {
+    const team = JSON.parse(readFileSync(new URL("../../testing/grok-gateway-team-mcp-list.json", import.meta.url), "utf8"));
+    const groups = grokGatewayConnectors(readGrokCatalog(team)!);
+    // Outlook mail and Outlook Calendar are the Outlook connector of the card
+    expect(groups.map((group) => [group.id, group.label, group.tools.length])).toEqual([
+      ["microsoft-teams", "Microsoft Teams", 10],
+      ["outlook", "Outlook (Exchange)", 17],
+      [undefined, "Automations", 2],
+    ]);
+    noteGrokAccountReach("/home/team", team, 7);
+    expect(grokAccountReach("/home/team")).toMatchObject({ gateway: true, connectors: ["microsoft-teams", "outlook"] });
+    const text = grokCatalogSection({ catalog: readGrokCatalog(team), connectable: CONNECTABLE })!.text;
+    expect(text).toMatch(/Microsoft Teams \(10 tools, e\.g\. microsoft_teams__(list|get|search)_/);
+    expect(text).not.toMatch(/Connectable but not connected yet[^\n]*(Teams|Outlook)/);
+  });
+
   it("groups the gateway's tools by connector, known ones first", () => {
     const groups = grokGatewayConnectors(readGrokCatalog(GATEWAY)!);
     expect(groups.map((group) => [group.id, group.label, group.tools.length])).toEqual([

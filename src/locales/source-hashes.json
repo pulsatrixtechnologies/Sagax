@@ -13825,6 +13825,8 @@
       "step.useTool.running": "89ffaa8264389d9e837aa6a249efc4e1057bcdc86cad145dfe97a5dae89d0d8c",
       "connectorSetup.connect": "d25d823e6a27ceb9d39108c0930e1ca94a24793efa4dcfe4c62cea2ddd1b420c",
       "connectorSetup.where": "a602d70bea2b5ed1a3cb14c2bd285507c1cfbadf841cdc83d8d2de269a4fe76c",
+      "connectorSetup.whereGrokTeam": "a18a26a99f532fb67791c57563e45027f77fe0d90f6002e1d3e73ff6d4ed779c",
+      "connectorSetup.whereGrokPersonal": "fcbeddf520f063741322c6152e7443cf40ad5854c97b3caf241d606d437c3375",
       "connectorSetup.waiting": "eabf3ac27f9252ab4653e991cfda125fc3b55b16d09c6e519dbddb8f7f0035ee",
       "connectorSetup.done": "b4f5b9c88427c44bdd611a81020a5940a3017745886f4ec5de42503e1f0b2bc4",
       "connectorSetup.checking": "ec963ffc911b840134fc738b41a8bb0493489c402a4a761efd36c16dea7d984b",

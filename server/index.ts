@@ -38986,8 +38986,10 @@ function connectorSetupStore() {
       const elsewhere = second?.connectors.length
         ? { engine: relayAccountLabel(driverDisplayName("grokAgent"), grokAccountKindFor(principalId, "second")), connectors: second.connectors }
         : undefined;
-      if (!reach && !elsewhere) return undefined;
-      return { connectors: reach?.connectors ?? [], at: reach?.at ?? 0, ...(elsewhere ? { elsewhere } : {}) };
+      // 2026-10-30: which account the card's connector goes on
+      const account = grokAccountKindFor(principalId, "primary");
+      if (!reach && !elsewhere && !account) return undefined;
+      return { connectors: reach?.connectors ?? [], at: reach?.at ?? 0, ...(elsewhere ? { elsewhere } : {}), ...(account ? { account } : {}) };
     },
   };
 }

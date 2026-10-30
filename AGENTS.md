@@ -968,6 +968,33 @@ reached through the relay.
   EngineConnect. Verified on the real grok 1.0.70 with a copy of a personal
   sign-in: 488 gateway tools, Teams 36, Outlook 29, `principal_type` User.
 
+## Grok's managed configs must be asked for (2026-10-30)
+
+A person's Outlook and Teams, active on grok.com, never reached their Grok
+turn: the bot said "Grok sees no connector on this turn" and offered connect
+cards. Grok fetches the managed MCP configs only when
+`GROK_MANAGED_MCPS_ENABLED=true` (`managed_mcps.enabled`, a pinned user
+setting xAI now leaves unset); `GROK_MANAGED_MCP_GATEWAY_TOOLS_ENABLED=true`
+alone lists no `managed_gateway:` server at all. Measured on grok 1.0.46
+(organization server, team account) and 1.0.70 (personal account).
+- `grokCloudConnectorEnv` sets both to `true` on the person's own sign-in
+  on an organization turn without a tool selection, both `false` elsewhere;
+  `probeGrokReach` uses the same values.
+- A team account may bring one managed server per connector
+  (`managed_gateway:outlook`, `:microsoft_teams`, `:outlook_calendar`)
+  whose tool names carry no connector (`outlook__send_message`):
+  `grokGatewayServerConnector` reads it from the server, Outlook Calendar
+  counts as Outlook. Outward calls keep their card (`connectorWriteKind`
+  reads `outlook__send_message`, `microsoft_teams__send_message`,
+  `outlook_calendar__create_event` as outward).
+- A Grok setup card names the account it goes on (`account` personal or
+  team, from the sign-in's `principal_type`).
+- Solo turns are unchanged (still off): in `default` mode Grok can call
+  those servers with no card.
+- Tests: `server/testing/grok-gateway-team-mcp-list.json`, the fake CLI
+  (managed servers only with both variables), `acp.test.ts`,
+  `grok-tool-catalog.test.ts`, `routes/connector-setup.test.ts`.
+
 ## Bot content has a default theme (2026-10-28)
 
 Pages and widgets bots make draw in the app's look, sober as Grok Bot's.

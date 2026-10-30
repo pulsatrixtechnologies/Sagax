@@ -53,7 +53,9 @@ export function ConnectorSetupBody({ view, checking, opened, error, onConnect, o
       ariaLabel={view.label}
       icon={<PlugZap size={15} />}
       title={view.label}
-      explanation={t("connectorSetup.where", { host })}
+      explanation={view.provider === "grok" && view.account
+        ? t(view.account === "team" ? "connectorSetup.whereGrokTeam" : "connectorSetup.whereGrokPersonal", { host })
+        : t("connectorSetup.where", { host })}
       footer={
         <>
           <span role="status" className="me-auto flex min-w-0 items-center gap-1.5 text-[12px] text-ink-tertiary">

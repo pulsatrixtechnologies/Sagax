@@ -52,6 +52,9 @@ export interface ConnectorSetupView {
   owner: string;
   createdAt: number;
   checkedAt?: number;
+  /** 2026-10-30: a Grok card names the account the connector goes on, the
+   * person's Grok sign-in here: their personal or their team account. */
+  account?: "personal" | "team";
 }
 
 function cleanName(raw: string): string {
@@ -202,7 +205,15 @@ export function claudeInventoryShowsConnected(connectors: readonly { name: strin
 const HOST_LABEL: Record<ConnectorSetupProvider, string> = { grok: "grok.com", claude: "claude.ai" };
 
 /** The row's text: what clients without the card draw (phones, exports). */
-export function connectorSetupText(view: Pick<ConnectorSetupView, "label" | "provider" | "url">, language: "fr" | "en"): string {
+export function connectorSetupText(view: Pick<ConnectorSetupView, "label" | "provider" | "url" | "account">, language: "fr" | "en"): string {
   const link = `[${HOST_LABEL[view.provider]}](${view.url})`;
-  return language === "fr" ? `Connectez ${view.label} sur ${link}.` : `Connect ${view.label} on ${link}.`;
+  const account = view.provider === "grok" && view.account ? ACCOUNT_LABEL[language][view.account] : "";
+  return language === "fr"
+    ? `Connectez ${view.label} sur ${link}${account ? `, avec ${account}` : ""}.`
+    : `Connect ${view.label} on ${link}${account ? `, with ${account}` : ""}.`;
 }
+
+const ACCOUNT_LABEL = {
+  fr: { personal: "votre compte Grok personnel", team: "votre compte Grok d'équipe" },
+  en: { personal: "your personal Grok account", team: "your team Grok account" },
+} as const;
