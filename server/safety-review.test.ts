@@ -88,8 +88,19 @@ describe("safety review server", () => {
       }
     }
     expect(destructiveKindOf({ tool: "outlook__delete_message", input: "{}" })).toBe("delete");
+    expect(destructiveKindOf({ tool: "mcp__claude_ai_Gmail__trash_thread", input: "{}" })).toBe("delete");
+    for (const prefix of ["", "mcp__"]) {
+      const tool = `${prefix}cursor__user-Outlook-delete_5fmail_5fmessage___12`;
+      expect(isOutboundTool(tool)).toBe(false);
+      expect(destructiveKindOf({ tool, input: "{}" })).toBe("delete");
+      expect(ownerDecision({ mode: "auto", rules: [], call: { ownerId: "pr_owner", botId: "bot-1", tool, input: "{}" } }))
+        .toMatchObject({ kind: "card", destructive: "delete" });
+    }
     const bulk = { ownerId: "pr_owner", botId: "bot-1", tool: "outlook__move_message", input: JSON.stringify({ ids: ["email-1", "email-2"] }) };
     expect(destructiveKindOf(bulk)).toBe("bulk");
+    expect(destructiveKindOf({ ...bulk, tool: "cursor__user-Outlook-move_5fmail_5fmessage___12" })).toBe("bulk");
+    expect(destructiveKindOf({ ...bulk, tool: "outlook__mark_as_read" })).toBe("bulk");
+    expect(destructiveKindOf({ ...bulk, tool: "outlook__get_message" })).toBeUndefined();
     expect(ownerDecision({ mode: "auto", rules: [], call: bulk })).toMatchObject({ kind: "card", destructive: "bulk" });
     expect(ownerDecision({ mode: "bypass", rules: [], call: bulk, crossPerson: true })).toMatchObject({ kind: "card", reason: "cross-person" });
   });
