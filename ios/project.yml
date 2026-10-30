@@ -70,8 +70,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax
-        MARKETING_VERSION: "0.8.18"
-        CURRENT_PROJECT_VERSION: "95"
+        MARKETING_VERSION: "0.8.19"
+        CURRENT_PROJECT_VERSION: "96"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         # The catalog lives in App/, which is already a source path.
@@ -281,8 +281,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax.share
-        MARKETING_VERSION: "0.8.18"
-        CURRENT_PROJECT_VERSION: "95"
+        MARKETING_VERSION: "0.8.19"
+        CURRENT_PROJECT_VERSION: "96"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: YES
@@ -358,8 +358,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax.notification
-        MARKETING_VERSION: "0.8.18"
-        CURRENT_PROJECT_VERSION: "95"
+        MARKETING_VERSION: "0.8.19"
+        CURRENT_PROJECT_VERSION: "96"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: YES
@@ -438,8 +438,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ca.pulsatrix.sagax.widgets
-        MARKETING_VERSION: "0.8.18"
-        CURRENT_PROJECT_VERSION: "95"
+        MARKETING_VERSION: "0.8.19"
+        CURRENT_PROJECT_VERSION: "96"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         APPLICATION_EXTENSION_API_ONLY: YES
