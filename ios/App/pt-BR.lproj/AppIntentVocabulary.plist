@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>IntentPhrases</key>
+	<array>
+		<dict>
+			<key>IntentName</key>
+			<string>INSendMessageIntent</string>
+			<key>IntentExamples</key>
+			<array>
+				<string>Envie uma mensagem para Scout com o Sagax</string>
+				<string>Diga ao Scout pelo Sagax que vou me atrasar cinco minutos</string>
+			</array>
+		</dict>
+		<dict>
+			<key>IntentName</key>
+			<string>INStartCallIntent</string>
+			<key>IntentExamples</key>
+			<array>
+				<string>Ligue para Scout com o Sagax</string>
+				<string>Inicie uma chamada com Scout pelo Sagax</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

@@ -42,6 +42,8 @@ targets:
     type: application
     platform: iOS
     sources:
+      # Includes localized AppIntentVocabulary.plist resources for both Siri
+      # intents in Base, en, fr and pt-BR, in the main app bundle only.
       - path: App
       - path: AppShared
       - path: Shared

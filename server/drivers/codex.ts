@@ -75,6 +75,7 @@ import { assertToolScopeSupported } from "../../shared/tool-scope-support.ts";
 import { gateServer, mcpStdioServer } from "../mcp-gate-config.ts";
 import { CALL_TOOL, DESCRIBE_TOOL, SEARCH_TOOL, directoryCallTarget } from "../mcp-directory.ts";
 import { sagaxReviewsAuto } from "./sagax-reviewer.ts";
+import { SPAWNED_PROXIES } from "../proxy-paths.ts";
 
 export { decodeCodexSelection, readCodexModelCatalog, STATIC_CODEX_MODELS } from "./codex-catalog.ts";
 
@@ -659,6 +660,28 @@ function isSagaxWorkplaceProxy(name: string, server: McpServerSpec): boolean {
   return !("url" in server) && (SAGAX_WORKPLACE_PROXIES.has(name) || server.env?.SAGAX_TOOL_SERVER === "sagax-stdio");
 }
 
+/** Perspicax profiles are harness-created mounts in integrations.custom,
+ * not third-party commands. A name or environment marker alone proves nothing. */
+function isSagaxPerspicaxBridge(server: McpServerSpec): server is StdioMcpSpec {
+  return !("url" in server) && server.command === process.execPath
+    && server.args.length === 1 && server.args[0] === SPAWNED_PROXIES.perspicax
+    && Boolean(server.env.SAGAX_PERSPICAX_PROFILE) && Boolean(server.env.SAGAX_PERSPICAX_TOKEN);
+}
+
+/** Codex has one parent environment for every mount. Keep each direct
+ * profile's capability and identity under its final mount's own prefix;
+ * the bridge restores them before reading its connection settings. */
+function isolatedPerspicaxBridge(name: string, server: StdioMcpSpec): { server: StdioMcpSpec; literal: Record<string, string> } {
+  const stem = `SAGAX_MCP_ENV_${createHash("sha256").update(name).digest("hex").toUpperCase()}__`;
+  const env: Record<string, string> = {};
+  const literal: Record<string, string> = { [PROXY_ENV_PREFIX_VARIABLE]: stem };
+  for (const [key, value] of Object.entries(server.env)) {
+    if (key === "ELECTRON_RUN_AS_NODE") literal[key] = value;
+    else env[`${stem}${key}`] = value;
+  }
+  return { server: { ...server, env }, literal };
+}
+
 function mountSagaxWorkplaceProxy(
   appServerArgs: string[],
   env: Record<string, string | undefined>,
@@ -928,7 +951,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       // explicit mode, which takes precedence.
       const approvalMode: ApprovalMode = turn.approvalMode ?? (config.fullAuto ? "full" : "ask");
       for (const [name, server] of Object.entries(turn.integrations?.custom ?? {})) {
-        if ("url" in server || isSagaxWorkplaceProxy(name, server)) continue;
+        if ("url" in server || isSagaxWorkplaceProxy(name, server) || isSagaxPerspicaxBridge(server)) continue;
         const reserved = Object.entries(server.env).find(([key, value]) => isReservedMcpEnvEntry(key, value))?.[0];
         if (reserved) {
           throw new Error(`Custom MCP server “${name}” cannot set reserved environment variable “${reserved}”`);
@@ -1046,12 +1069,20 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           return { command: proxy.command, args: proxy.args ?? [], env: shared };
         };
         const mountSelected = (name: string, mountName: string, server: McpServerSpec, approval: McpApprovalMode = "auto") => {
-          const selected = scopedServer(name, mountName, server);
+          let selected = scopedServer(name, mountName, server);
           if (selected) {
+            // A selected gate already encapsulates its upstream's env in a
+            // private per-mount record. Only a direct bridge needs prefixes.
+            const directPerspicax = isSagaxPerspicaxBridge(selected);
+            if (directPerspicax) {
+              const isolated = isolatedPerspicaxBridge(mountName, selected);
+              selected = isolated.server;
+              literalEnvs.set(mountName, { ...literalEnvs.get(mountName), ...isolated.literal });
+            }
             selectedMcp.set(mountName, selected);
             selectedApprovals.set(mountName, approval);
             mountMcpServer(appServerArgs, env, mountName, selected, approval, literalEnvs.get(mountName), mountedNames);
-            if (turn.toolScope !== undefined && approval === "prompt") appServerArgs.push("-c", `mcp_servers.${mountName}.default_tools_approval_mode="prompt"`);
+            if ((turn.toolScope !== undefined || directPerspicax) && approval === "prompt") appServerArgs.push("-c", `mcp_servers.${mountName}.default_tools_approval_mode="prompt"`);
           }
         };
         if (turn.integrations?.agents) {

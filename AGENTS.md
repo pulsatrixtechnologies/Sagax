@@ -27,6 +27,20 @@ holds. The real Perspicax Flow policy GO remains a person's answer, including
 at Full. Regression: `routine-full-approval.e2e.test.ts` exercises the real
 ingress, dispatcher, broker and a peer, in an isolated home.
 
+## Codex mounts the internal Perspicax bridge (2026-10-30)
+
+Perspicax profile bridges reach Codex through `integrations.custom`, but are
+harness-owned: identify the exact `process.execPath` command and the single
+`SPAWNED_PROXIES.perspicax` argument, never a server-name prefix alone.
+Their reserved routing variables do not trigger the third-party env guard.
+Keep the normal mount rename, `canUseMcpServer`, tool selection and approval
+path. A direct bridge gets variables prefixed by the hash of its final mount
+name, with values only in the child environment; the bridge restores them
+before reading its URL, profile or turn token. A selected gate already holds
+the upstream env in its private per-mount record and keeps that path.
+Never fix this by removing the reserved-variable guard for custom servers or
+sharing plain `SAGAX_PERSPICAX_*` values between profiles.
+
 ## Where work goes
 
 All work stays in `pulsatrixtechnologies` repositories. Never open a pull
@@ -9507,3 +9521,7 @@ only by `ios/project-carplay.yml` (`xcodegen generate --spec project-carplay.yml
 once Apple grants it; never put that entitlement in `project.yml`. Never show
 a message's content on the car's screen. Tests:
 `ios/Tests/CompanionCoreTests/CarAssistTests.swift`. See `docs/ios-carplay.md`.
+
+The main app's localized `ios/App/{Base,en,fr,pt-BR}.lproj/AppIntentVocabulary.plist`
+files supply example phrases for both supported Siri intents. Keep each
+locale aligned with `App/Localizable.xcstrings`; Base is the English fallback.

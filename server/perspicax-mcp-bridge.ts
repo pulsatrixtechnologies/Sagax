@@ -18,6 +18,18 @@ import readline from "node:readline";
 
 type Json = Record<string, unknown>;
 
+// Codex launches MCP children from one shared parent environment. It gives
+// this mount only its prefixed names and the non-secret prefix in its own
+// env table. Restore before reading any connection or turn-token settings.
+const environmentPrefix = process.env.SAGAX_PROXY_ENV_PREFIX;
+if (environmentPrefix) {
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.startsWith(environmentPrefix) && key.length > environmentPrefix.length && value !== undefined) {
+      process.env[key.slice(environmentPrefix.length)] = value;
+    }
+  }
+}
+
 const HARNESS = (process.env.SAGAX_HARNESS_URL ?? "http://127.0.0.1:8799").replace(/\/+$/, "");
 const LAUNCH_TOKEN = process.env.SAGAX_PERSPICAX_TOKEN ?? "";
 // A kept or pre-warmed engine process outlives the turn it was launched
