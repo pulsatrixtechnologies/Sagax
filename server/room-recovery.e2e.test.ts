@@ -14,6 +14,7 @@ it("boots and reports an interrupted routine back to its source room", async () 
   let restarted: ChildProcess | undefined;
   try {
     const { bot } = await runControlOmb(["new-bot", "--name", "Recovery lead", "--url", url]) as any;
+    await request(`/api/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ proactiveMode: "propose" }) }, url);
     const { channel } = await handleToolCall("create_channel", { name: "Recovery room", member_ids: [bot.id] },
       (path, options) => request(path, options, url)) as any;
     await waitForExit(fixture.child, { signal: "SIGTERM" });
@@ -35,7 +36,7 @@ it("boots and reports an interrupted routine back to its source room", async () 
       XDG_DATA_HOME: join(dataDir, ".local", "share"), HERMES_HOME: join(dataDir, ".hermes"),
       TEMP: join(dataDir, "tmp"), TMP: join(dataDir, "tmp"), TMPDIR: join(dataDir, "tmp"),
       SAGAX_PORT: new URL(url).port, SAGAX_WEBHOOK_PORT: String(Number(new URL(url).port) + 1),
-      PATH: dirname(process.execPath), FAKE_CLAUDE_MODE: "happy",
+      PATH: dirname(process.execPath), FAKE_CLAUDE_MODE: "happy", SAGAX_PROACTIVE_GATHER_MS: "50",
     });
     const log = openSync(logPath, "a", 0o600);
     restarted = spawn(process.execPath, ["--experimental-strip-types", fileURLToPath(new URL("./index.ts", import.meta.url))], {
@@ -53,6 +54,12 @@ it("boots and reports an interrupted routine back to its source room", async () 
       .toMatchObject([{ routineRun: { status: "failed" } }]);
     const { groups } = await request("/api/bots", {}, url) as any;
     expect(groups.find((g: any) => g.id === channel.id).working).toBe(false);
+    // The failed run remains available to the bot's proactive mode, even
+    // though recovery emits it synchronously while routines initialize.
+    await expect.poll(async () => {
+      const { messages } = await request(`/api/threads/${bot.activeTaskId}/messages`, {}, url) as any;
+      return messages.some((message: any) => message.card?.proactiveProposal);
+    }, { timeout: 10_000 }).toBe(true);
     // Store deliberately catches subscriber exceptions, so a healthy server
     // alone does not prove that recovery broadcasts were safe.
     expect(readFileSync(logPath, "utf8")).not.toMatch(/ReferenceError|store: change listener threw/);
