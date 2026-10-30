@@ -33,6 +33,9 @@ in Providers, without an admin (`GET /api/me/providers`,
 `server/routes/provider-accounts.ts`). Metadata alone returns. Organization
 accounts are stored in Perspicax using the Link and subject tokens; solo
 accounts use the server's existing provider config or `provider-keys.enc`.
+Directory metadata reads reuse an existing routine delegation only; they
+never start issuance while the person has no session, which would delay the
+delegation from their next sign-in through an unnecessary retry backoff.
 `ProviderAccounts` serializes imports per person and retires legacy encrypted
 files only after every remote import is acknowledged. Imports preserve an
 existing remote key. A deleted key cannot be reimported from an old file.
@@ -218,6 +221,8 @@ old connections. Keep the existing file/AAD compatibility tests.
   the person only from the session (solo: the local operator), never from
   a query/body id. Me and a bot's owner manage their own scope without an
   admin permission. Sharing a marketplace remains organization impact.
+  Skill commands resolve the actual local operator in solo mode and the
+  active speaker in organization mode, without an owner fallback.
 - `selectPluginScopes` chooses current folders Organization > Me > Bot.
   `scopedPluginFolders` and `scopedPluginMcp` feed execution and the receipt.
   Missing copies claim no name. Bot-private installs stay in their owner's

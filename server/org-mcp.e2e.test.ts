@@ -403,7 +403,16 @@ posixOnly("Perspicax organization, slice 5: MCP for the person who speaks", () =
 
   it("a routine run acts in its person's name with no consent: never paused, no card (slice 6, 2026-10-08)", async () => {
     // her delegation came with her sign-in
-    await waitFor(async () => (await api("GET", "/api/org/routine-delegation", alice)).body.state === "active");
+    let delegationStatus: { status: number; body: unknown } | undefined;
+    try {
+      await waitFor(async () => {
+        const response = await api("GET", "/api/org/routine-delegation", alice);
+        delegationStatus = { status: response.status, body: response.body };
+        return response.body.state === "active";
+      });
+    } catch (error) {
+      throw new Error(`${error instanceof Error ? error.message : String(error)}\nDelegation status: ${JSON.stringify(delegationStatus)}; issue results: ${JSON.stringify(idp.delegationIssues)}`);
+    }
     const routine = await api("POST", "/api/routines", alice, { name: "Morning", botId: x.id, prompt: "Check the board.", enabled: false,
       schedule: { type: "interval", everyMinutes: 60, anchorAt: Date.now() + 86_400_000 } });
     expect(routine.status, routine.text).toBe(201);

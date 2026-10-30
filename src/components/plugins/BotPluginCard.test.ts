@@ -36,19 +36,21 @@ function card(next: BotPluginsView, id = "reviewer@acme-tools"): string {
 }
 
 describe("scope toggle", () => {
-  it("offers everyone and the bot, with the current one checked", () => {
+  it("offers This bot, Me and Organization with the current scope checked", () => {
     const html = renderToStaticMarkup(createElement(ScopeToggle, { scope: "bot", botName: "Maya", onScope: () => {} }));
     expect(html).toContain('data-plugins-scope="bot"');
-    expect(html).toContain("Everyone");
-    expect(html).toContain("For Maya");
+    expect(html).toContain("Organization");
+    expect(html).toContain("Me");
+    expect(html).toContain("This bot");
     expect(html).toMatch(/aria-checked="true" data-plugins-scope-option="bot"/);
   });
 
   it("speaks French", () => {
     setLocale("fr");
     const html = renderToStaticMarkup(createElement(ScopeToggle, { scope: "workspace", botName: "Maya", onScope: () => {} }));
-    expect(html).toContain("Tout le monde");
-    expect(html).toContain("Pour Maya");
+    expect(html).toContain("Organisation");
+    expect(html).toContain("Moi");
+    expect(html).toContain("Ce bot");
   });
 });
 
@@ -59,7 +61,7 @@ describe("For <bot> on a plugin's page", () => {
     expect(html).toContain("critic");
     expect(html).toContain("review");
     expect(html).toContain("Left out: hooks");
-    expect(html).toContain("Declares MCP servers db");
+    expect(html).toContain("Declared MCP servers: db");
     expect(html).toContain("data-bot-plugin-uninstall");
     expect(html).toContain("Remove from Maya");
   });

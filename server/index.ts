@@ -22598,7 +22598,10 @@ async function startTurn(
         providerText,
         skillsLibraryEnabled(cfg) ? (store.bot(bot.id)?.assignedSkills ?? bot.assignedSkills) : undefined,
         { inline: skillCommandInline({ workspaceFiles: supportsWorkspaceFiles(instance.driverKind), organization: IDENTITY.kind === "perspicax" }),
-          overrides: skillsLibraryEnabled(cfg) ? personalSkills.commands(orgSpeakerPrincipal(bot, speaker) ?? localPrincipalId(), new Set(personalSkillInputs(bot, orgSpeakerPrincipal(bot, speaker)).filter((skill) => skill.shadowed).map((skill) => skill.name))) : [],
+          overrides: (() => {
+            const person = IDENTITY.kind === "perspicax" ? orgSpeakerPrincipal(bot, speaker) : localPrincipalId();
+            return skillsLibraryEnabled(cfg) && person ? personalSkills.commands(person, new Set(personalSkillInputs(bot, person).filter((skill) => skill.shadowed).map((skill) => skill.name))) : [];
+          })(),
         },
       );
       const setupText = peerToolsMounted ? expandSetupTurnText(skillCommandText) : skillCommandText;
@@ -33724,7 +33727,9 @@ async function perspicaxLinkSubjectToken(sub: string): Promise<string | null> {
     const live = await idpSessions.subjectToken({ iss: IDENTITY.issuer, sub });
     if (live.ok) return live.token;
   }
-  if (routineConsents) {
+  // Directory metadata reads must not start a no-session issuance backoff
+  // before this person signs in. Only reuse an existing delegation here.
+  if (routineConsents?.status(person.id).state === "active") {
     const delegated = await routineConsents.subjectToken(person.id);
     if (delegated.ok) return delegated.token;
   }
