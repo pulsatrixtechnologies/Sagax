@@ -421,8 +421,9 @@ export interface WireBot {
    * `approvalSetting`. Absent: the conversation runs the bot's setting. */
   approvalApplied?: AppliedApprovalLevel;
   /** How autonomously this bot may act on its own (shared/proactive-mode.ts):
-   * absent/"off" = never; "propose", "read-auto" and "follow-rules" each gate
-   * a proactive step through our approval model. Never a Chief orchestrator. */
+   * "off" = never; "propose", "read-auto" and "follow-rules" each gate a
+   * proactive step through our approval model. Absent reads as the default,
+   * "follow-rules" since 0.8.19 (proactiveModeFor). Never a Chief orchestrator. */
   proactiveMode?: ProactiveMode;
   /** Tools this bot may always use without asking. */
   alwaysAllow?: string[];

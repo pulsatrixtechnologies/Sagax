@@ -49551,7 +49551,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       // value is always a known level; the enforcement reads it from the store.
       if (body.proactiveMode !== undefined) {
         if (!isProactiveMode(body.proactiveMode)) return json(res, 400, { error: "proactiveMode must be off, propose, read-auto or follow-rules" });
-        patch.proactiveMode = body.proactiveMode === "off" ? undefined : body.proactiveMode;
+        // 0.8.19: "off" is stored as "off" (no longer as nothing), so a bot
+        // the person turned off stays off when the default is proactive.
+        patch.proactiveMode = body.proactiveMode;
       }
       if (body.teamMemorySharing !== undefined) {
         if (!isTeamMemorySharing(body.teamMemorySharing)) return json(res, 400, { error: "teamMemorySharing must be \"shared\" or \"private\"" });

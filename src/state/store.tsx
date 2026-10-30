@@ -693,7 +693,7 @@ export interface Bot {
   approvalSetting?: ApprovalMode;
   /** The level the open conversation really runs at, with why, when it is not approvalSetting (WireBot.approvalApplied). */
   approvalApplied?: import("../../shared/approval-mode").AppliedApprovalLevel;
-  /** how autonomously this bot may act on its own (shared/proactive-mode.ts); absent/"off" = never */
+  /** how autonomously this bot may act on its own (shared/proactive-mode.ts); "off" = never, absent = the default (proactiveModeFor) */
   proactiveMode?: ProactiveMode;
   /** tools this bot may always use without asking */
   alwaysAllow?: string[];

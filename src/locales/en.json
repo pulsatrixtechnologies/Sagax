@@ -1140,7 +1140,7 @@
   "botPanel.permissions.approvalDraft": "Applies to every thread of the new bot: routines, delegated work and work another bot or an AI client sends here.",
   "botPanel.permissions.approvalHelp": "Applies to every thread of this bot at once: routines, delegated work and work another bot or an AI client sends here. A thread keeps its own level only when you chose one in it; Refresh permissions brings it back to this level.",
   "botPanel.permissions.proactive": "Proactive",
-  "botPanel.permissions.proactiveHelp": "Whether this bot may act on its own: notice something (a new email, an upcoming meeting, a finished run) and start work without being asked. A write, a send, a payment or contacting a real person always goes through an approval card with a dry run first; read-only observation is free. Off is the default.",
+  "botPanel.permissions.proactiveHelp": "Whether this bot may act on its own: notice something (a new email, an upcoming meeting, a finished run) and start work without being asked. A write, a send, a payment or contacting a real person always goes through an approval card with a dry run first; read-only observation is free. Follow approval rules is the default.",
   "botPanel.permissions.proactive.off": "Off",
   "botPanel.permissions.proactive.propose": "Propose only",
   "botPanel.permissions.proactive.read-auto": "Read on its own, card to act",

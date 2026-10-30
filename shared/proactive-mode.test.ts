@@ -14,7 +14,8 @@ import {
 describe("the proactive mode value", () => {
   it("lists off, propose, read-auto and follow-rules in that order", () => {
     expect(PROACTIVE_MODES).toEqual(["off", "propose", "read-auto", "follow-rules"]);
-    expect(PROACTIVE_MODE_DEFAULT).toBe("off");
+    // 0.8.19: every bot is proactive by default
+    expect(PROACTIVE_MODE_DEFAULT).toBe("follow-rules");
   });
 
   it("recognizes only the known modes", () => {
@@ -22,9 +23,11 @@ describe("the proactive mode value", () => {
     for (const bad of ["chief", "auto", "", null, undefined, 3, "FOLLOW-RULES"]) expect(isProactiveMode(bad)).toBe(false);
   });
 
-  it("defaults to off and fails closed to off on an unknown stored value", () => {
-    expect(proactiveModeFor({})).toBe("off");
-    expect(proactiveModeFor({ proactiveMode: undefined })).toBe("off");
+  it("reads a bot that never chose a mode as proactive, keeps a chosen off, and fails closed to off on a garbled value", () => {
+    expect(proactiveModeFor({})).toBe("follow-rules");
+    expect(proactiveModeFor({ proactiveMode: undefined })).toBe("follow-rules");
+    expect(proactiveModeFor({ proactiveMode: null })).toBe("follow-rules");
+    expect(proactiveModeFor({ proactiveMode: "off" })).toBe("off");
     expect(proactiveModeFor({ proactiveMode: "chief" })).toBe("off");
     expect(proactiveModeFor({ proactiveMode: 7 })).toBe("off");
     for (const mode of PROACTIVE_MODES) expect(proactiveModeFor({ proactiveMode: mode })).toBe(mode);

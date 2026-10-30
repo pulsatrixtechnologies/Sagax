@@ -25,7 +25,7 @@ import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { api, useStore, type Bot } from "@/state/store";
 import { liveApprovalChange, type ApprovalMode } from "../../../shared/approval-mode";
 import { AppliedLevelNote, proactiveLevelHint } from "./AppliedLevelNote";
-import { PROACTIVE_MODES, type ProactiveMode } from "../../../shared/proactive-mode";
+import { PROACTIVE_MODES, proactiveModeFor, type ProactiveMode } from "../../../shared/proactive-mode";
 import { DEFAULT_OUTBOUND_POLICY, type OutboundPolicy } from "../../../shared/outbound";
 import { ApprovalModeSelector } from "../ApprovalModeSelector";
 import { AllowedRecipientsRow } from "./AllowedRecipientsRow";
@@ -133,7 +133,7 @@ export function PermissionsSection({
   // How autonomously this bot may act on its own. A level next to the approval
   // level, not a Chief orchestrator: the server enforces it per bot
   // (shared/proactive-mode.ts, server/proactive.ts).
-  const proactiveMode: ProactiveMode = bot.proactiveMode ?? "off";
+  const proactiveMode: ProactiveMode = proactiveModeFor(bot);
   const setProactiveMode = (mode: ProactiveMode) => {
     if (bot.busy || mode === proactiveMode) return;
     patch({ proactiveMode: mode });
