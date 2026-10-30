@@ -86,3 +86,89 @@ test("a cycle registers this computer and posts the reply", async () => {
 function json(body) {
   return { ok: true, json: async () => body, text: async () => JSON.stringify(body) };
 }
+
+test("worker retries back off per origin, reset after recovery and leave other servers running", async () => {
+  let now = 0;
+  let down = true;
+  const calls = [];
+  const logs = [];
+  const worker = createMachineWorker({
+    origins: () => ["https://offline.example.test", "https://ready.example.test"],
+    localOrigin: () => "http://127.0.0.1:8799",
+    identity: () => ({ deviceId: "laptop", name: "Studio" }),
+    engines: async () => [], now: () => now, random: () => 0, log: (line) => logs.push(line),
+    fetchLocal: async () => assert.fail("no local turn is due"),
+    fetchOrg: async (url) => {
+      calls.push(url);
+      if (down && url.startsWith("https://offline.")) throw new Error("offline");
+      return json(url.endsWith("/pull") ? { turns: [] } : {});
+    },
+  });
+  const attempts = () => calls.filter((url) => url === "https://offline.example.test/api/workers").length;
+  await worker.cycle();
+  now = 4_999;
+  await worker.cycle();
+  assert.equal(attempts(), 1);
+  now = 5_000;
+  await worker.cycle();
+  now = 14_999;
+  await worker.cycle();
+  assert.equal(attempts(), 2);
+  assert.equal(logs.length, 2, "skipped retries do not repeat the error log");
+  assert.equal(calls.filter((url) => url === "https://ready.example.test/api/workers").length, 4);
+  down = false;
+  now = 15_000;
+  await worker.cycle();
+  down = true;
+  await worker.cycle();
+  assert.equal(attempts(), 4);
+  now = 20_000;
+  await worker.cycle();
+  assert.equal(attempts(), 5, "recovery starts the next backoff at five seconds");
+});
+
+for (const status of [401, 403, 404]) {
+  test(`worker pauses a server that refuses registration or polling (${status})`, async () => {
+    for (const refusedRoute of ["register", "pull"]) {
+      let now = 0;
+      let attempts = 0;
+      const worker = createMachineWorker({
+        origins: () => ["https://example.test"], localOrigin: () => "http://127.0.0.1:8799",
+        identity: () => ({ deviceId: "laptop", name: "Studio" }), engines: async () => [],
+        now: () => now, random: () => 0,
+        fetchLocal: async () => assert.fail("no local turn is due"),
+        fetchOrg: async (url) => {
+          const registration = url.endsWith("/workers");
+          if (registration) attempts++;
+          return (registration ? refusedRoute === "register" : refusedRoute === "pull")
+            ? { ok: false, status } : json({});
+        },
+      });
+      await worker.cycle();
+      now = 59_999;
+      await worker.cycle();
+      assert.equal(attempts, 1, refusedRoute);
+      now = 60_000;
+      await worker.cycle();
+      assert.equal(attempts, 2, refusedRoute);
+    }
+  });
+}
+
+test("removing an origin drops its retry state", async () => {
+  let origins = ["https://example.test"];
+  let attempts = 0;
+  const worker = createMachineWorker({
+    origins: () => origins, localOrigin: () => "http://127.0.0.1:8799",
+    identity: () => ({ deviceId: "laptop", name: "Studio" }), engines: async () => [],
+    now: () => 0, random: () => 0,
+    fetchOrg: async () => { attempts++; return { ok: false, status: 401 }; },
+    fetchLocal: async () => assert.fail("no local turn is due"),
+  });
+  await worker.cycle();
+  origins = [];
+  await worker.cycle();
+  origins = ["https://example.test"];
+  await worker.cycle();
+  assert.equal(attempts, 2, "a newly reconnected origin retries immediately");
+});
