@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { BotPluginError, insideRoot, marketplaceAllowed, migrateBotMarketplaces, normalizePolicyEntry, parseGitSource, readMarketplaceManifest, readPluginContents, type GitRunner } from "./bot-plugins.ts";
 import { PluginMarketplaces } from "./plugin-marketplaces.ts";
 import { botPluginsWithMarketplaces } from "./testing/plugin-stores.ts";
+import { PersonCapabilities, principalDir } from "./person-connections.ts";
+import { personalPluginStorage } from "./person-plugins.ts";
 
 const dirs: string[] = [];
 const temp = () => {
@@ -95,6 +97,48 @@ describe("insideRoot", () => {
 });
 
 describe("BotPlugins", () => {
+  it("shares install and update behavior with a personal scope whose state and values stay encrypted", async () => {
+    const dataDir = temp();
+    const repo = marketplaceRepo();
+    write(repo, "plugins/reviewer/.claude-plugin/plugin.json", JSON.stringify({ name: "reviewer", userConfig: { region: { type: "string" } } }));
+    const vaultKey = { kind: "key" as const, key: Buffer.alloc(32, 7) };
+    const capabilities = new PersonCapabilities(dataDir, () => vaultKey);
+    capabilities.setGithub("pr_a", { token: "github-fixture", login: "alice", via: "token", connectedAt: 1 });
+    const credentialScopes: string[] = [];
+    const options = {
+      dataDir, git: fakeGit({ "https://github.com/acme/tools.git": repo }, []), gitEnvironment: () => ({}), policy: () => undefined,
+      storage: personalPluginStorage(dataDir, capabilities),
+      tokens: {
+        get: (scope: string) => { credentialScopes.push(scope); return undefined; },
+        remove: () => true,
+        sourcesFor: (scope: string) => { credentialScopes.push(scope); return new Set<string>(); },
+        forgetBot: (scope: string) => { credentialScopes.push(scope); },
+      },
+    };
+    const plugins = botPluginsWithMarketplaces(options);
+    await plugins.addMarketplace("pr_a", { source: "acme/tools" }, "pr_a");
+    await plugins.install("pr_a", { marketplace: "acme-tools", plugin: "reviewer" }, "pr_a");
+    await plugins.setPluginConfig("pr_a", "reviewer@acme-tools", { region: "fixture-region" });
+    plugins.setEnabled("pr_a", "reviewer@acme-tools", false);
+    await plugins.install("pr_a", { marketplace: "acme-tools", plugin: "reviewer" }, "pr_a");
+    expect(plugins.listPlugins("pr_a")[0]).toMatchObject({ enabled: false, config: { values: { region: "fixture-region" } } });
+    expect(plugins.listPlugins("pr_b")).toEqual([]);
+    expect(plugins.botsUsing("acme-tools")).toEqual(["pr_a"]);
+    expect(existsSync(join(plugins.folder("pr_a"), "state.json"))).toBe(false);
+    expect(existsSync(join(plugins.folder("pr_a"), "plugins", "config.json"))).toBe(false);
+    const disk = readFileSync(join(principalDir(dataDir, "pr_a"), "capabilities.enc"), "utf8");
+    expect(disk).not.toContain("fixture-region");
+    expect(disk).not.toContain("reviewer@acme-tools");
+    const again = botPluginsWithMarketplaces({ ...options, storage: personalPluginStorage(dataDir, new PersonCapabilities(dataDir, () => vaultKey)) });
+    expect(again.listPlugins("pr_a")[0]).toMatchObject({ enabled: false, config: { values: { region: "fixture-region" } } });
+    plugins.forgetBot("pr_a");
+    expect(capabilities.pluginState("pr_a").plugins).toEqual({});
+    expect(capabilities.pluginValues("pr_a")).toEqual({});
+    expect(capabilities.github("pr_a")?.login).toBe("alice");
+    expect(credentialScopes).toContain("person:pr_a");
+    expect(credentialScopes).not.toContain("pr_a");
+  });
+
   it("adds a marketplace, installs a plugin without what would run on the host, and lists its folder", async () => {
     const repo = marketplaceRepo();
     const calls: Array<{ args: string[]; env: Record<string, string> }> = [];

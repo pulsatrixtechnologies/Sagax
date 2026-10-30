@@ -7,7 +7,7 @@
 //   - marketplace-tokens.enc: one token per marketplace, per bot (its owner
 //     or a manager) or for the whole installation (`workspace`, an admin);
 //   - (unchanged) the person's own GitHub connection
-//     (principals/<id>/connections.enc, server/github-connect.ts): gh, git,
+//     (principals/<id>/capabilities.enc, server/github-connect.ts): gh, git,
 //     the GitHub MCP and Sagax's own fetches for them.
 //
 // Here: labeled credentials, each owned by one person (their principal id;

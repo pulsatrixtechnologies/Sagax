@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createCipheriv } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -15,6 +16,18 @@ function store() {
   const dir = mkdtempSync(join(tmpdir(), "sagax-person-"));
   dirs.push(dir);
   return { dir, connections: new PersonConnections(dir, () => key) };
+}
+
+function legacyFile(dir: string, principalId: string, document: unknown): string {
+  const iv = Buffer.alloc(12, 5);
+  const cipher = createCipheriv("aes-256-gcm", key.key, iv);
+  cipher.setAAD(Buffer.from("sagax person-connections v1"));
+  const data = Buffer.concat([cipher.update(JSON.stringify(document), "utf8"), cipher.final()]);
+  const folder = principalDir(dir, principalId);
+  mkdirSync(folder, { recursive: true });
+  const file = join(folder, "connections.enc");
+  writeFileSync(file, JSON.stringify({ v: 1, iv: iv.toString("base64"), tag: cipher.getAuthTag().toString("base64"), data: data.toString("base64") }));
+  return file;
 }
 
 describe("parsePersonalMcpInput", () => {
@@ -62,7 +75,7 @@ describe("PersonConnections", () => {
     const listed = connections.list("pr_a");
     expect(listed).toEqual([expect.objectContaining({ name: "docs", tokenConfigured: true, domain: "docs.example.com" })]);
     expect(JSON.stringify(listed)).not.toContain("secret-token-a");
-    const onDisk = readFileSync(join(principalDir(dir, "pr_a"), "connections.enc"), "utf8");
+    const onDisk = readFileSync(join(principalDir(dir, "pr_a"), "capabilities.enc"), "utf8");
     expect(onDisk).not.toContain("secret-token-a");
     expect(onDisk).not.toContain("gho_secret_a");
     // a second process with the same key reads it back
@@ -89,6 +102,57 @@ describe("PersonConnections", () => {
     expect(() => wrong.github("pr_a")).toThrow(PersonConnectionsError);
     expect(() => wrong.setGithub("pr_a", undefined)).toThrow(PersonConnectionsError);
     expect(new PersonConnections(dir, () => key).github("pr_a")?.login).toBe("alice");
+  });
+
+  it("migrates legacy connections once, preserving the original and removals across restarts", () => {
+    const { dir, connections } = store();
+    const old = legacyFile(dir, "pr_a", { version: 1, mcpServers: { docs: parsePersonalMcpInput({ name: "docs", url: "https://docs.example.com/mcp", token: "legacy-fixture" }).server }, github: { token: "github-fixture", login: "alice", via: "token", connectedAt: 1 } });
+    const original = readFileSync(old, "utf8");
+    expect(connections.list("pr_a")).toHaveLength(1);
+    const migrated = join(principalDir(dir, "pr_a"), "capabilities.enc");
+    expect(existsSync(migrated)).toBe(true);
+    expect(statSync(migrated).mode & 0o777).toBe(0o600);
+    expect(readFileSync(old, "utf8")).toBe(original);
+    expect(readFileSync(migrated, "utf8")).not.toContain("legacy-fixture");
+    expect(connections.read("pr_a")).toMatchObject({ version: 2, plugins: { version: 2, plugins: {} }, pluginValues: {}, assignedSkills: [] });
+    connections.remove("pr_a", "docs");
+    connections.setGithub("pr_a", undefined);
+    const again = new PersonConnections(dir, () => key);
+    expect(again.list("pr_a")).toEqual([]);
+    expect(again.github("pr_a")).toBeUndefined();
+    expect(readFileSync(old, "utf8")).toBe(original);
+  });
+
+  it("does not fall back to the legacy file when the new store is corrupt", () => {
+    const { dir, connections } = store();
+    const old = legacyFile(dir, "pr_a", { version: 1, mcpServers: {}, github: { token: "github-fixture", login: "alice", via: "token", connectedAt: 1 } });
+    const current = join(principalDir(dir, "pr_a"), "capabilities.enc");
+    writeFileSync(current, "broken-current-fixture");
+    expect(() => connections.github("pr_a")).toThrow(PersonConnectionsError);
+    expect(() => connections.setAssignedSkills("pr_a", ["docs"])).toThrow(PersonConnectionsError);
+    expect(readFileSync(current, "utf8")).toBe("broken-current-fixture");
+    expect(existsSync(old)).toBe(true);
+  });
+
+  it("keeps plugin state, configuration and skill references in the same encrypted personal store", () => {
+    const { dir, connections } = store();
+    const plugins = { version: 2 as const, plugins: { "docs@market": { name: "docs", marketplace: "market", enabled: true, installedAt: 1, updatedAt: 1, removed: [], declaredMcpServers: ["docs"] } } };
+    connections.setPluginState("pr_a", plugins);
+    connections.setPluginValues("pr_a", { "docs@market": { region: "fixture-region" } });
+    connections.setAssignedSkills("pr_a", ["release-notes", "docs", "docs"]);
+    connections.setGithub("pr_a", { token: "github-fixture", login: "alice", via: "token", connectedAt: 1 });
+    const again = new PersonConnections(dir, () => key);
+    expect(again.pluginState("pr_a")).toEqual(plugins);
+    expect(again.pluginValues("pr_a")).toEqual({ "docs@market": { region: "fixture-region" } });
+    expect(again.assignedSkills("pr_a")).toEqual(["docs", "release-notes"]);
+    expect(again.read("pr_b")).toMatchObject({ plugins: { plugins: {} }, pluginValues: {}, assignedSkills: [] });
+    const onDisk = readFileSync(join(principalDir(dir, "pr_a"), "capabilities.enc"), "utf8");
+    expect(onDisk).not.toContain("fixture-region");
+    expect(onDisk).not.toContain("github-fixture");
+    expect(onDisk).not.toContain("docs@market");
+    const detached = again.pluginState("pr_a");
+    detached.plugins["docs@market"]!.enabled = false;
+    expect(again.pluginState("pr_a").plugins["docs@market"]!.enabled).toBe(true);
   });
 
   it("refuses a person id that would leave the people folder", () => {

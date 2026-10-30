@@ -42,6 +42,8 @@ import { isAbsolute, join, normalize, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 
 import { writeFileAtomic } from "./atomic.ts";
+import { capabilityPluginRecordSchema as pluginRecord, capabilityPluginStateSchema as stateSchema } from "./capability-plugin-state.ts";
+import type { CapabilityPluginValues } from "./capability-plugin-state.ts";
 import { capturePluginHooks, type LifecycleHook } from "./lifecycle-hooks.ts";
 import type { MarketplaceViewer, MarketplaceVisibility, PluginMarketplaces } from "./plugin-marketplaces.ts";
 import { probeGithubRepo, type GithubCredential, type GithubProbe } from "./github-access.ts";
@@ -158,38 +160,11 @@ const marketplaceRecord = z.object({
   updatedAt: z.number(),
 }).strict();
 
-const pluginRecord = z.object({
-  name: z.string(),
-  marketplace: z.string(),
-  description: z.string().optional(),
-  version: z.string().optional(),
-  /** what was installed (plugin-marketplaces.ts pluginRevision), to tell an
-   * update without a version change */
-  revision: z.string().optional(),
-  enabled: z.boolean(),
-  installedAt: z.number(),
-  installedBy: z.string().optional(),
-  updatedAt: z.number(),
-  /** What was taken out at install (hooks, .mcp.json, ...). */
-  removed: z.array(z.string()),
-  /** MCP servers the plugin declared (names only). */
-  declaredMcpServers: z.array(z.string()),
-  /** Hook commands kept off the server host. Absent when the plugin had none. */
-  lifecycleHooks: z.number().int().min(0).max(100).optional(),
-}).strict();
-
 /** Before the one marketplace list: each bot kept its own marketplaces. */
 const legacyStateSchema = z.object({
   version: z.literal(1),
   marketplaces: z.record(z.string(), marketplaceRecord),
   plugins: z.record(z.string(), pluginRecord),
-}).strict();
-
-const stateSchema = z.object({
-  version: z.literal(2),
-  plugins: z.record(z.string(), pluginRecord),
-  /** Owner switch. Off until they turn it on. Hooks never run on the server. */
-  lifecycleHooksEnabled: z.boolean().optional(),
 }).strict();
 
 export type PluginState = z.infer<typeof stateSchema>;
@@ -470,6 +445,19 @@ export const runGit: GitRunner = (args, options) => new Promise((resolvePromise,
 
 export interface BotPluginsOptions {
   dataDir: string;
+  /** Another capability scope uses the same installs and update logic,
+   * with its own validated ids, folder and state store (personal state is
+   * encrypted in capabilities.enc). Nothing writes state.json there. */
+  storage?: {
+    root(id: string): string;
+    ids(): string[];
+    read(id: string): PluginState;
+    write(id: string, state: PluginState): void;
+    values(id: string): CapabilityPluginValues;
+    writeValues(id: string, values: CapabilityPluginValues): void;
+    /** Prevent a person id from sharing a bot's credential selection. */
+    credentialScope(id: string): string;
+  };
   /** The installation's one marketplace list. */
   marketplaces: PluginMarketplaces;
   git?: GitRunner;
@@ -536,23 +524,45 @@ export class BotPlugins {
   private readonly locks = new Map<string, Promise<unknown>>();
 
   constructor(options: BotPluginsOptions) {
-    this.options = options;
+    this.options = options.storage && options.tokens
+      ? { ...options, tokens: scopedPluginTokens(options.tokens, (id) => id === WORKSPACE_TOKEN_KEY ? id : options.storage!.credentialScope(id)) }
+      : options;
     this.git = options.git ?? runGit;
     this.now = options.now ?? Date.now;
   }
 
   private root(botId: string): string {
+    if (this.options.storage) return this.options.storage.root(botId);
     if (!BOT_ID.test(botId)) throw new BotPluginError("invalid bot", "invalid_bot");
     return join(this.options.dataDir, "bot-plugins", botId);
   }
 
   private read(botId: string): PluginState {
+    if (this.options.storage) return stateSchema.parse(this.options.storage.read(botId));
     return readStateFile(join(this.root(botId), "state.json")) ?? { version: 2, plugins: {} };
   }
 
   private write(botId: string, state: PluginState): void {
+    if (this.options.storage) {
+      this.options.storage.write(botId, stateSchema.parse(state));
+      return;
+    }
     mkdirSync(this.root(botId), { recursive: true, mode: 0o700 });
     writeFileAtomic(join(this.root(botId), "state.json"), JSON.stringify(stateSchema.parse(state), null, 2));
+  }
+
+  private validId(id: string): boolean {
+    if (!this.options.storage) return BOT_ID.test(id);
+    try { this.root(id); return true; } catch { return false; }
+  }
+
+  private values(id: string): CapabilityPluginValues {
+    return this.options.storage?.values(id) ?? readConfigValues(this.configFile(id));
+  }
+
+  private writeValues(id: string, values: CapabilityPluginValues): void {
+    if (this.options.storage) this.options.storage.writeValues(id, values);
+    else writeConfigValues(this.configFile(id), values);
   }
 
   private withLock<T>(botId: string, work: () => Promise<T>): Promise<T> {
@@ -680,7 +690,7 @@ export class BotPlugins {
   }
 
   listPlugins(botId: string): InstalledBotPlugin[] {
-    const values = readConfigValues(this.configFile(botId));
+    const values = this.values(botId);
     return Object.entries(this.read(botId).plugins).map(([key, record]) => {
       const fields = readPluginConfigFields(this.pluginDir(botId, record.marketplace, record.name));
       return { key, ...record, ...(fields.length ? { config: { fields, values: values[key] ?? {} } } : {}) };
@@ -702,9 +712,9 @@ export class BotPlugins {
       if (!fields.length) throw new BotPluginError("This plugin declares no configuration.", "no_config", 400);
       const checked = checkPluginConfig(fields, input);
       if (!checked.ok) throw new BotPluginError(checked.error, checked.code, 400);
-      const all = readConfigValues(this.configFile(botId));
+      const all = this.values(botId);
       all[key] = checked.values;
-      writeConfigValues(this.configFile(botId), all);
+      this.writeValues(botId, all);
       applyPluginConfig(dir, fields, checked.values);
       return { key, ...record, config: { fields, values: checked.values } };
     });
@@ -839,7 +849,7 @@ export class BotPlugins {
       }
       // the copy is fresh: this bot's values (or the defaults) go in again
       const fields = readPluginConfigFields(target);
-      if (fields.length) applyPluginConfig(target, fields, readConfigValues(this.configFile(botId))[key] ?? {});
+      if (fields.length) applyPluginConfig(target, fields, this.values(botId)[key] ?? {});
       const now = this.now();
       const previous = state.plugins[key];
       const revision = this.options.marketplaces.revisionOf(input.marketplace, entry);
@@ -899,7 +909,7 @@ export class BotPlugins {
   /** Enabled plugins' hook commands, and the files that belong with them.
    * Empty when the owner has not turned hooks on. */
   hooksOf(botId: string): LifecycleHook[] {
-    if (!BOT_ID.test(botId)) return [];
+    if (!this.validId(botId)) return [];
     const state = this.read(botId);
     const out: LifecycleHook[] = [];
     for (const [key, record] of Object.entries(state.plugins)) {
@@ -914,7 +924,7 @@ export class BotPlugins {
 
   /** Script files kept beside the plugins, for the computer to stage. */
   hookFiles(botId: string): Record<string, string> {
-    if (!BOT_ID.test(botId)) return {};
+    if (!this.validId(botId)) return {};
     const root = join(this.root(botId), "computer-hooks");
     const out: Record<string, string> = {};
     const walk = (dir: string, prefix: string) => {
@@ -938,7 +948,7 @@ export class BotPlugins {
   }
 
   lifecycleHooksEnabled(botId: string): boolean {
-    if (!BOT_ID.test(botId)) return false;
+    if (!this.validId(botId)) return false;
     return this.read(botId).lifecycleHooksEnabled === true;
   }
 
@@ -964,10 +974,10 @@ export class BotPlugins {
       rmSync(this.hookDir(botId, key), { recursive: true, force: true });
       delete state.plugins[key];
       this.write(botId, state);
-      const values = readConfigValues(this.configFile(botId));
+      const values = this.values(botId);
       if (values[key]) {
         delete values[key];
-        writeConfigValues(this.configFile(botId), values);
+        this.writeValues(botId, values);
       }
     });
   }
@@ -981,7 +991,7 @@ export class BotPlugins {
 
   /** Enabled plugin folders. Claude loads them with `--plugin-dir`. */
   pluginDirs(botId: string): string[] {
-    if (!BOT_ID.test(botId)) return [];
+    if (!this.validId(botId)) return [];
     return this.listPlugins(botId)
       .filter((plugin) => plugin.enabled)
       .map((plugin) => this.pluginDir(botId, plugin.marketplace, plugin.name))
@@ -992,7 +1002,7 @@ export class BotPlugins {
    * `plugins/<name>/...` (workspace_read) and what is copied into its
    * owner's cloud computer. A name two marketplaces share is listed once. */
   enabledPlugins(botId: string): Array<{ name: string; dir: string }> {
-    if (!BOT_ID.test(botId)) return [];
+    if (!this.validId(botId)) return [];
     const out: Array<{ name: string; dir: string }> = [];
     for (const plugin of this.listPlugins(botId)) {
       if (!plugin.enabled || out.some((row) => row.name === plugin.name)) continue;
@@ -1006,7 +1016,7 @@ export class BotPlugins {
   botsUsing(marketplace: string): string[] {
     const base = join(this.options.dataDir, "bot-plugins");
     let bots: string[];
-    try { bots = readdirSync(base, { withFileTypes: true }).filter((entry) => entry.isDirectory() && BOT_ID.test(entry.name)).map((entry) => entry.name); } catch { return []; }
+    try { bots = this.options.storage?.ids() ?? readdirSync(base, { withFileTypes: true }).filter((entry) => entry.isDirectory() && BOT_ID.test(entry.name)).map((entry) => entry.name); } catch { return []; }
     return bots.filter((botId) => Object.values(this.read(botId).plugins).some((plugin) => plugin.marketplace === marketplace)).sort();
   }
 
@@ -1073,7 +1083,7 @@ export class BotPlugins {
       if (!known || !existsSync(this.pluginDir(botId, record.marketplace, record.name))) continue;
       state.plugins[key] = record;
     }
-    const moved = moveBotIntoOneList(root, state, this.options.marketplaces);
+    const moved = moveBotIntoOneList(root, state, this.options.marketplaces, this.options.storage ? (next) => this.write(botId, next) : undefined);
     return { marketplaces: [...new Set(moved.names.values())].sort(), plugins: Object.keys(moved.plugins).sort() };
   }
 
@@ -1154,10 +1164,30 @@ export class BotPlugins {
 
   /** Forget everything of a deleted bot. */
   forgetBot(botId: string): void {
-    if (!BOT_ID.test(botId)) return;
+    if (!this.validId(botId)) return;
     try { this.options.tokens?.forgetBot(botId); } catch { /* the folder still goes */ }
+    if (this.options.storage) {
+      this.write(botId, { version: 2, plugins: {} });
+      this.writeValues(botId, {});
+    }
     rmSync(this.root(botId), { recursive: true, force: true });
   }
+}
+
+/** Credential picks follow the capability scope too; a person's id and a
+ * bot id are allowed to have the same spelling without sharing a pick. */
+function scopedPluginTokens(tokens: NonNullable<BotPluginsOptions["tokens"]>, scope: (id: string) => string): NonNullable<BotPluginsOptions["tokens"]> {
+  return {
+    ...tokens,
+    get: (id, source) => tokens.get(scope(id), source),
+    ...(tokens.chosen ? { chosen: (id: string, source: string) => tokens.chosen!(scope(id), source) } : {}),
+    ...(tokens.choose ? { choose: (id: string, source: string, credential: string | null) => tokens.choose!(scope(id), source, credential) } : {}),
+    ...(tokens.noteUsed ? { noteUsed: (id: string, source: string, used: Parameters<NonNullable<typeof tokens.noteUsed>>[2]) => tokens.noteUsed!(scope(id), source, used) } : {}),
+    ...(tokens.describe ? { describe: (id: string, source: string, viewer: string | undefined) => tokens.describe!(scope(id), source, viewer) } : {}),
+    remove: (id, source) => tokens.remove(scope(id), source),
+    sourcesFor: (id) => tokens.sourcesFor(scope(id)),
+    forgetBot: (id) => tokens.forgetBot(scope(id)),
+  };
 }
 
 // ── migration: one marketplace list ──────────────────────────────────────
@@ -1175,7 +1205,7 @@ export interface BotMarketplaceMigration {
  * bot package restored on a new bot): each is adopted (the same source is
  * reused, a clash gets a suffix), every install moves with its marketplace's
  * name, and the state is written in the current format. */
-function moveBotIntoOneList(root: string, legacy: LegacyPluginState, shared: PluginMarketplaces): { names: Map<string, string>; plugins: PluginState["plugins"]; renamed: string[] } {
+function moveBotIntoOneList(root: string, legacy: LegacyPluginState, shared: PluginMarketplaces, save?: (state: PluginState) => void): { names: Map<string, string>; plugins: PluginState["plugins"]; renamed: string[] } {
   const names = new Map<string, string>();
   const renamed: string[] = [];
   for (const [name, record] of Object.entries(legacy.marketplaces).sort(([a], [b]) => a.localeCompare(b))) {
@@ -1198,7 +1228,9 @@ function moveBotIntoOneList(root: string, legacy: LegacyPluginState, shared: Plu
     plugins[`${plugin.name}@${market}`] = { ...plugin, marketplace: market };
   }
   mkdirSync(root, { recursive: true });
-  writeFileAtomic(join(root, "state.json"), JSON.stringify(stateSchema.parse({ version: 2, plugins }), null, 2));
+  const current = stateSchema.parse({ version: 2, plugins });
+  if (save) save(current);
+  else writeFileAtomic(join(root, "state.json"), JSON.stringify(current, null, 2));
   rmSync(join(root, "marketplaces"), { recursive: true, force: true });
   for (const [old, now] of names) {
     if (old === now) continue;

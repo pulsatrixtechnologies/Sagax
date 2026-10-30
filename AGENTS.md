@@ -179,6 +179,27 @@ sheet). Keep these rules, covered by `server/capabilities.test.ts`,
 - Grok's account connectors are a static catalog: `unverifiable`, never
   "connected".
 
+## Personal capability storage (lot 2, 2026-10-30)
+
+`PersonCapabilities` (`server/person-connections.ts`, also exported under
+the existing `PersonConnections` name) owns one encrypted
+`principals/<pid>/capabilities.enc`: MCP servers, GitHub, installed plugin
+state, plugin configuration and assigned library skills. Existing connection
+routes use that same store. The first successful read of `connections.enc`
+writes version 2 atomically and keeps the encrypted original for recovery.
+An existing new file always wins, including an empty document; a corrupt
+new file is never replaced from the legacy copy. A store that cannot be
+decrypted is never overwritten.
+
+Plugin records share `server/capability-plugin-state.ts`. `BotPlugins` takes
+an optional scoped storage adapter; `personalPluginStorage`
+(`server/person-plugins.ts`) keeps its state and values encrypted and its
+source files under that person's `capability-plugins/`. It writes no
+plaintext `state.json` or `config.json`. Credential selections use a
+`person:` namespace so a person and a bot with the same id cannot share a
+selection. Forgetting that scope removes plugins and their values while
+preserving the person's other capabilities and GitHub connection.
+
 ## Proactive bots, wired for real (2026-10-30)
 
 A bot's proactive mode (`proactiveMode`, Edit bot > Permissions > Proactive,
@@ -6071,9 +6092,10 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   `organizationHidesSection`): `/api/me/connections`, `/api/me/github/*`,
   `/api/me/mcp/servers/*` (`server/routes/person-connections.ts`), the
   session's person only, member scope (CLIENT_ALLOW, `orgDirectory`).
-- One encrypted file per person (`principals/<pid>/connections.enc`,
+- One encrypted file per person (`principals/<pid>/capabilities.enc`,
   AES-256-GCM with the mcp-oauth vault key; `server/person-connections.ts`)
-  holds their own MCP servers and GitHub token; their OAuth sign-ins live in
+  holds their own MCP servers, GitHub token, plugin state and skill
+  references (`connections.enc` migrates at first read); OAuth sign-ins live in
   their own `principals/<pid>/mcp-oauth.enc` (one `McpOAuthManager` per
   person, `ownsState` routes `/api/mcp-oauth/callback` to it). No answer
   carries a token.
