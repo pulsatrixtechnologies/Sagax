@@ -964,9 +964,10 @@ describe("default fleet", () => {
     });
   });
 
-  it("hands a saved Anthropic key only to Claude instances, as the variable the CLI reads", () => {
+  it("hands a saved Anthropic key only to its API instance, as the variable the CLI reads", () => {
     const map = instanceConfigs({ anthropic: { key: "sk-ant-fixture", url: "https://anthropic-proxy.example.test" } });
-    expect(map.claude.environment).toEqual({ ANTHROPIC_API_KEY: "sk-ant-fixture", ANTHROPIC_BASE_URL: "https://anthropic-proxy.example.test" });
+    expect(map.claudeApi.environment).toEqual({ ANTHROPIC_API_KEY: "sk-ant-fixture", ANTHROPIC_BASE_URL: "https://anthropic-proxy.example.test" });
+    expect(map.claude.environment).toEqual({});
     expect(map.codex.environment).toEqual({});
     expect(map.openaiCompat.environment).toEqual({});
     expect(instanceConfigs({ anthropic: { url: "https://only-a-url.example.test" } }).claude.environment).toEqual({});
@@ -983,7 +984,8 @@ describe("default fleet", () => {
         bedrock: { driver: "claudeAgent", environment: { CLAUDE_CODE_USE_BEDROCK: "1" } },
       },
     });
-    expect(map.claude.environment).toEqual({ ANTHROPIC_API_KEY: "sk-ant-workspace", ANTHROPIC_BASE_URL: "https://anthropic-proxy.example.test" });
+    expect(map.claudeApi.environment).toEqual({ ANTHROPIC_API_KEY: "sk-ant-workspace", ANTHROPIC_BASE_URL: "https://anthropic-proxy.example.test" });
+    expect(map.claude.environment).toEqual({});
     expect(map.router.environment).toEqual({ ANTHROPIC_BASE_URL: "https://router.example.test", ANTHROPIC_AUTH_TOKEN: "router-token" });
     expect(map.keyed.environment).toEqual({ ANTHROPIC_API_KEY: "sk-ant-own" });
     expect(map.bedrock.environment).toEqual({ CLAUDE_CODE_USE_BEDROCK: "1" });
@@ -1408,16 +1410,11 @@ describe("credential env narrowing", () => {
     expect(instances.openai.access).toBe("api");
   });
 
-  it("runs only Claude (API key) on a key saved from Settings, and every Claude bot when asked", () => {
-    const own = instanceConfigs({ anthropic: { key: "SECRET-ANT", everyClaudeBot: false } });
-    expect(own.claudeApi.environment).toEqual({ ANTHROPIC_API_KEY: "SECRET-ANT" });
-    expect(own.claude.environment).toEqual({});
-    // An older or fleet-seeded key (no flag) keeps running every Claude bot;
-    // the separate instance then stays unset rather than duplicating it.
-    for (const anthropic of [{ key: "SECRET-ANT" }, { key: "SECRET-ANT", everyClaudeBot: true }]) {
-      const every = instanceConfigs({ anthropic });
-      expect(every.claude.environment).toEqual({ ANTHROPIC_API_KEY: "SECRET-ANT" });
-      expect(every.claudeApi.environment).toEqual({});
+  it("always isolates the Anthropic key on its API instance, including legacy flags", () => {
+    for (const everyClaudeBot of [undefined, false, true]) {
+      const instances = instanceConfigs({ anthropic: { key: "fixture-anthropic-key", everyClaudeBot } });
+      expect(instances.claudeApi.environment).toEqual({ ANTHROPIC_API_KEY: "fixture-anthropic-key" });
+      expect(instances.claude.environment).toEqual({});
     }
   });
 
@@ -2241,7 +2238,7 @@ describe("changedInstanceIds", () => {
     expect(reloaded({ mistral: { key: "m2" } }, saved)).toEqual(["mistral"]);
     expect(reloaded({ openaiCompat: { key: "c2", url: "https://compat.example/v1" } }, saved)).toEqual(["openaiCompat"]);
     expect(reloaded({ openaiCompat: { key: "c1", url: "https://other.example/v1" } }, saved)).toEqual(["openaiCompat"]);
-    expect(reloaded({ anthropic: { key: "a" } }, saved)).toEqual(["claude"]);
+    expect(reloaded({ anthropic: { key: "a" } }, saved)).toEqual(["claudeApi"]);
   });
   it("replaces nothing for sections no driver reads", () => {
     expect(reloaded({ onboarding: { hintsSeen: ["tour.composer"] } })).toEqual([]);

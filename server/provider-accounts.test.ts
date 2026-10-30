@@ -69,3 +69,21 @@ describe("personal provider accounts", () => {
     expect((await accounts.list(owner)).keys).toEqual([]);
   });
 });
+
+it.each([404, 405])("names an older organization host (%s), preserves local imports and resolves existing keys", async (status) => {
+  const { accounts, directory, store, dataDir } = fixture();
+  const owner = { principalId: "person-a", sub: "subject-a" };
+  store.set(owner, "openai", "fixture-pending-import");
+  directory.linkPostJson.mockResolvedValue({ ok: false, error: "refused", status } as never);
+  await expect(accounts.list(owner)).rejects.toMatchObject({ status: 409, code: "provider_accounts_update_required" });
+  expect(existsSync(join(dataDir, "principals", owner.principalId, PROVIDER_KEYS_FILE))).toBe(true);
+  directory.resolveProviderKey.mockResolvedValue({ ok: true, key: "fixture-existing-remote", fingerprint: "remote" });
+  expect(await accounts.key(owner, "openai")).toBe("fixture-existing-remote");
+  directory.resolveProviderKey.mockResolvedValue({ ok: false, error: "no_key" });
+  expect(await accounts.key(owner, "openai")).toBe("fixture-pending-import");
+  expect(store.keys(owner).openai).toBe("fixture-pending-import");
+  for (const error of ["user_inactive", "link"]) {
+    directory.resolveProviderKey.mockResolvedValue({ ok: false, error });
+    expect(await accounts.key(owner, "openai")).toBeUndefined();
+  }
+});

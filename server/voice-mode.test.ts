@@ -226,6 +226,18 @@ describe("voice mode routes", () => {
     expect((await call({ method: "POST", path: "/api/tts/prepare", body: { text: "Bonjour" } })).body).toEqual({ ready: false, utterances: ["Bonjour"] });
   });
 
+  it("legacy read aloud follows the person's newer provider choice instead of the installed engine", async () => {
+    const synthesize = vi.fn(async () => ({ bytes: new Uint8Array([7, 8]), mime: "audio/mpeg" }));
+    const { call } = harness({
+      legacyChoice: () => ({ provider: "fish", voice: "oldVoice" }),
+      preference: () => ({ tts: "openai", voices: { openai: "cedar" } }),
+      openai: { listVoices: async () => [], synthesize },
+      providerKeys: (provider) => provider === "openai" ? [{ key: OWN_KEY, via: "speaker-key", source: "perspicax-key", last4: "c0Je", provider, payerPrincipalId: "p-ada" }] : [],
+    });
+    expect((await call({ method: "POST", path: "/api/tts/speak", body: { text: "Bonjour" } })).status).toBe(200);
+    expect(synthesize).toHaveBeenCalledWith("Bonjour", "cedar", OWN_KEY, { speed: 1, language: "auto" });
+  });
+
   it("only serves a signed-in person on an organization server", async () => {
     const { call } = harness();
     const anonymous: RequestAuth = { ...ada, session: { ...(ada as { session: SessionRecord }).session, principalId: "anon:x" } } as RequestAuth;

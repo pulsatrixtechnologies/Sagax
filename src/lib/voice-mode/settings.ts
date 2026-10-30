@@ -9,6 +9,7 @@ import {
   VOICE_MODE_LANGUAGES,
   VOICE_MODE_STORAGE_KEY,
   cleanVoiceModeSettings,
+  installedVoiceSettings,
   type VoiceModeSettings,
 } from "../../../shared/voice-mode";
 import {
@@ -67,6 +68,16 @@ export function writeVoiceModeSettings(patch: Partial<VoiceModeSettings>, store:
   return next;
 }
 
+/** Preserve the solo installation and bot voices before retiring its old UI.
+ * An existing choice, including Auto, is never overwritten. */
+export function migrateInstalledVoiceSettings(tts: { provider?: string; voice?: string } | undefined, bots: ReadonlyArray<{ id: string; voice?: string }>, store: Storage | null = storage()): void {
+  if (!tts || !store) return;
+  try {
+    if (store.getItem(VOICE_MODE_STORAGE_KEY) !== null) return;
+    writeVoiceModeSettings(installedVoiceSettings(tts, bots), store);
+  } catch { /* a refused storage remains usable through server defaults */ }
+}
+
 function subscribe(fn: () => void): () => void {
   watchers.add(fn);
   // another window, or the preference sync writing the server's value
@@ -115,10 +126,10 @@ export function botHasOwnVoice(settings: VoiceModeSettings, botId: string): bool
 
 /** Pick a voice for the provider this bot speaks with: in the bot's own
  * choice when it has one, else the person's (xAI's in `voice`). */
-export function writeVoiceForBot(botId: string | undefined, voice: string, store: Storage | null = storage()): VoiceModeSettings {
+export function writeVoiceForBot(botId: string | undefined, voice: string, store: Storage | null = storage(), resolvedProvider?: VoiceTtsProvider): VoiceModeSettings {
   const settings = readVoiceModeSettings(store);
   const choice = effectiveVoiceChoice(settings, botId);
-  const provider: VoiceTtsProvider = choice.tts === "auto" ? "xai" : choice.tts;
+  const provider: VoiceTtsProvider = resolvedProvider ?? (choice.tts === "auto" ? "xai" : choice.tts);
   const own = botId ? settings.bots?.[botId] : undefined;
   if (botId && own) {
     const voices = { ...own.voices, [provider]: voice || undefined };

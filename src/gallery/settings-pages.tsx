@@ -51,7 +51,7 @@ const API: Record<string, unknown> = {
     live: { enabled: true, configured: false, voice: "", readTypedReplies: true, idleMinutes: 5 },
     imageGen: { configured: false },
     anthropic: { configured: true },
-    ...(params.get("org") ? { viewer: { role: "admin", operator: false, principalId: "p-1", email: "alex@example.com", name: "Alex Example", canCreateBots: true }, allowedEngines: ["claude", "codex", "grok", "compat-azure"], disabledModels: ["compat-azure/gpt-4o"] } : {}),
+    ...(params.get("org") ? { personalSettings: true, viewer: { role: "admin", operator: false, principalId: "p-1", email: "alex@example.com", name: "Alex Example", canCreateBots: true }, allowedEngines: ["claude", "codex", "grok", "compat-azure"], disabledModels: ["compat-azure/gpt-4o"] } : {}),
     ...(params.get("providers") ? { myDisabledModels: ["compat-azure/o4-mini"] } : {}),
     ...(params.get("providers") ? { openai: { configured: true }, openaiCompatServers: [{ instanceId: "compat-azure", name: "Azure Foundry", url: "https://example-resource.openai.azure.com/openai/v1", configured: true }] } : {}),
     features: {},
@@ -80,6 +80,9 @@ const API: Record<string, unknown> = {
     ] },
     "/api/me/voice-keys": { elevenlabs: { configured: true, last4: "9f3a" }, fish: { configured: false, last4: null }, xai: { configured: false, last4: null }, openai: { configured: false, last4: null } },
   } : {}),
+  "/api/me/providers": { keys: [{ provider: "elevenlabs", last4: "demo" }, { provider: "openai", last4: "demo" }], servers: [] },
+  "/api/voice/status": { provider: "xai", available: true, organization: params.has("org"), tts: "elevenlabs", stt: "openai", providers: { tts: ["openai", "elevenlabs", "system", "chatterbox"], stt: ["openai"] } },
+  "/api/voice/voices": { voices: [{ id: "demo-voice", label: "Example voice", own: true }] },
   "/api/me/local-models": params.get("providers") ? { expose: true, share: false, connected: true, endpoints: [{ id: "omlx", baseUrl: "http://127.0.0.1:8000/v1", label: "Local server" }], published: [{ id: "omlx", label: "Local server", models: ["local-large", "local-fast"] }], probes: [] } : undefined,
   "/api/bots": { bots: BOTS.map((name, index) => ({ id: `bot-${index}`, name, instanceId: "claude", model: "sonnet", threadId: `thread-${index}`, modelSelection: { instanceId: "claude", model: "sonnet", ...(params.has("auto") ? { auto: true } : {}) }, threads: [], messages: [] })), groups: [], sections: [] },
   ...Object.fromEntries(BOTS.map((_, index) => [`/api/bots/bot-${index}/auto-model`, {

@@ -2835,15 +2835,24 @@ export class Store {
       }
       return next;
     };
+    const movedSelection = (selection: ModelSelection): ModelSelection | undefined => {
+      const selected = ids.get(selection.instanceId);
+      const fast = selection.fast && ids.get(selection.fast.instanceId);
+      return selected || fast ? {
+        ...selection,
+        ...(selected ? { instanceId: selected } : {}),
+        ...(fast && selection.fast ? { fast: { ...selection.fast, instanceId: fast } } : {}),
+      } : undefined;
+    };
     const changed: BotRecord[] = [];
     for (const bot of this.bots) {
       let dirty = false;
-      const selected = ids.get(bot.modelSelection.instanceId);
-      if (selected) { bot.modelSelection = { ...bot.modelSelection, instanceId: selected }; dirty = true; }
+      const selected = movedSelection(bot.modelSelection);
+      if (selected) { bot.modelSelection = selected; dirty = true; }
       if (touches(bot.resumeCursors)) { bot.resumeCursors = rename(bot.resumeCursors); dirty = true; }
       for (const task of bot.tasks ?? []) {
-        const taskSelected = task.modelSelection && ids.get(task.modelSelection.instanceId);
-        if (task.modelSelection && taskSelected) { task.modelSelection = { ...task.modelSelection, instanceId: taskSelected }; dirty = true; }
+        const taskSelected = task.modelSelection && movedSelection(task.modelSelection);
+        if (taskSelected) { task.modelSelection = taskSelected; dirty = true; }
         if (touches(task.resumeCursors)) { task.resumeCursors = rename(task.resumeCursors); dirty = true; }
         if (task.handedMessages && touches(task.handedMessages)) { task.handedMessages = rename(task.handedMessages); dirty = true; }
         const last = task.lastInstanceId && ids.get(task.lastInstanceId);

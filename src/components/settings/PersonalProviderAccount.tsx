@@ -8,7 +8,7 @@ import { FIELD, PILL } from "../SettingsPrimitives";
 /** Secret input is local to this one provider; metadata alone returns. */
 export function PersonalProviderKey({ provider, name, onDone }: { provider: string; name: string; onDone?(): void }) {
   const { refreshInstances } = useStore();
-  const { view } = useProviderAccounts();
+  const { view, unavailable, error } = useProviderAccounts();
   const current = view?.keys.find((key) => key.provider === provider);
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
@@ -26,7 +26,9 @@ export function PersonalProviderKey({ provider, name, onDone }: { provider: stri
     } catch (failure) { setNote(failure instanceof Error ? failure.message : t("voiceKeys.error")); }
     finally { setBusy(false); }
   };
+  if (unavailable) return <p data-needs-server-update="" className="text-[12px] text-ink-secondary">{unavailable}</p>;
   return <div className="flex min-w-0 flex-col gap-2" data-personal-provider-key={provider}>
+    {error && <p role="alert" className="text-[12px] text-danger">{error}</p>}
     <label className="flex min-w-0 flex-col gap-1 text-[12px] text-ink-secondary">
       {t("voiceKeys.key", { provider: name })}
       <input className={FIELD} type="password" autoComplete="off" spellCheck={false} value={value} disabled={busy}
@@ -44,6 +46,7 @@ export function PersonalProviderKey({ provider, name, onDone }: { provider: stri
 
 export function PersonalProviderServerForm({ server, onDone }: { server?: PersonalProviderServer; onDone(): void }) {
   const { refreshInstances } = useStore();
+  const { unavailable } = useProviderAccounts();
   const [name, setName] = useState(server?.name ?? "");
   const [url, setUrl] = useState(server?.url ?? "");
   const [protocol, setProtocol] = useState<PersonalProviderServer["protocol"]>(server?.protocol ?? "openai");
@@ -67,6 +70,7 @@ export function PersonalProviderServerForm({ server, onDone }: { server?: Person
     } catch (failure) { providerAccountsChanged(); setError(failure instanceof Error ? failure.message : t("voiceKeys.error")); }
     finally { setBusy(false); }
   };
+  if (unavailable) return <p data-needs-server-update="" className="text-[12px] text-ink-secondary">{unavailable}</p>;
   return <form className="flex min-w-0 flex-col gap-2" data-personal-provider-server="" onSubmit={(event) => { event.preventDefault(); void save(false); }}>
     <label className="flex flex-col gap-1 text-[12px] text-ink-secondary">{t("compatServers.name")}<input className={FIELD} value={name} onChange={(event) => setName(event.target.value)} disabled={busy} /></label>
     <label className="flex flex-col gap-1 text-[12px] text-ink-secondary">{t("compatServers.url")}<input type="url" className={FIELD} value={url} onChange={(event) => setUrl(event.target.value)} disabled={busy} placeholder="https://api.example.com/v1" /></label>

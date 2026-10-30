@@ -61,7 +61,7 @@ export function createProviderAccountsRoutes(deps: {
       }
       return json(res, 200, await changed(deps.accounts.setServer(owner, decoded, body as PersonalProviderServer | null)));
     } catch (error) {
-      if (error instanceof ProviderAccountsError) return json(res, error.status, { error: error.message });
+      if (error instanceof ProviderAccountsError) return json(res, error.status, { error: error.message, ...(error.code ? { code: error.code } : {}) });
       return json(res, 503, { error: "Your provider accounts are unavailable. Try again." });
     }
   };

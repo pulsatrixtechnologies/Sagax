@@ -81,7 +81,7 @@ class FakeElement {
   querySelector = vi.fn((_selector: string): FakeElement | null => null);
   querySelectorAll = vi.fn((): FakeElement[] => []);
 }
-const VOICE_PICKER = "[data-voice-picker] button:not([disabled])";
+const VOICE_PICKER = "[data-voice-picker] button:not([disabled]), [data-voice-provider-voice] button:not([disabled])";
 const FIRST_FIELD = "input:not([disabled]), select:not([disabled])";
 /** A pane holding these fields, found the way a browser would. */
 function paneWith(fields: { voicePicker?: FakeElement; firstField?: FakeElement }) {
@@ -232,40 +232,16 @@ describe("voice set-up pop-up", () => {
     expect(pane.focus).not.toHaveBeenCalled();
   });
 
-  it("finds the voice picker where VoiceSettings draws it, which is only once the engine is set up", async () => {
+  it("uses the unified provider choice in voice setup, without the old engine or key form", async () => {
     const actual = await vi.importActual<typeof import("./VoiceSettings")>("./VoiceSettings");
-    const card = () => renderToStaticMarkup(createElement(actual.VoiceSettings, { bot: pepper, onPatch: () => {} }));
-    // The picker is a pill menu (a button) inside the data-voice-picker span.
-    const pickerTag = (html: string) => html.match(/data-voice-picker[^>]*>\s*<div[^>]*>\s*<button\b[^>]*>/)?.[0];
-
-    // The engine key is not on this card. Until the engine is set up, the
-    // card points at Settings and draws no picker.
-    fixture.config = { tts: { configured: false, provider: "elevenlabs" } };
-    const needsEngine = card();
-    expect(needsEngine).not.toContain("ElevenLabs key");
-    expect(needsEngine).not.toContain('aria-label="Voice engine"');
-    expect(needsEngine).toContain("Set up the voice engine");
-    // 2026-10-28: the voice engine is on the Voice page
-    expect(needsEngine).toContain(">Voice<");
-    expect(pickerTag(needsEngine)).toBeUndefined();
-
-    fixture.config = { tts: { configured: true, provider: "elevenlabs" } };
-    const needsVoice = card();
-    const tag = pickerTag(needsVoice);
-    expect(tag).toContain('aria-label="Pepper&#x27;s voice"');
-    expect(needsVoice).not.toContain("ElevenLabs key");
-    expect(needsVoice).not.toContain("Set up the voice engine");
-
-    // A paired Mac cannot edit the host engine from the bot panel.
-    fixture.config = { tts: { configured: false, provider: "elevenlabs" } };
-    const locked = renderToStaticMarkup(createElement(actual.VoiceSettings, {
-      bot: pepper,
-      onPatch: () => {},
-      workspaceConfigurationLocked: true,
-    }));
-    expect(locked).toContain("The host has not set up a voice engine.");
-    expect(locked).not.toContain(">Models and voice<");
-    expect(locked).not.toContain("ElevenLabs key");
+    for (const configured of [true, false]) {
+      fixture.config = { tts: { configured, provider: "elevenlabs" } };
+      const html = renderToStaticMarkup(createElement(actual.VoiceSettings, { bot: pepper, onPatch: () => {} }));
+      expect(html).toContain('data-voice-providers="bot"');
+      expect(html).toContain("Read replies aloud");
+      expect(html).not.toContain('aria-label="Voice engine"');
+      expect(html).not.toContain('type="password"');
+    }
   });
 
   it("keeps Tab inside, and brings focus back when it has fallen out", () => {

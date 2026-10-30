@@ -122,9 +122,10 @@ export function VoiceProviderSettings({ bot }: { bot?: { id: string; name: strin
   };
 
   const none = status !== null && !offeredTts.length && !offeredStt.length;
+  const selectedVoice = speaking ? view.voices[speaking] ?? "" : "";
   const voiceOptions: Array<PillOption<string>> = [
     { value: "", label: voices === null && speaking ? t("voiceProviders.loading") : t("voiceProviders.default") },
-    ...(view.voice && !(voices ?? []).some((voice) => voice.id === view.voice) ? [{ value: view.voice, label: view.voice }] : []),
+    ...(selectedVoice && !(voices ?? []).some((voice) => voice.id === selectedVoice) ? [{ value: selectedVoice, label: selectedVoice }] : []),
     ...(voices ?? []).map((voice) => ({ value: voice.id, label: voice.own ? t("voiceProviders.ownVoice", { voice: voice.label }) : voice.description ? `${voice.label} (${voice.description})` : voice.label })),
   ];
 
@@ -145,11 +146,11 @@ export function VoiceProviderSettings({ bot }: { bot?: { id: string; name: strin
           <CompactRow label={t("voiceProviders.voice")} rowId="voiceProviders.voice">
             <span data-voice-provider-voice={speaking ?? ""} className="inline-flex min-w-0">
               <PillSelect
-                value={view.voice}
+                value={selectedVoice}
                 ariaLabel={t("voiceProviders.voiceOf", { provider: speaking ? label(speaking) : "" })}
                 disabled={!speaking}
                 options={voiceOptions}
-                onChange={(voice) => { setNote(null); writeVoiceForBot(botId, voice); }}
+                onChange={(voice) => { setNote(null); writeVoiceForBot(botId, voice, undefined, speaking); }}
               />
             </span>
             <button

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { VOICE_MODE_STORAGE_KEY, cleanVoiceModeSettings } from "../../../shared/voice-mode";
 import { providerOrder } from "../../../shared/voice-providers";
 import { speakVoiceMode, voiceModeListenUrl, voiceModeSpeechUrl } from "./api";
-import { readVoiceModeSettings, voiceSettingsForBot, writeBotVoiceChoice, writeVoiceForBot, writeVoiceProviders } from "./settings";
+import { migrateInstalledVoiceSettings, readVoiceModeSettings, voiceSettingsForBot, writeBotVoiceChoice, writeVoiceForBot, writeVoiceProviders } from "./settings";
 
 function memory(initial?: unknown) {
   const map = new Map<string, string>();
@@ -25,6 +25,21 @@ function page(initial: unknown) {
 }
 
 describe("voice providers in the person's settings", () => {
+  it("migrates the installed provider and bot voices once, without replacing a saved Auto choice", () => {
+    const store = memory();
+    migrateInstalledVoiceSettings({ provider: "system", voice: "Thomas (French)" }, [{ id: "b-1", voice: "Amelie" }], store);
+    expect(voiceSettingsForBot(readVoiceModeSettings(store), "b-1")).toMatchObject({ tts: "system", voice: "Amelie" });
+    expect(voiceSettingsForBot(readVoiceModeSettings(store), "b-2")).toMatchObject({ tts: "system", voice: "Thomas (French)" });
+    writeVoiceProviders({ tts: "auto" }, store);
+    migrateInstalledVoiceSettings({ provider: "fish", voice: "oldVoice" }, [], store);
+    expect(voiceSettingsForBot(readVoiceModeSettings(store), "b-2").tts).toBe("auto");
+  });
+
+  it("saves the voice of Auto's actual provider without changing another provider's voice", () => {
+    const store = memory({ voice: "eve", speed: 1, language: "auto" });
+    writeVoiceForBot(undefined, "myClone", store, "elevenlabs");
+    expect(readVoiceModeSettings(store)).toMatchObject({ voice: "eve", voices: { elevenlabs: "myClone" } });
+  });
   it("keeps an untouched preference as it was, and cleans what is not a provider", () => {
     expect(cleanVoiceModeSettings({ voice: "eve", speed: 1, language: "fr" })).toEqual({ voice: "eve", speed: 1, language: "fr" });
     expect(cleanVoiceModeSettings({ voice: "", speed: 1, language: "auto", tts: "nope", stt: "auto", voices: { openai: "../x", elevenlabs: "abc" }, bots: { "b 1": { tts: "xai" }, "b-2": { tts: "openai" } } }))

@@ -12,6 +12,7 @@
 // Perspicax console part, which lives in Perspicax): keep them together.
 // shared/settings-actions.test.ts fails when an entry has no doc row.
 
+import { PERSONAL_PROVIDER_NAMES } from "./provider-accounts.ts";
 import { parseBotWorkplace } from "./bot-workplace.ts";
 import { pageRoutines } from "./routine-listing.ts";
 import { DEVICE_ONLY_SETTINGS } from "./device-settings.ts";
@@ -933,13 +934,11 @@ config("server.routinesInConversation", "server", "features.routinesInConversati
 config("server.roomTurnTimeout", "server", "rooms.turnTimeoutMinutes", "number", "Room turn limit", "Settings > Organization > Rooms");
 config("server.mcpCallTimeout", "server", "mcp.callTimeoutMinutes", "number", "MCP call time limit", "Settings > Organization");
 config("server.localVm", "computer", "localVm", "object", "Local VM ({mode, maxInstances, idleTimeoutMinutes})", "Settings > Computer");
-config("models.voiceProvider", "models", "tts.provider", "string", "Voice engine", "Settings > Voice");
 config("models.fishModel", "models", "tts.fishModel", "string", "Fish Audio model", "Settings > Voice");
 config("models.imageGen", "models", "imageGen", "object", "Image generation", "Settings > Models > Images", secretWhenKeyed);
 config("models.decider", "models", "decider", "object", "Decision model", "Settings > Models > Decision model", secretWhenKeyed);
-config("models.everyClaudeBot", "models", "anthropic.everyClaudeBot", "boolean", "Anthropic key for every Claude bot", "Settings > Models > Keys");
 add({
-  key: "models.providerKey", family: "credentials", target: "none", value: "object", label: "A provider key ({<provider>: {key}}; get says which are saved, never a key)", where: "Settings > Models > Keys",
+  key: "models.providerKey", family: "credentials", target: "none", value: "object", label: "A provider key ({<provider>: {key}}; get says which are saved, never a key)", where: "Settings > Providers",
   read: () => ({ path: "/api/config", shape: savedKeys }),
   // known providers, each holding its key only: nothing else rides along;
   // each goes where the screen writes it
@@ -1310,10 +1309,37 @@ add({
   write: (_ids, v) => ({ method: "PUT", path: "/api/me/local-models", body: v }),
   classes: (v) => (v as { share?: unknown } | null)?.share === true ? ["others"] : ["own"],
 });
+// Personal provider keys and named endpoints use the signed-in person's store.
+add({
+  key: "models.myProviderKey", family: "credentials", target: "none", value: "object",
+  label: "A personal provider key ({provider, key}; null removes; get returns metadata only)", where: "Settings > Providers",
+  read: () => ({ path: "/api/me/providers", field: "keys" }),
+  write: (_ids, v) => {
+    const { provider, key } = (v ?? {}) as { provider?: unknown; key?: unknown };
+    if (typeof provider !== "string" || !(Object.hasOwn(PERSONAL_PROVIDER_NAMES, provider) || /^compat:[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(provider))) return "provider must name a personal provider or compat:<server id>.";
+    if (key === null) return { method: "DELETE", path: `/api/me/providers/keys/${encodeURIComponent(provider)}` };
+    if (typeof key !== "string" && !isSecretRef(key)) return "key must be a key, a {$secret} reference, or null.";
+    return { method: "PUT", path: `/api/me/providers/keys/${encodeURIComponent(provider)}`, body: { key } };
+  },
+  classes: (v) => (v as { key?: unknown } | null)?.key === null ? ["delete"] : ["secret"],
+});
+add({
+  key: "models.myProviderServer", family: "models", target: "none", value: "object",
+  label: "A personal OpenAI or Anthropic server ({instanceId, name, url, protocol, models}; {instanceId, remove:true} removes)", where: "Settings > Providers > Add a provider",
+  read: () => ({ path: "/api/me/providers", field: "servers" }),
+  write: (_ids, v) => {
+    const record = (v ?? {}) as Record<string, unknown>;
+    const id = record.instanceId;
+    if (typeof id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(id)) return "instanceId must name a personal server.";
+    if (record.remove === true) return { method: "DELETE", path: `/api/me/providers/servers/${id}` };
+    return { method: "PUT", path: `/api/me/providers/servers/${id}`, body: record };
+  },
+  classes: (v) => (v as { remove?: unknown } | null)?.remove === true ? ["delete"] : ["own"],
+});
 // voice: the person's own keys (organization server), a custom TTS server, the Live key
 add({
   key: "models.myVoiceKeys", family: "credentials", target: "none", value: "object",
-  label: "The person's own voice keys ({<elevenlabs|fish|xai>: {key}}, key null removes; get says which are saved, never a key)", where: "Settings > Voice > Your voice keys",
+  label: "The person's own voice keys ({<elevenlabs|fish|xai>: {key}}, key null removes; get says which are saved, never a key)", where: "Settings > Providers",
   read: () => ({ path: "/api/me/voice-keys" }),
   write: (_ids, v) => {
     const entries = Object.entries((v ?? {}) as Record<string, unknown>);
@@ -1327,8 +1353,8 @@ add({
   },
   classes: (v) => Object.values((v ?? {}) as Record<string, { key?: unknown }>)[0]?.key === null ? ["delete"] : ["secret"],
 });
-config("models.ttsServer", "models", "tts.baseUrl", "string", "Custom voice server address (the voice engine's own server)", "Settings > Voice > Voice engine", secretWhenKeyed);
-config("models.ttsModel", "models", "tts.model", "string", "Custom voice server model", "Settings > Voice > Voice engine");
+config("models.ttsServer", "models", "tts.baseUrl", "string", "Custom voice server address (the voice engine's own server)", "Settings > Voice > Advanced", secretWhenKeyed);
+config("models.ttsModel", "models", "tts.model", "string", "Custom voice server model", "Settings > Voice > Advanced");
 config("server.vpsAlias", "server", "vps.sshAlias", "string", "VPS computer SSH alias", "Settings > Models > Integrations > VPS");
 // tests the screen offers: one real call, nothing saved
 add({

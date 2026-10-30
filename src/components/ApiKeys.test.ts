@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StoreProvider } from "@/state/store";
 import * as store from "@/state/store";
-import { AnthropicEveryClaudeBot, ApiKeyRow, looksLikeKey, OpenAiCompatUrl, OpenCodeProviderKeys } from "./ApiKeys";
+import { ApiKeyRow, looksLikeKey, OpenAiCompatUrl, OpenCodeProviderKeys } from "./ApiKeys";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
@@ -84,23 +84,6 @@ describe("provider key rows", () => {
     const own = render(createElement(ApiKeyRow, { section: "box" }));
     expect(own).toContain("Configured");
     expect(own).not.toContain("Included with your Cloud plan");
-  });
-
-  it("warns about per-token billing only while the Anthropic key runs every Claude bot", () => {
-    const withAnthropic = (everyClaudeBot: boolean) => vi.spyOn(store, "useStore").mockReturnValue({
-      state: { ...store.initialState, config: { ...store.initialState.config, anthropic: { configured: true, everyClaudeBot } } as store.ConfigStatus },
-      dispatch: vi.fn(),
-      flushBotPatches: vi.fn(),
-      refreshInstances: vi.fn(),
-      refreshModels: vi.fn(),
-    });
-    withAnthropic(false);
-    const off = render(createElement(AnthropicEveryClaudeBot));
-    expect(off).toContain("Use this key for every Claude bot");
-    expect(off).toContain("Signed-in Claude bots stay on their plan");
-    expect(off).not.toContain("instead of a Claude login");
-    withAnthropic(true);
-    expect(render(createElement(AnthropicEveryClaudeBot))).toContain("instead of a Claude login");
   });
 
   it("refuses pasted text that is not a key", () => {
