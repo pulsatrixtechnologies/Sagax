@@ -572,17 +572,16 @@ describe("Store", () => {
     expect(sibling.modelSelection).toBeUndefined();
     store.switchTaskModel(bot.id, first.threadId, next, true);
     expect(bot).toMatchObject({ modelSelection: next, approvalMode: "full", alwaysAllow: ["old-tool"] });
-    // The thread it was changed from now follows the bot; a sibling that
-    // follows moves to the new engine and keeps its level; a thread's own
-    // model and level stay.
+    // Every thread follows this explicit bot-wide pick, including an old
+    // thread-specific model. Permission levels and approvals stay.
     expect(first.modelSelection).toBeUndefined();
     expect(store.projectBotForTask(bot.id, sibling.threadId)).toMatchObject({ modelSelection: next, approvalMode: "full", alwaysAllow: ["old-tool"] });
-    expect(picked.modelSelection).toEqual(opus);
-    expect(store.projectBotForTask(bot.id, picked.threadId)).toMatchObject({ modelSelection: opus, approvalMode: "full", alwaysAllow: ["old-tool"] });
+    expect(picked.modelSelection).toBeUndefined();
+    expect(store.projectBotForTask(bot.id, picked.threadId)).toMatchObject({ modelSelection: next, approvalMode: "full", alwaysAllow: ["old-tool"] });
     const reloaded = new Store(selection);
     expect(reloaded.bot(bot.id)).toMatchObject({ modelSelection: next, approvalMode: "full", alwaysAllow: ["old-tool"] });
     expect(reloaded.projectBotForTask(bot.id, sibling.threadId)).toMatchObject({ approvalMode: "full", alwaysAllow: ["old-tool"] });
-    expect(reloaded.projectBotForTask(bot.id, picked.threadId)).toMatchObject({ modelSelection: opus, approvalMode: "full" });
+    expect(reloaded.projectBotForTask(bot.id, picked.threadId)).toMatchObject({ modelSelection: next, approvalMode: "full" });
   });
 
   it("createBot seeds a greeting without promising engine-specific tools", () => {

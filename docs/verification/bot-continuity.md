@@ -13,9 +13,9 @@ turns, and checks the prompt and model delivered to the provider boundary:
   without the setup interview or its "Wait for a yes" instruction.
 - `/setup Help me track garden watering` explicitly enables coaching; the next
   ordinary request disables it, even if no profile card was confirmed.
-- A pinned thread's model change with `updateBotDefault: true` updates that
-  thread and the bot default used by groups and future threads. It does not
-  change a selected sibling, other saved model choices, or approval levels.
+- A thread's model change with `updateBotDefault: true` updates the bot and
+  every existing thread, including an old own model. Approval levels stay
+  unchanged. Groups and future threads use this same bot model.
 - Without that flag, only the selected thread changes. Group dispatch still
   uses the bot default. Busy group changes and invalid requests are rejected.
 - Direct and room prompts carry the same saved identity and standing rules,
@@ -28,36 +28,20 @@ environments and MCP tokens are not retained. The renderer recipe checks both
 scope buttons in the real model picker, saves a screenshot, changes models,
 checks server persistence, and sends a message through the composer.
 
-Before 2026-10-09 the header started at **Only this thread**, with **Thread +
-bot default** as the other scope; the picker now has one mode (a change runs
-the thread and becomes the bot's model, which group turns and future threads
-use). The desktop model-switch recipe uses
-the real picker and private approval channel against offline providers. It
-checks Cancel, the 390px confirmation layout, switching a Custom Codex thread
-to Claude with Ask in one confirmed operation, then updating a mismatched bot
-default without changing another existing Custom thread. HTTP cannot bypass
-Custom; ordinary Full switches may use the atomic HTTP downgrade. A fresh
-thread adopts the new default, and a sample engineering-handoff request sent
-through the composer completes with the fake provider reply. Screenshots stay
-in `.omb-scratch/verify-evidence/model-switch/`. This proves settings and turn
-dispatch, not the quality of a real model's engineering output. The store test
-also simulates a failed disk write and confirms neither scope changes.
+Since 2026-10-30 the picker is a flat list of active models grouped by
+provider in both the window and composer. The scope says that a choice
+applies to every thread. Its only connection shortcut opens Settings >
+Providers, where sign-in, installation and keys are managed. A signed-out
+account's cloud models stay out, while a working local model stays available
+through an engine that supports it. The hover and keyboard preview names
+the model, provider and payer; the server supplies Auto's ordered dispatch
+chain, exclusion reasons and the bot's configured recovery choices.
 
-The picker smoke also includes an installed but signed-out Claude account and
-a missing Codex installation. The signed-out account stays in the picker's
-**Account** list; choosing it shows its sign-in card and **Use a local model**,
-never its cloud models. The missing Codex, which no bot uses, stays in Settings
-only, and the picker keeps an **Engines and accounts** shortcut. A missing
-engine that a bot already runs on stays in that bot's picker with its install
-card, so the model never silently vanishes. `src/lib/engine-rail.test.ts`
-covers these rules for each Claude account, empty catalogs and leaving the
-source catalog unchanged. `src/components/ModelPicker.interaction.test.ts`
-opens the real picker component and checks the sign-in and install cards, that
-no cloud model can be picked on a signed-out account while its local models
-still can, and that opening local models re-probes local servers behind a
-**Looking for local models…** status that ends after five seconds at most.
-The smoke selects a configured local Codex model, browses Claude, closes and
-reopens the picker, and checks that the selected local model is visible again.
+`src/components/ModelPicker.interaction.test.ts` verifies these controls and
+`server/model-switches.e2e.test.ts` verifies the live preview when models are
+disabled, when a bot is pinned and when nothing can run. The headless
+composer smoke uses its flat rows and checks persistence and a real fixture
+turn. The sections below describe earlier verification evidence.
 
 ### Signed-out Claude in the picker — 2026-09-26
 

@@ -533,6 +533,8 @@ function pickTier(request: AutoRequest, tier: Tier, role: AutoPick["role"], task
   }
   const first = chain[0];
   const baseEntry: AutoChainEntry = { instanceId: request.base.instanceId, model: request.base.model };
+  const baseUsable = Boolean(own?.models.options.some((option) => option.id === baseEntry.model))
+    && !skip.some((entry) => entry.instanceId === baseEntry.instanceId && entry.model === baseEntry.model);
   if (!first) {
     return {
       role,
@@ -543,11 +545,11 @@ function pickTier(request: AutoRequest, tier: Tier, role: AutoPick["role"], task
       ...(taskClass ? { taskClass } : {}),
       reason: "base",
       ...(own?.via ? { via: own.via } : {}),
-      chain: [baseEntry],
+      chain: baseUsable ? [baseEntry] : [],
     };
   }
   const entries: AutoChainEntry[] = chain.slice(0, MAX_CHAIN).map((entry) => ({ instanceId: entry.engine.instanceId, model: entry.model.id }));
-  if (!entries.some((entry) => entry.instanceId === baseEntry.instanceId && entry.model === baseEntry.model) && own) entries.push(baseEntry);
+  if (!entries.some((entry) => entry.instanceId === baseEntry.instanceId && entry.model === baseEntry.model) && baseUsable) entries.push(baseEntry);
   const reason: AutoReason = first.tier !== tier ? "tier-fallback" : first.engine.instanceId === request.base.instanceId ? "strongest-own" : "strongest-other";
   return {
     role,

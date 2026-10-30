@@ -43,11 +43,26 @@ it("keeps a model off across selection, Auto and its fast model", async () => {
     const preview = await api("GET", `/api/bots/${bot.id}/auto-model`);
     expect(preview.pick.model).not.toBe(top);
     expect(preview.pick.model).not.toBe(fast);
+    expect(preview.chain.length).toBeGreaterThan(0);
+    expect(preview.chain.every((entry: any) => entry.model !== top && entry.model !== fast)).toBe(true);
+    expect(preview.excluded).toEqual(expect.arrayContaining([
+      expect.objectContaining({ instanceId, model: top, reason: "modelOff" }),
+      expect.objectContaining({ instanceId, model: fast, reason: "modelOff" }),
+    ]));
+    // The same dispatch diagnostics are available for a pinned bot's backup card.
+    await api("PATCH", `/api/bots/${bot.id}`, { modelSelection: { instanceId, model: preview.pick.model } });
+    const pinned = await api("GET", `/api/bots/${bot.id}/auto-model`);
+    expect(pinned.auto).toBe(false);
+    expect(pinned.chain).toEqual(preview.chain);
+    expect(pinned.backups).toEqual([]);
     // With this engine's whole catalog off, the bot still changes to Auto.
     const instance = (await api("GET", "/api/instances")).instances.find((entry: any) => entry.instanceId === instanceId);
     const disabledModels = instance.models.options.map((entry: any) => `${instanceId}/${entry.id}`);
     await api("PUT", "/api/me/models", { disabledModels });
     expect((await api("GET", "/api/bots")).bots.find((entry: any) => entry.id === bot.id).modelSelection.auto).toBe(true);
+    const exhausted = await api("GET", `/api/bots/${bot.id}/auto-model`);
+    expect(exhausted.pick).toBeNull();
+    expect(exhausted.chain).toEqual([]);
   } finally {
     await server.close();
   }

@@ -5,7 +5,7 @@
 // asks before registering: the classic miss is a path the terminal sees
 // but this GUI app can't.
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, Loader2, Phone, RefreshCw, Sparkles, TriangleAlert } from "lucide-react";
+import { Check, Loader2, Phone, RefreshCw, TriangleAlert } from "lucide-react";
 
 import { api, useStore, type ConfigStatus, type InstanceInfo } from "@/state/store";
 import { EngineCard, RefreshEngines, engineReady } from "./EngineLibrary";
@@ -29,6 +29,7 @@ import { OrgHostToolsNote, orgRefusesEngine } from "./OrgHostToolsNote";
 import { DescribedRow, FIELD, FoldRow, HelpTip, PILL, PillSelect, SettingsGroup, requestSettingsCard, useSettingsCardOpen } from "./SettingsPrimitives";
 import { KeyList, ProviderKeyDialog } from "./settings/ProviderKeys";
 import { OpenAiCompatServers } from "./settings/OpenAiCompatServers";
+import { AutoModelSettings } from "./settings/AutoModelSettings";
 import { ModelSwitchesSettings } from "./settings/ModelSwitchesSettings";
 import { CloudAgentProvidersSettings, useCloudAgentProviders } from "./settings/CloudAgentProvidersSettings";
 import { VoiceProviderSettings } from "./settings/VoiceProviderSettings";
@@ -567,13 +568,7 @@ function ProvidersMovedNotice() {
       <SettingsGroup title={t("engines.title")} groupId="engines-moved">
         {/* Auto (docs/plans/2026-10-08-auto-model.md): one row, the detail behind its info button. */}
         <div data-auto-model-explainer="">
-          <DescribedRow
-            label={t("model.auto.settings.title")}
-            description={t("model.auto.settings.shortLine")}
-            help={t("model.auto.settings.body")}
-            icon={<Sparkles size={14} />}
-            rowId="auto"
-          />
+          <AutoModelSettings />
         </div>
         <DescribedRow label={t("providers.moved.title")} description={t("providers.moved.body")} rowId="providers-moved">
           <button type="button" data-open-providers="" className={PILL}

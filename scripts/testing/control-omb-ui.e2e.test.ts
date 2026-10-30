@@ -290,14 +290,12 @@ describe("control-omb ui drives the real renderer", () => {
     // the mascot opens with omb:composer-model (Composer.grok.test.ts).
     await expect.poll(async () => (await ui("eval", info.ui, "--js", "String(Boolean(document.querySelector('[data-composer-model]')))")).result, { timeout: 10_000 }).toBe("true");
     await ui("eval", info.ui, "--js", `window.dispatchEvent(new CustomEvent("omb:composer-model", { detail: { botId: ${JSON.stringify(info.botId)} } })); true`);
+    await ui("screenshot", info.ui, "--out", join(evidenceDir, "before-model-menu.png"));
     await expect.poll(async () => (await ui("eval", info.ui, "--js", "String(document.querySelector('[aria-label=\"Apply model changes to\"]') === null && Boolean(document.querySelector('[data-model-menu]')))")).result, { timeout: 10_000 }).toBe("true");
     const scopeShot = join(evidenceDir, "model-dropdown.png");
     mkdirSync(evidenceDir, { recursive: true });
     await ui("screenshot", info.ui, "--out", scopeShot);
-    // Models sit in a submenu per provider (#477), behind Provider (2026-10-18): open the bot's provider first.
-    await ui("eval", info.ui, "--js", "document.querySelector('[data-model-menu] [data-model-all]').click(); true");
-    await expect.poll(async () => (await ui("eval", info.ui, "--js", `String(Boolean(document.querySelector('[data-model-menu] [data-model-provider="${originalBot.modelSelection.instanceId}"]')))`)).result, { timeout: 10_000 }).toBe("true");
-    await ui("eval", info.ui, "--js", `document.querySelector('[data-model-menu] [data-model-provider="${originalBot.modelSelection.instanceId}"]').click(); true`);
+    // Active models are immediately visible in the flat provider groups.
     await expect.poll(async () => (await ui("eval", info.ui, "--js", `Boolean(document.querySelector('[data-model-menu] [data-model-option="${nextModel.id}"]'))`)).result, { timeout: 10_000 }).toBe(true);
     await ui("eval", info.ui, "--js", `document.querySelector('[data-model-menu] [data-model-option="${nextModel.id}"]').click(); true`);
     await expect.poll(async () => (await savedBot()).modelSelection.model, { timeout: 10_000 }).toBe(nextModel.id);
@@ -340,6 +338,7 @@ describe("control-omb ui drives the real renderer", () => {
     // CLI, so all three are verified; one failed and one was a dry run.
     expect(tree).toContain("3 steps · 3 verified · 1 failed · 1 dry run");
 
+    await ui("screenshot", info.ui, "--out", join(evidenceDir, "model-picked-fixture-turn.png"));
     // Hit-test the actual layout, not just the Tailwind class strings: the
     // blank band beside the floating card must reach the transcript while
     // the card and composer remain interactive.

@@ -3073,6 +3073,10 @@ function reduce(state: AppState, action: Action): AppState {
       return state;
     }
     case "setModel":
+      if (action.threadId && action.updateBotDefault) {
+        return reconcileModelVariantSessions(updateBot(state, action.botId, (bot) => ({ ...bot, modelSelection: action.selection,
+          tasks: bot.tasks?.map((task) => ({ ...task, modelSelection: action.selection, followsBotModel: true })) })));
+      }
       if (action.threadId) {
         const picked = reducer(state, { type: "updateTask", botId: action.botId, threadId: action.threadId,
           patch: { modelSelection: action.selection } });

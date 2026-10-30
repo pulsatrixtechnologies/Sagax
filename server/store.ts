@@ -3455,9 +3455,9 @@ export class Store {
     }
     const nextTask = persistedPin({ ...task, ...taskPatch, modelSelection: own,
       ...(typeof taskPatch.title === "string" ? { title: taskPatch.title.trim().slice(0, 80) || UNTITLED_THREAD } : {}) });
-    // A new bot model moves the threads that follow it (withDefaultModel);
-    // every other thread keeps its model and the level it runs at now.
-    const others = updateBotDefault ? this.withDefaultModel(bot)! : bot.tasks!;
+    // 2026-10-30: a model picked for this bot applies to every thread,
+    // including earlier thread-specific picks. Permission levels stay.
+    const others = updateBotDefault ? bot.tasks!.map(withoutModel) : bot.tasks!;
     const nextTasks = bot.tasks!.map((candidate, index) => candidate === task ? nextTask : others[index]!);
     const botPatch = updateBotDefault ? { modelSelection: structuredClone(selection) } : {};
     this.saveBots(this.bots.map((candidate) => candidate === bot ? { ...bot, ...botPatch, tasks: nextTasks } : candidate));
