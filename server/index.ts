@@ -26351,14 +26351,15 @@ async function runGroupMemberTurn(
     return true;
   }
   const roomPolicyRefusal = instance ? policyModelRefusal(instance) : undefined;
+  const roomModelRefusal = modelSwitchRefusal(roomSelection.instanceId, roomSelection.model, effectiveBotOwner(bot));
   // A room turn a guest drives on a Cloud home is confined like a guest's
   // own conversation, or refused on an engine that cannot be.
   if (!groupSpeakers.has(threadId)) guestDrivenTurns.delete(threadId);
   const roomGuestConfined = cloudGuestDriven(threadId) || cloudGuestDrivenHandoff(orchestration?.roomHandoffId) || botmailConfined(threadId);
   const roomGuestRefusal = roomGuestConfined && instance?.adapter.capabilities.guestTurns !== "confined"
     ? (cloudGuestDriven(threadId) || !botmailConfined(threadId) ? guestEngineRefusal(threadId) : BOTMAIL_ENGINE_REFUSAL) : undefined;
-  if (!instance || roomPolicyRefusal || roomGuestRefusal) {
-    const message = roomPolicyRefusal ?? roomGuestRefusal ?? (namesEngine(roomSelection) ? `${bot.name}'s model is unavailable` : NO_ENGINE_PERSON);
+  if (!instance || roomPolicyRefusal || roomModelRefusal || roomGuestRefusal) {
+    const message = roomPolicyRefusal ?? roomModelRefusal ?? roomGuestRefusal ?? (namesEngine(roomSelection) ? `${bot.name}'s model is unavailable` : NO_ENGINE_PERSON);
     store.appendMessage(threadId, {
       role: "bot",
       kind: "activity",
@@ -30402,7 +30403,7 @@ function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = fa
     // The bot's fast model (#1209): any row this engine lists, a local or
     // custom one included, when hosted models allow it.
     const fastWanted = bot.modelSelection.fast?.instanceId === instance.instanceId
-      ? instance.models.options.find((option) => option.id === bot.modelSelection.fast?.model &&
+      ? instance.models.options.find((option) => option.id === bot.modelSelection.fast?.model && modelOn(switches, instance.instanceId, option.id) &&
         (!hostedModels || hostedModels.allows({ instanceId: instance.instanceId, model: option.id })))
       : undefined;
     engines.push({
@@ -40828,13 +40829,14 @@ function applyModelSwitches(owner?: string): void {
     if (offer !== "on") {
       const live = registry.get(selection.instanceId);
       const next = live?.models.options.find((option) => !option.custom && modelOn(switches, selection.instanceId, option.id));
-      if (next) {
-        store.applyModelDefault(id, { instanceId: selection.instanceId, model: next.id, auto: true });
-        console.log(`[models] bot=${id} model ${selection.instanceId}/${selection.model} is turned off; now on Auto (${next.id})`);
-        if (offer === "adminOff" && bot.threadId) {
-          const move = { from: selection.model, to: orgEngineName(selection.instanceId) };
-          store.appendMessage(bot.threadId, { role: "bot", kind: "activity", tool: { name: `notice: ${orgEngineMoveLine(move)}`, ok: true, engineMove: move } });
-        }
+      // Auto can use another ready engine even when this engine has no
+      // model left on. Its concrete selection is checked before dispatch.
+      const model = next?.id ?? selection.model;
+      store.applyModelDefault(id, { instanceId: selection.instanceId, model, auto: true });
+      console.log(`[models] bot=${id} model ${selection.instanceId}/${selection.model} is turned off; now on Auto (${model})`);
+      if (offer === "adminOff" && bot.threadId) {
+        const move = { from: selection.model, to: orgEngineName(selection.instanceId) };
+        store.appendMessage(bot.threadId, { role: "bot", kind: "activity", tool: { name: `notice: ${orgEngineMoveLine(move)}`, ok: true, engineMove: move } });
       }
     }
     const stray = (store.bot(id)?.tasks ?? [])
