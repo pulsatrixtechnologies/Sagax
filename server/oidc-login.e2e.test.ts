@@ -92,6 +92,7 @@ async function start() {
       HOME: home, USERPROFILE: home, SAGAX_LOCAL_VM_TEST_NAMESPACE: process.env.SAGAX_LOCAL_VM_TEST_NAMESPACE ?? "", SAGAX_PORT: String(PORT), SAGAX_WEBHOOK_PORT: String(PORT + 1),
       SAGAX_IDENTITY: "perspicax",
       SAGAX_PERSPICAX_ISSUER: idp.issuer,
+      SAGAX_PERSPICAX_LINK_FILE: join(home, "link", "pulsabot.json"),
       SAGAX_PUBLIC_URL: BASE,
       SAGAX_ANTHROPIC_API_KEY: ORG_KEY,
     },
@@ -116,11 +117,18 @@ posixOnly("Sign in with Pulsatrix (SAGAX_IDENTITY=perspicax)", () => {
     chmodSync(FAKE_CLI, 0o755);
     chmodSync(FAKE_CLAUDE, 0o755);
     idp = await startFakeOidcProvider({ user: ADMIN });
+    idp.directoryPeople = [ADMIN, EMPLOYEE].map((user) => idp.personOf(user));
     PORT = await freePortBlock([0, 1]);
     BASE = `http://127.0.0.1:${PORT}`;
     home = mkdtempSync(join(tmpdir(), "omb-oidc-login-"));
     const data = join(home, ".sagax");
     mkdirSync(data, { recursive: true });
+    // Organization-key turns require the directory's engine allowlist.
+    // Exercise the same linked directory as the organization-sharing tests.
+    mkdirSync(join(home, "link"), { recursive: true, mode: 0o750 });
+    writeFileSync(join(home, "link", "pulsabot.json"), JSON.stringify({
+      version: 1, issuer: idp.issuer, client_id: "pulsa-bot", server_id: idp.serverId, origin: BASE, link_token: idp.linkToken,
+    }), { mode: 0o640 });
     writeFileSync(join(data, "config.json"), JSON.stringify({
       instances: {
         grok: { driver: "grokAgent", config: { cli: FAKE_CLI, fullAuto: false } },
@@ -176,6 +184,11 @@ posixOnly("Sign in with Pulsatrix (SAGAX_IDENTITY=perspicax)", () => {
 
   it("scenario A: the admin creates a bot on the server and gets its answer; another browser reads the thread", async () => {
     const jar = (await signIn()).jar;
+    const organization = await waitFor(async () => {
+      const current = await api("GET", "/api/org", jar);
+      return current.body.link?.state === "ok" ? current.body : null;
+    });
+    expect(organization, log.slice(-3000)).toBeTruthy();
     const created = await api("POST", "/api/bots", jar, { name: "Helpdesk Otter" });
     expect(created.status, JSON.stringify(created.body)).toBe(201);
     ids.bot = created.body.bot.id;

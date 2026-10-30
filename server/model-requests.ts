@@ -144,7 +144,7 @@ export function modelCardCopy(args: {
   lines.push(...args.capabilityLines);
   // The same consent line the team-setup card shows for a model change:
   // the default moves, saved thread selections do not.
-  lines.push("Default models apply to groups and new threads. Every existing thread keeps its current model and permissions.");
+  lines.push("The new model applies across this bot's conversations. Existing permissions stay unchanged.");
   lines.push("Nothing runs.");
   return { title, summary: title + " · default engine/model", detail: lines.join("\n") };
 }

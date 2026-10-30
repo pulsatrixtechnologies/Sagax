@@ -282,7 +282,7 @@ describe("one mode (2026-10-09)", () => {
     });
   });
 
-  it("keeps the bot's model as a way back without touching the bot", () => {
+  it("returns every thread to the bot's model silently", () => {
     fixture.instances = [signedIn()];
     const profile = { ...bot("claude", "claude-opus-5-5"), tasks: [{ threadId: "thread-atlas", title: "t", createdAt: 1, followsBotModel: false, modelSelection: { instanceId: "claude", model: "claude-sonnet-5" } }] };
     fixture.bots = [profile];
@@ -293,7 +293,7 @@ describe("one mode (2026-10-09)", () => {
     expect(row(opened, "claude-sonnet-5")!.props.current).toBe(true);
     follow.props.onPick();
     expect(fixture.dispatch).toHaveBeenCalledExactlyOnceWith({
-      type: "setModel", botId: "atlas", threadId: "thread-atlas", updateBotDefault: false,
+      type: "setModel", botId: "atlas", threadId: "thread-atlas", updateBotDefault: true,
       selection: { instanceId: "claude", model: "claude-opus-5-5" },
     });
   });
@@ -621,13 +621,14 @@ describe("the flat model picker", () => {
     expect(opened.html).not.toContain("data-rail-row-action");
   });
 
-  it("shows its scope and closes from the dialog's Close button", () => {
+  it("keeps scope silent and closes from the dialog's Close button", () => {
     ready();
     const forBot = bot("claude", "claude-opus-5-5");
     const opened = open(forBot);
     expect(opened.html).toContain('role="dialog"');
     expect(opened.html).toContain('aria-modal="true"');
-    expect(opened.html).toContain("This choice applies to every thread of this bot.");
+    expect(opened.html).not.toContain("data-model-scope");
+    expect(opened.html).not.toContain("Switch it too");
     const close = opened.nodes.find((node) => node.props["aria-label"] === "Close")!;
     (close.props.onClick as () => void)();
     expect(render(forBot).html).not.toContain("data-model-picker-content");

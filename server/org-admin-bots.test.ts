@@ -59,6 +59,10 @@ function setup() {
     exportPackage: (id) => ({ document: { format: "package", version: 2, bot: id, secret: "[redacted]" }, filename: `${id} pkg.json`, redacted: ["x"], skipped: [] }),
     importPackage: async (_doc, input) => { add("imported", input.ownerPrincipalId, { name: input.name ?? "IMPORTED" }); return { botId: "imported", warnings: ["agents[x].skills: too_large"] }; },
     exportZip: (id, options) => ({ filename: `${id}.sagaxbot.zip`, bytes: id === "huge" ? 600 * 1024 * 1024 : 4, write: async (sink) => { await sink(Buffer.from(`PK${options.conversations ? "c" : ""}`)); return { bytes: 3, redacted: 2 }; } }),
+    capabilities: (id, viewer) => {
+      calls.push(`caps:${id}:${viewer.principalId}:${viewer.orgAdmin}`);
+      return id === "plain" ? null : { botId: id, engine: { kind: "claudeAgent", label: "Claude" }, items: [] };
+    },
     avatar: (id) => (id === "a" ? { bytes: Buffer.from("PNGBYTES"), type: "image/png", version: "0123456789abcdef" } : id === "p" ? "too_large" : null),
     importZip: async (_request, input) => {
       if (input.preview) return { preview: { kind: "zip", name: "A", importName: input.name ?? "A 2", includes: {}, hasConversations: false, hasSharing: false, created: [], skipped: [], needsAction: [] } };
@@ -189,6 +193,19 @@ describe("bots", () => {
     expect((await console.call("GET", "bots/p/avatar")).body.code).toBe("too_large");
     // out of a manager's reach reads as no such bot
     expect((await console.call("GET", "bots/a/avatar", MANAGER)).status).toBe(404);
+  });
+
+  it("a bot's capabilities: the resolved list for the console person, within reach; read only", async () => {
+    const { console, calls } = setup();
+    const got = await console.call("GET", "bots/a/capabilities");
+    expect(got.status).toBe(200);
+    expect(got.body).toEqual({ botId: "a", engine: { kind: "claudeAgent", label: "Claude" }, items: [] });
+    expect(calls).toContain("caps:a:pr_admin:true");
+    expect((await console.call("GET", "bots/a/capabilities", MANAGER)).status).toBe(404);
+    expect((await console.call("GET", "bots/b/capabilities", MANAGER)).status).toBe(200);
+    expect(calls).toContain("caps:b:pr_mona:false");
+    expect((await console.call("GET", "bots/plain/capabilities")).body.code).toBe("not_found");
+    expect((await console.call("GET", "bots/zz/capabilities")).status).toBe(404);
   });
 
   it("every bot carries its look and persona", async () => {

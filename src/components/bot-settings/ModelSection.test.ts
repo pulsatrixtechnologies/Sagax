@@ -34,6 +34,9 @@ describe("ModelSection", () => {
     const html = () => renderToStaticMarkup(createElement(StoreProvider, null, createElement(ModelSection, { bot: bot() })));
     fixture.config = member;
     expect(html()).toContain("Default model");
+    expect(html()).not.toContain("data-thread-models");
+    expect(html()).not.toContain("Switch it too");
+    expect(html()).not.toContain("data-model-scope");
     expect(html()).not.toContain("Backup models for this bot");
     fixture.config = { automaticRecovery: { enabled: false } } as ConfigStatus;
     expect(html()).not.toContain("Backup models for this bot");

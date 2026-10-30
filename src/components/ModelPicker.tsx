@@ -918,7 +918,7 @@ export function ModelPicker({
     if (bot.busy) return;
     closeAll();
     if (follows !== false) return;
-    dispatch({ type: "setModel", botId: bot.id, threadId: threadId ?? bot.threadId, updateBotDefault: false, selection: profile.modelSelection });
+    dispatch({ type: "setModel", botId: bot.id, threadId: threadId ?? bot.threadId, updateBotDefault: true, selection: profile.modelSelection });
   };
 
   // One mode (2026-10-09): a model chosen here runs this thread and
@@ -947,13 +947,6 @@ export function ModelPicker({
     applyToOthers(next);
     if (!keepOpen) closeAll();
   };
-
-  // 2026-10-30 (decision 3): a model picked here becomes the bot's model, so
-  // every existing thread moves with it. Said where the choice
-  // is made. Not for a viewer's own choice on a shared bot, nor for a batch.
-  const scopeLine = (className: string) => !viewerLocal && !alsoApplyTo?.length
-    ? <p data-model-scope className={className}>{t("model.scope.allThreads")}</p>
-    : null;
 
   /** The menu's Effort list: this person's level, for the model in use. */
   const setEffort = (effort: EffortLevel | undefined) => {
@@ -1462,7 +1455,6 @@ export function ModelPicker({
           <div className="mb-4 flex min-w-0 items-start justify-between gap-3 pr-10">
             <div className="min-w-0">
               <h2 id="model-picker-title" className="text-[16px] font-semibold text-ink">{t("model.choose")}</h2>
-              {scopeLine("mt-1 text-[12px] text-ink-secondary")}
             </div>
             <button type="button" data-model-providers-link onClick={openProviders} className="shrink-0 text-[12px] font-medium text-accent-text hover:underline">{t("settings.section.providers")}</button>
           </div>
@@ -1522,7 +1514,6 @@ export function ModelPicker({
       <ModelSearchList variant="popover" autoFocus sections={menuSections} onPick={onRow} onEscape={() => closeMenu(true)} disabled={Boolean(bot.busy)}
         favorites={{ keys: favoriteKeys, onToggle: (row) => toggleModelFavorite(row.key) }} />
       {!viewerLocal && <ModelNoEngineNotice className="border-t border-popover-hairline px-3 py-2" onConnect={() => closeMenu()} />}
-      {scopeLine("border-t border-popover-hairline px-3 py-1.5 text-[11.5px] leading-snug text-popover-ink-secondary")}
       {advanced && settingsPanel}
       <div className="border-t border-popover-hairline px-1.5 pt-1">
         <ModelMenuItem variant="popover" data-model-edit onClick={openWindow}>

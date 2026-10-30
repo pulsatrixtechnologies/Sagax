@@ -17,7 +17,6 @@ import { engineOffer } from "../../../shared/offered-engines";
 import { useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { botWithViewerSettings, useViewerBotOverride, viewerLocalBotSettings } from "@/lib/viewer-bot-overrides";
 import { useBotEditor } from "./BotEditorContext";
-import { ThreadModelsLine } from "../ThreadModelsLine";
 import { botRecovery } from "@/lib/bot-runtime-settings";
 import { BotRecoverySettings } from "./BotRecoverySettings";
 import { BotPayerSettings } from "./BotPayerSettings";
@@ -62,15 +61,13 @@ export function ModelSection({ bot }: { bot: Bot }) {
             label={
               <div>
                 <div className="text-[13px] leading-[18px] text-ink">{t("botPanel.model.default")}</div>
-                <div className="mt-0.5 text-[12px] leading-4 text-ink-secondary">
-                  {viewerLocal ? t("botPanel.model.forYou") : draft && !bulk ? t("botPanel.model.starting") : t("botPanel.model.groups")}
-                </div>
+                {(viewerLocal || (draft && !bulk)) && <div className="mt-0.5 text-[12px] leading-4 text-ink-secondary">
+                  {viewerLocal ? t("botPanel.model.forYou") : t("botPanel.model.starting")}
+                </div>}
               </div>
             }
           />
           {!draft && turn.busy && <ModelLockLine bot={bot} lock={turn} />}
-          {/* Right below the picker, so it shows the moment the model changes. */}
-          {!draft && <ThreadModelsLine bot={bot} className="mt-2" />}
         </div>}
         {/* Share the model picker's effort choices, but edit the profile
             default. Simple keeps the saved effort and does not show it. */}

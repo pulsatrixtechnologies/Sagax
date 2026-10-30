@@ -88,9 +88,6 @@ struct BotPanelModel: View {
                 HStack(alignment: .center, spacing: 16) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Default model").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
-                        Text("For groups and new threads. Also updates the selected idle thread; other existing threads keep their model.")
-                            .panelText(13, 19.5)
-                            .foregroundStyle(theme.inkSecondary)
                     }
                     .frame(width: 118, alignment: .leading)
                     Spacer(minLength: 0)
