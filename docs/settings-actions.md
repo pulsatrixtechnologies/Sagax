@@ -193,7 +193,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Perspicax tools (profiles) | Bot editor > Perspicax | `sagax_settings` get, set `bot.perspicaxProfiles` | simple (élargit les droits pour le bot qui parle lui-même) |
 | A skill on or off ({name, enabled}) | Bot editor > Skills | `sagax_settings` get, set `bot.skill` | simple |
 | Import a skill from GitHub onto a bot ({repo: owner/repo, path?: its folder, ref?: a branch or tag}, or a GitHub, SKILL.md or skills.sh link; then bot.skill {name, enabled} turns it on or off) | Bot editor > Persona > Skills > Import | `sagax_settings` get, set `bot.skillImport` | simple |
-| A plugin of a configured marketplace ({marketplace, plugin} installs or updates it for this bot; everyone: true for every bot; {marketplace, plugin, everyone: true, update: true}; uninstall: true removes; {key: plugin@marketplace, enabled} turns this bot's on or off); get lists the marketplaces and this bot's plugins | Connect apps > Plugins > For <bot> or Everyone | `sagax_settings` get, set `bot.plugin` | simple |
+| A plugin of a configured marketplace ({marketplace, plugin} installs or updates it for this bot; everyone: true for every bot; {marketplace, plugin, everyone: true, update: true}; uninstall: true removes; {key: plugin@marketplace, enabled} turns this bot's on or off); get lists the marketplaces and this bot's plugins | Capabilities, scope For <bot> or Everyone | `sagax_settings` get, set `bot.plugin` | simple |
 | Attach or detach one MCP server on a bot ({name, attached: true/false}; connections.mcpServer lists the person's servers) | Bot editor > Access > Tools | `sagax_settings` get, set `bot.mcpServer` | simple |
 | Share with a person or team ({target: user:<id>/team:<name>, level}, level null removes) | Bot editor > Visibility > Sharing | `sagax_settings` get, set `bot.share` | autrui |
 | Tool access grant ({scope: area:read/write/admin, expiresAt}) | Bot editor > Tool access | `sagax_settings` get, set `bot.toolGrant` | élargit les droits |
@@ -395,10 +395,10 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 
 | Réglage | Où dans l'UI | Outil du bot | Classe |
 |---|---|---|---|
-| Add your MCP server ({name, url/command, auth, ...}) | Connect apps > Providers | `sagax_settings` get, set `connections.mcpServer` | secret |
-| Your MCP server on or off ({name, enabled}) | Connect apps > Providers | `sagax_settings` get, set `connections.mcpServerEnabled` | simple |
-| Remove your MCP server (its name) | Connect apps > Providers | `sagax_settings` set `connections.mcpServerRemove` | suppression |
-| Disconnect GitHub (true) | Connect apps > Sources > GitHub | `sagax_settings` set `connections.githubDisconnect` | suppression + secret |
+| Add your MCP server ({name, url/command, auth, ...}) | Capabilities > Providers | `sagax_settings` get, set `connections.mcpServer` | secret |
+| Your MCP server on or off ({name, enabled}) | Capabilities > Providers | `sagax_settings` get, set `connections.mcpServerEnabled` | simple |
+| Remove your MCP server (its name) | Capabilities > Providers | `sagax_settings` set `connections.mcpServerRemove` | suppression |
+| Disconnect GitHub (true) | Capabilities > Sources > GitHub | `sagax_settings` set `connections.githubDisconnect` | suppression + secret |
 | Your web search provider ({provider: brave/exa/parallel/firecrawl/searxng, baseUrl, key?}; null forgets it). get says whether a key is saved, never the key | Settings > Models > Web search | `sagax_settings` get, set `connections.webSearch` | simple |
 | The person's webhooks (read only: names, bots, on or off; never a signing secret) | Routines > Webhooks | `sagax_settings` get, set `connections.webhooks` | simple |
 | Give a webhook a new signing secret (its id; the secret is never returned to the bot: the person sees it with Reveal) | Routines > Webhooks > webhook > Rotate | `sagax_settings` set `connections.webhookSecretRotate` | secret |
@@ -450,7 +450,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | New conversations confidential | Settings > Organization > Privacy | `sagax_settings` get, set `org.confidentialByDefault` | organisation |
 | Allow vault export | Settings > Organization > Credentials | `sagax_settings` get, set `org.allowVaultExport` | organisation |
 | People from before: days | Settings > Organization > People | `sagax_settings` get, set `org.interimAttachDays` | organisation |
-| Plugin marketplaces | Connect apps > Sources > Organization sources and access | `sagax_settings` get, set `org.pluginMarketplaces` | organisation |
+| Plugin marketplaces | Capabilities > Sources > Organization sources and access | `sagax_settings` get, set `org.pluginMarketplaces` | organisation |
 | Public links for published pages | Settings > Pages > Organization pages | `sagax_settings` get, set `org.pagesLinkSharing` | organisation |
 | Reader comments on published pages | Settings > Pages > Organization pages | `sagax_settings` get, set `org.pagesReaderComments` | organisation |
 | Phone calls ({enabled, callbackNumber, addDoNotCall, removeDoNotCall}) | Settings > Experimental > Phone calls | `sagax_settings` get, set `org.phoneCalls` | organisation |
