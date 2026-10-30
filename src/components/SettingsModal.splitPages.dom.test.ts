@@ -9,7 +9,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AppSettingsSection } from "@/state/store";
+import { api, type AppSettingsSection, type InstanceInfo } from "@/state/store";
 import { setLocale } from "@/lib/i18n";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -29,6 +29,9 @@ const fixture = vi.hoisted(() => ({
   dispatch: vi.fn(),
   config: undefined as Record<string, unknown> | undefined,
   rules: [] as unknown[],
+  instances: [] as InstanceInfo[],
+  refreshInstances: vi.fn(),
+  refreshModels: vi.fn(),
 }));
 
 const answers = (path: string): unknown => {
@@ -37,16 +40,17 @@ const answers = (path: string): unknown => {
   if (path === "/api/me/tool-grants") return { grants: [], adminOnlyAreas: [] };
   if (path === "/api/me/voice-keys") return { elevenlabs: { configured: false }, fish: { configured: false }, xai: { configured: false } };
   if (path === "/api/me/credentials/list") return { items: [], onePassword: { available: false, reason: "absent" }, wallets: {} };
+  if (path === "/api/instances/codex/auth/start" || path === "/api/instances/codex/auth/status?flowId=flow-a") return { auth: { phase: "waiting", flowId: "flow-a", userCode: "ABCD-EFGH", authorizationUrl: "https://auth.openai.com/codex/device", expiresAt: null } };
   throw new Error(`no answer for ${path}`);
 };
 
 vi.mock("@/state/store", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/state/store")>();
-  const state = () => ({ appSettingsSection: fixture.section, appSettingsSubPage: null, instances: [], bots: [{ id: "bot-a", name: "Scout" }], groups: [], config: fixture.config });
+  const state = () => ({ appSettingsSection: fixture.section, appSettingsSubPage: null, instances: fixture.instances, bots: [{ id: "bot-a", name: "Scout" }], groups: [], config: fixture.config });
   return {
     ...actual,
     api: vi.fn(async (path: string) => answers(path)),
-    useStore: () => ({ state: state(), dispatch: fixture.dispatch, refreshInstances: vi.fn() }),
+    useStore: () => ({ state: state(), dispatch: fixture.dispatch, refreshInstances: fixture.refreshInstances, refreshModels: fixture.refreshModels }),
     useStoreOptional: () => ({ state: state(), dispatch: fixture.dispatch }),
   };
 });
@@ -85,6 +89,8 @@ beforeEach(() => {
   fixture.dispatch = vi.fn();
   fixture.config = { rooms: { turnTimeoutMinutes: 5 } };
   fixture.rules = RULES;
+  fixture.instances = [];
+  vi.mocked(api).mockClear();
   // happy-dom has no layout: every node counts as visible
   if (!("checkVisibility" in Element.prototype)) Object.defineProperty(Element.prototype, "checkVisibility", { configurable: true, value: () => true });
   host = document.createElement("div");
@@ -95,6 +101,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   setLocale("en");
+  vi.useRealTimers();
 });
 
 describe("Settings split: navigation", () => {
@@ -121,6 +128,32 @@ describe("Settings split: navigation", () => {
 });
 
 describe("Settings split: every moved setting at its new place", () => {
+  it("keeps an in-progress sign-in and its polling when another provider is opened", async () => {
+    fixture.instances = ["codex", "other"].map((id) => ({
+      instanceId: id, driverKind: "codexAgent", displayName: id, access: "subscription",
+      snapshot: { state: "available", authenticated: false }, models: { default: "", options: [] },
+      authentication: { method: "device-code" }, install: { signInCommand: "codex login" },
+    } as InstanceInfo));
+    await settings("providers");
+    const row = (id: string) => host.querySelector<HTMLElement>(`[data-provider-row="account:${id}"]`)!;
+    const toggle = (id: string) => row(id).querySelector<HTMLButtonElement>(":scope > button")!;
+    await act(async () => toggle("codex").click());
+    vi.useFakeTimers();
+    const start = [...row("codex").querySelectorAll("button")].find((button) => button.textContent?.includes("Connect ChatGPT"))!;
+    await act(async () => start.click());
+    const detail = row("codex").querySelector<HTMLElement>("[data-provider-detail]")!;
+    expect(detail.textContent).toContain("ABCD-EFGH");
+    await act(async () => toggle("other").click());
+    expect(detail.hidden).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(api).toHaveBeenCalledWith("/api/instances/codex/auth/status?flowId=flow-a", expect.anything());
+    await act(async () => toggle("codex").click());
+    expect(row("codex").querySelector("[data-provider-detail]")).toBe(detail);
+    expect(detail.hidden).toBe(false);
+    expect(detail.textContent).toContain("ABCD-EFGH");
+    expect(vi.mocked(api).mock.calls.filter(([path]) => path === "/api/instances/codex/auth/start")).toHaveLength(1);
+  });
+
   it("Account keeps the account only", async () => {
     await settings("account");
     expect(group("account")).not.toBeNull();

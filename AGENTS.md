@@ -36,7 +36,9 @@ none), its state (Connected, Reconnect, Key missing, Turned off by the
 admin, Offline; not connected yet waits under "To connect") and what it
 brings. Each engine the page offers lands in exactly one row; a row opens
 in place on the engine's own controls (`EngineRow` `bare`), the key's
-dialog, the server's form. The claude.ai connectors moved from under Auto
+dialog, the server's form. A visited detail stays mounted while folded,
+preserving sign-in polling and unsaved fields when another row opens.
+The claude.ai connectors moved from under Auto
 to the Claude row. "Add a provider" is one flow (an account, a key, a
 server). `GET /api/me/engines` says where a person's own key lives
 (`keyWhere`: `perspicax` or `server`), so "Pays with" no longer says

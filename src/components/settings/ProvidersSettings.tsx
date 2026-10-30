@@ -121,6 +121,10 @@ function ProviderLine({ row, open, onToggle, nameOf, detail }: {
   detail: ReactNode;
 }) {
   const { state } = useStore();
+  // Keep a visited detail alive: signing in and editing can outlast the
+  // expanded row. Hiding it must not discard its flow or unsaved fields.
+  const [visited, setVisited] = useState(open);
+  useEffect(() => { if (open) setVisited(true); }, [open]);
   const instance = row.instanceIds.length ? state.instances.find((entry) => entry.instanceId === row.instanceIds[0]) : undefined;
   const line = providerLine(row, nameOf);
   return (
@@ -135,7 +139,7 @@ function ProviderLine({ row, open, onToggle, nameOf, detail }: {
         <StatePill state={row.state} />
         <ChevronDown size={13} aria-hidden="true" className={cn("shrink-0 text-ink-secondary transition-transform motion-reduce:transition-none", open && "rotate-180")} />
       </button>
-      {open && <div data-provider-detail={row.id} className="flex min-w-0 flex-col gap-3 px-3.5 pb-3 pt-2 sm:pl-[52px]">{detail}</div>}
+      {(open || visited) && <div data-provider-detail={row.id} hidden={!open} className={cn("min-w-0 flex-col gap-3 px-3.5 pb-3 pt-2 sm:pl-[52px]", open ? "flex" : "hidden")}>{detail}</div>}
     </li>
   );
 }
