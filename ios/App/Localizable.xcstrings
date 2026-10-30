@@ -30556,6 +30556,86 @@
         }
       }
     },
+    "%@ wants to update a learned skill. It will wait until you have stopped. You can say no to deny it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ veut mettre à jour une compétence apprise. Elle attendra que tu sois arrêté. Tu peux dire non pour la refuser."
+          }
+        }
+      }
+    },
+    "%@ wants to enable a learned skill. It will wait until you have stopped. You can say no to deny it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ veut activer une compétence apprise. Elle attendra que tu sois arrêté. Tu peux dire non pour la refuser."
+          }
+        }
+      }
+    },
+    "%@ asks: %@ Should I confirm it?": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%1$@ demande : %2$@ Dois-je confirmer?"
+          }
+        }
+      }
+    },
+    "A skill is enabled once you have read it, after the drive. You can say no now to deny it.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une compétence s'active une fois lue, après le trajet. Tu peux dire non maintenant pour la refuser."
+          }
+        }
+      }
+    },
+    "Your bots appear here once Sagax is connected.": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vos bots apparaissent ici une fois Sagax connecté."
+          }
+        }
+      }
+    },
+    "Call a bot": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appeler un bot"
+          }
+        }
+      }
+    },
+    "Calling…": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appel…"
+          }
+        }
+      }
+    },
+    "Microphone off": {
+      "localizations": {
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Micro coupé"
+          }
+        }
+      }
+    },
     "%@ asks: %@ Review it on screen. Should I confirm it?": {
       "localizations": {
         "fr": {

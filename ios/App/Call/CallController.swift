@@ -405,7 +405,14 @@ final class CallController: ObservableObject {
         bridge.onMute = { [weak self] muted in self?.engine?.setMuted(muted) }
         bridge.onHold = { [weak self] held in held ? self?.engine?.hold() : self?.engine?.resume() }
         callKit = bridge
-        let placed = injecting || demo ? false : await bridge.start(name: chat.name)
+        let handle: String = switch chat {
+        case let .bot(bot): CarCallHandle.value(kind: .bot, id: bot.id)
+        case let .room(room): CarCallHandle.value(kind: .room, id: room.id)
+        }
+        let placed = injecting || demo ? false : await bridge.start(name: chat.name, handle: handle)
+        // Siri ("call Scout with Sagax", a reply to an announced message):
+        // asked once, after the person chose to call a bot
+        if !demo { SiriAccess.askOnce() }
         guard target?.id == chat.id else { return }
         if placed {
             // the system activates the session for the call; if it never says
@@ -1002,12 +1009,19 @@ final class CallController: ObservableObject {
         switch prompt {
         case let .approval(requester, kind, tool, title, detail, updating):
             switch kind {
+            case .skill where CarRoute.isDriving:
+                // in the car nothing says to look at the phone (CarPlay rule):
+                // it waits, and a no is still heard
+                return updating
+                    ? String(localized: "\(requester) wants to update a learned skill. It will wait until you have stopped. You can say no to deny it.")
+                    : String(localized: "\(requester) wants to enable a learned skill. It will wait until you have stopped. You can say no to deny it.")
             case .skill:
                 return updating
                     ? String(localized: "\(requester) wants to update a learned skill. Open this chat to review it first. You can say no to deny it.")
                     : String(localized: "\(requester) wants to enable a learned skill. Open this chat to review it first. You can say no to deny it.")
             case .routine, .profile:
                 let line = title.trimmingCharacters(in: .whitespacesAndNewlines)
+                if CarRoute.isDriving { return String(localized: "\(requester) asks: \(line) Should I confirm it?") }
                 return String(localized: "\(requester) asks: \(line) Review it on screen. Should I confirm it?")
             case .command:
                 let action: String = switch tool {
@@ -1016,7 +1030,8 @@ final class CallController: ObservableObject {
                 case "Write", "Edit", "edit": String(localized: "change a file")
                 default: String(localized: "use \(tool)")
                 }
-                let shown = String(detail.trimmingCharacters(in: .whitespacesAndNewlines).prefix(160))
+                // shorter in the car (DrivingSafety)
+                let shown = DrivingSafety.spokenDetail(detail, driving: CarRoute.isDriving)
                 // asked with its two options; the answer must pick one (CallAnswers.decision)
                 return String(localized: "\(requester) wants to \(action). \(shown). Allow once, or deny?")
             }
@@ -1028,6 +1043,8 @@ final class CallController: ObservableObject {
             return "\(detail)\(end)\(choices)"
         case .allowOnceOrDeny:
             return String(localized: "Sorry, I need one of the two answers: allow once, or deny?")
+        case .skillReview where CarRoute.isDriving:
+            return String(localized: "A skill is enabled once you have read it, after the drive. You can say no now to deny it.")
         case .skillReview:
             return String(localized: "Open this chat to review the complete skill before enabling it. You can say no now to deny it.")
         case .approvalFailed:

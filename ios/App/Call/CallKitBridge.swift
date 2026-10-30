@@ -7,6 +7,11 @@
 //
 // When CallKit cannot place the call (the simulator, a restricted device),
 // the call activates its own audio session and runs the same way.
+//
+// In the car the call is a phone call like any other: CarPlay shows it with
+// its mute and end buttons, its audio goes to the car, and the handle names
+// the bot (`CarCallHandle`) so calling again from the car or Siri reaches the
+// same bot (docs/ios-carplay.md).
 import AVFoundation
 import CallKit
 import UIKit
@@ -37,16 +42,18 @@ final class CallKitBridge: NSObject, CXProviderDelegate {
     }
 
     /// Place the call. False when CallKit refused it (run without it).
-    func start(name: String) async -> Bool {
+    /// `handle` names the bot (`CarCallHandle.value`); `name` is what the
+    /// call screen, the car and the lock screen show.
+    func start(name: String, handle: String) async -> Bool {
         let id = UUID()
-        let action = CXStartCallAction(call: id, handle: CXHandle(type: .generic, value: name))
+        let action = CXStartCallAction(call: id, handle: CXHandle(type: .generic, value: handle))
         action.contactIdentifier = name
         do {
             try await controller.request(CXTransaction(action: action))
             callId = id
             let update = CXCallUpdate()
             update.localizedCallerName = name
-            update.remoteHandle = CXHandle(type: .generic, value: name)
+            update.remoteHandle = CXHandle(type: .generic, value: handle)
             update.hasVideo = false
             update.supportsHolding = true
             update.supportsGrouping = false

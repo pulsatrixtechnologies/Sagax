@@ -235,6 +235,24 @@
         }
       }
     },
+    "NSSiriUsageDescription": {
+      "comment": "Siri: send a message to a bot or call one, also in the car",
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Siri sends your message to a bot or calls one when you ask, also in the car."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Siri envoie votre message à un bot ou l'appelle quand vous le demandez, aussi en voiture."
+          }
+        }
+      }
+    },
     "NSSpeechRecognitionUsageDescription": {
       "comment": "Dictation: iOS speech recognition permission prompt",
       "extractionState": "manual",

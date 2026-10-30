@@ -118,6 +118,12 @@ targets:
         # Home accessories and scenes (phone tool "home"). The App ID needs
         # the HomeKit capability; automatic signing then puts it in the profile.
         com.apple.developer.homekit: true
+        # Siri talks to a bot (App/CarAssist, docs/ios-carplay.md): "send a
+        # message to Scout with Sagax", a reply to an announced message,
+        # "call Scout with Sagax". Not a request to Apple: automatic signing
+        # turns on the Siri capability of the App ID. The CarPlay
+        # entitlement is another matter: project-carplay.yml.
+        com.apple.developer.siri: true
         com.apple.security.application-groups:
           - group.ca.pulsatrix.sagax
         keychain-access-groups:
@@ -195,9 +201,19 @@ targets:
           - audio
           # a push wakes the app for a moment to recount the icon badge
           - remote-notification
-        # Required for communication notifications (INSendMessageIntent).
+        # Required for communication notifications (INSendMessageIntent),
+        # and a Siri call to a bot continuing in the app (INStartCallIntent).
         NSUserActivityTypes:
           - INSendMessageIntent
+          - INStartCallIntent
+        # Siri's requests the app handles itself, in its own process
+        # (SagaxAppDelegate.application(_:handlerFor:), SiriIntentHandlers.swift).
+        INIntentsSupported:
+          - INSendMessageIntent
+          - INStartCallIntent
+        NSSiriUsageDescription: >-
+          Siri sends your message to a bot or calls one when you ask, also
+          in the car.
         NSFaceIDUsageDescription: >-
           Sagax uses Face ID to show a card number or another secret you
           saved. The bot never sees it.
