@@ -62,6 +62,9 @@ its installed provider and each bot's old voice; an existing preference,
 including Auto, is never replaced. A paired Mac keeps its local voice choice.
 Legacy `/api/tts` clients honor a synced personal preference when one exists.
 Auto's voice picker saves the voice under the provider actually offered.
+Its status and audio requests include the current choice, including Auto,
+ahead of preference sync; the picker waits for that choice's resolution.
+Reading status never saves a preference.
 Shared-bot readers can still change their personal provider and voice.
 
 A solo server retires `anthropic.everyClaudeBot` before serving: old paid

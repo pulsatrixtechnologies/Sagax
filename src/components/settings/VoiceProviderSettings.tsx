@@ -26,7 +26,9 @@ import {
   VOICE_PROVIDER_LABELS,
   VOICE_STT_PROVIDERS,
   VOICE_TTS_PROVIDERS,
+  type VoiceSttChoice,
   type VoiceSttProvider,
+  type VoiceTtsChoice,
   type VoiceTtsProvider,
 } from "../../../shared/voice-providers";
 import { CompactRow, DescribedRow, GROUP_CARD, PILL, PillSelect, SettingsGroup, type PillOption } from "../SettingsPrimitives";
@@ -56,7 +58,9 @@ export function VoiceProviderSettings({ bot }: { bot?: { id: string; name: strin
   const botId = bot?.id;
   const settings = useVoiceModeSettings();
   const view = voiceSettingsForBot(settings, botId);
-  const [status, setStatus] = useState<VoiceModeStatus | null>(null);
+  const [resolution, setResolution] = useState<{ botId?: string; tts: VoiceTtsChoice; stt: VoiceSttChoice; status: VoiceModeStatus } | null>(null);
+  const status = resolution?.botId === botId ? resolution?.status ?? null : null;
+  const currentResolution = resolution?.botId === botId && resolution?.tts === view.tts && resolution?.stt === view.stt;
   const [failed, setFailed] = useState<string | null>(null);
   const [voices, setVoices] = useState<VoiceOption[] | null>(null);
   const [testing, setTesting] = useState(false);
@@ -65,16 +69,19 @@ export function VoiceProviderSettings({ bot }: { bot?: { id: string; name: strin
 
   useEffect(() => {
     const controller = new AbortController();
-    fetchVoiceProviders(botId, controller.signal).then(setStatus, (error: unknown) => {
+    setFailed(null);
+    fetchVoiceProviders(botId, controller.signal, { tts: view.tts, stt: view.stt }).then((next) => {
+      if (!controller.signal.aborted) setResolution({ botId, tts: view.tts, stt: view.stt, status: next });
+    }, (error: unknown) => {
       if (!controller.signal.aborted) setFailed(error instanceof Error ? error.message : String(error));
     });
     return () => controller.abort();
-  }, [botId]);
+  }, [botId, view.tts, view.stt]);
 
   const offeredTts = status?.providers?.tts ?? [];
   const offeredStt = status?.providers?.stt ?? [];
   // the provider whose voice is picked: the one chosen, else the one the server starts with
-  const speaking: VoiceTtsProvider | undefined = view.tts !== "auto" ? view.tts : status?.tts ?? offeredTts[0];
+  const speaking: VoiceTtsProvider | undefined = view.tts !== "auto" ? view.tts : currentResolution ? status?.tts ?? offeredTts[0] : undefined;
 
   useEffect(() => {
     if (!speaking || !offeredTts.includes(speaking)) { setVoices(null); return; }
@@ -131,7 +138,7 @@ export function VoiceProviderSettings({ bot }: { bot?: { id: string; name: strin
 
   const body = (
     <>
-      {failed && !status && <DescribedRow label={t("voiceProviders.tts")} description={failed} />}
+      {failed && (!status || !currentResolution) && <DescribedRow label={t("voiceProviders.tts")} description={failed} />}
       {none && <DescribedRow label={t("voiceProviders.tts")} description={t("voiceProviders.none")} />}
       {status && !none && (
         <>
@@ -157,7 +164,7 @@ export function VoiceProviderSettings({ bot }: { bot?: { id: string; name: strin
               type="button"
               data-voice-provider-test=""
               onClick={() => void test()}
-              disabled={testing || !offeredTts.length}
+              disabled={testing || !speaking || !offeredTts.length}
               aria-label={t("voiceProviders.test")}
               className={cn(PILL, "gap-1.5 disabled:cursor-not-allowed")}
             >

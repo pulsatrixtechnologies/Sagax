@@ -1021,7 +1021,7 @@ export function createVoiceModeRoutes(deps: VoiceModeDeps): RouteHandler {
  * same setting. `voice` is the voice of the provider asked for (xAI's when
  * none is): an older page's xAI voice keeps working. */
 export function requestedChoice(action: string, url: URL, body: Record<string, unknown> | null, preference: unknown, botId: string): EffectiveVoiceChoice & { badVoice?: true } {
-  const query = action === "speech" || action === "listen" || action === "transcribe" || action === "voices";
+  const query = action === "status" || action === "speech" || action === "listen" || action === "transcribe" || action === "voices";
   const read = (name: string): unknown => (query ? url.searchParams.get(name) ?? undefined : body?.[name]);
   const saved = effectiveVoiceChoice(preference === undefined || preference === null ? {} : cleanVoiceModeSettings(preference), botId || undefined);
   const tts = cleanTtsChoice(read("tts"));

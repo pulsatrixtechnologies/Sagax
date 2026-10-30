@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 import type { VoiceKeyInfo, VoiceModeRefusalCause, VoiceModeSettings, VoiceModeStatus, VoiceProviderFailure } from "../../../shared/voice-mode";
-import { encodeProviderVoices, isVoiceTtsProvider, VOICE_TTS_PROVIDERS, type VoiceProviderId, type VoiceTtsProvider } from "../../../shared/voice-providers";
+import { encodeProviderVoices, isVoiceTtsProvider, VOICE_TTS_PROVIDERS, type VoiceProviderId, type VoiceTtsProvider, type VoiceTtsChoice, type VoiceSttChoice } from "../../../shared/voice-providers";
 import { readVoiceModeSettings, voiceSettingsForBot } from "./settings";
 
 /** What a voice request says about who speaks (2026-10-29): the providers
@@ -13,7 +13,7 @@ function voiceBody(botId: string, settings: VoiceModeSettings): Record<string, u
   const view = voiceSettingsForBot(settings, botId);
   return {
     voice: view.voice, speed: view.speed, language: view.language,
-    ...(view.tts !== "auto" ? { tts: view.tts } : {}),
+    tts: view.tts,
     ...(Object.keys(view.voices).length ? { voices: view.voices } : {}),
   };
 }
@@ -23,8 +23,8 @@ function voiceQuery(botId: string, settings: VoiceModeSettings): Record<string, 
   const view = voiceSettingsForBot(settings, botId);
   const voices = encodeProviderVoices(view.voices);
   return {
-    ...(view.tts !== "auto" ? { tts: view.tts } : {}),
-    ...(view.stt !== "auto" ? { stt: view.stt } : {}),
+    tts: view.tts,
+    stt: view.stt,
     ...(voices ? { voices } : {}),
   };
 }
@@ -543,8 +543,11 @@ export function voiceModeSpeechUrl(botId: string, settings: VoiceModeSettings, t
 
 /** The person's providers for this bot, or for no bot (Settings > Voice):
  * GET /api/bots/<id>/voice/status or GET /api/voice/status. */
-export async function fetchVoiceProviders(botId?: string, signal?: AbortSignal): Promise<VoiceModeStatus> {
-  const res = await fetch(botId ? `${base(botId)}/status` : "/api/voice/status", { signal, cache: "no-store" });
+export async function fetchVoiceProviders(botId?: string, signal?: AbortSignal, choice?: { tts: VoiceTtsChoice; stt: VoiceSttChoice }): Promise<VoiceModeStatus> {
+  // Include Auto explicitly: the synced server preference may still hold
+  // the provider the person just replaced in this window.
+  const query = choice ? `?${new URLSearchParams(choice)}` : "";
+  const res = await fetch(`${botId ? `${base(botId)}/status` : "/api/voice/status"}${query}`, { signal, cache: "no-store" });
   if (!res.ok) throw await failure(res);
   return (await res.json()) as VoiceModeStatus;
 }

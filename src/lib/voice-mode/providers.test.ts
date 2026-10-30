@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { VOICE_MODE_STORAGE_KEY, cleanVoiceModeSettings } from "../../../shared/voice-mode";
 import { providerOrder } from "../../../shared/voice-providers";
-import { speakVoiceMode, voiceModeListenUrl, voiceModeSpeechUrl } from "./api";
+import { fetchVoiceProviders, speakVoiceMode, voiceModeListenUrl, voiceModeSpeechUrl } from "./api";
 import { migrateInstalledVoiceSettings, readVoiceModeSettings, voiceSettingsForBot, writeBotVoiceChoice, writeVoiceForBot, writeVoiceProviders } from "./settings";
 
 function memory(initial?: unknown) {
@@ -70,6 +70,20 @@ describe("voice providers in the person's settings", () => {
 });
 
 describe("what a request says about the voice", () => {
+  it("sends Auto explicitly before a changed preference has synced", async () => {
+    page({ voice: "eve", speed: 1, language: "auto" });
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(new Uint8Array([1])));
+    vi.stubGlobal("fetch", fetch);
+    await speakVoiceMode("b-1", "Bonjour", readVoiceModeSettings());
+    expect(JSON.parse(String(fetch.mock.calls[0]![1]!.body))).toMatchObject({ tts: "auto", voice: "eve" });
+    const url = new URL(voiceModeSpeechUrl("b-1", readVoiceModeSettings(), "t-1", "http://x"));
+    expect(url.searchParams.get("tts")).toBe("auto");
+    expect(url.searchParams.get("stt")).toBe("auto");
+    fetch.mockResolvedValueOnce(Response.json({ tts: "xai", stt: "xai" }));
+    await fetchVoiceProviders("b-1", undefined, { tts: "auto", stt: "auto" });
+    expect(fetch.mock.calls.at(-1)![0]).toBe("/api/bots/b-1/voice/status?tts=auto&stt=auto");
+  });
+
   it("sends the bot's provider and voice, and the voices of the others for a fallback", async () => {
     page({ voice: "eve", speed: 1, language: "fr", stt: "openai", bots: { "b-1": { tts: "elevenlabs", voices: { elevenlabs: "myClone" } } } });
     const fetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(new Uint8Array([1]), { status: 200, headers: { "x-voice-key": "voice-key:abcd", "x-voice-provider": "elevenlabs" } }));
