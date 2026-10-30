@@ -305,6 +305,20 @@ export function createWebhookIngressHandler(
   };
 }
 
+/** Which absolute http(s) origin senders should use for `/hooks` and
+ * `/sources`. Prefers the dedicated webhook URL; falls back to the server's
+ * public origin (same host the UI serves, with `/hooks` routed to the
+ * receiver). Blank values are unset. Pairing custom domains are not consulted. */
+export function resolveWebhookPublicUrl(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
+): string | undefined {
+  const dedicated = env.SAGAX_WEBHOOK_PUBLIC_URL?.trim();
+  if (dedicated) return dedicated;
+  const publicUrl = env.SAGAX_PUBLIC_URL?.trim();
+  if (publicUrl) return publicUrl;
+  return undefined;
+}
+
 /** The base senders are told to use. Behind a proxy or tunnel the listening
  * address is unreachable from outside, so the operator supplies the public
  * one; a trailing slash is tolerated because every hook path adds its own. */

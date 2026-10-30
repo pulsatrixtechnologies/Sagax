@@ -9,6 +9,7 @@ import {
   WEBHOOK_AUTH_FAILURE_LIMIT,
   listenWebhookIngress,
   MAX_WEBHOOK_BODY_BYTES,
+  resolveWebhookPublicUrl,
   webhookCredential,
   type WebhookIngress,
 } from "./webhook-ingress.ts";
@@ -345,6 +346,28 @@ describe("requests with a wrong secret", () => {
       rmSync(floodDir, { recursive: true, force: true });
     }
   }, 60_000);
+});
+
+describe("resolveWebhookPublicUrl", () => {
+  it("prefers SAGAX_WEBHOOK_PUBLIC_URL over SAGAX_PUBLIC_URL", () => {
+    expect(
+      resolveWebhookPublicUrl({
+        SAGAX_WEBHOOK_PUBLIC_URL: "https://hooks.example.com",
+        SAGAX_PUBLIC_URL: "https://bot.example.com",
+      }),
+    ).toBe("https://hooks.example.com");
+  });
+
+  it("falls back to SAGAX_PUBLIC_URL when the dedicated webhook URL is unset", () => {
+    expect(resolveWebhookPublicUrl({ SAGAX_PUBLIC_URL: "https://bot.pulsatrix.mcp.goxcloud.ca/" })).toBe(
+      "https://bot.pulsatrix.mcp.goxcloud.ca/",
+    );
+  });
+
+  it("treats blank dedicated and public values as unset", () => {
+    expect(resolveWebhookPublicUrl({ SAGAX_WEBHOOK_PUBLIC_URL: "  ", SAGAX_PUBLIC_URL: "" })).toBeUndefined();
+    expect(resolveWebhookPublicUrl({})).toBeUndefined();
+  });
 });
 
 describe("advertised base URL", () => {
