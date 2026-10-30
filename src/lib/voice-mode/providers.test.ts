@@ -70,6 +70,18 @@ describe("voice providers in the person's settings", () => {
 });
 
 describe("what a request says about the voice", () => {
+  it("keeps the person's OpenAI then Auto recognition choice for both transports without a bot", async () => {
+    page({ voice: "eve", speed: 1, language: "auto", stt: "openai" });
+    const fetch = vi.fn(async (_url: string, _init?: RequestInit) => Response.json({ text: "Bonjour" }));
+    vi.stubGlobal("fetch", fetch);
+    for (const stt of ["openai", "auto"] as const) {
+      writeVoiceProviders({ stt });
+      expect(new URL(voiceModeListenUrl("", "auto", undefined, "http://x")).searchParams.get("stt")).toBe(stt);
+      await transcribeVoiceMode("", new Blob(["audio"], { type: "audio/wav" }), "auto");
+      expect(new URL(fetch.mock.calls.at(-1)![0], "http://x").searchParams.get("stt")).toBe(stt);
+    }
+  });
+
   it("sends Auto explicitly before a changed preference has synced", async () => {
     page({ voice: "eve", speed: 1, language: "auto" });
     const fetch = vi.fn(async (_url: string, _init?: RequestInit) => new Response(new Uint8Array([1])));

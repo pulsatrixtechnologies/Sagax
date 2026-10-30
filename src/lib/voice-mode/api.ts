@@ -411,7 +411,7 @@ export function voiceLocale(): string | undefined {
 }
 
 function sttQuery(language: string, threadId: string | undefined, locale: string | undefined, botId?: string): URLSearchParams {
-  const stt = botId ? voiceSettingsForBot(readVoiceModeSettings(), botId).stt : "auto";
+  const stt = voiceSettingsForBot(readVoiceModeSettings(), botId).stt;
   return new URLSearchParams({ language, ...(language === "auto" && locale ? { locale } : {}), ...(threadId ? { threadId } : {}), stt });
 }
 
