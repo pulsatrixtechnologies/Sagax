@@ -1358,7 +1358,7 @@ const MessagesList = memo(function MessagesList({
                 <AccessCard
                   access={m.access}
                   viewer={{ principalId: config?.viewer?.principalId ?? null, admin: config?.viewer?.role === "admin" || config?.viewer?.role === "owner" }}
-                  onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "engines" })}
+                  onSignIn={() => dispatch({ type: "toggleAppSettings", open: true, section: "providers" })}
                 />
               ) : null;
             case "secret":
@@ -2366,7 +2366,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
         <AccessCard
           access={m.access}
           viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
-          onSignIn={() => { close(); dispatch({ type: "toggleAppSettings", open: true, section: "engines" }); }}
+          onSignIn={() => { close(); dispatch({ type: "toggleAppSettings", open: true, section: "providers" }); }}
         />
       ) : <RoutineRunRow message={m} botId={bot.id} onResume={resumeAutoPaused(m, close)} />} />}
       {!side && <ChatStaleBanner />}

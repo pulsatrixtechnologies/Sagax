@@ -49,7 +49,12 @@ function part(html: string, from: string, to?: string): string {
   return html.slice(start, end > start ? end : undefined);
 }
 
-beforeEach(() => {
+beforeEach(async () => {
+  // 2026-10-30: the Engines and Keys groups below are Models' former view
+  const { requestSettingsCard, resetSettingsCards } = await import("./SettingsPrimitives");
+  const { LEGACY_CARD } = await import("./EnginesSettings");
+  resetSettingsCards();
+  requestSettingsCard(LEGACY_CARD);
   fixture.config = baseConfig();
   fixture.section = "engines";
   fixture.instances = [];
@@ -64,9 +69,17 @@ afterEach(() => {
 });
 
 describe("Settings > Models and voice", () => {
-  it.each(["router", "OpenRouter", "base URL", "API key", "OpenAI", "Anthropic", "Groq", "ElevenLabs", "integrations", "Intégrations"])("is found by searching for %s", async (typed) => {
+  it.each(["integrations", "Intégrations", "ancien affichage", "modèle auto"])("is found by searching for %s", async (typed) => {
     const { SECTIONS, sectionMatches } = await import("./SettingsModal");
     const page = SECTIONS.find((entry) => entry.id === "engines")!;
+    // the modal lowercases and trims what was typed before matching
+    expect(sectionMatches(page, typed.trim().toLowerCase())).toBe(true);
+  });
+
+  // 2026-10-30: every account, key and server is on Providers
+  it.each(["router", "OpenRouter", "base URL", "API key", "OpenAI", "Anthropic", "Groq", "ElevenLabs", "Azure", "fournisseurs", "voir comme un membre"])("finds Providers by searching for %s", async (typed) => {
+    const { SECTIONS, sectionMatches } = await import("./SettingsModal");
+    const page = SECTIONS.find((entry) => entry.id === "providers")!;
     // the modal lowercases and trims what was typed before matching
     expect(sectionMatches(page, typed.trim().toLowerCase())).toBe(true);
   });
@@ -83,7 +96,8 @@ describe("Settings > Models and voice", () => {
     const models = SECTIONS.find((entry) => entry.id === "engines")!;
     const voice = SECTIONS.find((entry) => entry.id === "voice")!;
     const usage = SECTIONS.find((entry) => entry.id === "usage")!;
-    for (const typed of ["modèle auto", "à configurer", "fournisseur d'images", "recherche web"]) expect(sectionMatches(models, typed), typed).toBe(true);
+    for (const typed of ["modèle auto", "fournisseur d'images", "recherche web"]) expect(sectionMatches(models, typed), typed).toBe(true);
+    expect(sectionMatches(SECTIONS.find((entry) => entry.id === "providers")!, "à configurer")).toBe(true);
     for (const typed of ["moteur de voix", "appels en direct", "micro"]) {
       expect(sectionMatches(voice, typed), typed).toBe(true);
       expect(sectionMatches(models, typed), typed).toBe(false);
@@ -111,11 +125,10 @@ describe("Settings > Models and voice", () => {
     expect(fr).not.toContain("Modèles et comptes");
   });
 
-  it("opens from an old Integrations link", async () => {
+  it("opens Providers from an old Integrations link (2026-10-30)", async () => {
     fixture.section = "connections";
     const html = await page();
-    expect(html).toContain("data-models-voice");
-    expect(html).toContain('data-keys-section=""');
+    expect(html).toContain("data-providers-page");
   });
 
   const readyClaude = {
@@ -133,9 +146,10 @@ describe("Settings > Models and voice", () => {
     fixture.instances = [kimiToSetUp];
     const html = await page();
     const at = (marker: string) => html.indexOf(marker);
-    expect(at('data-settings-card="engines.list"')).toBeGreaterThan(0);
-    expect(at('data-settings-card="engines.list"')).toBeLessThan(at("data-auto-model-explainer"));
-    expect(at("data-auto-model-explainer")).toBeLessThan(at('data-settings-card="engines.setup"'));
+    // 2026-10-30: Auto heads the page; the former Engines and Keys follow, opened
+    expect(at("data-auto-model-explainer")).toBeGreaterThan(0);
+    expect(at("data-auto-model-explainer")).toBeLessThan(at('data-settings-card="engines.list"'));
+    expect(at('data-settings-card="engines.list"')).toBeLessThan(at('data-settings-card="engines.setup"'));
     expect(at('data-settings-card="engines.setup"')).toBeLessThan(at("data-keys-section"));
     expect(at("data-keys-section")).toBeLessThan(at('data-settings-card="connections.image"'));
     for (const group of ["engines", "keys", "image"]) expect(html, group).toContain(`data-settings-group="${group}"`);

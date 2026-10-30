@@ -98,10 +98,10 @@ afterEach(() => {
 });
 
 describe("Settings split: navigation", () => {
-  it("lists Account, Security, Vault, Appearance, Notifications under Personal, and Models, Voice under AI", async () => {
+  it("lists Account, Security, Vault, Appearance, Notifications under Personal, and Providers, Models, Voice under AI", async () => {
     await settings("account");
     expect(railLabels("you")).toEqual(["Account", "Security", "Vault", "Appearance", "Notifications"]);
-    expect(railLabels("ai")).toEqual(["Models", "Voice"]);
+    expect(railLabels("ai")).toEqual(["Providers", "Models", "Voice"]);
     expect(rail().textContent).not.toContain("Models and voice");
   });
 
@@ -116,7 +116,7 @@ describe("Settings split: navigation", () => {
     setLocale("fr");
     await settings("account");
     expect(railLabels("you")).toEqual(["Compte", "Sécurité", "Coffre", "Apparence", "Notifications"]);
-    expect(railLabels("ai")).toEqual(["Modèles", "Voix"]);
+    expect(railLabels("ai")).toEqual(["Fournisseurs", "Modèles", "Voix"]);
   });
 });
 
@@ -152,24 +152,29 @@ describe("Settings split: every moved setting at its new place", () => {
     expect(card("security")).toBeNull();
   });
 
-  it("Voice holds the microphone, the voice engine and Live calls; Models keeps the engines and every key", async () => {
+  it("Voice holds the microphone, the voice engine and Live calls; Models keeps Auto and image generation, Engines and Keys folded as the former view", async () => {
     await settings("voice");
     expect(pane().querySelector("h2")?.textContent).toBe("Voice");
     for (const id of ["connections.audio", "connections.voice", "voice.advanced"]) expect(card(id), id).not.toBeNull();
     expect(pane().querySelector("[data-keys-section]")).toBeNull();
     await settings("engines");
     expect(pane().querySelector("h2")?.textContent).toBe("Models");
-    for (const id of ["engines.list", "engines.keys", "connections.image"]) expect(card(id), id).not.toBeNull();
+    for (const id of ["engines.legacy", "connections.image"]) expect(card(id), id).not.toBeNull();
+    // 2026-10-30: Engines and Keys are the former view, folded until asked for
+    for (const id of ["engines.list", "engines.keys"]) expect(card(id), id).toBeNull();
+    await settings("providers");
+    expect(pane().querySelector("h2")?.textContent).toBe("Providers");
+    expect(card("providers.list"), "providers.list").not.toBeNull();
     for (const id of ["connections.audio", "connections.voice", "voice.advanced"]) expect(card(id), id).toBeNull();
   });
 
-  it("Voice's Add in Keys opens Models, where every key is managed", async () => {
+  it("Voice's Add in Keys opens Providers, where every key is managed, with the key's dialog", async () => {
     fixture.config = { rooms: { turnTimeoutMinutes: 5 }, tts: { configured: false, ready: false, voice: "", provider: "elevenlabs", keys: { elevenlabs: false, fish: false } }, live: { enabled: true, configured: false, voice: "", readTypedReplies: true, idleMinutes: 5 } };
     await settings("voice");
     const add = pane().querySelector<HTMLButtonElement>('[data-add-in-keys="elevenlabs"]')!;
     expect(add).not.toBeNull();
     act(() => add.click());
-    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "toggleAppSettings", open: true, section: "engines" });
+    expect(fixture.dispatch).toHaveBeenCalledWith({ type: "toggleAppSettings", open: true, section: "providers" });
   });
 
   it("keeps the person's own voice keys on an organization member's Voice page", async () => {
@@ -243,13 +248,13 @@ describe("Settings split: old links and anchors open the new page", () => {
     expect(opened("credentials")).toBe("credentials");
   });
 
-  it("sends Models and voice's voice anchors to Voice and keeps the keys in Models", () => {
+  it("sends Models and voice's voice anchors to Voice and the keys to Providers", () => {
     expect(opened("engines", "connections.voice")).toBe("voice");
     expect(opened("engines", "voice.advanced")).toBe("voice");
     expect(opened("connections", "connections.audio")).toBe("voice");
     expect(opened("engines", "voice.microphone")).toBe("voice");
     expect(opened("engines", "connections.voiceKeys")).toBe("voice");
-    expect(opened("engines", "engines.keys")).toBe("engines");
+    expect(opened("engines", "engines.keys")).toBe("providers");
     expect(opened("connections", "connections.image")).toBe("engines");
   });
 
@@ -290,7 +295,8 @@ describe("Settings split: the search finds each setting at its new place", () =>
     ["coffre", "Vault"],
     ["microphone", "Voice"],
     ["live calls", "Voice"],
-    ["openrouter", "Models"],
+    // 2026-10-30: keys are on Providers
+    ["openrouter", "Providers"],
   ])("%s lands on %s only", async (query, page) => {
     const pages = await search(query);
     expect(pages).toEqual([page]);

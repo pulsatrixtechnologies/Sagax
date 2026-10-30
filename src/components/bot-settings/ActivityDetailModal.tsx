@@ -394,7 +394,7 @@ export function ActivityDetailPane({ item, wide, onClose, onChanged, onBack }: {
       }}
       stopping={stopping}
       viewer={{ principalId: state.config?.viewer?.principalId ?? null, admin: state.config?.viewer?.role === "admin" || state.config?.viewer?.role === "owner" }}
-      onSignIn={() => { onClose(); dispatch({ type: "toggleAppSettings", open: true, section: "engines" }); }}
+      onSignIn={() => { onClose(); dispatch({ type: "toggleAppSettings", open: true, section: "providers" }); }}
       wide={wide}
       onBack={parent ? () => { setParents((list) => list.slice(0, -1)); setCurrent(parent); } : onBack}
       backLabel={parent ? t("activity.backTo", { title: parent.title }) : undefined}
