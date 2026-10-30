@@ -9,8 +9,9 @@ import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { SwitchRow } from "./SettingsPrimitives";
+import { azureOpenAIEndpoint, looksLikeAzureUrl } from "../../shared/azure-openai";
 
-export type ConfigSection = "box" | "opencodeGo" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "xai" | "mistral" | "cerebras" | "groq" | "elevenlabs" | "fishAudio" | "openaiImage" | "customImage";
+export type ConfigSection = "box" | "opencodeGo" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "azureFoundry" | "xai" | "mistral" | "cerebras" | "groq" | "elevenlabs" | "fishAudio" | "openaiImage" | "customImage";
 /** Sections whose key can be tried against the provider from the server. */
 export type TestableProvider = "anthropic" | "openai" | "openrouter" | "openaiCompat" | "xai" | "mistral" | "cerebras" | "groq";
 
@@ -40,6 +41,9 @@ const SECTIONS: Record<
   openai: { body: (v) => ({ openai: { key: v } }), flag: (c) => c.openai?.configured ?? false },
   openrouter: { body: (v) => ({ openrouter: { key: v } }), flag: (c) => c.openrouter?.configured ?? false },
   openaiCompat: { body: (v) => ({ openaiCompat: { key: v } }), flag: (c) => c.openaiCompat?.configured ?? false },
+  // Azure AI Foundry / Azure OpenAI: the OpenAI-compatible connection with
+  // an Azure resource's URL (shared/azure-openai.ts), its own row and words.
+  azureFoundry: { body: (v) => ({ openaiCompat: { key: v } }), flag: (c) => c.openaiCompat?.configured ?? false },
   mistral: { body: (v) => ({ mistral: { key: v } }), flag: (c) => c.mistral?.configured ?? false },
   cerebras: { body: (v) => ({ cerebras: { key: v } }), flag: (c) => c.cerebras?.configured ?? false },
   groq: { body: (v) => ({ groq: { key: v } }), flag: (c) => c.groq?.configured ?? false },
@@ -136,6 +140,14 @@ const CREDENTIALS: Record<
     descriptionKey: "keys.openaiCompat.desc",
     href: "https://platform.openai.com/docs/api-reference",
     linkLabelKey: "keys.openaiCompat.link",
+    optional: true,
+  },
+  azureFoundry: {
+    labelKey: "keys.azureFoundry.label",
+    placeholderKey: "keys.azureFoundry.placeholder",
+    descriptionKey: "keys.azureFoundry.desc",
+    href: "https://learn.microsoft.com/azure/ai-foundry/openai/api-version-lifecycle",
+    linkLabelKey: "keys.azureFoundry.link",
     optional: true,
   },
   mistral: {
@@ -664,7 +676,7 @@ export function VpsConnection() {
 /** The OpenAI-compatible engine's base URL: a setting next to its key, so
  * OpenRouter, Groq, Together or OpenAI itself are one field away. Saves when
  * the field is left or Enter is pressed, like the key above it. */
-export function OpenAiCompatUrl() {
+export function OpenAiCompatUrl({ azure = false }: { azure?: boolean } = {}) {
   const { state, dispatch } = useStore();
   const saved = state.config?.openaiCompat?.url ?? "";
   const [value, setValue] = useState(saved);
@@ -685,9 +697,13 @@ export function OpenAiCompatUrl() {
       .finally(() => { savingRef.current = false; setSaving(false); });
   };
 
+  const label = azure ? t("keys.azureFoundry.url") : t("keys.openaiCompat.url");
+  // An Azure address that is not a resource endpoint (the portal, a project
+  // page): said before anything is sent to it.
+  const wrongAzure = Boolean(saved) && !dirty && looksLikeAzureUrl(saved) && !azureOpenAIEndpoint(saved);
   return (
     <div>
-      <div className="mb-1.5 text-[13px] text-ink-secondary">{t("keys.openaiCompat.url")}</div>
+      <div className="mb-1.5 text-[13px] text-ink-secondary">{label}</div>
       <div className="relative">
         <input
           type="url"
@@ -695,8 +711,8 @@ export function OpenAiCompatUrl() {
           onChange={(e) => setValue(e.target.value)}
           onBlur={save}
           onKeyDown={(e) => e.key === "Enter" && save()}
-          placeholder="https://api.groq.com/openai/v1"
-          aria-label={t("keys.openaiCompat.url")}
+          placeholder={azure ? "https://my-resource.openai.azure.com" : "https://api.groq.com/openai/v1"}
+          aria-label={label}
           spellCheck={false}
           className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 pr-8 font-mono text-[12px] text-ink placeholder:text-ink-secondary focus:outline-none"
         />
@@ -704,7 +720,59 @@ export function OpenAiCompatUrl() {
           <Loader2 size={13} aria-hidden="true" className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-ink-secondary" />
         )}
       </div>
-      <p className="mt-1 text-[11.5px] leading-relaxed text-ink-secondary">{t("keys.openaiCompat.urlHint")}</p>
+      <p className="mt-1 text-[11.5px] leading-relaxed text-ink-secondary">{azure ? t("keys.azureFoundry.urlHint") : t("keys.openaiCompat.urlHint")}</p>
+      {wrongAzure && <p data-azure-wrong-url className="mt-1 text-[12px] text-danger">{t("model.listIssue.azure-bad-url")}</p>}
+      {error && <div className="mt-1 text-[12px] text-danger">{error}</div>}
+    </div>
+  );
+}
+
+/** The model the OpenAI-compatible connection runs by default, typed by
+ * hand: on Azure, a deployment name, offered even when the resource's
+ * deployments cannot be listed. Saves like the URL above it. */
+export function OpenAiCompatModel({ azure = false, compact = false }: { azure?: boolean; compact?: boolean } = {}) {
+  const { state, dispatch } = useStore();
+  const saved = state.config?.openaiCompat?.model ?? "";
+  const [value, setValue] = useState(saved);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const savingRef = useRef(false);
+  useEffect(() => { setValue(saved); }, [saved]);
+  const dirty = value.trim() !== saved;
+
+  const save = () => {
+    if (savingRef.current || !dirty) return;
+    savingRef.current = true;
+    setSaving(true);
+    setError(null);
+    api("/api/config", { method: "PUT", body: JSON.stringify({ openaiCompat: { model: value.trim() } }) })
+      .then((status: ConfigStatus) => dispatch({ type: "configStatus", config: status }))
+      .catch((e) => setError(e.message))
+      .finally(() => { savingRef.current = false; setSaving(false); });
+  };
+
+  const label = azure ? t("keys.azureFoundry.deployment") : t("keys.openaiCompat.model");
+  return (
+    <div data-openai-compat-model>
+      <div className={cn("mb-1.5 text-ink-secondary", compact ? "text-[12px]" : "text-[13px]")}>{label}</div>
+      <div className="relative">
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onBlur={save}
+          onKeyDown={(e) => e.key === "Enter" && save()}
+          placeholder={azure ? "gpt-4.1" : "meta-llama/llama-3.3-70b-instruct"}
+          aria-label={label}
+          spellCheck={false}
+          autoComplete="off"
+          className="w-full rounded-lg border border-hairline/40 bg-inset px-3 py-2 pr-8 font-mono text-[12px] text-ink placeholder:text-ink-secondary focus:outline-none"
+        />
+        {saving && (
+          <Loader2 size={13} aria-hidden="true" className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-ink-secondary" />
+        )}
+      </div>
+      <p className="mt-1 text-[11.5px] leading-relaxed text-ink-secondary">{azure ? t("keys.azureFoundry.deploymentHint") : t("keys.openaiCompat.modelHint")}</p>
       {error && <div className="mt-1 text-[12px] text-danger">{error}</div>}
     </div>
   );

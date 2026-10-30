@@ -27,6 +27,7 @@ import { flushSync } from "react-dom";
 import { ROUTINE_CONVERSATION_HEADER } from "../../shared/wire";
 import type { BotVisibility, CardAnswerer, CloudBackend, EffortLevel, InstalledPackageMetadata, LiveCallState, LiveSettings, ServerFrame, GroupThreadUsage, SteerQueueReason, VoiceCallMark, WireBotConversation, WireWaitingApproval } from "../../shared/wire";
 import { DATA_ROUTES, dataSheetKey, withDataThread, type DataSheet, type DataTable } from "../../shared/data-surface";
+import type { ModelListIssue } from "../../shared/azure-openai";
 import type { TurnDigest } from "../../shared/digest";
 import type { MessageReaction } from "../../shared/reactions";
 import type { AutoModelRecord } from "../../shared/auto-model";
@@ -943,7 +944,7 @@ export interface ConfigStatus {
   anthropic?: { configured: boolean; everyClaudeBot?: boolean };
   openai?: { configured: boolean };
   openrouter?: { configured: boolean };
-  openaiCompat?: { configured: boolean; url?: string };
+  openaiCompat?: { configured: boolean; url?: string; model?: string };
   /** what this server is entitled to; Settings shows only what works here.
    * `license` reaches admins only, and only while the key is inside its
    * warning window or grace period. */
@@ -1229,7 +1230,7 @@ export interface InstanceInfo {
       message: string;
     };
   };
-  models: { default: string; options: Array<{ id: string; label: string; custom?: boolean; loaded?: boolean; local?: boolean; anthropic?: boolean; server?: string; sharedBy?: string; provider?: string; contextWindow?: number; variants?: ModelVariantOption[];
+  models: { default: string; issue?: ModelListIssue; options: Array<{ id: string; label: string; custom?: boolean; loaded?: boolean; local?: boolean; anthropic?: boolean; server?: string; sharedBy?: string; provider?: string; contextWindow?: number; variants?: ModelVariantOption[];
     /** Per-model reasoning levels and default (shared/model-capabilities.ts). */
     effortLevels?: EffortLevel[]; defaultEffort?: EffortLevel }> };
   capabilities?: {

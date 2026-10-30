@@ -115,6 +115,9 @@ interface RuntimeOptions<Config> {
    * pays for that turn. */
   apiKey: string | ((turn?: SendTurnInput) => string);
   apiUrl: string;
+  /** How the key is sent; default `Authorization: Bearer`. Azure takes
+   * `api-key` on every route (shared/azure-openai.ts). */
+  authHeaders?: (apiKey: string) => Record<string, string>;
   models: () => ModelCatalog;
   requestBody(model: string, messages: OpenAIChatMessage[], stream: boolean): Record<string, unknown>;
   httpErrorLabel: string;
@@ -419,13 +422,15 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
   let warmPing: ReturnType<typeof setInterval> | null = null;
 
   const modelsUrl = () => `${options.apiUrl.replace(/\/$/, "")}/models`;
+  const auth = (apiKey: string): Record<string, string> =>
+    options.authHeaders ? options.authHeaders(apiKey) : { authorization: `Bearer ${apiKey}` };
 
   const pingModels = async (turn?: SendTurnInput) => {
     const apiKey = resolveKey(turn);
     try {
       const response = await fetch(modelsUrl(), {
         method: "GET",
-        headers: { authorization: `Bearer ${apiKey}` },
+        headers: auth(apiKey),
       });
       // Drain so undici returns the socket to the keep-alive pool.
       await response.arrayBuffer().catch(() => undefined);
@@ -537,7 +542,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       const response = await fetch(`${options.apiUrl}/responses`, {
         method: "POST",
         ...(messages.some(message => Array.isArray(message.content) && message.content.some(part => part.type === "image_url")) ? { redirect: "error" as const } : {}),
-        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        headers: { ...auth(apiKey), "content-type": "application/json" },
         body: payload,
         signal: activeSignal,
       });
@@ -693,7 +698,7 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
       const response = await fetch(`${options.apiUrl}/chat/completions`, {
         method: "POST",
         ...(messages.some(message => Array.isArray(message.content) && message.content.some(part => part.type === "image_url")) ? { redirect: "error" as const } : {}),
-        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        headers: { ...auth(apiKey), "content-type": "application/json" },
         body: payload,
         signal: activeSignal,
       });
