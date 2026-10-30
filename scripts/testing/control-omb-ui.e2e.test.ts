@@ -344,7 +344,7 @@ describe("control-omb ui drives the real renderer", () => {
     // the card and composer remain interactive.
     const hitTest = await ui("eval", info.ui, "--js", `(() => {
       const card = document.querySelector('section[aria-label="This run"]');
-      const dock = card.parentElement.parentElement;
+      const dock = card.closest("[data-run-overlay]");
       const rect = card.getBoundingClientRect();
       const blank = document.elementFromPoint(dock.getBoundingClientRect().left + 8, rect.top + rect.height / 2);
       const onCard = document.elementFromPoint(rect.left + 20, rect.top + 20);
