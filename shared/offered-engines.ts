@@ -10,11 +10,16 @@
 //   (`allowedEngines`, shared/org-allowed-engines.ts: null or absent is
 //   every engine, [] is none since Sagax 0.5.12) is "notAllowed" and
 //   dropped everywhere, even when the person connected it before.
-// - 2026-10-27 (#1098): an engine outside that list that the person pays
-//   for with their own subscription or key (GET /api/me/engines `myTurns`
-//   "subscription" or "key") is offered: it is their bill, not the
-//   organization's. Until then it is "notGiven" when the server lists it
-//   (`orgNotAllowed`), so Settings shows it to connect their own account.
+// - 2026-10-30: what the admin turns off is off for everyone, the admin
+//   included, even on the person's own subscription or key. The #1098
+//   exception (2026-10-27) comes back only when the organization lets own
+//   accounts through (`ownAccountsOutsideList`, off by default, set in
+//   Perspicax): then an engine outside the list that the person pays for
+//   with their own subscription or key (GET /api/me/engines `myTurns`
+//   "subscription" or "key", never "expired") is offered, and the app says
+//   "allowed through your own account" (`ownAccountOnly`). Until then it is
+//   "notGiven" when the server lists it (`orgNotAllowed`), so Settings
+//   shows it to connect their own account.
 // - An engine the organization pays for but has not given this person
 //   (`sagax_server_engines`, GET /api/me/engines `orgKeyNotGiven`) and that
 //   nothing of their own serves is "notGiven": not offered to pick, still
@@ -28,7 +33,7 @@ export interface PersonEngineAccess {
   instanceId: string;
   orgKeyNotGiven?: boolean;
   /** #1098: outside the organization's list; only the person's own account
-   * or key runs it. */
+   * or key runs it (listed only with `ownAccountsOutsideList`). */
   orgNotAllowed?: boolean;
   myTurns?: string;
 }
@@ -38,11 +43,15 @@ export interface EngineOfferContext {
   organization: boolean;
   /** The organization's list (`allowedEngines`). */
   allowedEngines: AllowedEngines;
+  /** 2026-10-30: the organization lets a person's own subscription or key
+   * run an engine outside its list. Absent or false: off for everyone. */
+  ownAccountsOutsideList?: boolean;
   /** The person's own access, when known (null while loading). */
   mine?: readonly PersonEngineAccess[] | null;
 }
 
-/** #1098: the person's own subscription or key runs this engine. */
+/** #1098: the person's own subscription or key runs this engine. An expired
+ * sign-in ("expired") does not. */
 export function personPays(access: Pick<PersonEngineAccess, "myTurns"> | undefined): boolean {
   return access?.myTurns === "subscription" || access?.myTurns === "key";
 }
@@ -52,6 +61,9 @@ export function engineOffer(context: EngineOfferContext, instanceId: string): En
   if (!context.organization) return "offered";
   const access = context.mine?.find((engine) => engine.instanceId === instanceId);
   if (!engineAllowed(context.allowedEngines, instanceId)) {
+    // 2026-10-30: off for everyone unless the organization lets own
+    // accounts through.
+    if (context.ownAccountsOutsideList !== true) return "notAllowed";
     if (personPays(access)) return "offered";
     return access?.orgNotAllowed === true ? "notGiven" : "notAllowed";
   }
@@ -74,6 +86,14 @@ export function offeredEngines<T extends { instanceId: string }>(
     const offer = engineOffer(context, instance.instanceId);
     return offer === "offered" || (purpose === "settings" && offer === "notGiven");
   });
+}
+
+/** 2026-10-30: offered only because the organization lets own accounts
+ * through and the person's own subscription or key pays for it: the app
+ * says "allowed through your own account". */
+export function ownAccountOnly(context: EngineOfferContext, instanceId: string): boolean {
+  if (!context.organization || engineAllowed(context.allowedEngines, instanceId)) return false;
+  return engineOffer(context, instanceId) === "offered";
 }
 
 /** A bot moved off an engine the organization no longer allows: the names

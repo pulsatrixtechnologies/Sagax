@@ -25,6 +25,10 @@
 //   3. the payer is signed in to this engine with their
 //      own subscription (Claude, Codex, Grok Build,
 //      Kimi Code)                                       -> subscription
+//      2026-10-30: a sign-in the provider refused since
+//      (`subscriptionExpired`, the #1533 marker) is
+//      skipped: the next steps serve, else
+//                                                       -> no_access (sign_in_expired)
 //   4. the payer keeps a key for the engine's provider
 //      in Perspicax (claudeAgent: anthropic, codex:
 //      openai, grokAgent: xai, geminiAgent: google,
@@ -46,7 +50,10 @@
 //
 // 2026-10-27 (#1098): an engine outside the organization's list still runs
 // on the payer's own subscription or key (steps 3 and 4): it is their bill,
-// not the organization's (`paidByPerson`).
+// not the organization's (`paidByPerson`). Since 2026-10-30 the server asks
+// this only when the organization lets own accounts through
+// (`ownAccountsOutsideList`); otherwise such an engine is refused before
+// this plan.
 //
 // Decision of 2026-10-01, superseding the 2026-09-28 decision 7 ("the owner key
 // serves everyone") and the slice 3 rules: the owner's credentials never pay
@@ -85,7 +92,7 @@ export type AccessPayer = "speaker" | "owner" | "organization";
 /** Why no credentials serve a turn. */
 /** `owner_model_offline` (#1137) is decided by the server around the plan:
  * the owner pays and their computer, whose model the bot runs on, is offline. */
-export type NoAccessCause = "payer_disabled" | "no_credentials" | "server_engine_not_allowed" | "owner_model_offline";
+export type NoAccessCause = "payer_disabled" | "no_credentials" | "server_engine_not_allowed" | "owner_model_offline" | "sign_in_expired";
 
 /** A key of the payer's in Perspicax. */
 export function keyVia(via: AccessVia | undefined): via is "owner-key" | "speaker-key" {
@@ -182,6 +189,10 @@ export interface EngineCredentialInput {
   person?: (principalId: string) => PersonFacts | undefined;
   /** The person signed in to this driver with their own subscription (D10). */
   subscriptionSignedIn: (principalId: string, driver: string) => boolean;
+  /** 2026-10-30: that sign-in was refused by the provider since (#1533
+   * marker, PrincipalEngineLogins.expired): it no longer pays. Absent means
+   * never expired. */
+  subscriptionExpired?: (principalId: string, driver: string) => boolean;
   /** The directory lists this provider for the person (names only). */
   hasKey: (sub: string, provider: ModelProvider) => boolean;
   /** The instance's driver reads a key the server configured (Settings >
@@ -243,7 +254,11 @@ export function resolveEngineAccess(input: EngineCredentialInput, skip: { key?: 
   // routines included) does not fall back on the organization either (S4-14).
   if (facts?.disabled) return { ok: false, reason: "no_access", cause: "payer_disabled", ...who };
   const driver = input.instance.driver;
-  if (payer.principalId && !input.instance.keyOnly && subscriptionDriver(driver) && input.subscriptionSignedIn(payer.principalId, driver)) {
+  const signedIn = Boolean(payer.principalId) && !input.instance.keyOnly && subscriptionDriver(driver) && input.subscriptionSignedIn(payer.principalId, driver);
+  // An expired sign-in is skipped: the payer's key or the organization's
+  // serves, else the turn asks them to reconnect.
+  const expired = signedIn && input.subscriptionExpired?.(payer.principalId, driver) === true;
+  if (signedIn && !expired) {
     return { ok: true, via: "subscription", ...who };
   }
   const provider = facts?.sub ? providersOfDriver(driver).find((candidate) => input.hasKey(facts.sub!, candidate)) : undefined;
@@ -258,11 +273,11 @@ export function resolveEngineAccess(input: EngineCredentialInput, skip: { key?: 
     // nobody is known to speak for is judged as the bot's owner's.
     const judged = payer.principalId || input.owner.principalId;
     if (input.orgEngineAllowed === false || (input.serverEngineAllowed && !input.serverEngineAllowed(judged, input.instance.instanceId))) {
-      return { ok: false, reason: "no_access", cause: "server_engine_not_allowed", ...who };
+      return { ok: false, reason: "no_access", cause: expired ? "sign_in_expired" : "server_engine_not_allowed", ...who };
     }
     return { ok: true, via: "org-key", payer: "organization", ...routine };
   }
-  return { ok: false, reason: "no_access", cause: "no_credentials", ...who };
+  return { ok: false, reason: "no_access", cause: expired ? "sign_in_expired" : "no_credentials", ...who };
 }
 
 /** 2026-10-27 (#1098): the plan runs on the payer's own subscription or

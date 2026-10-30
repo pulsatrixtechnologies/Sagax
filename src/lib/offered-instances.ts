@@ -13,7 +13,7 @@ import { useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-or
  * card has loaded (usePerspicaxOrg); the server already leaves out what
  * the organization does not allow before that. */
 export function engineOfferContext(config: ConfigStatus | null | undefined, organization: boolean, mine: readonly MyEngine[] | null): EngineOfferContext {
-  return { organization, allowedEngines: config?.allowedEngines ?? null, mine };
+  return { organization, allowedEngines: config?.allowedEngines ?? null, ownAccountsOutsideList: config?.ownAccountsOutsideList === true, mine };
 }
 
 /** `state.instances` as offered to this person. */
@@ -25,6 +25,6 @@ export function useOfferedInstances(purpose: "pick" | "settings" = "pick"): Inst
   return useMemo(
     () => offeredEngines(state.instances, context, purpose),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [state.instances, context.organization, context.allowedEngines, mine, purpose],
+    [state.instances, context.organization, context.allowedEngines, context.ownAccountsOutsideList, mine, purpose],
   );
 }

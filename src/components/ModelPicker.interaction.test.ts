@@ -539,6 +539,36 @@ describe("on an organization server", () => {
     expect(menu(render(bot("droid", "droid-pro")).html)).not.toContain("data-model-host-tools");
   });
 
+  it("lists an OpenAI-compatible server's own models (Azure AI Foundry), says the choice moves every thread, and names an own-account engine (2026-10-30)", () => {
+    fixture.org = orgOf("admin");
+    fixture.myEngines = [engine(), { ...engine({ instanceId: "codex", driver: "codex", displayName: "Codex" }), orgNotAllowed: true, orgKey: false, myTurns: "subscription", subscription: { supported: true, signedIn: true } }];
+    const azure: InstanceInfo = {
+      instanceId: "compat-az", driverKind: "openai-compat", displayName: "Azure AI Foundry", access: "api",
+      snapshot: { state: "available", authenticated: true },
+      models: { default: "gpt-4.1", options: [{ id: "gpt-4.1", label: "gpt-4.1", custom: true }, { id: "o4-mini", label: "o4-mini", custom: true }] },
+      capabilities: { withholdsHostTools: true },
+    };
+    fixture.instances = [signedIn(), azure, codex];
+    fixture.config = { allowedEngines: ["claude", "compat-az"] };
+    let opened = open(bot("compat-az", "gpt-4.1"));
+    let html = menu(opened.html);
+    expect(row(opened, "gpt-4.1")).toBeDefined();
+    expect(row(opened, "o4-mini")).toBeDefined();
+    expect(html).toContain("data-model-scope");
+    expect(html).toContain("This choice applies to every thread of this bot.");
+    // off the list: gone for the admin too, even on her own subscription
+    expect(rail(opened)!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude", "compat-az"]);
+    // the organization lets own accounts through: back, and said so
+    fixture.config = { allowedEngines: ["claude", "compat-az"], ownAccountsOutsideList: true };
+    fixture.values = [];
+    opened = open(bot("codex", "gpt-5.6"));
+    expect(rail(opened)!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude", "compat-az", "codex"]);
+    html = menu(opened.html);
+    expect(html).toContain("data-model-own-account-only");
+    expect(html).toContain("Allowed through your own account");
+    fixture.config = null;
+  });
+
   it("lists the person's own computer under Local, pickable on Codex and greyed on Claude Code when the server does not speak the Anthropic protocol", () => {
     fixture.org = orgOf("member");
     fixture.myEngines = [engine()];
@@ -1124,7 +1154,7 @@ describe("the organization's allowed model providers", () => {
   // of menus": a provider the admin hid is listed nowhere while the
   // organization's key is what runs it. 2026-10-27 (#1098, #1282): the one
   // the person pays for with their own subscription or key stays theirs.
-  it("never lists a provider the organization hid unless the person pays for it themselves", () => {
+  it("never lists a provider the organization hid, even when the person pays for it, unless the organization allows own accounts", () => {
     fixture.org = orgFixture;
     fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", false)];
     fixture.config = { allowedEngines: ["claude"] };
@@ -1143,13 +1173,17 @@ describe("the organization's allowed model providers", () => {
     const sections = lists(composer)[0]!.props.sections;
     expect(sections.map((section) => section.label ?? section.key)).toEqual(["top", "Claude"]);
     expect(composer.html).not.toContain('data-model-provider="codex"');
-    // their own subscription runs it: it is their bill, so it is offered
+    // 2026-10-30: their own subscription does not bring it back...
     fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", true)];
+    fixture.values = [];
+    expect(rail(open(forBot))!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude"]);
+    // ...unless the organization lets own accounts through (#1098)
+    fixture.config = { allowedEngines: ["claude"], ownAccountsOutsideList: true };
     fixture.values = [];
     expect(rail(open(forBot))!.props.instances.map((instance) => instance.instanceId)).toEqual(["claude", "codex"]);
   });
 
-  it("drops a favorite whose provider the organization hid; it comes back with the provider, or on the person's own account", () => {
+  it("drops a favorite whose provider the organization hid; it comes back with the provider, or on the person's own account when allowed", () => {
     fixture.storage["sagax.modelFavorites.v1"] = JSON.stringify([["codex", "gpt-5.6"], ["claude", "claude-opus-5-5"]]);
     try {
       fixture.org = orgFixture;
@@ -1168,8 +1202,11 @@ describe("the organization's allowed model providers", () => {
       expect(favoritesShown()).toEqual(["gpt-5.6", "claude-opus-5-5"]);
       fixture.config = { allowedEngines: ["claude"] };
       expect(favoritesShown()).toEqual(["claude-opus-5-5"]);
-      // #1098: the person's own subscription keeps the favorite
+      // 2026-10-30: the person's own subscription no longer keeps it...
       fixture.myEngines = [mine("claude", "claudeAgent", false), mine("codex", "codex", true)];
+      expect(favoritesShown()).toEqual(["claude-opus-5-5"]);
+      // ...unless the organization lets own accounts through (#1098)
+      fixture.config = { allowedEngines: ["claude"], ownAccountsOutsideList: true };
       expect(favoritesShown()).toEqual(["gpt-5.6", "claude-opus-5-5"]);
     } finally {
       delete fixture.storage["sagax.modelFavorites.v1"];

@@ -18,6 +18,19 @@ describe("payerOrder (server/engine-credentials.ts, the speaker pays)", () => {
     expect(payerOrder(claude()).current).toBeNull();
   });
 
+  it("2026-10-30: an expired sign-in pays for nothing and is never connected", () => {
+    const expired = claude({ subscription: { supported: true, signedIn: true, expired: true }, myTurns: "expired" });
+    expect(payerOrder(expired).current).toBeNull();
+    expect(payerOrder(expired).rows.find((row) => row.id === "subscription")?.ready).toBe(false);
+    expect(orgEngineState(expired)).toBe("signInRequired");
+    // an older server that still says "subscription"
+    expect(orgEngineState(claude({ subscription: { supported: true, signedIn: true, expired: true }, myTurns: "subscription" }))).toBe("signInRequired");
+    // a key serving instead: connected, on the key
+    const keyed = claude({ subscription: { supported: true, signedIn: true, expired: true }, myKey: true, myTurns: "key" });
+    expect(orgEngineState(keyed)).toBe("connected");
+    expect(payerOrder(keyed).current).toBe("key");
+  });
+
   it("offers no subscription or own key for an engine without them", () => {
     const other = { driver: "openaiCompatible", installed: true, subscription: { supported: false, signedIn: false }, myKey: false, orgKey: false, myTurns: "none" as const };
     expect(payerOrder(other).rows.map((row) => row.id)).toEqual(["org-key"]);

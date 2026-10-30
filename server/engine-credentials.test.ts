@@ -324,6 +324,34 @@ describe("an engine outside the organization's list (#1098)", () => {
   });
 });
 
+describe("an expired sign-in no longer pays (2026-10-30)", () => {
+  const expired = (list: string[]) => (principalId: string, driver: string) => list.includes(`${principalId}/${driver}`);
+
+  it("the person's key serves instead", () => {
+    const plan = resolveEngineAccess(input({ speaker: bob, signedIn: [`${BOB}/claudeAgent`], subscriptionExpired: expired([`${BOB}/claudeAgent`]), keys: ["SUB-BOB/anthropic"] }));
+    expect(plan).toEqual({ ok: true, via: "speaker-key", payer: "speaker", payerPrincipalId: BOB, provider: "anthropic" });
+  });
+
+  it("then the organization's key", () => {
+    const plan = resolveEngineAccess(input({ speaker: bob, signedIn: [`${BOB}/claudeAgent`], subscriptionExpired: expired([`${BOB}/claudeAgent`]), keyBacked: true }));
+    expect(plan).toEqual({ ok: true, via: "org-key", payer: "organization" });
+  });
+
+  it("nothing else: refused as an expired sign-in, so Auto leaves it out and the card says Reconnect", () => {
+    const plan = resolveEngineAccess(input({ speaker: bob, signedIn: [`${BOB}/claudeAgent`], subscriptionExpired: expired([`${BOB}/claudeAgent`]) }));
+    expect(plan).toEqual({ ok: false, reason: "no_access", cause: "sign_in_expired", payer: "speaker", payerPrincipalId: BOB });
+    expect(paidByPerson(plan)).toBe(false);
+    // the organization's key not given to them: still the sign-in to fix
+    expect(resolveEngineAccess(input({ speaker: bob, signedIn: [`${BOB}/claudeAgent`], subscriptionExpired: expired([`${BOB}/claudeAgent`]), keyBacked: true, serverEngineAllowed: () => false })))
+      .toMatchObject({ ok: false, cause: "sign_in_expired" });
+  });
+
+  it("a sign-in that did not expire pays as before", () => {
+    expect(resolveEngineAccess(input({ speaker: bob, signedIn: [`${BOB}/claudeAgent`], subscriptionExpired: expired([]) })))
+      .toEqual({ ok: true, via: "subscription", payer: "speaker", payerPrincipalId: BOB });
+  });
+});
+
 // #1137 (shared/turn-payer.ts): the owner may pay for the people a bot is
 // shared with. The same order, judged on the owner's credentials.
 describe("resolveEngineAccess: the owner pays (#1137)", () => {

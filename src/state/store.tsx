@@ -945,6 +945,8 @@ export interface ConfigStatus {
   openai?: { configured: boolean };
   openrouter?: { configured: boolean };
   openaiCompat?: { configured: boolean; url?: string; model?: string };
+  /** 2026-10-30: the named OpenAI-compatible servers (never their keys). */
+  openaiCompatServers?: Array<{ instanceId: string; name: string; url: string; configured: boolean }>;
   /** what this server is entitled to; Settings shows only what works here.
    * `license` reaches admins only, and only while the key is inside its
    * warning window or grace period. */
@@ -1049,6 +1051,9 @@ export interface ConfigStatus {
    * admin allows in Perspicax; null or absent means every provider
    * (shared/org-allowed-engines.ts). Refreshed by the config frame. */
   allowedEngines?: string[] | null;
+  /** 2026-10-30: a person's own subscription or key may run an engine
+   * outside `allowedEngines` (Perspicax, off by default). */
+  ownAccountsOutsideList?: boolean;
   /** Organization server: new threads start confidential unless the person
    * picks an ordinary one (Settings > Organisation). */
   confidentialThreadsByDefault?: boolean;

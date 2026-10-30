@@ -460,11 +460,16 @@ export class DesktopLocalModels {
     return Boolean(endpoint?.models.includes(decoded.model));
   }
 
-  overlay<T extends { models: { default: string; options: ModelOption[] } }>(instances: T[], person: string | null): T[] {
+  /** The person's computer models on each engine that can run them
+   * (2026-10-30: never on one that cannot, such as an OpenAI-compatible
+   * server, where they were only greyed out: shared/local-model-engines.ts).
+   * An instance that does not name its driver keeps them all. */
+  overlay<T extends { driverKind?: string; models: { default: string; options: ModelOption[] } }>(instances: T[], person: string | null): T[] {
     const rows = this.modelsFor(person);
     return instances.map((instance) => {
       const options = instance.models.options.filter((option) => !isDesktopInjectModel(option.id));
-      for (const row of rows) options.push({ id: row.id, label: row.label, custom: true, local: true, ...(row.anthropic ? { anthropic: true } : {}), ...(row.contextWindow ? { contextWindow: row.contextWindow } : {}), ...(row.server ? { server: row.server } : {}), ...(row.sharedBy ? { sharedBy: row.sharedBy } : {}) });
+      const runs = (row: InjectedModel) => typeof instance.driverKind !== "string" || localModelUnavailable(instance.driverKind, "desktop", row.anthropic === true) === null;
+      for (const row of rows.filter(runs)) options.push({ id: row.id, label: row.label, custom: true, local: true, ...(row.anthropic ? { anthropic: true } : {}), ...(row.contextWindow ? { contextWindow: row.contextWindow } : {}), ...(row.server ? { server: row.server } : {}), ...(row.sharedBy ? { sharedBy: row.sharedBy } : {}) });
       return { ...instance, models: { ...instance.models, options } };
     });
   }

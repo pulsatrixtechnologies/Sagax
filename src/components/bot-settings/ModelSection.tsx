@@ -147,7 +147,8 @@ function FallbackChain({ bot, onChange }: { bot: Bot; onChange: (fallback: Bot["
   const offerContext = engineOfferContext(state.config, org !== null, mine);
   // a backup on an engine the organization no longer offers is not shown
   // (the server skips it too) and leaves the chain at the next change; one
-  // the person pays for themselves stays (#1098)
+  // the person pays for themselves stays when the organization lets own
+  // accounts through (#1098, 2026-10-30)
   const chain = (bot.fallback ?? []).filter((entry) => {
     const offer = engineOffer(offerContext, entry.instanceId);
     return offer === "offered" || (offer === "notGiven" && mine?.find((row) => row.instanceId === entry.instanceId)?.orgNotAllowed !== true);

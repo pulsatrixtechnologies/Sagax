@@ -14,7 +14,7 @@ import { ChevronDown, ChevronRight, Info, KeyRound, Loader2, LogOut, Plus, Refre
 import { api, useStore, type Bot, type ConfigStatus, type InstanceInfo, type ModelSelection } from "@/state/store";
 import type { ModelVariantOption } from "../../shared/runtime-events";
 import { isDesktopModelId, localModelRows, localRowUnavailable, refreshLocalModelsOnOpen, runsLoopbackModels } from "@/lib/local-models";
-import { engineOffer } from "../../shared/offered-engines";
+import { engineOffer, ownAccountOnly } from "../../shared/offered-engines";
 import { engineOfferContext } from "@/lib/offered-instances";
 import { configuredModelInstances, isClaudeAccount, SIGN_IN_FAMILY_LABEL, signInFamily, splitEngineRail, type SignInFamily } from "@/lib/engine-rail";
 import { useShowUnreadyProviders } from "@/lib/unready-providers-preference";
@@ -1066,6 +1066,13 @@ export function ModelPicker({
     if (!keepOpen) closeAll();
   };
 
+  // 2026-10-30 (decision 3): a model picked here becomes the bot's model, so
+  // every thread that follows the bot moves with it. Said where the choice
+  // is made. Not for a viewer's own choice on a shared bot, nor for a batch.
+  const scopeLine = (className: string) => !viewerLocal && !alsoApplyTo?.length
+    ? <p data-model-scope className={className}>{t("model.scope.allThreads")}</p>
+    : null;
+
   /** The menu's Effort list: this person's level, for the model in use. */
   const setEffort = (effort: EffortLevel | undefined) => {
     if (bot.busy && !alsoApplyTo?.length) return;
@@ -1121,8 +1128,11 @@ export function ModelPicker({
   // (solo) or on the person's own computer (organization server), and a
   // local server's models (`server::model`). Cloud: everything else the
   // engine offers. On an organization server the server's own custom models
-  // are never listed. A signed-out engine (solo) offers its local models
-  // only: its cloud ones wait for the sign-in.
+  // are never listed, except an OpenAI-compatible server's own list
+  // (2026-10-30: Azure AI Foundry, vLLM, a gateway: what its /models
+  // answers is that provider's catalog, not a model typed on this machine).
+  // A signed-out engine (solo) offers its local models only: its cloud ones
+  // wait for the sign-in.
   const catalogOf = (instance: InstanceInfo) => {
     const options = instance.models.options;
     const localRows = localModelRows(options, orgMode);
@@ -1134,7 +1144,9 @@ export function ModelPicker({
     const mine = orgMode ? accountModels.get(instance.instanceId) : undefined;
     const runnable = (option: ModelOption) => !mine || option.custom || mine.has(option.id)
       || (instance.instanceId === selection.instanceId && option.id === selection.model);
-    const offered = (orgMode ? options.filter((option) => !option.custom || isDesktopModelId(option.id)) : options).filter(runnable);
+    const endpointList = instance.driverKind === "openai-compat";
+    const offered = (orgMode ? options.filter((option) => !option.custom || isDesktopModelId(option.id)
+      || (endpointList && !option.local && !option.id.includes("::"))) : options).filter(runnable);
     const localOptions = offered.filter(isLocal);
     const signInFirst = !orgMode && needsSignIn(instance);
     const unavailable = (id: string): string | undefined => {
@@ -1523,6 +1535,10 @@ export function ModelPicker({
             {signInFamily(railInstance) ? SIGN_IN_FAMILY_LABEL[signInFamily(railInstance)!] : railInstance.displayName}
           </h2>
           {orgMode && railEngine && !routineThread && !railInstance.policy && <PaysWithLine engine={railEngine} className="mt-0.5 truncate text-[11.5px]" />}
+          {/* 2026-10-30: outside the organization's list, allowed only because the person's own account pays */}
+          {ownAccountOnly(offerContext, railInstance.instanceId) && (
+            <p data-model-own-account-only className="mt-0.5 truncate text-[11.5px] text-ink-secondary">{t("engines.ownAccountOnly")}</p>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1 pr-10">
           <button
@@ -1783,6 +1799,7 @@ export function ModelPicker({
         />
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 pb-4 pt-4 sm:px-6 sm:pt-5">
+            {scopeLine("text-[12px] text-ink-secondary pr-10")}
             {autoPane ? (
               <>
                 {autoHeader}
@@ -1844,6 +1861,7 @@ export function ModelPicker({
       <ModelSearchList variant="popover" autoFocus submenus groupProviders sections={menuSections} onPick={onRow} onEscape={() => closeMenu(true)} disabled={Boolean(bot.busy)}
         favorites={{ keys: favoriteKeys, onToggle: (row) => toggleModelFavorite(row.key) }} />
       {!viewerLocal && <ModelNoEngineNotice className="border-t border-popover-hairline px-3 py-2" onConnect={() => closeMenu()} />}
+      {scopeLine("border-t border-popover-hairline px-3 py-1.5 text-[11.5px] leading-snug text-popover-ink-secondary")}
       {advanced && settingsPanel}
       <div className="border-t border-popover-hairline px-1.5 pt-1">
         <ModelMenuItem variant="popover" data-model-edit onClick={openWindow}>

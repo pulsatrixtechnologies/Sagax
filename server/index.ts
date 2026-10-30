@@ -995,6 +995,7 @@ import { recentPersonSignIn } from "./recent-sign-in.ts";
 import { createAuthRefusalLogger } from "./auth-refusal-log.ts";
 import { isAccountEmail, isPrincipalId, PrincipalRegistry, type Principal } from "./principals.ts";
 import { OrgTeams } from "./org-teams.ts";
+import { addCompatServer, compatServers, editCompatServer, editCompatServerSchema, newCompatServerSchema, removeCompatServer } from "./openai-compat-servers.ts";
 import { keyVia, materializeEngineAccess, paidByPerson, providersOfDriver, resolveEngineAccess, subscriptionDriver, turnPayer, type AccessPayer, type SubscriptionDriver, type EngineCredentialInput, type EngineCredentialPlan, type NoAccessCause, type TurnAccess } from "./engine-credentials.ts";
 import { configKeyPatch, engineKeyScope, engineKeyTarget, EngineKeyError, fileKeyConfigured, hermesProviderEnv, normalizeEngineKey, writeFileEngineKey } from "./engine-api-keys.ts";
 import { isLoginDriver, LOGIN_MARKER, loginCliFor, loginSlotOf, PrincipalEngineLogins, secondLoginSupported, type LoginSlot } from "./principal-engine-logins.ts";
@@ -6635,6 +6636,7 @@ function personRunsEngine(principalId: string | null | undefined, instance: Sele
     owner: { principalId: id, ...orgPersonFacts(principals.byId(id)) },
     instance: { instanceId: instance.instanceId, driver: instance.driverKind, installed: engineInstalled(instance.instanceId), keyOnly: keyOnlyInstance(instance.instanceId) },
     subscriptionSignedIn: (pid, driver) => engineLogins?.signedIn(pid, driver) ?? false,
+    subscriptionExpired: (pid, driver) => engineLogins?.expired(pid, driver) ?? false,
     hasKey: (sub, provider) => perspicaxDirectory?.providerKeys(sub).includes(provider) ?? false,
     keyBacked: driverKeyBacked(cfg, instance.driverKind, instance.instanceId),
     hasLocalKey: (pid, driver) => fileKeyConfigured(DATA_DIR, { organization: true, principalId: pid }, driver),
@@ -29479,6 +29481,8 @@ function configStatus() {
     memory: { semanticRecall: semanticRecallEnabled(cfg), embeddingsUrl: cfg.memory?.embeddingsUrl ?? "", embeddingsModel: cfg.memory?.embeddingsModel ?? "" },
     // the base URL is a setting, not a secret; the key stays write-only
     openaiCompat: { configured: Boolean(cfg.openaiCompat?.key), url: cfg.openaiCompat?.url ?? "", model: cfg.openaiCompat?.model ?? "" },
+    // 2026-10-30: the named OpenAI-compatible servers, never their keys
+    openaiCompatServers: compatServers(cfg),
     // configured = cloud computers work here; included = through Cloud Pro,
     // not a saved key
     box: boat.describeBoatAccount(cfg),
@@ -29574,7 +29578,7 @@ function configStatus() {
     // whether that list decides anything here, or the organisation's Admin does
     membership: workspaceMembership(),
     // organization server: the model providers its admin allows (null: all)
-    ...(IDENTITY.kind === "perspicax" ? { allowedEngines: orgAllowedEngines() } : {}),
+    ...(IDENTITY.kind === "perspicax" ? { allowedEngines: orgAllowedEngines(), ownAccountsOutsideList: orgOwnAccountsOutsideList() } : {}),
     // organization server: new threads start confidential (server/confidential-threads.ts)
     ...(IDENTITY.kind === "perspicax" ? { confidentialThreadsByDefault: confidentialThreadsByDefault() } : {}),
   };
@@ -30004,6 +30008,7 @@ function orgEngineInput(bot: BotRecord, instance: { instanceId: string; driverKi
       return person ? orgPersonFacts(person) : undefined;
     },
     subscriptionSignedIn: (principalId, driver) => engineLogins?.signedIn(principalId, driver, slot) ?? false,
+    subscriptionExpired: (principalId, driver) => engineLogins?.expired(principalId, driver, slot) ?? false,
     hasKey: (sub, provider) => perspicaxDirectory?.providerKeys(sub).includes(provider) ?? false,
     keyBacked: driverKeyBacked(cfg, instance.driverKind, instance.instanceId),
     hasLocalKey: (principalId, driver) => fileKeyConfigured(DATA_DIR, { organization: true, principalId }, driver),
@@ -30193,8 +30198,9 @@ function speakerTurnSelection(bot: BotRecord, speaker: TurnSpeaker): TurnModelSw
   });
 }
 /** 2026-10-16 the people an organization's provided account serves.
- * An admin (and this server's own operator) runs every engine on it; a
- * member only the engine instances Perspicax lists on their person sheet
+ * This server's own operator runs every engine on it; anyone else, an
+ * admin included since 2026-10-30 (the admin is held to their own lists),
+ * only the engine instances Perspicax lists on their person sheet
  * (`sagax_server_engines`). A Perspicax that does not send the list yet
  * gives none (the default for members), said once per person in the log.
  * Their own subscription and keys never ask this. */
@@ -30204,7 +30210,7 @@ function serverEngineAllowedFor(principalId: string, instanceId: string): boolea
   if (!principalId || !isPrincipalId(principalId)) return false;
   const person = principals.byId(principalId);
   if (!person) return false;
-  if (person.local === true || person.orgRole === "admin") return true;
+  if (person.local === true) return true;
   const sub = person.subject?.iss === IDENTITY.issuer ? person.subject.sub : undefined;
   const list = sub ? perspicaxDirectory?.serverEngines(sub) ?? null : null;
   if (list === null) {
@@ -30357,7 +30363,10 @@ function autoEnginesFor(bot: BotRecord, speaker: TurnSpeaker, guestConfined = fa
   }
   for (const instance of registry.instances()) {
     if (!instance.enabled || providerInstancesChanging.has(instance.instanceId) || policyModelRefusal(instance)) continue;
-    if (orgEngineTurnRefusal(bot, instance, speaker)) continue;
+    // 2026-10-30: Auto picks only what the organization's list allows, even
+    // when the person's own account could run another engine (that one is
+    // picked by name, when the organization lets own accounts through).
+    if (!consoleEngineAllowed(instance.instanceId) || orgEngineTurnRefusal(bot, instance, speaker)) continue;
     // A guest's turn on a Cloud home runs only on an engine that confines it.
     if (guestConfined && instance.adapter.capabilities.guestTurns !== "confined") continue;
     const own = instance.instanceId === base?.instanceId;
@@ -31012,13 +31021,16 @@ function refusedModelsFor(person: string | null, instanceId: string): ReadonlySe
   return modelAccessRefusals.refused(personPaysEngine(person, instanceId) ? [personPayer(person)] : [personPayer(person), "org"], instanceId);
 }
 /** Organization server: the engines its list allows, in order (solo: all).
- * 2026-10-27 (#1098): with a person, an engine outside the list stays when
- * that person can pay for it themselves (their own subscription sign-in or
- * a key): the app offers it once theirs serves it (shared/offered-engines.ts,
- * GET /api/me/engines `orgNotAllowed`), and Settings shows it to connect. */
+ * 2026-10-30: an engine off the list is off for everyone, admins included.
+ * Only when the organization lets own accounts through
+ * (`ownAccountsOutsideList`, off by default) does an engine outside the
+ * list stay for a person who can pay for it themselves (their own
+ * subscription sign-in or a key, #1098): the app offers it once theirs
+ * serves it (shared/offered-engines.ts, GET /api/me/engines
+ * `orgNotAllowed`), and Settings shows it to connect. */
 function orgOfferedEngines<T extends { instanceId: string }>(instances: readonly T[], person?: string | null): T[] {
   const allowed = offeredEngines(instances, { organization: IDENTITY.kind === "perspicax", allowedEngines: orgAllowedEngines() }, "settings");
-  if (!person || IDENTITY.kind !== "perspicax" || allowed.length === instances.length) return allowed;
+  if (!person || IDENTITY.kind !== "perspicax" || !orgOwnAccountsOutsideList() || allowed.length === instances.length) return allowed;
   return instances.filter((instance) => allowed.includes(instance) || personalEngine(instance.instanceId, person));
 }
 /** #1098: an engine a person can run on their own account or key: one they
@@ -37824,7 +37836,10 @@ if (IDENTITY.kind === "perspicax" && engineLogins) {
         // Perspicax gives them this engine (an admin always).
         const orgKey = orgKeySet && serverEngineAllowedFor(principalId, entry.instanceId);
         // the order of engine-credentials.ts for this person speaking
-        const myTurns = !installed || person?.disabledAt !== undefined ? "none" : signedIn ? "subscription" : myKey || localKey ? "key" : orgKey ? "org-key" : "none";
+        // 2026-10-30: an expired sign-in no longer pays (engine-credentials.ts
+        // step 3): the key or the organization's serves, else "expired",
+        // which is never ready, never Auto's, and counted under Needs setup
+        const myTurns = !installed || person?.disabledAt !== undefined ? "none" : signedIn && !expired ? "subscription" : myKey || localKey ? "key" : orgKey ? "org-key" : expired ? "expired" : "none";
         const live = registry.get(entry.instanceId);
         const notAvailable = installed ? undefined : engineNotAvailableReason(entry.instanceId);
         return {
@@ -40531,6 +40546,7 @@ const orgOpsDeps: OpsDeps = {
       policies: {
         allowedMarketplaces: policy?.mode === "list" ? [...policy.allow] : null,
         allowedEngines: cfg.organization?.allowedEngines ? [...cfg.organization.allowedEngines] : null,
+        ownAccountsOutsideList: cfg.organization?.ownAccountsOutsideList === true,
         defaults: { engine: selection?.instanceId ?? null, model: selection?.model ?? null, approvalMode: cfg.newBotDefaults?.profile.approvalMode ?? null },
       },
       backup,
@@ -40570,6 +40586,19 @@ const orgOpsDeps: OpsDeps = {
       orgAudit({ category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["allowedEngines"], before: { allowedEngines: before }, after: { allowedEngines: changes.allowedEngines }, actor });
       applyOrgEngineAllowList();
       // Every open picker lists the new set at once (config frame).
+      broadcast({ kind: "config", ...configStatus() });
+    }
+    if (changes.ownAccountsOutsideList !== undefined) {
+      // 2026-10-30: own subscriptions and keys outside the list, off by default
+      const before = cfg.organization?.ownAccountsOutsideList === true;
+      const organization = { ...cfg.organization };
+      if (changes.ownAccountsOutsideList) organization.ownAccountsOutsideList = true;
+      else delete organization.ownAccountsOutsideList;
+      saveConfig({ organization });
+      cfg.organization = organization;
+      orgAudit({ category: "org", action: "org.settings", target: { kind: "organization" }, changed: ["ownAccountsOutsideList"], before: { ownAccountsOutsideList: before }, after: { ownAccountsOutsideList: changes.ownAccountsOutsideList }, actor });
+      // Turned off: a bot kept on its owner's own engine moves to Auto now.
+      applyOrgEngineAllowList();
       broadcast({ kind: "config", ...configStatus() });
     }
     if (changes.defaults) {
@@ -40731,6 +40760,13 @@ function saveOrgPluginMarketplaces(raw: unknown, actor: AdminActor): void {
 function consoleEngineAllowed(instanceId: string): boolean {
   return engineAllowed(orgAllowedEngines(), instanceId);
 }
+/** 2026-10-30: the organization lets a person run an engine outside its
+ * list on their own subscription or key (Perspicax, Model providers:
+ * `ownAccountsOutsideList`). Off by default: what the admin turns off is
+ * off for everyone, the admin included. Solo: never asked. */
+function orgOwnAccountsOutsideList(): boolean {
+  return IDENTITY.kind === "perspicax" && cfg.organization?.ownAccountsOutsideList === true;
+}
 /** Organization server: the engines its admin allows (Perspicax), null for
  * every engine (shared/org-allowed-engines.ts). */
 function orgAllowedEngines(): string[] | null {
@@ -40739,17 +40775,20 @@ function orgAllowedEngines(): string[] | null {
   return IDENTITY.kind === "perspicax" && Array.isArray(allowed) ? allowed : null;
 }
 /** Why a model choice may not use this engine here, if it may not.
- * 2026-10-27 (#1098): an engine outside the organization's list stays
+ * 2026-10-30: an engine outside the organization's list is refused to
+ * everyone, admins included. Only with `ownAccountsOutsideList` does it stay
  * open to a person (`payer`) who pays for it with their own subscription or
- * key: their bill, not the organization's. */
+ * key (#1098). */
 function orgEngineAllowRefusal(instanceId: string, payer?: string | null): string | undefined {
   if (consoleEngineAllowed(instanceId)) return undefined;
-  return payer && personPaysEngine(payer, instanceId) ? undefined : ORG_ENGINE_NOT_ALLOWED;
+  return orgOwnAccountsOutsideList() && payer && personPaysEngine(payer, instanceId) ? undefined : ORG_ENGINE_NOT_ALLOWED;
 }
-/** #1098: the organization's engine list for one turn: an engine outside
- * it runs when the turn's payer pays with their own subscription or key. */
+/** The organization's engine list for one turn: an engine outside it never
+ * runs (2026-10-30), unless the organization lets own accounts through and
+ * the turn's payer pays with their own subscription or key (#1098). */
 function orgEngineTurnRefusal(bot: BotRecord, instance: { instanceId: string; driverKind: string }, speaker: TurnSpeaker): string | undefined {
   if (consoleEngineAllowed(instance.instanceId)) return undefined;
+  if (!orgOwnAccountsOutsideList()) return ORG_ENGINE_NOT_ALLOWED;
   // #1422: a local pi model gets no exemption here. On an organization server
   // its local host (127.0.0.1, server/drivers/local-inject.ts) is the
   // server's own machine, shared by every member, not the person's: the
@@ -40775,6 +40814,7 @@ function personPaysEngine(principalId: string, instanceId: string): boolean {
     owner: { principalId: id, ...orgPersonFacts(person) },
     instance: { instanceId, driver: driverKind, installed: engineInstalled(instanceId) },
     subscriptionSignedIn: (pid, driver) => engineLogins?.signedIn(pid, driver) ?? false,
+    subscriptionExpired: (pid, driver) => engineLogins?.expired(pid, driver) ?? false,
     hasKey: (sub, provider) => perspicaxDirectory?.providerKeys(sub).includes(provider) ?? false,
     keyBacked: false,
     hasLocalKey: (pid, driver) => fileKeyConfigured(DATA_DIR, { organization: true, principalId: pid }, driver),
@@ -40834,9 +40874,11 @@ function applyOrgEngineAllowList(): void {
     const bot = store.bot(id);
     if (!bot) continue;
     // #1098: an engine its owner pays for with their own subscription or
-    // key is theirs to keep, whatever the organization's list says
+    // key is theirs to keep, only when the organization lets own accounts
+    // through (2026-10-30, `ownAccountsOutsideList`)
     const owner = effectiveBotOwner(bot);
-    const next = personPaysEngine(owner, bot.modelSelection.instanceId) ? null : allowedFallbackSelection(bot.modelSelection, allowed, engines, preferred);
+    const ownKept = (instanceId: string) => orgOwnAccountsOutsideList() && personPaysEngine(owner, instanceId);
+    const next = ownKept(bot.modelSelection.instanceId) ? null : allowedFallbackSelection(bot.modelSelection, allowed, engines, preferred);
     if (next) {
       store.applyModelDefault(id, next);
       console.log(`[org] bot=${id} engine ${bot.modelSelection.instanceId} is not allowed by the organization; now on Auto (${next.instanceId})`);
@@ -40847,7 +40889,7 @@ function applyOrgEngineAllowList(): void {
       if (bot.threadId) store.appendMessage(bot.threadId, { role: "bot", kind: "activity", tool: { name: `notice: ${orgEngineMoveLine(move)}`, ok: true, engineMove: move } });
     }
     const stray = (store.bot(id)?.tasks ?? [])
-      .filter((task) => task.modelSelection && !engineAllowed(allowed, task.modelSelection.instanceId) && !personPaysEngine(owner, task.modelSelection.instanceId))
+      .filter((task) => task.modelSelection && !engineAllowed(allowed, task.modelSelection.instanceId) && !ownKept(task.modelSelection.instanceId))
       .map((task) => task.threadId);
     if (stray.length) store.followBotModel(id, stray, (from, to) => hostedModels?.resetTask(from, to) ?? {});
   }
@@ -44506,7 +44548,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
           // 2026-10-20: every bot of the person (canAccessBot), whatever its
           // team; an archived bot or temporary agent is not listed
           bots: setupBots,
-          instances: orgOfferedEngines(instances, effectiveBotOwner(chief)).filter((instance) => consoleEngineAllowed(instance.instanceId) || personPaysEngine(effectiveBotOwner(chief), instance.instanceId)).map((instance) => ({ instanceId: instance.instanceId, driverKind: instance.driverKind, displayName: instance.displayName,
+          instances: orgOfferedEngines(instances, effectiveBotOwner(chief)).filter((instance) => consoleEngineAllowed(instance.instanceId) || (orgOwnAccountsOutsideList() && personPaysEngine(effectiveBotOwner(chief), instance.instanceId))).map((instance) => ({ instanceId: instance.instanceId, driverKind: instance.driverKind, displayName: instance.displayName,
             state: instance.snapshot.state, models: instance.models, effortLevels: instance.capabilities?.effortLevels ?? [] })),
           scope: "Every bot of the person is listed, whatever its team. A new default model: threads following the bot (main, routines) move at their next turn. Full Access applies requested team setup immediately; Approve for me applies it too when the person asked in their own message and every bot it touches is theirs; other modes, and a suggestion, return a review card.",
         });
@@ -53293,6 +53335,57 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
     // ── per-instance settings (CLI/account or API tool support) ──
     // PATCH /api/instances/:id {cli: "/path/to/cli" | ""} — "" reverts to the
     // driver default. Only this idle instance is replaced; siblings keep running.
+    // 2026-10-30: named OpenAI-compatible servers (server/openai-compat-servers.ts):
+    // each one an engine of its own, its key write-only. An address the
+    // server connects to: an organization admin's on an organization server.
+    const compatServer = /^\/api\/instances\/openai-compat-servers(?:\/([\w.-]+))?$/.exec(path);
+    if (compatServer && (method === "POST" || method === "PATCH" || method === "DELETE")) {
+      if (method !== "DELETE" && !String(req.headers["content-type"] ?? "").toLowerCase().startsWith("application/json")) {
+        return json(res, 415, { error: "content-type must be application/json" });
+      }
+      if (IDENTITY.kind === "perspicax" && !orgAdminCaller(auth)) {
+        return json(res, 403, { error: "Only an organization admin can change an address the server connects to.", code: "admin_only_field", field: "openaiCompatServers" });
+      }
+      const targetId = compatServer[1];
+      if ((method === "POST") !== (targetId === undefined)) return json(res, 404, { error: "not found" });
+      if (providerConfigBusy) return json(res, 409, { error: "provider settings are already being updated" });
+      const viewer = auth.kind === "session" ? auth.session.principalId?.trim().toLowerCase() || null : null;
+      let next: { instanceId: string; instances: NonNullable<AppConfig["instances"]>; keys: NonNullable<AppConfig["openaiCompatServers"]> } | null;
+      if (method === "POST") {
+        const parsed = newCompatServerSchema.safeParse(await readBody(req, 8192));
+        if (!parsed.success) return json(res, 400, { error: "Name the server (up to 80 characters) and give its address: https, or http on this machine or a private network." });
+        next = addCompatServer(persistableInstanceConfigs(cfg), cfg.openaiCompatServers, parsed.data);
+      } else if (method === "PATCH") {
+        const parsed = editCompatServerSchema.safeParse(await readBody(req, 8192));
+        if (!parsed.success) return json(res, 400, { error: "Send a new name, address or key." });
+        const edited = editCompatServer(persistableInstanceConfigs(cfg), cfg.openaiCompatServers, targetId!, parsed.data);
+        next = edited && { instanceId: targetId!, ...edited };
+      } else {
+        const id = targetId!;
+        if (cfg.defaultModelSelection?.instanceId === id || store.bots.some((bot) =>
+          bot.modelSelection.instanceId === id || bot.fallback?.some((candidate) => candidate.instanceId === id) || store.tasks(bot.id).some((task) => task.modelSelection?.instanceId === id)) ||
+          busyProviderSelections().some((selection) => selection.instanceId === id)) {
+          return json(res, 409, { error: "Choose another model for the bots and default model using this server before removing it." });
+        }
+        const removed = removeCompatServer(persistableInstanceConfigs(cfg), cfg.openaiCompatServers, id);
+        next = removed && { instanceId: id, ...removed };
+      }
+      if (!next) return json(res, 404, { error: "unknown server" });
+      providerConfigBusy = true;
+      providerInstancesChanging.add(next.instanceId);
+      try {
+        // the key first: the instance reads it when it loads
+        saveConfig({ openaiCompatServers: next.keys });
+        cfg.openaiCompatServers = next.keys;
+        await persistProviderInstance(next.instanceId, next.instances);
+        broadcast({ kind: "config", ...configStatus() });
+        return json(res, method === "POST" ? 201 : 200, { instanceId: next.instanceId, instances: await instancesForViewer(viewer) });
+      } finally {
+        providerInstancesChanging.delete(next.instanceId);
+        providerConfigBusy = false;
+      }
+    }
+
     const instancePatch = /^\/api\/instances\/([\w.-]+)$/.exec(path);
     if (method === "PATCH" && instancePatch) {
       // same non-simple-request gate as the local-VM lifecycle routes

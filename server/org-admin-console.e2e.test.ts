@@ -16,14 +16,14 @@
 //   C6  a bot's look and persona, its picture
 //   C7  the routines calendar: past and planned runs, by scope
 import { spawn, type ChildProcess } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { engineOffer, offeredEngines } from "../shared/offered-engines.ts";
+import { engineOffer, offeredEngines, ownAccountOnly } from "../shared/offered-engines.ts";
 import { removeTempDir, waitForExit } from "./testing/cleanup.ts";
 import { startFakeOidcProvider, type FakeOidcProvider, type FakeOidcUser } from "./testing/fake-oidc-provider.ts";
 import { freePortBlock } from "./testing/ports.ts";
@@ -526,7 +526,7 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(settings.body).toMatchObject({
       // 2026-10-26: no organization switch for Full access, a saved value is ignored
       org: { allowFullAccess: true, orgKeyConfigured: true },
-      policies: { allowedMarketplaces: null, allowedEngines: null },
+      policies: { allowedMarketplaces: null, allowedEngines: null, ownAccountsOutsideList: false },
       backup: { enabled: true, schedule: "daily 03:00 UTC", ok: true },
     });
     const saved = await admin("POST", "settings", ALICE, { allowFullAccess: false, allowedEngines: ["claude", "hold"], pluginMarketplaces: { mode: "list", allow: ["acme/plugins"] }, defaults: { approvalMode: "ask" } });
@@ -543,20 +543,45 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(listed.find((bot) => bot.id === bots.atlas!.id)?.modelSelection).toMatchObject({ instanceId: "claude", model: "fake-model" });
     // 2026-10-18 (owner): an engine the organization does not offer is picked
     // nowhere (shared/offered-engines.ts), and the moved bot says so in one
-    // line. 2026-10-27 (#1098): the server still lists it to the person,
-    // flagged orgNotAllowed, so Settings can connect their own account for
-    // it; the pick list, read with their own access, leaves it out.
+    // line. 2026-10-30: off for everyone, the admin included, even on their
+    // own subscription: Alice (an admin) signed in to Claude herself.
+    const aliceClaude = join(home, ".sagax", "principals", ids.alice!, "claude");
+    mkdirSync(aliceClaude, { recursive: true });
+    writeFileSync(join(aliceClaude, ".pulsabot-login.json"), JSON.stringify({ at: Date.now() }));
     const instances = (await api("GET", "/api/instances", alice)).body.instances as Array<{ instanceId: string }>;
     expect(instances.map((row) => row.instanceId)).toEqual(expect.arrayContaining(["claude", "hold"]));
+    expect(instances.map((row) => row.instanceId)).not.toContain("broken");
     const mine = await api("GET", "/api/me/engines", alice);
     expect(mine.status, mine.text).toBe(200);
     const access = mine.body.engines as Array<{ instanceId: string; orgNotAllowed?: boolean; myTurns: string }>;
-    expect(access.find((row) => row.instanceId === "broken")).toMatchObject({ orgNotAllowed: true, myTurns: "none" });
+    expect(access.find((row) => row.instanceId === "claude")).toMatchObject({ myTurns: "subscription" });
+    expect(access.find((row) => row.instanceId === "broken")).toBeUndefined();
     const context = { organization: true, allowedEngines: ["claude", "hold"], mine: access };
-    expect(engineOffer(context, "broken")).toBe("notGiven");
+    expect(engineOffer(context, "broken")).toBe("notAllowed");
     const offered = offeredEngines(instances, context).map((row) => row.instanceId);
     expect(offered).not.toContain("broken");
     expect(offered).toEqual(expect.arrayContaining(["claude", "hold"]));
+    const ownRefused = await api("PATCH", `/api/bots/${bots.atlas!.id}/tasks/${bots.atlas!.threadId}`, alice, { modelSelection: { instanceId: "broken", model: "fake-model" }, updateBotDefault: true });
+    expect(ownRefused.status, ownRefused.text).toBe(403);
+    // the organization lets own accounts through: it comes back for her, said so
+    const ownOn = await admin("POST", "settings", ALICE, { ownAccountsOutsideList: true });
+    expect(ownOn.body.settings.policies).toMatchObject({ ownAccountsOutsideList: true });
+    expect((await api("GET", "/api/config", alice)).body.ownAccountsOutsideList).toBe(true);
+    const ownAccess = (await api("GET", "/api/me/engines", alice)).body.engines as Array<{ instanceId: string; orgNotAllowed?: boolean; myTurns: string }>;
+    expect(ownAccess.find((row) => row.instanceId === "broken")).toMatchObject({ orgNotAllowed: true, myTurns: "subscription" });
+    const ownContext = { organization: true, allowedEngines: ["claude", "hold"], ownAccountsOutsideList: true, mine: ownAccess };
+    expect(engineOffer(ownContext, "broken")).toBe("offered");
+    expect(ownAccountOnly(ownContext, "broken")).toBe(true);
+    expect(((await api("GET", "/api/instances", alice)).body.instances as Array<{ instanceId: string }>).map((row) => row.instanceId)).toContain("broken");
+    // off again: gone at once, and her own sign-in is put back as it was
+    expect((await admin("POST", "settings", ALICE, { ownAccountsOutsideList: false })).body.settings.policies).toMatchObject({ ownAccountsOutsideList: false });
+    expect(((await api("GET", "/api/me/engines", alice)).body.engines as Array<{ instanceId: string }>).map((row) => row.instanceId)).not.toContain("broken");
+    // 2026-10-30: a sign-in the provider refused since no longer pays: the
+    // organization's key serves her turns, never "subscription" (nor Ready on it)
+    writeFileSync(join(aliceClaude, ".pulsabot-login-expired.json"), JSON.stringify({ at: Date.now() }));
+    const expired = ((await api("GET", "/api/me/engines", alice)).body.engines as Array<{ instanceId: string; myTurns: string; subscription: { expired?: boolean } }>).find((row) => row.instanceId === "claude");
+    expect(expired).toMatchObject({ myTurns: "org-key", subscription: { signedIn: true, expired: true } });
+    rmSync(aliceClaude, { recursive: true, force: true });
     const moved = (await api("GET", `/api/threads/${bots.brittle!.threadId}/messages?limit=100`, alice)).body.messages as Array<{ kind?: string; tool?: { name: string; engineMove?: { from: string; to: string } } }>;
     const line = moved.find((message) => message.tool?.engineMove);
     expect(line?.tool?.engineMove).toEqual({ from: expect.any(String), to: expect.any(String) });
@@ -578,7 +603,7 @@ posixOnly("Perspicax console: the Sagax admin routes", () => {
     expect(reset.body.settings.policies).toMatchObject({ allowedEngines: null, allowedMarketplaces: null });
     expect(((await api("GET", "/api/instances", alice)).body.instances as Array<{ instanceId: string }>).map((row) => row.instanceId)).toContain("broken");
     const audit = (await admin("GET", "audit?category=org&limit=50", ALICE)).body.rows as Array<any>;
-    expect(audit.filter((row) => row.action === "org.settings" && row.actor.via === "console").map((row) => row.changed[0])).toEqual(expect.arrayContaining(["allowFullAccess", "allowedEngines", "pluginMarketplaces", "defaults"]));
+    expect(audit.filter((row) => row.action === "org.settings" && row.actor.via === "console").map((row) => row.changed[0])).toEqual(expect.arrayContaining(["allowFullAccess", "allowedEngines", "ownAccountsOutsideList", "pluginMarketplaces", "defaults"]));
   }, 60_000);
 
   it("C5: the vault export policy (2026-10-18), and a pairing code is no recent sign-in", async () => {

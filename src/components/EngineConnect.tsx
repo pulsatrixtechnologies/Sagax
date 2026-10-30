@@ -39,8 +39,9 @@ export function paysWithText(
   // "not connected" (the Grok lockout: a logout must not say "not installed").
   if (!engine.installed && !engineConnectable(engine)) return t("myEngines.notInstalled");
   if (engine.installed) {
-    // #1533: a sign-in the provider refused since is not "connected"
-    if (engine.subscription?.signedIn && engine.subscription.expired) return t("engineConnect.signInExpired");
+    // #1533: a sign-in the provider refused since is not "connected"; since
+    // 2026-10-30 a key that serves instead is what the line names
+    if (engine.myTurns === "expired" || (engine.myTurns === "subscription" && engine.subscription?.signedIn && engine.subscription.expired)) return t("engineConnect.signInExpired");
     if (engine.myTurns === "subscription") return t("engineConnect.paysWith.subscription");
     if (engine.myTurns === "key") return t("engineConnect.paysWith.key");
     if (engine.myTurns === "org-key") return t("engineConnect.paysWith.organization");

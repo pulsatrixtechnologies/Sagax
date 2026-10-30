@@ -24,6 +24,40 @@ repository. Do not add an upstream remote with push access.
 
 More specific `AGENTS.md` files override this note within their directories.
 
+## Providers the admin turns off are off for everyone (2026-10-30)
+
+Lot 0 of "Providers, models and voice" (the maintainer's decisions). What an
+admin turns off in Perspicax (`allowedEngines`) is off for everyone, the
+admin included, whoever pays: the #1098 exception (an engine outside the
+list on the person's own subscription or key) now needs the organization
+setting `ownAccountsOutsideList` (off by default; `GET/POST settings`,
+Perspicax Model providers card, `cfg.organization`, reaches the app in its
+config). With it on, such an engine is offered to a person whose own
+account pays (`shared/offered-engines.ts` `engineOffer`, `ownAccountOnly`;
+server `orgOfferedEngines`, `orgEngineAllowRefusal`, `orgEngineTurnRefusal`,
+`applyOrgEngineAllowList`, `orgOwnAccountsOutsideList`) and the picker and
+Settings > Models say "Allowed through your own account". Auto never picks
+outside the list (`autoEnginesFor`). The admin is held to their own person
+sheet for the organization's key (`serverEngineAllowedFor`: only the
+server's own operator is exempt). An expired sign-in (#1533 marker) no
+longer pays: `resolveEngineAccess` skips it (`subscriptionExpired`) to the
+person's key, then the organization's, else `no_access` `sign_in_expired`;
+`GET /api/me/engines` answers `myTurns: "expired"`, never Ready
+(`myTurnsReady`, shared/org-engine-readiness.ts), counted under Needs
+setup. The picker says "This choice applies to every thread of this bot."
+(`data-model-scope`), lists an OpenAI-compatible server's own `/models`
+rows on an organization server, and the person's computer models are
+grafted only on engines that can run them (`desktopLocalModels.overlay`).
+Named OpenAI-compatible servers: Settings > Models > Keys, "Add an
+OpenAI-compatible server" (`OpenAiCompatServers`), each an engine
+`compat-<id>` on its own key (`server/openai-compat-servers.ts`,
+`openaiCompatServers` in config.json, `SAGAX_COMPAT_SERVER_API_KEY`),
+`POST/PATCH/DELETE /api/instances/openai-compat-servers[/id]`, an
+organization admin's only. Tests: `shared/offered-engines.test.ts`,
+`shared/org-engine-readiness.test.ts`, `server/engine-credentials.test.ts`,
+`server/openai-compat-servers.test.ts`, `server/desktop-local-models.test.ts`,
+`src/lib/model-payers.test.ts`, `ModelPicker.interaction.test.ts`, C5 in
+`server/org-admin-console.e2e.test.ts`.
 ## Azure AI Foundry / Azure OpenAI (2026-10-30)
 
 The OpenAI-compatible connection (`openaiCompat`) treats an Azure resource

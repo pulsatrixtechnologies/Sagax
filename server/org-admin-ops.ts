@@ -40,6 +40,9 @@ export interface TestResult { ok: boolean; reason: string | null; label: string 
 export interface Policies {
   allowedMarketplaces: string[] | null;
   allowedEngines: string[] | null;
+  /** 2026-10-30: members may run an engine outside the list on their own
+   * subscription or key. False by default. */
+  ownAccountsOutsideList: boolean;
   defaults: { engine: string | null; model: string | null; approvalMode: string | null };
 }
 
@@ -85,6 +88,7 @@ export interface SettingsChanges {
   allowVaultExport?: boolean;
   pluginMarketplaces?: { mode: "any" } | { mode: "list"; allow: string[] };
   allowedEngines?: string[] | null;
+  ownAccountsOutsideList?: boolean;
   defaults?: { engine?: string | null; model?: string | null; approvalMode?: string | null };
   interimAttachDays?: number;
 }
@@ -109,7 +113,7 @@ export async function timed(check: () => Promise<TestResult | null>): Promise<{ 
 }
 
 function settingsChanges(body: Record<string, unknown>): SettingsChanges | string {
-  const extra = onlyKeys(body, ["allowFullAccess", "memberEnvironmentAutonomy", "memberAutoApproval", "allowVaultExport", "pluginMarketplaces", "allowedEngines", "defaults", "interimAttachDays"]);
+  const extra = onlyKeys(body, ["allowFullAccess", "memberEnvironmentAutonomy", "memberAutoApproval", "allowVaultExport", "pluginMarketplaces", "allowedEngines", "ownAccountsOutsideList", "defaults", "interimAttachDays"]);
   if (extra) return extra;
   if (!Object.keys(body).length) return "Send at least one setting.";
   const out: SettingsChanges = {};
@@ -140,6 +144,10 @@ function settingsChanges(body: Record<string, unknown>): SettingsChanges | strin
     const value = body.allowedEngines;
     if (value !== null && (!Array.isArray(value) || value.length > 100 || value.some((entry) => typeof entry !== "string" || !/^[A-Za-z0-9_.:-]{1,80}$/.test(entry)))) return "allowedEngines is null (every engine) or a list of engine instance ids.";
     out.allowedEngines = value === null ? null : [...new Set(value as string[])];
+  }
+  if (body.ownAccountsOutsideList !== undefined) {
+    if (typeof body.ownAccountsOutsideList !== "boolean") return "ownAccountsOutsideList is true or false.";
+    out.ownAccountsOutsideList = body.ownAccountsOutsideList;
   }
   if (body.defaults !== undefined) {
     const value = objectBody(body.defaults);

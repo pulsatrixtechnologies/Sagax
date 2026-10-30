@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { accessWorksForChat, orgAdminNames, orgEngineReadiness, type ReadinessAccess } from "./org-engine-readiness.ts";
+import { accessWorksForChat, myTurnsReady, orgAdminNames, orgEngineReadiness, type ReadinessAccess } from "./org-engine-readiness.ts";
 
 const admitted = { withholdsHostTools: true };
 const instances = [
@@ -47,15 +47,27 @@ describe("an organization person's engines at first run (2026-10-18)", () => {
     expect(ids(orgEngineReadiness(more, org(mine)).connectable)).toEqual(["claude", "codex", "grok"]);
   });
 
-  it("an engine the admin hid is never offered to connect; on the person's own subscription it answers (#1098, their bill)", () => {
+  it("an engine the admin hid is never offered, even on the person's own subscription (2026-10-30)", () => {
     const readiness = orgEngineReadiness(instances, org(none, ["claude"]));
     expect(readiness.state).toBe("connect");
     expect(ids(readiness.connectable)).toEqual(["claude"]);
-    // 2026-10-27 (#1098): outside the organization's list, the person's own subscription or key still runs it
-    const mine = none.map((row) => (row.instanceId === "grok" ? { ...row, myTurns: "subscription" as const, subscription: { supported: true, signedIn: true } } : row));
+    const mine = none.map((row) => (row.instanceId === "grok" ? { ...row, orgNotAllowed: true, myTurns: "subscription" as const, subscription: { supported: true, signedIn: true } } : row));
     const paid = orgEngineReadiness(instances, org(mine, ["claude"]));
-    expect(paid.state).toBe("ready");
-    expect(ids(paid.working)).toEqual(["grok"]);
+    expect(paid.state).toBe("connect");
+    expect(paid.working).toEqual([]);
+    // the organization lets own accounts through: their subscription runs it (#1098)
+    const allowed = orgEngineReadiness(instances, { ...org(mine, ["claude"]), ownAccountsOutsideList: true });
+    expect(allowed.state).toBe("ready");
+    expect(ids(allowed.working)).toEqual(["grok"]);
+  });
+
+  it("an expired sign-in is not ready (2026-10-30)", () => {
+    const expired = none.map((row) => (row.instanceId === "claude" ? { ...row, myTurns: "expired" as const, subscription: { supported: true, signedIn: true, expired: true } } : row));
+    expect(myTurnsReady(expired[0]!)).toBe(false);
+    expect(orgEngineReadiness(instances, org(expired)).state).toBe("connect");
+    // an older server still says "subscription" for it
+    expect(myTurnsReady({ myTurns: "subscription", subscription: { expired: true } })).toBe(false);
+    expect(myTurnsReady({ myTurns: "key", subscription: { expired: true } })).toBe(true);
   });
 
   it("an engine paid by the organization but not given to the person can still be connected with their own account", () => {

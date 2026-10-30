@@ -12085,5 +12085,18 @@
   "voiceProviders.none": "Add an xAI, OpenAI or ElevenLabs key in My voice keys to choose who speaks and who listens.",
   "voiceProviders.fallbackNote": "Only the providers you have a key for are offered. If one fails or reaches its limit, another one you have takes over by itself, and the conversation's Events tab says so.",
   "voiceMode.keyLineProvider": "Voice: {provider} with {key}",
-  "voiceProviders.ownVoice": "{voice} (your voice)"
+  "voiceProviders.ownVoice": "{voice} (your voice)",
+  "engines.ownAccountOnly": "Allowed through your own account",
+  "model.scope.allThreads": "This choice applies to every thread of this bot.",
+  "compatServers.addTitle": "Add an OpenAI-compatible server",
+  "compatServers.add": "Add",
+  "compatServers.edit": "Edit",
+  "compatServers.remove": "Remove",
+  "compatServers.name": "Server name",
+  "compatServers.namePlaceholder": "Name, for example Azure AI Foundry",
+  "compatServers.url": "Server address",
+  "compatServers.key": "API key",
+  "compatServers.keyPlaceholder": "API key (optional)",
+  "compatServers.keyKeep": "Leave empty to keep the saved key",
+  "compatServers.hint": "Each server is a provider of its own in the model picker, under this name. Its models come from its /models list."
 }
