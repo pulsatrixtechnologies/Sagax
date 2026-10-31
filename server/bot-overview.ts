@@ -213,6 +213,7 @@ function wontLines(facts: OverviewFacts): string[] {
   if (mode === "custom") lines.push("Command approvals follow the provider's custom configuration.");
   if (facts.bot.peers?.length === 0) lines.push("Cannot initiate contact with other bots.");
   else if (mode !== "full" && facts.bot.approvePeerComms) lines.push("Asks before contacting other bots.");
+  else if (mode !== "full" && facts.bot.approvePeerComms === false) lines.push("Contacts other bots without asking first.");
   if (facts.bot.computer === "off") lines.push("Can't use a computer.");
   if (!facts.routines.some((routine) => routine.enabled)) lines.push("Won't act on a schedule.");
   if (mode !== "full") lines.push("Profile proposal cards require your approval.");
