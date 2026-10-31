@@ -8021,11 +8021,13 @@ and `sidebar-logo-preferences.test.ts`:
   held to 3:1 on the rail in `scripts/check-skin-contrast.mjs`), never the
   skin accent (#188 had made it grey or navy in some skins).
 - Section headers: the name in sentence case, 12px regular in the secondary
-  ink, 28px tall, then the attention marks; no chevron, a click folds and
-  `aria-expanded` says which way; folded, the section's item count at the
-  right (`count`, `data-section-count`). The small capitals rule
-  (`.sidebar-section-label` uppercase) is gone; the class stays as Hibou
-  98's hook.
+  ink, 30px tall, a small chevron for fold state (`ChevronRight` folded,
+  `ChevronDown` open, `data-section-chevron`), then the attention marks; a
+  click folds and `aria-expanded` says which way. No item count (the My
+  Team reference keeps the name only; #1664 restored the chevron so a
+  folded section is not mistaken for an empty open one). The small
+  capitals rule (`.sidebar-section-label` uppercase) is gone; the class
+  stays as Hibou 98's hook.
 - Rows (comfortable): a 44px portrait at `pl-1`, 6px before the name, 56px
   tall; the name 14px medium, then the last message 13px; the title is not
   drawn (avatar tooltip and `sr-only` with the name). Group and people rows
@@ -8040,8 +8042,9 @@ and `sidebar-logo-preferences.test.ts`:
 - Midnight's rail secondary ink is `#fcfcfca1` (#a5a5a5 on the rail, the
   window's preview and header grey); the default skin stays Pulsatrix.
 - iOS: the iPad desktop shell (`ios/App/Desktop/DesktopSidebar*.swift`,
-  `DesktopTheme.swift`) mirrors the head (no logo), tiles, headers with the
-  folded count and rows.
+  `DesktopTheme.swift`) mirrors the head (no logo), tiles, and rows; its
+  section headers still show the folded item count (web uses the chevron
+  instead, #1664).
 
 ## Side thread and compact sidebar (the reference design parity, 2026-10-16)
 
