@@ -25,7 +25,7 @@ struct WorkingMonitorWidget: Widget {
                 .widgetContainerBackground()
         }
         .configurationDisplayName("Working")
-        .description("The bots working right now and how long each has been at it — even when the app is closed.")
+        .description("The bots working right now and how long each has been at it, even when the app is closed.")
         .supportedFamilies([.systemMedium])
     }
 }

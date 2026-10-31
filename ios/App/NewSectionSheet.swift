@@ -180,7 +180,7 @@ struct NewSectionSheet: View {
             if bots.count > maximumBotsPerSection {
                 Text(
                     selection.selectedIDs.count == maximumBotsPerSection
-                        ? "100 selected — that’s the section limit."
+                        ? "100 selected. That’s the section limit."
                         : "Choose up to 100 bots for one section."
                 )
                 .font(.system(size: 12, weight: .medium))

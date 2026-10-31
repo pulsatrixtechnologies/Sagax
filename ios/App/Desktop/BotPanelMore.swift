@@ -747,7 +747,7 @@ private struct BotPanelMemory: View {
                     .panelText(12, 18)
                     .foregroundStyle(theme.inkSecondary)
                     .padding(.top, 4)
-                Text("Notes this bot keeps between tasks. They are plain markdown files in a folder on this computer — open them in any editor, or in Obsidian.")
+                Text("Notes this bot keeps between tasks. They are plain markdown files in a folder on this computer. Open them in any editor, or in Obsidian.")
                     .panelText(13, 21.125)
                     .foregroundStyle(theme.inkSecondary)
                     .padding(.top, 4)
@@ -790,7 +790,7 @@ private struct BotPanelMemory: View {
                         Task { await patch(BotAccessPatch(memoryUpkeep: on)) }
                     }
                 }
-                Text("Keeps these notes in shape without the bot having to remember to: notices facts you mention in chats and files them — core facts here, detail in topic files it creates — and tidies up every night: expired notes are archived, duplicates merged, contradicted notes crossed out. Facts about you are added to About me (Settings → General), where every bot reads them and you can remove any. Every change shows below and can be undone.")
+                Text("Keeps these notes in shape without the bot having to remember to: notices facts you mention in chats and files them (core facts here, detail in topic files it creates) and tidies up every night: expired notes are archived, duplicates merged, contradicted notes crossed out. Facts about you are added to About me (Settings → General), where every bot reads them and you can remove any. Every change shows below and can be undone.")
                     .panelText(13, 21.125)
                     .foregroundStyle(theme.inkSecondary)
                     .padding(.top, 4)
@@ -907,7 +907,7 @@ private struct BotPanelMemory: View {
             MarkdownEditor(
                 text: Binding(get: { memory.editing?.text ?? "" }, set: { memory.edit($0) }),
                 placeholder: editing.path == MemoryRules.index
-                    ? String(localized: "Nothing remembered yet. The bot writes durable notes here — or add your own.")
+                    ? String(localized: "Nothing remembered yet. The bot writes durable notes here, or add your own.")
                     : String(localized: "Write the note here."),
                 minHeight: 200, monospaced: true,
                 accessibilityLabel: editing.path == MemoryRules.index ? String(localized: "Bot memory") : String(localized: "Memory file \(editing.path)")

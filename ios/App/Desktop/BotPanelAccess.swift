@@ -194,7 +194,7 @@ struct BotPanelAccess: View {
             Text("Working folder").panelText(13, 19.5, .medium).foregroundStyle(theme.ink)
             Text("Where this bot runs its shell and file tools.").panelText(13, 19.5).foregroundStyle(theme.inkSecondary).padding(.top, 2)
             HStack(spacing: 8) {
-                PanelTextField(placeholder: "Private bot folder — or an absolute path", text: $folder, mono: true)
+                PanelTextField(placeholder: "Private bot folder, or an absolute path", text: $folder, mono: true)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                     .disabled(!edits("cwd"))

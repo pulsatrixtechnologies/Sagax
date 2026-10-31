@@ -195,7 +195,7 @@ struct BotPanelComputer: View {
                     switch phase {
                     case .browser:
                         Image(systemName: "globe").font(.system(size: 19))
-                        Text("This bot works in the built-in browser — no desktop here")
+                        Text("This bot works in the built-in browser: no desktop here")
                     case .waiting:
                         ProgressView().controlSize(.small)
                         Text(offline ? "This computer is offline" : "Starting your bot's computer…")

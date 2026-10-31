@@ -32,6 +32,8 @@ const ALLOWED = new Set([
   "botWizard.step.tools.intro",
   "botWizard.tools.questionHint",
   "botWizard.recap.tools.workspace",
+  // Auto-model picker: the bot's work location is called Workspace.
+  "model.auto.exclude.capabilities",
   // Keys another branch adds with its own wording go here until reviewed.
 ]);
 
@@ -77,12 +79,38 @@ it("hardcoded copy does not bring back the retired workspace and Organisation ph
   expect(offending).toEqual([]);
 });
 
-// The welcome flow is the first copy anyone reads; it speaks in short
-// sentences, not em-dash asides.
-it("English welcome flow copy has no em dashes", () => {
-  const offending = Object.entries(en)
-    .filter(([key, value]) => key.startsWith("onboarding.") && value.includes("—"))
-    .map(([key]) => key);
+// Prefs: never em dash or en dash in UI / i18n. English and French are the
+// reviewed catalogs; other packs may still be catching up.
+const DASH = /[\u2013\u2014]/;
+it("English and French UI catalogs have no em or en dashes", () => {
+  const fr = JSON.parse(readFileSync(new URL("./fr.json", import.meta.url), "utf8")) as Record<string, string>;
+  const offending = [
+    ...Object.entries(en).filter(([, value]) => DASH.test(value)).map(([key]) => `en ${key}`),
+    ...Object.entries(fr).filter(([, value]) => DASH.test(value)).map(([key]) => `fr ${key}`),
+  ];
+  expect(offending).toEqual([]);
+});
+
+// iOS String Catalogs (App + Widgets): keys and localized values.
+it("iOS string catalogs have no em or en dashes", () => {
+  const catalogs = [
+    new URL("../../ios/App/Localizable.xcstrings", import.meta.url),
+    new URL("../../ios/Widgets/Localizable.xcstrings", import.meta.url),
+  ];
+  const offending: string[] = [];
+  for (const url of catalogs) {
+    const raw = JSON.parse(readFileSync(url, "utf8")) as {
+      strings?: Record<string, { localizations?: Record<string, { stringUnit?: { value?: string } }> }>;
+    };
+    const label = url.pathname.includes("/Widgets/") ? "widgets" : "app";
+    for (const [key, entry] of Object.entries(raw.strings ?? {})) {
+      if (DASH.test(key)) offending.push(`${label} key: ${key.slice(0, 80)}`);
+      for (const [lang, loc] of Object.entries(entry.localizations ?? {})) {
+        const value = loc.stringUnit?.value ?? "";
+        if (DASH.test(value)) offending.push(`${label} ${lang}: ${value.slice(0, 80)}`);
+      }
+    }
+  }
   expect(offending).toEqual([]);
 });
 

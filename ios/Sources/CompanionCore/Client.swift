@@ -449,7 +449,7 @@ public enum APIError: Error, LocalizedError, Sendable {
             case 401: return "This phone is not paired with that computer."
             case 403: return "That can only be done on the computer itself."
             case 404: return "That is no longer there."
-            case 409: return "The bot is busy — stop it first."
+            case 409: return "The bot is busy. Stop it first."
             default: return "The computer answered with an error (\(code))."
             }
         case let .transport(detail):
