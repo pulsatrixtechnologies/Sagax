@@ -13,7 +13,7 @@
 // under ~/.sagax (server/harness/bus.ts, server/drivers/native.ts).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bug, ChevronDown, ChevronRight, PanelRight, RefreshCw } from "lucide-react";
-import { useStore, visibleMessages, type Bot } from "@/state/store";
+import { api, useStore, visibleMessages, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import { useCaptionChrome, useMacInsetChrome } from "@/components/DesktopCapabilities";
@@ -23,6 +23,7 @@ import type { RuntimeEvent } from "../../shared/runtime-events";
 import { RunLog } from "./RunLog";
 import { timelineEvents } from "@/lib/taskTimeline";
 import { t } from "@/lib/i18n";
+import { readableError } from "@/lib/plain-error";
 
 type Lens = "run" | "events" | "raw";
 
@@ -47,17 +48,15 @@ export function InspectorPanel({ bot }: { bot: Bot }) {
     const controller = new AbortController();
     loadAbort.current = controller;
     try {
-      const res = await fetch(`/api/threads/${threadId}/events?limit=400`, { signal: controller.signal });
-      if (!res.ok) throw new Error(`${res.status}`);
-      // SAFETY: this same-version renderer calls the harness's typed
-      // inspector endpoint; malformed transport data is handled by catch.
-      const next = (await res.json()) as InspectorPage;
+      const next = await api<InspectorPage>(`/api/threads/${threadId}/events?limit=400`, {
+        signal: controller.signal,
+      });
       if (controller.signal.aborted) return;
       setPage(next);
       setError(null);
     } catch (e) {
       if (controller.signal.aborted) return;
-      setError(e instanceof Error ? e.message : String(e));
+      setError(readableError(e));
     } finally {
       if (loadAbort.current === controller) loadAbort.current = null;
     }
@@ -230,7 +229,7 @@ export function InspectorPanel({ bot }: { bot: Bot }) {
 
       <div role="tabpanel" id={`inspector-panel-${lens}`} aria-labelledby={`inspector-tab-${lens}`} tabIndex={0} className="flex min-h-0 flex-1 flex-col outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/60">
       {lens === "run" ? <RunLog key={threadId} events={activity} /> : <div ref={listRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto font-mono text-[11.5px]">
-        {error && <div className="px-4 py-3 text-danger">couldn't load: {error}</div>}
+        {error && <div className="px-4 py-3 text-danger">{t("inspector.loadError", { error })}</div>}
         {page && rows.length === 0 && !error && (
           <div className="px-4 py-6 text-ink-secondary">
             {lens === "raw" ? "No native protocol messages recorded for this thread yet." : "No runtime events for this thread yet."}
