@@ -6,6 +6,7 @@ import type { ApprovalModeSelector } from "./ApprovalModeSelector";
 import type { ModelPicker } from "./ModelPicker";
 import { CODEX_USAGE_LIMIT_REACHED, CODEX_USAGE_URL } from "../../shared/codex-usage-limit";
 import { failedTurnTool } from "../../shared/failed-turn";
+import { providerReplyCutMessage } from "../../shared/provider-reply-cut";
 
 const fixture = vi.hoisted(() => {
   vi.stubGlobal("window", {});
@@ -136,6 +137,21 @@ describe("thread control placement", () => {
     expect(markup).toContain("Full access controls tool approvals, not provider safety checks");
     expect(markup).not.toContain("<button");
     expect(renderToStaticMarkup(createElement(ErrorRow, { message: "Network timeout", onRetry: () => {} }))).toContain("<button");
+  });
+  it("marks a content-filter or length cut as a quiet notice, never a Retry failure", () => {
+    const filter = renderToStaticMarkup(createElement(FailedTurnRow, {
+      tool: failedTurnTool(providerReplyCutMessage("content_filter")), engine: undefined, onRetry: () => {},
+    }));
+    expect(filter).toContain("The reply was cut by the provider: content filter.");
+    expect(filter).toContain('role="status"');
+    expect(filter).not.toContain("text-danger");
+    expect(filter).not.toContain(">Retry<");
+    const legacy = renderToStaticMarkup(createElement(FailedTurnRow, {
+      tool: failedTurnTool("provider did not finish the response (length)"), engine: undefined, onRetry: () => {},
+    }));
+    expect(legacy).toContain("The reply was cut: maximum length reached. Ask for a continuation.");
+    expect(legacy).not.toContain("provider did not finish");
+    expect(legacy).not.toContain(">Retry<");
   });
   it("draws Retry and the next action on the 28px control step", () => {
     const retry = renderToStaticMarkup(createElement(ErrorRow, { message: "Network timeout", onRetry: () => {} }));

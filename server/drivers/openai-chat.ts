@@ -24,6 +24,7 @@ import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS }
 import { outOfCreditsMessage } from "./engine-errors.ts";
 import { refusesRequestSize, RequestTooLargeError, sizeChange, smallerResend } from "./chat-size-limit.ts";
 import { requestTooLargeMessage } from "../../shared/request-too-large.ts";
+import { providerReplyCutMessage, providerReplyCutReason } from "../../shared/provider-reply-cut.ts";
 import { classifyContinuable, writeTurnHandoff } from "../turn-continuation.ts";
 import { DUPLEX_INTERRUPT_WAIT_MS } from "../voice-call-duplex.ts";
 import { KEY_REJECTED_REASON, keyRejected, noteKeyAccepted, noteKeyRejected, rejectsKey } from "../key-rejections.ts";
@@ -1201,9 +1202,18 @@ export function createOpenAIChatRuntime<Config>(options: RuntimeOptions<Config>)
           if (reply.trim()) emit({ ...base(turn.threadId, turnId), type: "item.completed", itemType: "assistant_text", text: safeText(reply) });
           abort.signal.throwIfAborted();
           if (!completion.toolCalls.length) {
-            if (!reply.trim()) throw new ChatProtocolError("provider returned an empty response");
+            const cut = providerReplyCutReason(completion.finishReason);
+            if (!reply.trim()) {
+              // A content filter or length stop with no text: the cut is the
+              // cause, not a blank completion.
+              if (cut) throw new ChatProtocolError(providerReplyCutMessage(cut));
+              throw new ChatProtocolError("provider returned an empty response");
+            }
+            // Partial reply already emitted above. A cut is a readable line
+            // (shared/provider-reply-cut.ts), not the raw finish_reason.
+            if (cut) throw new ChatProtocolError(providerReplyCutMessage(cut));
             if (completion.finishReason && completion.finishReason !== "stop") {
-              throw new ChatProtocolError(`provider did not finish the response (${completion.finishReason})`);
+              throw new ChatProtocolError(providerReplyCutMessage("generic"));
             }
             if (options.nudgeAnnouncedAction && !nudged && tools.definitions.length && announcesAction(completion.text)) {
               nudged = true;

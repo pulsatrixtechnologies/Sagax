@@ -28,6 +28,7 @@ import {
 
   Code,
   Eye,
+  Info,
   Pencil,
   SquarePen,
   Pin,
@@ -84,6 +85,7 @@ import { plainErrorLine } from "@/lib/plain-error";
 import { openPlaceAction, placeRowViewFor, usePlaceSeat, worksOnSimpleLabel } from "@/lib/place-view";
 import type { PlaceRow } from "../../shared/place-view";
 import { isPureLeakedSystemHarnessMessage, stripLeakedSystemHarnessMessages } from "../../shared/system-message-guard.ts";
+import { isProviderReplyCut } from "../../shared/provider-reply-cut";
 import { isProviderSafetyBlock, PROVIDER_SAFETY_GUIDANCE, PROVIDER_SAFETY_HELP_URL } from "../../shared/provider-safety";
 import { isCancelledTranscriptRow } from "../../shared/client-cancel";
 import { BotAvatar } from "./Avatar";
@@ -380,7 +382,8 @@ export function ErrorRow({
             {PROVIDER_SAFETY_GUIDANCE}{" "}
             <a href={PROVIDER_SAFETY_HELP_URL} target="_blank" rel="noreferrer" className="underline">{t("chat.providerSafetyHelp")}</a>
           </p>
-        ) : setupInstance &&
+        ) : isProviderReplyCut(message) ? null
+        : setupInstance &&
         !(setupInstance.snapshot.state === "available" && setupInstance.snapshot.authenticated !== false) ? (
           <EngineSetup instance={setupInstance} className="mt-2 text-ink-secondary" />
         ) : action !== undefined ? (
@@ -461,6 +464,17 @@ export function FailedTurnRow({ tool, engine, onRetry, botId, threadId }: {
   }
   const rawCause = failedTurnCause(tool.name) ?? tool.name;
   const cause = localizedEngineCause(rawCause) ?? rawCause;
+  // A content-filter or length cut: keep the partial reply, mark it with a
+  // quiet notice (no Retry, no red failure). shared/provider-reply-cut.ts.
+  if (isProviderReplyCut(rawCause)) {
+    const line = plainErrorLine(rawCause) ?? cause;
+    return (
+      <div role="status" className="flex w-fit max-w-[min(42rem,78%)] items-start gap-2 rounded-xl border border-hairline/40 bg-panel px-3 py-2 text-[13px] text-ink-secondary">
+        <Info size={13} aria-hidden="true" className="mt-0.5 shrink-0" />
+        <span className="min-w-0 break-words">{line}</span>
+      </div>
+    );
+  }
   return (
     <ErrorRow
       message={cause}

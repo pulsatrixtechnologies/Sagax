@@ -3,6 +3,18 @@ import { describe, expect, it } from "vitest";
 import { BACKOFF_BASE_MS, RETRY_MAX_ATTEMPTS, classifyError, computeBackoff } from "./retry.ts";
 
 describe("classifyError", () => {
+  it("does not retry a content-filter or length cut of a reply", () => {
+    expect(classifyError({ text: "The reply was cut by the provider: content filter." })).toEqual({
+      transient: false, reason: "provider_cut",
+    });
+    expect(classifyError({ text: "The reply was cut: maximum length reached. Ask for a continuation." })).toEqual({
+      transient: false, reason: "provider_cut",
+    });
+    expect(classifyError({ text: "provider did not finish the response (content_filter)" })).toEqual({
+      transient: false, reason: "provider_cut",
+    });
+  });
+
   it("does not retry a provider safety block even inside a 503 or rate-limit error", () => {
     for (const text of ["HTTP 503: blocked by our safety systems", "429: safety monitoring paused this task"]) {
       expect(classifyError({ text })).toEqual({ transient: false, reason: "provider_safety" });

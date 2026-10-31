@@ -9,7 +9,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ProviderInstance, RuntimeEvent } from "../contracts.ts";
 import { isOpenAIChatModel, isOpenAIReasoningModel, OpenAICompatDriver } from "./openai-compat.ts";
-import { refusesModel, responsesInput } from "./openai-responses.ts";
+import { providerReplyCutMessage } from "../../shared/provider-reply-cut.ts";
+import { refusesModel, ResponsesReader, responsesInput } from "./openai-responses.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -210,6 +211,26 @@ describe("OpenAI turns on /v1/responses", () => {
 });
 
 describe("openai-responses helpers", () => {
+  it("maps an incomplete Responses status to length or content_filter finish reasons", () => {
+    const length = new ResponsesReader();
+    length.event({ type: "response.output_text.delta", delta: "Almost done" });
+    length.event({
+      type: "response.incomplete",
+      response: { status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, usage: { input_tokens: 3, output_tokens: 2 } },
+    });
+    expect(length.reply()).toMatchObject({ text: "Almost done", finishReason: "length" });
+
+    const filter = new ResponsesReader();
+    filter.json({
+      status: "incomplete",
+      incomplete_details: { reason: "content_filter" },
+      output: [{ type: "message", content: [{ type: "output_text", text: "Partial." }] }],
+      usage: { input_tokens: 1, output_tokens: 1 },
+    });
+    expect(filter.reply()).toMatchObject({ text: "Partial.", finishReason: "content_filter" });
+    expect(providerReplyCutMessage("content_filter")).toContain("content filter");
+  });
+
   it("reads a model refusal, never a key, balance or size refusal", () => {
     const body = (message: string, extra: Record<string, unknown> = {}) => JSON.stringify({ error: { message, type: "invalid_request_error", ...extra } });
     expect(refusesModel(400, body("This is not a chat model and thus not supported in the v1/chat/completions endpoint."))).toBe(true);
