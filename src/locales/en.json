@@ -5595,6 +5595,7 @@
   "routines.scope.ownedBy": "Owned by {name}",
   "routines.scope.owner": "Owner",
   "routines.scope.ownerFilter": "Filter by owner",
+  "routines.scope.ownerMe": "Me",
   "routines.scope.readOnly": "Read only: you can see this routine but not change it.",
   "routines.scope.redacted": "Read only. Its instructions and results stay with its owner.",
   "routines.scope.reset": "Clear filters",

@@ -1,10 +1,10 @@
 // The routines the Automations page shows for the chosen scope and filters
 // (2026-10-09). Mine without a team or owner filter is the store's own live
 // listing, as before, enriched with the owner and the canRun / canEdit flags
-// the server sends. My teams, Everyone, or a team or owner filter read the
-// scoped listing from the server (GET /api/routines?scope=...), which
-// decides what the person may see; it is read again when the store's
-// routines or runs change and once a minute.
+// the server sends. My teams, Everyone, or a team or owner filter (owner also
+// under Mine, #1676) read the scoped listing from the server
+// (GET /api/routines?scope=...), which decides what the person may see; it is
+// read again when the store's routines or runs change and once a minute.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type ConfigStatus } from "@/state/store";
@@ -61,8 +61,10 @@ export function useRoutineScope({ config, routines, runs, ignoreStatus = false }
   const fallbackAllowed = useMemo(() => routineScopesAllowed(config), [config]);
   const allowed = listing?.info.allowed ?? fallbackAllowed;
   const scope = available ? effectiveRoutineScope(prefs, allowed) : "mine";
+  // Team only applies to My teams / Everyone. Owner stays under Mine too
+  // (#1676): a person can leave out routines of bots shared with them.
   const teamId = scope === "mine" ? undefined : prefs.teamId;
-  const ownerId = scope === "mine" ? undefined : prefs.ownerId;
+  const ownerId = prefs.ownerId;
   const live = scope === "mine" && !teamId && !ownerId;
   const search = routineScopeSearch({ scope, ...(teamId ? { teamId } : {}), ...(ownerId ? { ownerId } : {}) });
 
