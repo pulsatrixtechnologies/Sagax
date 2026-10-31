@@ -17,7 +17,7 @@ import {
   chatFollowups, closeMessageDb, closeMessageSearch, configureContentEncryption, contentEncryptionModeFromEnv, contentEncryptionStatus,
   contentKeyChanged, deleteThread, eraseContentOwner, flushContentIndex, insertMessage, latestSaidByBot, openApprovalCardMessages,
   readCommandReceipt, readMessageText, readThread, readThreadTail, recallMessages, recentMessages, runContentMigration, saveChatFollowup,
-  searchMessages, searchMessagesAsync, threadsReferencing, unlockContentKeys, updateMessage, withCommandReceipt, type ContentOwnerResolver,
+  searchMessages, searchMessagesAsync, setMigrationFaultForTests, threadsReferencing, unlockContentKeys, updateMessage, withCommandReceipt, type ContentOwnerResolver,
 } from "./message-db.ts";
 import type { Message } from "./store.ts";
 
@@ -47,7 +47,11 @@ beforeEach(async () => {
   owners = {};
   turn("on");
 });
-afterEach(async () => { await closeMessageSearch(); closeMessageDb(); });
+afterEach(async () => {
+  setMigrationFaultForTests(null);
+  await closeMessageSearch();
+  closeMessageDb();
+});
 
 describe("sealing", () => {
   it("round-trips a message and keeps no plaintext in its row", () => {
@@ -211,7 +215,55 @@ describe("migration", () => {
     db.close();
     expect(readThread("t1", legacy("t1")).messages[0]?.text).toBe("written while locked");
   });
+
+  it("keeps the cursor when a slice throws so cleartext rows are not skipped", () => {
+    turn("off");
+    for (let i = 0; i < 40; i++) insertMessage("t1", msg(`m${i}`, `plain orchid ${i}`, { at: i }));
+    turn("on");
+    expect(runContentMigration(0).done).toBe(false);
+    const afterFirst = raw();
+    const sealedFirst = (afterFirst.prepare("SELECT SUM(sealed IS NOT NULL) AS n FROM messages").get() as { n: number }).n;
+    afterFirst.close();
+    expect(sealedFirst).toBeGreaterThan(0);
+
+    setMigrationFaultForTests(() => { throw new Error("SQLITE_BUSY"); });
+    expect(() => runContentMigration(0)).toThrow(/SQLITE_BUSY/);
+    setMigrationFaultForTests(null);
+
+    const mid = raw();
+    const plainLeft = (mid.prepare("SELECT SUM(sealed IS NULL) AS n FROM messages").get() as { n: number }).n;
+    mid.close();
+    expect(plainLeft).toBeGreaterThan(0);
+
+    migrateAll();
+    expect(contentEncryptionStatus()).toMatchObject({ done: true, plainRows: 0, sealedRows: 40 });
+    expect(readThread("t1", legacy("t1")).messages).toHaveLength(40);
+  });
+
+  it("logs a failed auto-migrate slice and reschedules instead of giving up", async () => {
+    vi.useFakeTimers();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      turn("off");
+      for (let i = 0; i < 20; i++) insertMessage("t1", msg(`m${i}`, `word ${i}`, { at: i }));
+      setMigrationFaultForTests(() => { throw new Error("disk full"); });
+      configureContentEncryption({ mode: "on", resolveOwner, autoMigrate: true });
+      await vi.advanceTimersByTimeAsync(50);
+      expect(error.mock.calls.map((call) => String(call[0])).join("\n")).toMatch(/content migration slice failed/);
+      setMigrationFaultForTests(null);
+      for (let i = 0; i < 40; i++) await vi.advanceTimersByTimeAsync(MIGRATION_BACKOFF_STEP);
+      expect(contentEncryptionStatus()).toMatchObject({ done: true, plainRows: 0, sealedRows: 20 });
+    } finally {
+      setMigrationFaultForTests(null);
+      error.mockRestore();
+      vi.useRealTimers();
+      turn("on");
+    }
+  });
 });
+
+/** Upper bound used while draining the auto-migrate backoff in the test above. */
+const MIGRATION_BACKOFF_STEP = 60_000;
 
 describe("search and recall over sealed rows", () => {
   beforeEach(() => {

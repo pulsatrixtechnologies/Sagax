@@ -710,6 +710,47 @@ const lastUse = new Map<string, number>();
  * verification fixture uses a second). */
 const graceFromEnv = Number(process.env.SAGAX_CONTENT_AT_REST_GRACE_MS?.trim() || NaN);
 let graceMs = Number.isInteger(graceFromEnv) && graceFromEnv >= 0 ? graceFromEnv : GRACE_MS;
+/** Soft cap so a long-lived org server cannot retain a hint per historical
+ * upload forever even if a pass misses a path. */
+const AT_REST_HINT_MAX = 10_000;
+
+function forgetAtRestHint(path: string): void {
+  lastUse.delete(path);
+  scopeHints.delete(path);
+}
+
+/** Drop sealed or missing entries; if still over the cap, drop the oldest. */
+function pruneAtRestHints(): void {
+  for (const path of lastUse.keys()) {
+    try {
+      if (!existsSync(path)) { forgetAtRestHint(path); continue; }
+      if (atRestInfoSync(path)?.sealed) forgetAtRestHint(path);
+    } catch { forgetAtRestHint(path); }
+  }
+  for (const path of scopeHints.keys()) {
+    if (lastUse.has(path)) continue;
+    try {
+      if (!existsSync(path) || atRestInfoSync(path)?.sealed) scopeHints.delete(path);
+    } catch { scopeHints.delete(path); }
+  }
+  if (lastUse.size <= AT_REST_HINT_MAX && scopeHints.size <= AT_REST_HINT_MAX) return;
+  const oldest = Array.from(lastUse.entries()).sort((a, b) => a[1] - b[1]);
+  while (lastUse.size > AT_REST_HINT_MAX && oldest.length) {
+    const path = oldest.shift()?.[0];
+    if (path) forgetAtRestHint(path);
+  }
+  if (scopeHints.size > AT_REST_HINT_MAX) {
+    for (const path of Array.from(scopeHints.keys())) {
+      if (scopeHints.size <= AT_REST_HINT_MAX) break;
+      if (!lastUse.has(path)) scopeHints.delete(path);
+    }
+  }
+}
+
+/** Test seam: sizes of the in-memory write/use maps. */
+export function atRestHintSizesForTests(): { lastUse: number; scopeHints: number } {
+  return { lastUse: lastUse.size, scopeHints: scopeHints.size };
+}
 
 /** Test seam. */
 export function setAtRestGrace(ms: number): void {
@@ -1633,7 +1674,11 @@ export function runAtRestMigration(options: { sliceMs?: number; pauseMs?: number
         dirs.add(dirname(path));
         if (!held(path)) recoverOriginal(path);
         let stat: Stats;
-        try { stat = lstatSync(path); } catch { continue; }
+        try { stat = lstatSync(path); } catch {
+          forgetAtRestHint(path);
+          seen.delete(path);
+          continue;
+        }
         if (!stat.isFile()) continue;
         const known = seen.get(path);
         const unchanged = known && known.ino === stat.ino && known.size === stat.size && known.mtimeMs === stat.mtimeMs && known.on === on;
@@ -1644,7 +1689,11 @@ export function runAtRestMigration(options: { sliceMs?: number; pauseMs?: number
         if (!info) continue;
         const remember = (keyId: string | null) => seen.set(path, { ino: info.stat.ino, size: info.stat.size, mtimeMs: info.stat.mtimeMs, on, keyId });
         if (on) {
-          if (info.sealed && (!want || root.stickyKeys || info.keyId === want.keyId)) { remember(info.keyId); continue; }
+          if (info.sealed && (!want || root.stickyKeys || info.keyId === want.keyId)) {
+            remember(info.keyId);
+            forgetAtRestHint(path);
+            continue;
+          }
           if (!want) { pass.locked++; continue; }
           if (held(path) || Date.now() - Math.max(lastUse.get(path) ?? 0, info.sealed ? 0 : stat.mtimeMs) < graceMs) { pass.waiting++; continue; }
           await whilePaused();
@@ -1652,19 +1701,24 @@ export function runAtRestMigration(options: { sliceMs?: number; pauseMs?: number
           await breathe(1 + stat.size / (1024 * 1024));
           if (outcome === "done") {
             if (info.sealed) pass.resealed++; else pass.sealed++;
-            scopeHints.delete(path);
+            forgetAtRestHint(path);
             const after = atRestInfoSync(path);
             if (after) seen.set(path, { ino: after.stat.ino, size: after.stat.size, mtimeMs: after.stat.mtimeMs, on, keyId: want.keyId });
           } else if (outcome === "locked") pass.locked++;
           else if (outcome === "held" || outcome === "changed") pass.waiting++;
           else pass.failed++;
         } else {
-          if (!info.sealed) { remember(null); continue; }
+          if (!info.sealed) {
+            remember(null);
+            forgetAtRestHint(path);
+            continue;
+          }
           await whilePaused();
           const outcome = await (current = replaceInPlace(path, null));
           await breathe(1 + stat.size / (1024 * 1024));
           if (outcome === "done") {
             pass.opened++;
+            forgetAtRestHint(path);
             const after = atRestInfoSync(path);
             if (after) seen.set(path, { ino: after.stat.ino, size: after.stat.size, mtimeMs: after.stat.mtimeMs, on, keyId: null });
           } else if (outcome === "locked") pass.locked++;
@@ -1704,6 +1758,7 @@ export function runAtRestMigration(options: { sliceMs?: number; pauseMs?: number
     for (const spec of logs) dirs.add(spec.dir);
     await cleanStaleTemps(dirs);
     sweepOriginals();
+    pruneAtRestHints();
     return pass;
   })().finally(() => { running = null; });
   return running;

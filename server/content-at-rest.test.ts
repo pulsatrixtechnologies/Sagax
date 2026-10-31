@@ -16,6 +16,7 @@ import { DATA_DIR, EVENTS_DIR, NATIVE_DIR } from "./config.ts";
 import {
   ContentErased,
   ContentExportLocked,
+  atRestHintSizesForTests,
   atRestInfoSync,
   atRestStream,
   describeHandle,
@@ -23,6 +24,7 @@ import {
   holdPlain,
   LogReader,
   forgetLogMemory,
+  noteAtRestWrite,
   sealLogLines,
   setAtRestThreadFiles,
   readAtRestSync,
@@ -389,6 +391,22 @@ describe("migration", () => {
     await migrateAll();
     expect(readMemoryFile("b1").text).toBe("two, written meanwhile\n");
     expect(sealedOnDisk(index)).toBe(true);
+  });
+
+  it("drops lastUse and scopeHints once a file is sealed or gone", async () => {
+    writeMemoryFile("b1", "hint prune orchid\n");
+    const path = join(workspaceDir("b1"), "MEMORY.md");
+    noteAtRestWrite(path, { owner: WORKSPACE_OWNER });
+    expect(atRestHintSizesForTests()).toEqual({ lastUse: 1, scopeHints: 1 });
+    await migrateAll();
+    expect(sealedOnDisk(path)).toBe(true);
+    expect(atRestHintSizesForTests()).toEqual({ lastUse: 0, scopeHints: 0 });
+
+    noteAtRestWrite(path, { owner: WORKSPACE_OWNER });
+    expect(atRestHintSizesForTests().lastUse).toBe(1);
+    rmSync(path);
+    await runAtRestMigration({ sliceMs: Infinity });
+    expect(atRestHintSizesForTests()).toEqual({ lastUse: 0, scopeHints: 0 });
   });
 });
 
