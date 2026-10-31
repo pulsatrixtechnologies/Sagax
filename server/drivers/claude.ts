@@ -1782,7 +1782,8 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
     /** What a closed process's conversation holds of the volatile half, by
      * thread: a relaunch that resumes that same session sends only what
      * changed since, like a live one (port of OpenMausBot #3164). Absent
-     * (server restart, crash, unsettled turn): the whole half rides. */
+     * (server restart, crash, unsettled turn, evicted entry): the whole
+     * half rides. Bounded like the neighboring session caches. */
     const heldVolatile = new Map<string, { sessionId: string; volatile: string; sections?: Record<string, string> }>();
     /** Where each session's file was written (the config dir of its launch),
      * for sessionBytes. After a restart the default config dir is searched. */
@@ -1836,6 +1837,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       s.controlWaiters?.clear();
       if (s.sessionId && s.sawInit && !s.lastTurnFailed && s.volatile !== UNDELIVERED_VOLATILE && (!s.turn || s.turn.settled)) {
         heldVolatile.set(threadId, { sessionId: s.sessionId, volatile: s.volatile, ...(s.volatileSections ? { sections: s.volatileSections } : {}) });
+        if (heldVolatile.size > 500) heldVolatile.delete(heldVolatile.keys().next().value!);
       } else heldVolatile.delete(threadId);
       if (s.idleTimer) clearTimeout(s.idleTimer);
       // Broker ownership belongs to this session. Detach and close it now,
@@ -3938,6 +3940,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         } finally {
           for (const { stop } of active.values()) stop();
           for (const threadId of Array.from(sessions.keys())) closeSession(threadId, "dispose");
+          heldVolatile.clear();
           listeners.clear();
         }
       },
