@@ -118,21 +118,34 @@ describe("Réglages > Utilisation : la carte Forfait sous Coût", () => {
     expect(page.querySelector('[data-plan-status="unavailable"]')?.textContent).toContain("Forfait indisponible pour ce compte.");
   });
 
-  it("aucun abonnement connecté : « Connectez un abonnement »", async () => {
+  it("aucun fournisseur listé : « Connectez un abonnement »", async () => {
     scene.org = ORG;
     scene.config = { viewer: { role: "member" } };
-    scene.plan = { providers: [{ ...claude, state: "signed-out", ok: false }] };
+    scene.plan = { providers: [] };
     const page = await mount();
     expect(page.querySelector('[data-plan-status="none"]')?.textContent).toContain("Connectez un abonnement");
   });
 
-  it("un fournisseur en erreur (429) : la carte dit pourquoi au lieu de disparaître", async () => {
+  it("abonnement déconnecté : la ligne reste avec Connecter (#1774)", async () => {
+    scene.org = ORG;
+    scene.config = { viewer: { role: "member" } };
+    scene.plan = { providers: [{ ...claude, state: "signed-out", ok: false, plan: null }] };
+    const page = await mount();
+    const row = page.querySelector('[data-plan-row="claude"]');
+    expect(row).not.toBeNull();
+    expect(row!.querySelector('[data-plan-state="signed-out"]')?.textContent).toContain("Non connecté");
+    expect(page.querySelector('[data-plan-status]')).toBeNull();
+  });
+
+  it("fournisseur en erreur (429) : la ligne reste avec la raison et Réessayer (#1774)", async () => {
     scene.org = ORG;
     scene.config = { viewer: { role: "admin" } };
-    scene.plan = { providers: [{ ...claude, state: "error", ok: false, failure: { kind: "http", status: 429 } }] };
+    scene.plan = { providers: [{ ...claude, state: "error", ok: false, plan: null, failure: { kind: "http", status: 429 } }] };
     const page = await mount();
-    const status = page.querySelector('[data-plan-status="unavailable"]');
-    expect(status?.textContent).toContain("Forfait indisponible pour ce compte.");
-    expect(status?.textContent).toContain("429");
+    const row = page.querySelector('[data-plan-row="claude"]');
+    expect(row).not.toBeNull();
+    expect(row!.querySelector('[data-plan-state="error"]')?.textContent).toMatch(/429/);
+    expect(row!.textContent).toContain("Réessayer");
+    expect(page.querySelector('[data-plan-status]')).toBeNull();
   });
 });

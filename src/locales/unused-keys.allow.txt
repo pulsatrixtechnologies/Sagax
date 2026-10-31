@@ -438,12 +438,9 @@ phoneApp.iosAction
 phoneApp.next
 phoneApp.subtitle
 phoneApp.title
-planUsage.connect
 planUsage.empty
-planUsage.notSignedIn
 planUsage.subtitle
 planUsage.title
-planUsage.tryAgain
 pro.disclaimer
 pro.fromPrice
 pro.launchPriceLabel

@@ -96,7 +96,7 @@ describe("the page's order", () => {
       cost: createElement(CostCard, { usage: null, error: null }),
       plan: createElement(PlanUsageView, {
         report: { providers: [{ id: "claude", name: "Claude", driver: "claude", plan: null, ok: true, error: null, state: "no-windows" }] },
-        loading: false, now: NOW.getTime(), onRefresh: () => {}, issuer: "",
+        loading: false, now: NOW.getTime(), onRefresh: () => {}, myEngines: null, onOpenEngines: () => {}, issuer: "",
       }),
       rest: createElement("div", { "data-rest": "" }),
     }));
@@ -195,7 +195,7 @@ describe("Plan card", () => {
     setLocale("fr");
     const html = renderToStaticMarkup(createElement(PlanUsageView, {
       report: { providers: [provider({})] }, loading: false, now: NOW.getTime(),
-      onRefresh: () => {}, issuer: "",
+      onRefresh: () => {}, myEngines: null, onOpenEngines: () => {}, issuer: "",
     }));
     expect(html.indexOf('data-plan-window-kind="fiveHour"')).toBeLessThan(html.indexOf('data-plan-window-kind="weekly"'));
     expect(html).toContain('aria-valuenow="10"');
@@ -217,7 +217,7 @@ describe("Plan card", () => {
         weekly: { available: false, remainingPercent: null, usedPercent: null, resetsAt: null },
         extra: [{ label: "Opus week", remainingPercent: 75, usedPercent: 25, resetsAt: null }],
       })] },
-      loading: false, now: NOW.getTime(), onRefresh: () => {}, issuer: "",
+      loading: false, now: NOW.getTime(), onRefresh: () => {}, myEngines: null, onOpenEngines: () => {}, issuer: "",
     }));
     expect(html).toContain('data-plan-window-kind="fiveHour"');
     expect(html).not.toContain('data-plan-window-kind="weekly"');
@@ -271,7 +271,7 @@ describe("Usage laid out as the reference design's", () => {
     setLocale("fr");
     const html = renderToStaticMarkup(createElement(PlanUsageView, {
       report: { providers: [{ id: "claude", name: "Claude", driver: "claude", plan: "Max", ok: true, error: null, state: "no-windows" }] },
-      loading: false, now: NOW.getTime(), onRefresh: () => {}, issuer: "https://px.example.test",
+      loading: false, now: NOW.getTime(), onRefresh: () => {}, myEngines: null, onOpenEngines: () => {}, issuer: "https://px.example.test",
     }));
     expect(html).toContain('data-settings-group="plan"');
     expect(html.indexOf("data-plan-refresh")).toBeLessThan(html.indexOf('data-plan-row="claude"'));

@@ -1,21 +1,24 @@
 // Settings → Usage: remaining subscription allowance. This is not the token
 // ledger below it — each provider reports its own 5-hour and weekly windows.
 //
-// One row per connected provider (server/plan-usage.ts): its windows or "No
-// plan windows". Since 2026-10-15 a provider in error or not signed in has no
-// row (no Connect here). Since 2026-10-16 the card is always drawn: with no
-// connected provider, a failed read or no access, it says so in one line
-// instead of vanishing. On an organization server the card ends with the
-// link to the person's keys in Perspicax.
+// One row per provider (server/plan-usage.ts): its windows, "No plan
+// windows", "Not signed in" with Connect, or the real error with Try again
+// (#1774: an expired token stays listed; it must not vanish so only the
+// last used engine shows). Since 2026-10-16 the card is always drawn: with
+// no provider, a failed read or no access, it says so in one line instead
+// of vanishing. On an organization server the card ends with the link to
+// the person's keys in Perspicax.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ExternalLink, Loader2, RefreshCw } from "lucide-react";
-import { api } from "@/state/store";
+import { api, useStore } from "@/state/store";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
-import { perspicaxKeysUrl, usePerspicaxOrg } from "@/lib/perspicax-org";
-import { connectedPlanRows, formatResetDistance, planRows, type PlanRow, type PlanUsageReport, type PlanWindow } from "@/lib/plan-usage";
+import { openSettings } from "@/lib/settings-link";
+import { perspicaxKeysUrl, reloadMyEngines, useMyEngines, usePerspicaxOrg, type MyEngine } from "@/lib/perspicax-org";
+import { formatResetDistance, planRows, type PlanRow, type PlanUsageReport, type PlanWindow } from "@/lib/plan-usage";
 import { usageLocale } from "@/lib/usage-personal";
 import { CompactRow, PILL, SettingsGroup } from "./SettingsPrimitives";
+import { EngineConnect } from "./EngineConnect";
 
 function dueResetDeadlines(report: PlanUsageReport, now: number, seen: Set<string>): string[] {
   const due: string[] = [];
@@ -119,14 +122,40 @@ export interface PlanUsageViewProps {
   loading: boolean;
   now: number;
   onRefresh: () => void;
-  /** Organization server: the Perspicax issuer, for "Manage my keys in
-   * Perspicax". Empty in solo, where there is no such link. */
+  /** Organization server: the person's own engines (GET /api/me/engines),
+   * whose card carries Connect. null in solo. */
+  myEngines: MyEngine[] | null;
+  /** Organization server: the Perspicax issuer, for EngineConnect and
+   * "Manage my keys in Perspicax". Empty in solo. */
   issuer: string;
+  /** Solo: open Settings > Providers to sign in. */
+  onOpenEngines: () => void;
   /** The last read failed and no earlier report is kept. */
   failed?: boolean;
   /** This account cannot read plan windows here (a solo server's windows
    * are an admin read): the card says so instead of asking. */
   unavailable?: boolean;
+}
+
+function SignedOut({ provider, myEngines, issuer, onOpenEngines, onRefresh }: { provider: PlanRow } & Pick<PlanUsageViewProps, "myEngines" | "issuer" | "onOpenEngines" | "onRefresh">) {
+  const mine = myEngines?.find((engine) => engine.instanceId === provider.instanceId);
+  return (
+    <div data-plan-state="signed-out" className="flex flex-col gap-2">
+      <p className="text-[12px] text-ink-secondary">{t("planUsage.notSignedIn")}</p>
+      {mine ? (
+        <EngineConnect engine={mine} issuer={issuer} onChanged={async () => { await reloadMyEngines(); onRefresh(); }} statusLine={false} disconnect={false} />
+      ) : (
+        <button
+          type="button"
+          data-plan-connect={provider.instanceId ?? provider.id}
+          onClick={onOpenEngines}
+          className={cn(PILL, "w-fit")}
+        >
+          {t("planUsage.connect", { name: provider.name })}
+        </button>
+      )}
+    </div>
+  );
 }
 
 /** One window of a plan, as the card draws it. */
@@ -220,25 +249,25 @@ function PlanSummary({ provider, now }: { provider: PlanRow; now: number }) {
   );
 }
 
-/** What the card says when it has no plan to draw. */
-function planStatus({ report, loading, failed, unavailable }: Pick<PlanUsageViewProps, "report" | "loading" | "failed" | "unavailable">): { kind: string; text: string; reasons: string[] } {
-  if (unavailable) return { kind: "unavailable", text: t("usage.plan.unavailable"), reasons: [] };
+/** What the card says when it has no row to draw. Error and signed-out
+ * providers are rows (#1774), so they never collapse into this line. */
+function planStatus({ report, loading, failed, unavailable }: Pick<PlanUsageViewProps, "report" | "loading" | "failed" | "unavailable">): { kind: string; text: string } {
+  if (unavailable) return { kind: "unavailable", text: t("usage.plan.unavailable") };
   if (!report) {
-    if (failed && !loading) return { kind: "unavailable", text: t("usage.plan.unavailable"), reasons: [] };
-    return { kind: "loading", text: t("planUsage.loading"), reasons: [] };
+    if (failed && !loading) return { kind: "unavailable", text: t("usage.plan.unavailable") };
+    return { kind: "loading", text: t("planUsage.loading") };
   }
-  const failing = planRows(report).filter((row) => row.state === "error");
-  if (failing.length > 0) return { kind: "unavailable", text: t("usage.plan.unavailable"), reasons: failing.map((row) => row.message ?? "").filter(Boolean) };
-  return { kind: "none", text: t("usage.plan.none"), reasons: [] };
+  return { kind: "none", text: t("usage.plan.none") };
 }
 
 /** The card's body, without fetching: every state is drawn from props.
  * 2026-10-14: "Plan" on Settings > Usage, the person's own subscriptions.
- * 2026-10-15: only the connected providers. 2026-10-16: the card is always
- * drawn under Cost; with no plan to show it says why in one line (loading,
- * unavailable for this account, or connect a subscription). */
-export function PlanUsageView({ report, loading, now, onRefresh, issuer, failed = false, unavailable = false }: PlanUsageViewProps) {
-  const rows = unavailable ? [] : connectedPlanRows(report);
+ * 2026-10-16: the card is always drawn under Cost; with no row to show it
+ * says why in one line (loading, unavailable, or connect a subscription).
+ * 2026-10-30 (#1774): signed-out and error rows stay listed with Connect
+ * or Try again (an expired token must not vanish). */
+export function PlanUsageView({ report, loading, now, onRefresh, myEngines, issuer, onOpenEngines, failed = false, unavailable = false }: PlanUsageViewProps) {
+  const rows = unavailable ? [] : planRows(report);
   const status = rows.length === 0 ? planStatus({ report, loading, failed, unavailable }) : null;
   // 0.5.6: the reference design's usage meters, a grey heading outside one rounded card,
   // one block per plan (name, a 4 px gauge per window, its two lines).
@@ -265,7 +294,6 @@ export function PlanUsageView({ report, loading, now, onRefresh, issuer, failed 
         {status && (
           <div className="px-3.5 py-2.5" data-plan-status={status.kind} role="status">
             <p className="text-[13px] text-ink-secondary">{status.text}</p>
-            {status.reasons.map((reason) => <p key={reason} className="mt-0.5 text-[12px] text-ink-secondary">{reason}</p>)}
           </div>
         )}
         {rows.map((provider) => (
@@ -279,6 +307,22 @@ export function PlanUsageView({ report, loading, now, onRefresh, issuer, failed 
               <p data-plan-state="no-windows" className="text-[12px] text-ink-secondary">
                 {provider.access === "api-key" ? t("planUsage.apiKeyNoWindows") : t("planUsage.noWindows")}
               </p>
+            )}
+            {provider.state === "signed-out" && (
+              <SignedOut provider={provider} myEngines={myEngines} issuer={issuer} onOpenEngines={onOpenEngines} onRefresh={onRefresh} />
+            )}
+            {provider.state === "error" && (
+              <div data-plan-state="error" className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <p className="text-[12px] text-danger">{provider.message}</p>
+                <button
+                  type="button"
+                  onClick={onRefresh}
+                  disabled={loading}
+                  className="rounded-md px-2 py-0.5 text-[12px] text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-50"
+                >
+                  {t("planUsage.tryAgain")}
+                </button>
+              </div>
             )}
           </div>
         ))}
@@ -303,7 +347,9 @@ export function PlanUsageView({ report, loading, now, onRefresh, issuer, failed 
 /** `enabled` false: this account cannot read plan windows here, so the card
  * says so without asking the server. */
 export function PlanUsage({ enabled = true }: { enabled?: boolean }) {
+  const { dispatch } = useStore();
   const org = usePerspicaxOrg();
+  const myEngines = useMyEngines();
   const [report, setReport] = useState<PlanUsageReport | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [failed, setFailed] = useState(false);
@@ -350,7 +396,9 @@ export function PlanUsage({ enabled = true }: { enabled?: boolean }) {
       loading={loading}
       now={now}
       onRefresh={() => void load(true)}
+      myEngines={org ? myEngines : null}
       issuer={org?.org.identity.issuer ?? ""}
+      onOpenEngines={() => openSettings(dispatch, "providers")}
       failed={failed}
       unavailable={!enabled}
     />
