@@ -3,6 +3,7 @@ import { ArrowRight, Loader2, Play } from "lucide-react";
 import { cn } from "@/lib/cn";
 import { routineAutoPausedText, routineDateTime, routineRunError } from "@/lib/routine-display";
 import { t } from "@/lib/i18n";
+import type { LocaleKey } from "@/locales";
 import { ChatMarkdown } from "./ChatMarkdown";
 import type { RoutineRunCardData } from "../../shared/routine-run";
 import type { Message } from "@/state/store";
@@ -10,31 +11,33 @@ import type { Message } from "@/state/store";
 const DETAIL_LIMIT = 280;
 
 const COPY = {
-  queued: { label: "Queued", tone: "text-ink-secondary" },
-  running: { label: "Running", tone: "text-accent" },
-  waiting: { label: "Waiting", tone: "text-warning" },
-  completed: { label: "Completed", tone: "text-ink-secondary" },
-  failed: { label: "Failed", tone: "text-danger" },
-  cancelled: { label: "Cancelled", tone: "text-ink-secondary" },
-  missed: { label: "Missed", tone: "text-danger" },
-  nothing_to_report: { label: "Nothing to report", tone: "text-ink-secondary" },
+  queued: { label: "routines.status.queued", tone: "text-ink-secondary" },
+  running: { label: "routines.status.running", tone: "text-accent" },
+  waiting: { label: "routines.status.waiting", tone: "text-warning" },
+  completed: { label: "routines.status.completed", tone: "text-ink-secondary" },
+  failed: { label: "routines.status.failed", tone: "text-danger" },
+  cancelled: { label: "routines.status.cancelled", tone: "text-ink-secondary" },
+  missed: { label: "routines.status.missed", tone: "text-danger" },
+  nothing_to_report: { label: "routines.status.nothing_to_report", tone: "text-ink-secondary" },
 } satisfies Record<
   RoutineRunCardData["status"],
-  { label: string; tone: string }
+  { label: LocaleKey; tone: string }
 >;
 
 const GOAL_COPY = {
-  completed: COPY.completed,
-  "needs-input": { label: "Needs your input", tone: "text-warning" },
-  blocked: { label: "Blocked", tone: "text-danger" },
-  "limit-reached": { label: "Turn limit reached", tone: "text-warning" },
-  paused: { label: "Paused", tone: "text-warning" },
-  stopped: { label: "Stopped", tone: "text-ink-secondary" },
-  failed: COPY.failed,
+  completed: { label: "routines.goal.completed", tone: "text-ink-secondary" },
+  "needs-input": { label: "routines.goal.needs-input", tone: "text-warning" },
+  blocked: { label: "routines.goal.blocked", tone: "text-danger" },
+  "limit-reached": { label: "routines.goal.limit-reached", tone: "text-warning" },
+  paused: { label: "routines.goal.paused", tone: "text-warning" },
+  stopped: { label: "routines.goal.stopped", tone: "text-ink-secondary" },
+  failed: { label: "routines.goal.failed", tone: "text-danger" },
 } satisfies Record<
   NonNullable<RoutineRunCardData["goalStatus"]>,
-  { label: string; tone: string }
+  { label: LocaleKey; tone: string }
 >;
+
+const DEFERRED = { label: "routines.status.deferred" as const, tone: "text-warning" };
 
 function compactDetail(value: string | undefined): string {
   const clean = value?.replace(/\s+/g, " ").trim() ?? "";
@@ -86,8 +89,9 @@ export function RoutineRunCard({
   const copy = run.goalStatus
     ? GOAL_COPY[run.goalStatus]
     : run.status === "queued" && run.deferredAt != null
-      ? { label: "Deferred: target busy", tone: "text-warning" }
+      ? DEFERRED
       : COPY[run.status];
+  const statusLabel = t(copy.label);
   const reported = run.status === "completed" && (!run.goalStatus || run.goalStatus === "completed");
   // A report is the bot's words, whole; an error stays one short line.
   const report = reported ? run.summary?.trim() : undefined;
@@ -103,7 +107,7 @@ export function RoutineRunCard({
 
   return (
     <section
-      aria-label={t("routineRun.ariaLabel", { name: run.routineName, status: copy.label })}
+      aria-label={t("routineRun.ariaLabel", { name: run.routineName, status: statusLabel })}
       className="flex w-full max-w-[680px] flex-col items-start"
     >
       {/* the bot's own bubble, as its other messages beside it */}
@@ -116,7 +120,7 @@ export function RoutineRunCard({
           <span aria-hidden="true">·</span>
           <span aria-live="polite" className={cn("inline-flex items-center gap-1 font-medium", copy.tone)}>
             {run.status === "running" && !run.goalStatus && <Loader2 aria-hidden="true" className="size-3 animate-spin" />}
-            {copy.label}
+            {statusLabel}
           </span>
         </>}
         {pausedAfter && <>
@@ -143,7 +147,7 @@ export function RoutineRunCard({
           <button
             type="button"
             onClick={onOpen}
-            aria-label={`${actionLabel} for ${run.routineName}`}
+            aria-label={t(review ? "routines.post.reviewFor" : "routines.post.openRunFor", { name: run.routineName })}
             className={cn(
               "inline-flex items-center gap-0.5 rounded font-medium transition-colors hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent",
               // a team that needs the person keeps its warning chip
