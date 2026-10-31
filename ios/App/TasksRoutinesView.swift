@@ -605,7 +605,8 @@ struct TasksRoutinesView: View {
                 .contextMenu {
                     if let target = NotificationTarget(botId: run.botId, threadId: run.executionThreadId ?? run.threadId) {
                         Button("Open thread", systemImage: "arrow.up.right.square") {
-                            Task { await session.openNotification(target) }
+                            // the execution thread itself, not the run detail again
+                            Task { await session.openNotification(target, runDetail: false) }
                         }
                     }
                     if run.isActive && session.surfaceGate.allows(.routineRunCancel) {

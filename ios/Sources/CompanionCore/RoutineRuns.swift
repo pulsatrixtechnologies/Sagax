@@ -199,6 +199,39 @@ public extension Routine {
 // MARK: - Results thread (AU14, AU15)
 
 public enum RoutineResults {
+    /// The routine run a thread is the execution of, if any (desktop
+    /// `routineRunOfThread`).
+    public static func runId(ofThread threadId: String?, bots: [Bot], rooms: [Room] = []) -> String? {
+        guard let threadId, !threadId.isEmpty else { return nil }
+        for bot in bots {
+            if let id = bot.tasks?.first(where: { $0.threadId == threadId })?.routineRunId, !id.isEmpty {
+                return id
+            }
+        }
+        for room in rooms {
+            if let id = room.tasks?.first(where: { $0.threadId == threadId })?.routineRunId, !id.isEmpty {
+                return id
+            }
+        }
+        return nil
+    }
+
+    /// Which run a notification tap should open (desktop
+    /// `openNotificationTarget` with `runDetail`): the payload's
+    /// `routineRunId`, else the execution thread's run. Nil when the run is
+    /// unknown to this client so the conversation still opens.
+    public static func runId(
+        for target: NotificationTarget,
+        bots: [Bot],
+        rooms: [Room] = [],
+        knownRunIds: Set<String>?
+    ) -> String? {
+        let runId = target.routineRunId ?? runId(ofThread: target.threadId, bots: bots, rooms: rooms)
+        guard let runId else { return nil }
+        if let knownRunIds, !knownRunIds.contains(runId) { return nil }
+        return runId
+    }
+
     /// `EventDetails`: the results thread (or the chat it was asked from),
     /// when that conversation still exists.
     public static func openTarget(

@@ -154,6 +154,11 @@ final class Session: ObservableObject {
         didSet { if case let .bot(bot)? = notificationChat { freshTopics[bot.id] = nil } }
     }
 
+    /// A routine-run push: the run's detail, not its report thread (#1700).
+    /// The roster and the iPad shell present it, then call
+    /// `consumeNotificationRoutineRun`.
+    @Published private(set) var notificationRoutineRun: OpenedRoutineRun?
+
     /// A chat a deep link asked for, consumed by the roster's
     /// NavigationStack the same way a notification response is.
     @Published private(set) var pendingChat: Chat? {
@@ -1206,6 +1211,7 @@ final class Session: ObservableObject {
         endpointRefreshTask = nil
         restorePending = false
         pendingNotification = nil
+        notificationRoutineRun = nil
         pairingInvite = CompanionPairingInvitePolicy.nextInvite(
             current: pairingInvite,
             after: .signedOut
@@ -1255,6 +1261,7 @@ final class Session: ObservableObject {
         restorePending = false
         endLinger()
         pendingNotification = nil
+        notificationRoutineRun = nil
         screenWatchers = 0
         client = nil
         token = nil
@@ -3506,7 +3513,7 @@ final class Session: ObservableObject {
         }
     }
 
-    /// 2026-10-29 / #1699: Continue in the conversation opens the bot's one
+/// 2026-10-29 / #1699: Continue in the conversation opens the bot's one
     /// conversation and quotes the run's report in the composer (desktop
     /// `continueRoutineRunInConversation`).
     func continueRoutineRunInConversation(_ run: RoutineRun) async {
@@ -3519,13 +3526,19 @@ final class Session: ObservableObject {
         if let citation = plan.citation {
             pendingComposerCitations[plan.composerThreadId, default: []].append(citation)
         }
-        await openNotification(plan.target)
+        // Continue stays on the conversation, never the run detail (#1700).
+        await openNotification(plan.target, runDetail: false)
         if let messageId = plan.focusMessageId {
             await jump(to: messageId, inThread: plan.target.threadId)
         }
     }
 
-    func openNotification(_ target: NotificationTarget) async {
+    /// Opens what a notification named. A routine run's push (or a link to
+    /// its execution thread) opens the run's detail when this phone knows
+    /// the run (#1700, desktop `openNotificationTarget`); otherwise the
+    /// conversation. `runDetail: false` keeps "Open thread" / Continue on
+    /// the conversation itself.
+    func openNotification(_ target: NotificationTarget, runDetail: Bool = true) async {
         guard let client else {
             // Do not carry a stale destination into a future, unrelated
             // pairing. Only a saved connection waiting for Keychain access is
@@ -3545,6 +3558,29 @@ final class Session: ObservableObject {
                 try await hydrate(using: client)
                 bot = state.bot(target.botId)
             }
+            if runDetail {
+                let listing = await loadRoutines()
+                let known = Set(listing.runs.map(\.id))
+                if let runId = RoutineResults.runId(
+                    for: target, bots: state.bots, rooms: state.rooms, knownRunIds: known
+                ), let run = listing.runs.first(where: { $0.id == runId }) {
+                    notificationChat = nil
+                    notificationRoutineRun = OpenedRoutineRun(
+                        run: run,
+                        routine: listing.routines.first { $0.id == run.routineId }
+                    )
+                    return
+                }
+            }
+            // Run-only access banner and no known run: the bot, when we have
+            // it (desktop opens that bot's Coding activity for the run).
+            if target.threadId.isEmpty {
+                if let selected = bot {
+                    notificationRoutineRun = nil
+                    notificationChat = .bot(selected)
+                }
+                return
+            }
             // A room's approval/question notification carries the asker bot
             // with the ROOM's thread id — open the room rather than asking
             // the bot to switch to a thread it does not own (a 404).
@@ -3560,6 +3596,7 @@ final class Session: ObservableObject {
                         // current task instead of leaving the person nowhere.
                     }
                 }
+                notificationRoutineRun = nil
                 notificationChat = .room(room)
                 return
             }
@@ -3570,6 +3607,7 @@ final class Session: ObservableObject {
             // the stream opens beside it; the conversation never gives way.
             if !SidebarPrefsModel.shared.showThreads,
                let landed = await land(bot: selected, threadId: target.threadId, using: client) {
+                notificationRoutineRun = nil
                 notificationChat = .bot(landed)
                 return
             }
@@ -3583,6 +3621,7 @@ final class Session: ObservableObject {
                     // banner and no navigation at all.
                 }
             }
+            notificationRoutineRun = nil
             notificationChat = .bot(selected)
         } catch is CancellationError {
             // A refresh from the previous computer must not alert on the
@@ -3591,6 +3630,7 @@ final class Session: ObservableObject {
     }
 
     func consumeNotificationChat() { notificationChat = nil }
+    func consumeNotificationRoutineRun() { notificationRoutineRun = nil }
 
     // MARK: - Thread chips
 

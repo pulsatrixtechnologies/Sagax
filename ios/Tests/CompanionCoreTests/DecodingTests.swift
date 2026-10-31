@@ -227,6 +227,21 @@ final class DecodingTests: XCTestCase {
         XCTAssertFalse(detached.requiresTaskSwitch(activeThreadId: "task-2"))
     }
 
+    func testNotificationTargetCarriesARoutineRun() {
+        let withRun = NotificationTarget(
+            payload: ["botId": "scout", "threadId": "report", "routineRunId": "run-1"]
+        )
+        XCTAssertEqual(withRun?.botId, "scout")
+        XCTAssertEqual(withRun?.threadId, "report")
+        XCTAssertEqual(withRun?.routineRunId, "run-1")
+        // an owner's access banner names the run and no conversation
+        let runOnly = NotificationTarget(payload: ["botId": "scout", "routineRunId": "run-1"])
+        XCTAssertEqual(runOnly?.botId, "scout")
+        XCTAssertEqual(runOnly?.threadId, "")
+        XCTAssertEqual(runOnly?.routineRunId, "run-1")
+        XCTAssertFalse(runOnly?.requiresTaskSwitch(activeThreadId: "main") ?? true)
+    }
+
     func testDecodesTheCloudBackendAndItsAbsence() throws {
         // The cloud-desktop button hides on cloudBackend == "vps", so both
         // sides of that gate must decode: a harness that sends the field, and

@@ -134,6 +134,26 @@ final class PushTests: XCTestCase {
         XCTAssertEqual(payload.nudgeKey, frame.dedupKey)
     }
 
+    func testARoutineRunPushOpensItsRunDetail() throws {
+        let userInfo: [AnyHashable: Any] = [
+            "aps": ["alert": ["title": "Scout", "body": "Morning brief finished", "subtitle": "Open routine Morning brief"]],
+            "kind": "message",
+            "threadId": "report-thread",
+            "botId": "scout",
+            "routineRunId": "run-1",
+            "routineName": "Morning brief",
+            "senderName": "Scout",
+        ]
+        let payload = try XCTUnwrap(PushPayload(userInfo: userInfo))
+        XCTAssertEqual(payload.routineRunId, "run-1")
+        XCTAssertEqual(payload.routineName, "Morning brief")
+        // the tap names the run so Session opens the detail, not only the report (#1700)
+        XCTAssertEqual(
+            payload.target,
+            NotificationTarget(botId: "scout", threadId: "report-thread", routineRunId: "run-1")
+        )
+    }
+
     func testOtherNotificationsAreNotPushes() {
         XCTAssertNil(PushPayload(userInfo: ["kind": "message", "threadId": "t"]), "no aps: a local notification")
         XCTAssertNil(PushPayload(userInfo: ["aps": [:], "kind": "spend"]), "unknown kind")
