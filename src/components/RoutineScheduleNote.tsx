@@ -18,6 +18,6 @@ export function RoutineScheduleNote() {
   return <p data-routine-schedule-note={place.kind} className="text-[11px] leading-relaxed text-ink-secondary">
     {place.kind === "server"
       ? t("routines.scheduleNote.server")
-      : "Runs while Sagax is open on this computer — it cannot wake a sleeping Mac. A run missed by less than 12 hours still happens when the app is back; for 24/7, run Sagax on a VPS."}
+      : t("routines.scheduleNote.local")}
   </p>;
 }
