@@ -1574,6 +1574,9 @@ export type SideChat = {
   header: ReactNode | ((pill: ReactNode) => ReactNode);
   label: string;
   panel?: { open: boolean; onToggle: () => void; slot?: HTMLElement | null };
+  /** Older pages for this pane's own transcript (outside the store). */
+  loadOlder?: () => void;
+  loadingOlder?: boolean;
 };
 
 // ── single stream (Show threads off, docs/single-stream-orchestration.md) ──
@@ -2046,6 +2049,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
     messages,
     pinOn: [bot.busy, composerDock.pad],
     hasMore: bot.hasMore,
+    ...(side?.loadOlder ? { onLoadOlder: side.loadOlder, loadingOlder: side.loadingOlder } : {}),
   });
   // The run card sits in the right rail, over the transcript. It is not part
   // of the measured dock: folding it into the pad scrolls the thread by the

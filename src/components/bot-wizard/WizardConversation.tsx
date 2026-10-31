@@ -28,8 +28,8 @@ export function WizardConversation({ botId, threadId, title, className }: {
     threadId,
     messages: transcript.messages,
     activeLeafId: transcript.activeLeafId,
-    hasMore: false,
-  } : null, [bot, threadId, transcript.messages, transcript.activeLeafId]);
+    hasMore: transcript.hasMore,
+  } : null, [bot, threadId, transcript.messages, transcript.activeLeafId, transcript.hasMore]);
 
   const header = (
     <div data-wizard-conversation-header className="content-topbar absolute inset-x-0 top-0 z-[3] flex min-h-[52px] items-center gap-2 px-3 py-2.5">
@@ -57,7 +57,7 @@ export function WizardConversation({ botId, threadId, title, className }: {
           </div>
         </>
       ) : (
-        <ChatView bot={threadBot} side={{ header, label: title }} />
+        <ChatView bot={threadBot} side={{ header, label: title, loadOlder: transcript.loadOlder, loadingOlder: transcript.loadingOlder }} />
       )}
     </div>
   );

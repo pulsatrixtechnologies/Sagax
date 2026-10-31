@@ -1396,6 +1396,7 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
     messages: group.messages,
     pinOn: [group.busyBotId, group.working, composerDock.pad],
     hasMore: group.hasMore,
+    ...(pane?.loadOlder ? { onLoadOlder: pane.loadOlder, loadingOlder: pane.loadingOlder } : {}),
   });
   // Seen (src/lib/read-receipts.ts): this person's own position while the window has focus.
   useReportRead(group.threadId, scrollRef, group.messages.at(-1)?.id);

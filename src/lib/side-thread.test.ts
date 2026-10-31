@@ -9,6 +9,7 @@ import {
   currentSideThread,
   EMPTY_SIDE_TRANSCRIPT,
   openSideThread,
+  prependOlder,
   sideThreadRedundant,
   wantsSideThread,
 } from "./side-thread";
@@ -57,6 +58,13 @@ describe("the open side thread", () => {
 });
 
 describe("the side thread's transcript", () => {
+  it("prepends older pages without duplicating messages already held", () => {
+    const held = { messages: [message("c"), message("d", "c")], activeLeafId: "d", loaded: true };
+    const next = prependOlder(held, [message("a"), message("b", "a"), message("c")]);
+    expect(next.messages.map((m) => m.id)).toEqual(["a", "b", "c", "d"]);
+    expect(next.activeLeafId).toBe("d");
+  });
+
   it("takes the newest page and keeps a live message that arrived before it", () => {
     const early = applySideFrame(EMPTY_SIDE_TRANSCRIPT, { kind: "message", threadId: "a", message: message("m3", "m2") }, "a");
     expect(early.loaded).toBe(false);

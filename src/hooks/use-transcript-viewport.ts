@@ -51,6 +51,8 @@ export function useTranscriptViewport<T extends { id: string; role?: string }>({
   pinOn,
   transcriptShown = true,
   hasMore = false,
+  onLoadOlder,
+  loadingOlder: loadingOlderOverride,
 }: {
   /** The bot or room. Opening another conversation — another owner, or
    * another thread of this owner — re-arms bottom-follow. */
@@ -65,6 +67,11 @@ export function useTranscriptViewport<T extends { id: string; role?: string }>({
   transcriptShown?: boolean;
   /** True when older messages remain on the server before messages[0]. */
   hasMore?: boolean;
+  /** Side / split panes hold their own transcript outside the store: call
+   * this instead of dispatching `loadOlderMessages`. */
+  onLoadOlder?: () => void;
+  /** Pending flag when `onLoadOlder` is set; otherwise the store's. */
+  loadingOlder?: boolean;
 }) {
   const { state, dispatch } = useStore();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -236,11 +243,16 @@ export function useTranscriptViewport<T extends { id: string; role?: string }>({
     setTranscriptWindow((w) => ({ ...w, end: nextEnd >= messages.length ? null : nextEnd }));
   };
   // Scrollback across the network: the snapshot holds a bounded page, and
-  // everything before it is still on the server.
-  const olderPending = Boolean(state.loadingOlder[threadId]);
+  // everything before it is still on the server. A side / split pane passes
+  // its own loader; the main chat uses the store.
+  const olderPending = onLoadOlder ? Boolean(loadingOlderOverride) : Boolean(state.loadingOlder[threadId]);
+  const requestOlder = useCallback(() => {
+    if (onLoadOlder) onLoadOlder();
+    else dispatch({ type: "loadOlderMessages", threadId });
+  }, [onLoadOlder, dispatch, threadId]);
   const loadOlder = () => {
     holdRowForPrepend();
-    dispatch({ type: "loadOlderMessages", threadId });
+    requestOlder();
   };
 
   useEffect(() => {
@@ -259,9 +271,9 @@ export function useTranscriptViewport<T extends { id: string; role?: string }>({
     } else if (hasMore && !olderPending) {
       expandingRef.current = true;
       holdRowForPrepend();
-      dispatch({ type: "loadOlderMessages", threadId });
+      requestOlder();
     }
-  }, [hiddenCount, startIndex, hasMore, olderPending, threadId, dispatch, transcriptKey]);
+  }, [hiddenCount, startIndex, hasMore, olderPending, requestOlder, transcriptKey]);
 
   useEffect(() => {
     const sentinel = topSentinelRef.current;

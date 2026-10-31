@@ -443,13 +443,15 @@ function BotPane({ leafId, bot, threadId, target, onClose }: { leafId: string; b
   }, [unread, bot.id, threadId]);
   // The chat view reads the bot on this section's thread, with this
   // section's messages; the rest (busy state, approvals, model) stays live.
+  // hasMore and loadOlder stay on this section's transcript: the store only
+  // pages the selected thread.
   const paneBot = useMemo<Bot>(() => ({
     ...bot,
     threadId,
     messages: transcript.messages,
     activeLeafId: transcript.activeLeafId,
-    hasMore: false,
-  }), [bot, threadId, transcript.messages, transcript.activeLeafId]);
+    hasMore: transcript.hasMore,
+  }), [bot, threadId, transcript.messages, transcript.activeLeafId, transcript.hasMore]);
   const title = target.threadId ? task?.title?.trim() || t("task.newShort") : bot.name;
   const label = t("splitView.aria", { name: bot.name });
   const header = (pill: ReactNode) => (
@@ -465,7 +467,7 @@ function BotPane({ leafId, bot, threadId, target, onClose }: { leafId: string; b
   const loadingPill = <BotHeaderPill name={bot.name} panelOpen={panel.open} onToggle={panel.onToggle} avatar={<BotAvatar bot={bot} state="idle" size={24} animated={false} />} />;
   return (
     <section aria-label={label} data-split-pane={`bot:${bot.id}`} className="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-app">
-      {transcript.loaded ? <ChatView bot={paneBot} side={{ header, label, panel }} /> : <PaneLoading header={header(loadingPill)} failed={transcript.failed} />}
+      {transcript.loaded ? <ChatView bot={paneBot} side={{ header, label, panel, loadOlder: transcript.loadOlder, loadingOlder: transcript.loadingOlder }} /> : <PaneLoading header={header(loadingPill)} failed={transcript.failed} />}
     </section>
   );
 }
@@ -489,8 +491,8 @@ function GroupPane({ leafId, group, threadId, target, onClose }: { leafId: strin
     ...group,
     threadId,
     messages: transcript.messages,
-    hasMore: false,
-  }), [group, threadId, transcript.messages]);
+    hasMore: transcript.hasMore,
+  }), [group, threadId, transcript.messages, transcript.hasMore]);
   const members = useMemo(() => groupMemberBots(group, state.bots), [group, state.bots]);
   const task = group.tasks?.find((candidate) => candidate.threadId === threadId);
   const title = target.threadId && task ? task.title?.trim() || t("task.newShort") : group.name;
@@ -510,7 +512,7 @@ function GroupPane({ leafId, group, threadId, target, onClose }: { leafId: strin
   const loadingPill = group.dm ? null : <BotHeaderPill name={group.name} panelOpen={panel.open} onToggle={panel.onToggle} avatar={<GroupAvatarStack members={members} size={24} />} />;
   return (
     <section aria-label={label} data-split-pane={`group:${group.id}`} className="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-app">
-      {transcript.loaded ? <GroupView group={paneGroup} pane={{ header, label, panel }} /> : <PaneLoading header={header(loadingPill)} failed={transcript.failed} />}
+      {transcript.loaded ? <GroupView group={paneGroup} pane={{ header, label, panel, loadOlder: transcript.loadOlder, loadingOlder: transcript.loadingOlder }} /> : <PaneLoading header={header(loadingPill)} failed={transcript.failed} />}
     </section>
   );
 }

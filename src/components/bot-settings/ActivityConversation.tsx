@@ -2,8 +2,8 @@
 // should also be able to dive into the current subagent's chat"): the real
 // thread (its messages, tool calls, approvals and composer) in the chat
 // view's compact form, the way the side thread column shows one. Same data
-// as that column (useSideTranscript: the thread's newest page, then the
-// live stream), so it follows the run while it goes; no new server route.
+// as that column (useSideTranscript: newest page, older pages on scroll-up,
+// then the live stream), so it follows the run while it goes; no new route.
 // "Open thread" in the window's footer still moves the main chat there.
 import { useMemo } from "react";
 import { Loader2, Maximize2 } from "lucide-react";
@@ -31,8 +31,8 @@ export default function ActivityConversation({ botId, threadId, title, onOpenInM
     threadId,
     messages: transcript.messages,
     activeLeafId: transcript.activeLeafId,
-    hasMore: false,
-  } : null, [bot, threadId, transcript.messages, transcript.activeLeafId]);
+    hasMore: transcript.hasMore,
+  } : null, [bot, threadId, transcript.messages, transcript.activeLeafId, transcript.hasMore]);
 
   const header = (
     <div data-activity-conversation-header className="content-topbar absolute inset-x-0 top-0 z-[3] flex min-h-[52px] items-center gap-2 px-3 py-2.5">
@@ -63,7 +63,7 @@ export default function ActivityConversation({ botId, threadId, title, onOpenInM
           </div>
         </>
       ) : (
-        <ChatView bot={threadBot} side={{ header, label: t("activity.conversation.aria", { title }) }} />
+        <ChatView bot={threadBot} side={{ header, label: t("activity.conversation.aria", { title }), loadOlder: transcript.loadOlder, loadingOlder: transcript.loadingOlder }} />
       )}
     </div>
   );
