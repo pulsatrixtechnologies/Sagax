@@ -11,12 +11,24 @@ describe("persona search index", () => {
   });
   it("finds the page of a setting by a French or English word, accents optional", () => {
     expect(find("mascotte")[0]).toBe("appearance");
-    expect(find("moteur")).toContain("model");
     expect(find("voix")[0]).toBe("voice");
     expect(find("horaire")).toEqual(expect.arrayContaining(["voice", "permissions", "access"]));
     expect(find("approbation")).toContain("permissions");
     expect(find("mcp")).toEqual(expect.arrayContaining(["access", "perspicax"]));
     expect(find("modele")).toContain("model");
+  });
+  // #1702: "moteur" / "engine" name Model, not Identity (which only shows the
+  // current engine as a fact).
+  it("ranks Model first for moteur and engine, ahead of Identity", () => {
+    expect(find("moteur")[0]).toBe("model");
+    expect(find("moteurs")[0]).toBe("model");
+    expect(find("engine")[0]).toBe("model");
+    expect(find("moteur")).not.toContain("overview");
+    expect(find("engine")).not.toContain("overview");
+    expect(personaPageRank("model", "Modèle", "moteur")).toBe(1);
+    expect(personaPageRank("model", "Modèle", "engine")).toBe(1);
+    expect(personaPageRank("overview", "Identité", "moteur")).toBeNull();
+    expect(personaPageRank("overview", "Identité", "engine")).toBeNull();
   });
   it("ranks a label before a keyword before the index", () => {
     expect(personaPageRank("voice", "Voix", "voix")).toBe(0);
