@@ -1,6 +1,6 @@
 import { Cron, scheduledJobs } from "croner";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { normalizeCronSchedule, nextCronRuns, type RoutineCronSchedule } from "./routine-schedule.ts";
+import { createCronRunPreview, normalizeCronSchedule, nextCronRuns, type RoutineCronSchedule } from "./routine-schedule.ts";
 
 const schedule = (expression: string, timeZone = "UTC"): RoutineCronSchedule => ({ type: "cron", expression, timeZone });
 const runs = (expression: string, after: string, count = 3, timeZone = "UTC") =>
@@ -95,6 +95,15 @@ describe("cron date calculator", () => {
     expect(scheduledJobs).toEqual(before);
     for (const count of [0, -1, 1001, 1.5, Infinity]) expect(() => nextCronRuns(value, Date.now(), count)).toThrow(/1 and 1000/);
     expect(() => nextCronRuns(value, NaN, 3)).toThrow(/preview date/);
+  });
+
+  it("reuses one calculator across many preview calls", () => {
+    const value = normalizeCronSchedule(schedule("* * * * *", "UTC"));
+    const preview = createCronRunPreview(value);
+    const after = Date.parse("2026-10-01T00:00:00Z");
+    expect(preview(after - 1, 1)).toEqual([after]);
+    expect(preview(after, 2)).toEqual([after + 60_000, after + 120_000]);
+    expect(() => preview(after, 0)).toThrow(/1 and 1000/);
   });
 });
 

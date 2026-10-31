@@ -15,6 +15,7 @@ import {
   groupCalendarSlots,
   scheduleAt,
   slotAt,
+  SLOT_GROUP_MS,
   snapMinutes,
   startOfDay,
   startOfWeek,
@@ -202,10 +203,29 @@ describe("routine calendar projection", () => {
     const dense: Routine = { ...monthly, schedule: { type: "cron", expression: "* * * * *", timeZone: "UTC" } };
     const day = startOfDay(from);
     const items = projectedRoutineItems([dense], [], day, day + 86_400_000);
-    // One marker per 5-minute calendar slot, through the whole day.
-    expect(items).toHaveLength(Math.ceil((day + 86_400_000 - from) / 300_000));
-    expect(items.at(-1)!.at).toBeGreaterThanOrEqual(day + 86_400_000 - 300_000);
+    // One marker per half-hour group slot (#1677), spanning the whole day (#1483).
+    expect(items).toHaveLength(Math.ceil((day + 86_400_000 - from) / SLOT_GROUP_MS));
+    expect(items.at(-1)!.at).toBeGreaterThanOrEqual(day + 86_400_000 - SLOT_GROUP_MS);
     expect(() => scheduleAt(monthly.schedule, from, from + 86_400_000)).toThrow("Edit this routine");
+  });
+
+  it("keeps a week of per-minute cron markers bounded to half-hour slots (#1677)", () => {
+    const day = startOfDay(new Date(2026, 9, 1, 12).getTime());
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const dense: Routine = {
+      ...monthly,
+      createdAt: day - 86_400_000,
+      nextRunAt: day,
+      schedule: { type: "cron", expression: "* * * * *", timeZone },
+    };
+    const items = projectedRoutineItems([dense], [], day, day + 7 * 86_400_000);
+    // Far below one marker per 5-minute slot (7 * 288), one per half hour instead.
+    expect(items).toHaveLength(7 * (86_400_000 / SLOT_GROUP_MS));
+    expect(items.at(-1)!.at).toBeGreaterThanOrEqual(day + 6 * 86_400_000);
+
+    const many = Array.from({ length: 20 }, (_, i) => ({ ...dense, id: `dense-${i}` }));
+    const crowded = projectedRoutineItems(many, [], day, day + 7 * 86_400_000);
+    expect(crowded).toHaveLength(20 * 7 * (86_400_000 / SLOT_GROUP_MS));
   });
 
   it("shows every hourly cron run on every day, not only the first 12 (#1483)", () => {
@@ -216,6 +236,19 @@ describe("routine calendar projection", () => {
     const items = projectedRoutineItems([hourly], [], tomorrow, addDays(tomorrow, 1));
     expect(items).toHaveLength(24);
     expect(items.at(-1)!.at - tomorrow).toBeGreaterThanOrEqual(22 * 3_600_000);
+  });
+
+  it("keeps every half-hour cron run (sparse relative to a calendar slot)", () => {
+    const day = startOfDay(new Date(2026, 9, 1, 12).getTime());
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const halfHourly: Routine = {
+      ...monthly,
+      createdAt: day - 86_400_000,
+      nextRunAt: day,
+      schedule: { type: "cron", expression: "0,30 * * * *", timeZone },
+    };
+    const items = projectedRoutineItems([halfHourly], [], day, day + 86_400_000);
+    expect(items).toHaveLength(48);
   });
 
   it("keeps daily cron projections visible throughout a full month", () => {

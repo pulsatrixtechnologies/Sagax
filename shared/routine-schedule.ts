@@ -103,7 +103,18 @@ export function normalizeCronSchedule(value: unknown, after = Date.now()): Routi
  * Croner's DST policy is intentional: missing clock times advance through
  * the gap, and repeated clock times use their first occurrence only. */
 export function nextCronRuns(schedule: RoutineCronSchedule, after: number, count: number): number[] {
-  if (!Number.isInteger(count) || count < 1 || count > MAX_PREVIEW_RUNS) throw new Error("Choose between 1 and 1000 cron preview runs");
+  return createCronRunPreview(schedule)(after, count);
+}
+
+/**
+ * One Croner build for many previews of the same schedule. The calendar's
+ * dense path jumps half hour by half hour and would otherwise rebuild the
+ * calculator on every call (#1677).
+ */
+export function createCronRunPreview(schedule: RoutineCronSchedule): (after: number, count: number) => number[] {
   const { crons } = cronCalculator(schedule);
-  return futureRuns(crons, after, count);
+  return (after, count) => {
+    if (!Number.isInteger(count) || count < 1 || count > MAX_PREVIEW_RUNS) throw new Error("Choose between 1 and 1000 cron preview runs");
+    return futureRuns(crons, after, count);
+  };
 }
