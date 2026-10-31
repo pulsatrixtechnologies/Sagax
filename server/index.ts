@@ -810,7 +810,7 @@ import { DEFAULT_OUTBOUND_POLICY, isOutboundTool, normalizeOutboundPolicy } from
 import { normalizeAllowedRecipients, sendRecipientsAllowed } from "../shared/allowed-recipients.ts";
 import { standingGrantsAllowed } from "./custom-rules-org.ts";
 import { bindThreadLogCapProvider } from "./thread-log-rotation.ts";
-import { listenWebhookIngress, triggerSourceSetup, webhookCredential, type WebhookIngress } from "./webhook-ingress.ts";
+import { listenWebhookIngress, resolveWebhookPublicUrl, triggerSourceSetup, webhookCredential, type WebhookIngress } from "./webhook-ingress.ts";
 import { assertModelVariantSupported, memberTurnSelection } from "./member-turn.ts";
 import { WebhookManager } from "./webhooks.ts";
 import { cardStandingGrants, orgServerExecRouting, webhookExecTargetAdminOnly, workplaceIsBotComputer } from "./exec-target.ts";
@@ -1444,7 +1444,8 @@ import { createOrgLibraryRoutes } from "./routes/org-library.ts";
 const PORT = Number(process.env.SAGAX_PORT || process.env.OGB_PORT || 8799);
 const WEBHOOK_PORT = Number(process.env.SAGAX_WEBHOOK_PORT || PORT + 1);
 // Behind a proxy or tunnel, the base URL senders should use (docs/self-hosting.md).
-const WEBHOOK_PUBLIC_URL = process.env.SAGAX_WEBHOOK_PUBLIC_URL || undefined;
+// Org stacks set SAGAX_PUBLIC_URL; fall back to it when the dedicated webhook URL is unset.
+const WEBHOOK_PUBLIC_URL = resolveWebhookPublicUrl();
 const STATIC_DIR = process.env.SAGAX_STATIC_DIR || null;
 
 ensureDirs();

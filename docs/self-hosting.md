@@ -242,7 +242,8 @@ Open the link (`https://<DOMAIN>/pair#code=…`) in a browser and it is
 paired; see "Using it from your computer" for what a session is. Webhook
 URLs (`https://<DOMAIN>/hooks/wh_…`) work without a session, and that is the
 base the app prints on new hooks because the stack sets
-`SAGAX_WEBHOOK_PUBLIC_URL`.
+`SAGAX_WEBHOOK_PUBLIC_URL` (when that is unset, the server falls back to
+`SAGAX_PUBLIC_URL`, the same public origin).
 
 What the stack does, so you can adapt it:
 
@@ -1468,9 +1469,9 @@ Any reverse proxy works, given three things:
    `proxy_buffering off` in nginx); the UI streams events over SSE.
 
 Plus one convenience: set `SAGAX_PUBLIC_URL=https://your.domain` so pairing
-links, and `SAGAX_WEBHOOK_PUBLIC_URL=https://your.domain` so hook URLs, are
-printed with the public address. [`deploy/Caddyfile`](../deploy/Caddyfile)
-is the reference implementation.
+links and hook URLs use the public address (hook URLs also accept a dedicated
+`SAGAX_WEBHOOK_PUBLIC_URL` when the webhook host differs).
+[`deploy/Caddyfile`](../deploy/Caddyfile) is the reference implementation.
 
 ## Opening a desktop from another device
 
