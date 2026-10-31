@@ -92,6 +92,15 @@ final class ApprovalNotificationTests: XCTestCase {
         XCTAssertEqual(NotificationQuestion.first(line: "Publish version 2.4 to the team?\nRelease notes checked."), "Publish version 2.4 to the team?")
     }
 
+    func testUnavailableRespondNeverCountsAsLanded() {
+        // #1744: a 200 with outcome unavailable must not become Allowed / Answer sent
+        XCTAssertFalse(AnswerFeedback.respondLanded("unavailable"))
+        XCTAssertTrue(AnswerFeedback.respondLanded("allowed-once"))
+        XCTAssertTrue(AnswerFeedback.respondLanded("rejected"))
+        XCTAssertTrue(AnswerFeedback.respondLanded("answered"))
+        XCTAssertTrue(AnswerFeedback.respondLanded(nil), "a body without outcome still landed")
+    }
+
     // MARK: - Withdrawal
 
     func testASettledAskTakesDownItsOwnBannersOnly() {

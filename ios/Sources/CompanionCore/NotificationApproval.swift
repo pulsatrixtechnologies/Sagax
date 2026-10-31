@@ -224,6 +224,13 @@ public enum AnswerFeedback: Equatable, Sendable {
         case .open: .failed
         }
     }
+
+    /// Whether a `/respond` body means the answer landed. `unavailable` is
+    /// the server saying the action never ran (turn ended, ask timed out,
+    /// wrong thread); a body with no outcome still counts as landed.
+    public static func respondLanded(_ outcome: String?) -> Bool {
+        outcome != "unavailable"
+    }
 }
 
 /// The question a banner asked: its first line (the body puts it first).

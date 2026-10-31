@@ -90,10 +90,14 @@ enum NotificationApprovalRunner {
             always: false, rememberCommand: false, alwaysAllowKey: nil
         )
         do {
-            try await WidgetRouteRequest.perform(connection: connection, token: token, replay: .onlyWhenUndelivered) { client in
-                _ = try await client.respond(threadId: threadId, decision: decision)
+            // `unavailable` never ran: treat it as failed so the receipt is
+            // not "Allowed" / "Answer sent" (#1744).
+            let outcome = try await WidgetRouteRequest.perform(
+                connection: connection, token: token, replay: .onlyWhenUndelivered
+            ) { client in
+                try await client.respond(threadId: threadId, decision: decision)
             }
-            return .answered
+            return AnswerFeedback.respondLanded(outcome) ? .answered : .failed
         } catch let refusal as StepUpRequired {
             // Deny never widens anything. A key refusal on it is not an Allow.
             guard behavior == "allow" else { return .failed }
@@ -124,10 +128,12 @@ enum NotificationApprovalRunner {
         var again = decision
         again.stepUp = ceremonyId
         do {
-            try await WidgetRouteRequest.perform(connection: connection, token: token, replay: .onlyWhenUndelivered) { client in
-                _ = try await client.respond(threadId: threadId, decision: again)
+            let outcome = try await WidgetRouteRequest.perform(
+                connection: connection, token: token, replay: .onlyWhenUndelivered
+            ) { client in
+                try await client.respond(threadId: threadId, decision: again)
             }
-            return .answered
+            return AnswerFeedback.respondLanded(outcome) ? .answered : .failed
         } catch {
             return .failed
         }
