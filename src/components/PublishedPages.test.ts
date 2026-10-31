@@ -14,9 +14,11 @@ describe("published page card", () => {
     expect(expiryFromHours(0, now)).toBeNull();
   });
 
-  it("previews in a sandbox with scripts only (HTML) or nothing (Markdown)", () => {
+  it("previews in a sandbox with scripts only, never popups (#1799)", () => {
     expect(pageFrameSandbox("html")).toBe("allow-scripts");
-    expect(pageFrameSandbox("markdown")).toBe("");
+    expect(pageFrameSandbox("markdown")).toBe("allow-scripts");
+    expect(pageFrameSandbox("presentation")).toBe("allow-scripts");
+    expect(pageFrameSandbox("markdown")).not.toContain("allow-popups");
   });
 
   it("frames only this server's own preview wrapper path, never srcdoc or another address", () => {

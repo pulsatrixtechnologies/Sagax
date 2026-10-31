@@ -240,7 +240,8 @@ describe("annotation mode of the app's preview (« Annoter la page »)", () => {
     const viewer: PageViewer = { principalId: "pr_alice", computerOwner: false };
     const wrapper = await hit(options(pages, viewer), `/pages/preview/${page.id}/1?annotate=1`);
     expect(wrapper.status).toBe(200);
-    expect(wrapper.body).not.toContain("<script");
+    // wrapper only has the nonce'd open-link listener; annotation runs in the frame
+    expect(wrapper.body).not.toContain(ANNOTATE_SOURCE);
     const src = frameSrc(wrapper.body);
     expect(src).toMatch(/[?&]a=1(&|$)/);
     const frame = await hit(options(pages, viewer), src, { "sec-fetch-dest": "iframe" });
@@ -301,7 +302,8 @@ describe("Presentation kind (« Présentation »)", () => {
     expect(doc).not.toContain("<script");
     expect(doc).toContain("scroll-snap-type");
     expect(pageCsp("presentation")).toContain("script-src 'none'");
-    expect(pageFrameSandbox("presentation")).toBe("");
+    expect(pageFrameSandbox("presentation")).toBe("allow-scripts");
+    expect(pageFrameSandbox("presentation")).not.toContain("allow-popups");
   });
 });
 
@@ -424,10 +426,11 @@ describe("reader comments on a published page (Owner 2026-10-21)", () => {
     expect((await call(handler, bob, "PATCH", `/api/pages/${id}`, { readerComments: true })).status).toBe(404);
     const wrapper = await hit(options(pages, null), `/pages/view/${token}`);
     expect(wrapper.body).toContain(`<form method="post" action="/pages/comment/${token}"`);
-    // no script runs without a built bar (only its JSON block, never run)
-    expect(wrapper.body).not.toMatch(/<script(?![^>]*type="application\/json")/);
+    // without a built bar: only the nonce'd open-link listener (#1799)
+    expect(wrapper.body).toMatch(/<script nonce="[^"]+">/);
     const csp = String(wrapper.headers["content-security-policy"]);
-    expect(csp).toContain("script-src 'none'");
+    expect(csp).toMatch(/script-src 'nonce-[^']+'/);
+    expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
     expect(csp).toContain(`form-action sagax.example.com/pages/comment/${token}`);
     // the honeypot is in the form
     expect(wrapper.body).toContain('name="website"');

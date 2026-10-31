@@ -11,6 +11,7 @@ import { t } from "@/lib/i18n";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { cn } from "@/lib/cn";
 import { clampWidgetHeight, WIDGET_MESSAGE } from "@/lib/rich-blocks";
+import { acceptWidgetOpen } from "@/lib/sandboxed-open";
 import { widgetFontFace } from "@/lib/widget-kit";
 import { buildArtifactDocument } from "@/lib/artifact-document";
 import { ARTIFACT_ERROR_MESSAGE, ARTIFACT_START_LIMIT_MS, nextArtifactProblem, type ArtifactProblem } from "@/lib/artifact-frame";
@@ -145,7 +146,9 @@ export function ArtifactFrame({ artifact, fill = false, className, bare = false 
       if (!ready.current) setProblem((current) => nextArtifactProblem(current, "slow"));
     }, ARTIFACT_START_LIMIT_MS);
     const onMessage = (event: MessageEvent) => {
-      if (event.source !== frame.current?.contentWindow) return;
+      const source = frame.current?.contentWindow;
+      if (acceptWidgetOpen(event, source)) return;
+      if (event.source !== source) return;
       const data = event.data as { type?: unknown; height?: unknown } | null;
       if (!data) return;
       if (data.type === ARTIFACT_ERROR_MESSAGE) {

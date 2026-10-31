@@ -18,6 +18,7 @@ import geistLatin from "@fontsource-variable/geist/files/geist-latin-wght-normal
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { buildWidgetDocument, clampWidgetHeight, WIDGET_MESSAGE } from "@/lib/rich-blocks";
+import { acceptWidgetOpen } from "@/lib/sandboxed-open";
 import { widgetFontFace, type WidgetTheme } from "@/lib/widget-kit";
 import type { Message } from "@/state/store";
 import { postWidgetTheme, useWidgetTheme, widgetFrameAttributes } from "./WidgetFrame";
@@ -46,7 +47,9 @@ function SandboxedAppFrame({ srcDoc, title, theme, onEscaped }: {
   useEffect(() => {
     loads.current = 0;
     const onMessage = (event: MessageEvent) => {
-      if (event.source !== frame.current?.contentWindow) return;
+      const source = frame.current?.contentWindow;
+      if (acceptWidgetOpen(event, source)) return;
+      if (event.source !== source) return;
       const data = event.data as { type?: unknown; height?: unknown } | null;
       if (!data || data.type !== WIDGET_MESSAGE) return;
       const next = clampWidgetHeight(data.height);

@@ -350,11 +350,14 @@ function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: Serv
   // reader comments: a plain form that may post to this page's comment path only
   const formAction = input.commentPath ? (known ? `${known}${input.commentPath}` : host ? `${host}${input.commentPath}` : "'self'") : "'none'";
   // A reading link's bar runs this server's own built script, in the wrapper
-  // only (its CSP below); the app's preview runs none.
+  // only (its CSP below). The open-link listener (#1799) is a nonce'd inline
+  // script on every wrapper so a page frame can open the system browser.
   const assets = input.preview ? null : options.readerAssets?.() ?? null;
+  const openNonce = randomBytes(16).toString("base64url");
+  const scriptSrc = assets ? `script-src 'self' 'nonce-${openNonce}'` : `script-src 'nonce-${openNonce}'`;
   const csp = [
     "default-src 'none'",
-    assets ? "script-src 'self'" : "script-src 'none'",
+    scriptSrc,
     assets ? "style-src 'self' 'unsafe-inline'" : "style-src 'unsafe-inline'",
     assets ? "img-src 'self' data: blob: https:" : "img-src 'none'",
     ...(assets ? ["font-src 'self' data:", "connect-src 'self'"] : []),
@@ -382,6 +385,7 @@ function sendWrapper(options: PublicPageOptions, req: IncomingMessage, res: Serv
       + (input.preview && input.look?.theme ? `&c=${input.look.theme}` : "")
       + (input.preview && input.look?.theme && input.look.skin ? `&s=${encodeSkinTokens(input.look.skin)}` : ""),
     lang,
+    openNonce,
     preview: input.preview,
     ...(!input.preview && input.version.kind === "presentation" ? { slides: splitSlides(options.pages?.content(input.page.id, input.version.n) ?? "").length } : {}),
     ...(input.preview ? {} : { reader: { boot: readerBoot({ page: input.page, version: input.version, viewer, lang, personName: names.personName, ...(meName ? { meName } : {}),
@@ -721,11 +725,13 @@ function serveFrame(options: PublicPageOptions, req: IncomingMessage, res: Serve
     const drawn = readerLook(options, target.page, "");
     return drawn.look ? lookContentTokens(drawn.look, drawn.botHex) : undefined;
   })();
-  const nonce = annotating || keepScroll !== undefined || reportSize ? randomBytes(16).toString("base64url") : undefined;
-  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": pageCsp(target.version.kind, { frameAncestors: ancestors, ...(nonce ? { annotateNonce: nonce } : {}) }) });
+  // Every frame gets a nonce so Markdown/presentation can run our open-link
+  // bridge (#1799); annotation and place-keeping reuse the same nonce.
+  const nonce = randomBytes(16).toString("base64url");
+  res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-security-policy": pageCsp(target.version.kind, { frameAncestors: ancestors, annotateNonce: nonce }) });
   res.end(method === "HEAD" ? undefined : pageDocument({ kind: target.version.kind, title: target.page.title ?? target.version.title, content, lang: language(req) }, {
     ...(annotating ? { annotateNonce: nonce } : {}),
-    ...(keepScroll !== undefined || reportSize ? { nonce: nonce! } : {}),
+    nonce,
     ...(keepScroll !== undefined ? { keepScroll } : {}),
     ...(reportSize ? { reportSize: true } : {}),
     ...(theme ? { theme } : {}),

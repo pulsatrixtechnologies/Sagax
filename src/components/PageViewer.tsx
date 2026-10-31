@@ -32,6 +32,7 @@ import { BarChart3, Check, Ellipsis, Highlighter, History, Loader2, MessageSquar
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { pagePlace, rememberPagePlace } from "@/lib/open-page";
+import { acceptPageOpen } from "@/lib/sandboxed-open";
 import { api, useStore } from "@/state/store";
 import {
   annotationPrompt,
@@ -324,6 +325,7 @@ export function PageSurface({ pageId, version: initialVersion, initialTitle = ""
   };
   useEffect(() => {
     const listen = (event: MessageEvent) => {
+      if (acceptPageOpen(event)) return;
       const frame = innerFrame();
       const y = acceptScroll(event, frame);
       if (y !== null) rememberPagePlace(pageId, y);

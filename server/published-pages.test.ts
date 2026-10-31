@@ -14,7 +14,7 @@ import { createAgentCard, type AgentCardStore } from "./chat-widgets.ts";
 import { json, readBody } from "./harness/http.ts";
 import { pageOwnerFor, PublishedPages } from "./published-pages.ts";
 import { PageLive } from "./page-live.ts";
-import { bannerName, escapeHtml, FRAME_PRELUDE, jsonBlock, markdownToHtml, pageDocument, parseReaderAssets, REPORT_SIZE_SOURCE, SLIDE_PRINT_MM, STATE_BRIDGE_SOURCE, wrapperBanner, ANNOTATE_BRIDGE_SOURCE } from "./published-pages-render.ts";
+import { bannerName, escapeHtml, FRAME_PRELUDE, jsonBlock, markdownToHtml, OPEN_BRIDGE_SOURCE, pageDocument, parseReaderAssets, REPORT_SIZE_SOURCE, SLIDE_PRINT_MM, STATE_BRIDGE_SOURCE, WRAPPER_OPEN_SOURCE, wrapperBanner, ANNOTATE_BRIDGE_SOURCE } from "./published-pages-render.ts";
 import type { RequestAuth } from "./request-auth.ts";
 import {
   createPublishedPageRoutes,
@@ -26,7 +26,7 @@ import {
 } from "./routes/published-pages.ts";
 import type { Message } from "./store.ts";
 import { encodeSkinTokens, PAGE_THEME_LAYER, PAGE_THEME_STYLE_ID } from "../src/lib/page-theme.ts";
-import { PAGE_LIMITS, pageCsp, pageFrameSandbox, parsePageProposal, validExpiry } from "../shared/published-pages.ts";
+import { PAGE_LIMITS, PAGE_OPEN_MESSAGE, pageCsp, pageFrameSandbox, parsePageProposal, validExpiry } from "../shared/published-pages.ts";
 import { parseReaderBoot, READER_BOOT_ID, READER_MASCOT_ID, readerNotice } from "../shared/page-reader.ts";
 import { holdContrast } from "../src/lib/bot-accent-colors.ts";
 import { fallbackWidgetTokens } from "../src/lib/widget-kit.ts";
@@ -325,11 +325,13 @@ describe("wrapper and sandboxed frame", () => {
     expect(text).toContain(escapeHtml(notice.warning));
     expect(wrapper.body).toContain("jamais de mot de passe");
     expect(wrapper.body).toMatch(/<header class="sagax-bar"><h1 title="Rapport">Rapport<\/h1>/);
-    // no built UI here: no script runs, only the JSON block the bar would read
-    expect(wrapper.body).not.toMatch(/<script(?![^>]*type="application\/json")/);
+    // no built UI here: only the nonce'd open-link listener (#1799) and the JSON boot block
+    expect(wrapper.body).toMatch(/<script nonce="[^"]+">/);
+    expect(wrapper.body).toContain(WRAPPER_OPEN_SOURCE);
     expect(wrapper.body).toMatch(/<iframe src="\/pages\/frame\/[^"]+\?t=[^"]+" sandbox="allow-scripts"/);
     const csp = String(wrapper.headers["content-security-policy"]);
-    expect(csp).toContain("script-src 'none'");
+    expect(csp).toMatch(/script-src 'nonce-[^']+'/);
+    expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
     expect(csp).toContain("frame-ancestors 'none'");
     // the frame may load this page's frame path and nothing else
     const token = path.slice("/pages/view/".length);
@@ -383,14 +385,14 @@ describe("wrapper and sandboxed frame", () => {
     }
   });
 
-  it("Markdown runs no script, escapes raw HTML and writes links as text", () => {
+  it("Markdown escapes raw HTML and writes safe links as anchors (#1799)", () => {
     expect(pageCsp("markdown")).toContain("script-src 'none'");
-    expect(pageCsp("markdown")).toMatch(/; sandbox$/);
+    expect(pageCsp("markdown")).toMatch(/; sandbox allow-scripts$/);
+    expect(pageCsp("markdown")).not.toContain("allow-popups");
     const html = markdownToHtml("# Titre\n\n<script>alert(1)</script> **gras** [lien](javascript:alert(1)) [ok](https://example.com)\n\n- a\n- b\n\n```\n<b>x</b>\n```");
     expect(html).not.toContain("<script>");
     expect(html).toContain("&lt;script&gt;");
-    expect(html).not.toContain("<a ");
-    expect(html).toContain("ok (<span class=\"url\">https://example.com</span>)");
+    expect(html).toContain('<a href="https://example.com" rel="noopener noreferrer">ok</a>');
     expect(html).toContain("[lien](javascript:alert(1))");
     expect(html).toContain("<strong>gras</strong>");
     expect(html).toContain("<ul><li>a</li><li>b</li></ul>");
@@ -408,13 +410,12 @@ describe("wrapper and sandboxed frame", () => {
     expect(doc).toContain("<li class=\"task\">\u2611 fait</li>");
     expect(doc).toContain("<li class=\"task\">\u2610 a faire</li>");
     expect(doc).toContain("<del>barre</del>");
-    expect(doc).toContain("<span class=\"url\">https://example.com</span>");
-    expect(doc).toContain("<span class=\"url\">https://example.org/x</span>.");
-    expect(doc).not.toContain("<a ");
-    expect(pageCsp("markdown")).toMatch(/; sandbox$/);
+    expect(doc).toContain('<a class="url" href="https://example.com" rel="noopener noreferrer">https://example.com</a>');
+    expect(doc).toContain('<a class="url" href="https://example.org/x" rel="noopener noreferrer">https://example.org/x</a>.');
+    expect(pageCsp("markdown")).toMatch(/; sandbox allow-scripts$/);
   });
 
-  it("an HTML page starts with the prelude; Markdown has no script at all", () => {
+  it("an HTML page starts with the prelude; Markdown without a nonce has no script", () => {
     expect(pageDocument({ kind: "html", title: "R", content: HTML }).startsWith(`<!doctype html>${FRAME_PRELUDE}`)).toBe(true);
     expect(pageDocument({ kind: "html", title: "R", content: "<p>x</p>" }).startsWith(FRAME_PRELUDE)).toBe(true);
     expect(pageDocument({ kind: "markdown", title: "R", content: "# x" })).not.toContain("<script");
@@ -623,9 +624,10 @@ describe("the app's preview (review of #646, round 2)", () => {
     const wrapper = await hit(options(pages, alice), `/pages/preview/${page.id}/1`);
     expect(wrapper.status).toBe(200);
     expect(wrapper.body).toContain("Aperçu d&#39;une page proposée par Scout pour Alice");
-    expect(wrapper.body).not.toContain("<script");
+    expect(wrapper.body).toContain(WRAPPER_OPEN_SOURCE);
     const csp = String(wrapper.headers["content-security-policy"]);
     expect(csp).toContain("frame-ancestors 'self'");
+    expect(csp).toMatch(/script-src 'nonce-[^']+'/);
     expect(csp).toContain(`frame-src sagax.example.com/pages/preview-frame/${page.id}/1;`);
     expect(wrapper.headers["x-frame-options"]).toBe("SAMEORIGIN");
     const src = frameSrc(wrapper.body);
@@ -634,6 +636,7 @@ describe("the app's preview (review of #646, round 2)", () => {
     expect(frame.status).toBe(200);
     expect(String(frame.headers["content-security-policy"])).toMatch(/; sandbox allow-scripts$/);
     expect(frame.body).toContain("<h1>Rapport</h1>");
+    expect(frame.body).toContain(OPEN_BRIDGE_SOURCE);
   });
 
   it("nobody else previews: another person, nobody signed in, or someone holding the ticket", async () => {
@@ -662,7 +665,7 @@ describe("the app's own look of its preview (2026-10-28, the page view)", () => 
     expect(wrapper.status).toBe(200);
     expect(wrapper.body).not.toContain("sagax-banner\" role");
     expect(wrapper.body).toContain('<meta name="color-scheme" content="dark">');
-    expect(wrapper.body).not.toContain("<script");
+    expect(wrapper.body).toContain(WRAPPER_OPEN_SOURCE);
     const src = frameSrc(wrapper.body);
     expect(src).toMatch(/&k=640(&|$)/);
     expect(src).toMatch(/&c=dark(&|$)/);
@@ -979,14 +982,17 @@ describe("the reader's bar (2026-10-28)", () => {
     expect(wrapper.body).toMatch(/<iframe src="[^"]+" sandbox="allow-scripts"/);
   });
 
-  it("the app's preview never gets the bar or its script", async () => {
+  it("the app's preview never gets the bar; only the open-link listener runs (#1799)", async () => {
     const { pages } = store();
     const { page } = proposed(pages, "pr_owner");
     const wrapper = await hit(withAssets(pages, owner), `/pages/preview/${page.id}/1`);
     expect(wrapper.body).toContain("sagax-banner");
     expect(wrapper.body).not.toContain("sagax-bar");
-    expect(wrapper.body).not.toContain("<script");
-    expect(String(wrapper.headers["content-security-policy"])).toContain("script-src 'none'");
+    expect(wrapper.body).toContain(WRAPPER_OPEN_SOURCE);
+    expect(wrapper.body).not.toContain("/assets/");
+    const csp = String(wrapper.headers["content-security-policy"]);
+    expect(csp).toMatch(/script-src 'nonce-[^']+'/);
+    expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
   });
 
   it("a title cannot close the JSON block or write markup", () => {
@@ -1033,8 +1039,10 @@ describe("Download PDF (2026-10-28)", () => {
     expect(csp).not.toMatch(/script-src[^;]*unsafe-inline/);
     expect(frame!.body).toContain(`<script nonce="${nonce}">${REPORT_SIZE_SOURCE}</script>`);
     expect(frame!.body).toContain(`<script nonce="${nonce}">${ANNOTATE_BRIDGE_SOURCE}</script>`);
-    // our own two scripts only, both by nonce
-    expect(frame!.body.match(/<script/g)).toHaveLength(2);
+    expect(frame!.body).toContain(OPEN_BRIDGE_SOURCE);
+    expect(frame!.body).toContain(PAGE_OPEN_MESSAGE);
+    // our own scripts only (open-link bridge, size, annotate), all by nonce
+    expect(frame!.body.match(/<script/g)).toHaveLength(3);
     // our own dark rules are for the screen only: the PDF is on white
     expect(frame!.body).toContain("@media screen and (prefers-color-scheme:dark)");
   });
