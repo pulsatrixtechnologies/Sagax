@@ -877,6 +877,16 @@ describe("PiDriver turns (fake CLI)", () => {
     const done = await recorder.until((e) => e.type === "turn.completed" && e.turnId === turnId);
     expect(done).toMatchObject({ ok: false, stopReason: "failed" });
     expect(instance.adapter.hasSession("t-exit")).toBe(false);
+    expect(recorder.events.find((event) => event.type === "runtime.error")).toMatchObject({
+      message: expect.stringContaining("fake-pi: simulated startup failure"),
+    });
+  });
+
+  it("drains stderr beyond pipe capacity while a cold turn runs", async () => {
+    await create("stderr-flood");
+    const { turnId } = await instance.adapter.sendTurn({ threadId: "t-stderr-flood", text: "hi" });
+    expect(await recorder.until((event) => event.type === "turn.completed" && event.turnId === turnId)).toMatchObject({ ok: true });
+    expect(recorder.events.filter((event) => event.type === "runtime.error")).toEqual([]);
   });
 
   it("surfaces a pi turn error instead of reporting an empty success", async () => {

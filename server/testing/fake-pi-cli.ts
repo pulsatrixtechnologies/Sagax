@@ -7,7 +7,7 @@
 //
 //   FAKE_PI_MODE   happy (default) | tooluse | mcpgateway | permission | interleave | question-select | question-input
 //                  | turn-error | no-models | exit-early | compaction | compaction-recovery
-//                  | compaction-recovery-upstream | prompt-reject | omp-chunk
+//                  | compaction-recovery-upstream | prompt-reject | omp-chunk | stderr-flood
 //   FAKE_PI_MODELS comma-separated provider/model pairs (default "ollama-cloud/glm-5.2,openai/gpt-4o")
 //   FAKE_PI_ERROR  the turn-error mode's errorMessage
 //   FAKE_PI_SET_MODEL_REFUSE refuse every set_model
@@ -73,7 +73,13 @@ if (argv[0] === "update" && argv.includes("--models")) {
 // exit-early: die before saying anything — a failed spawn surfaces as a
 // runtime.error + failed turn, never a hang.
 if (mode === "exit-early") {
+  process.stderr.write("fake-pi: simulated startup failure\n");
   process.exit(1);
+}
+if (mode === "stderr-flood") {
+  // Exceed a pipe's capacity before answering any RPC. A driver that does
+  // not drain stderr cannot reach the normal happy response below.
+  await new Promise<void>((resolve) => process.stderr.write("diagnostic line\n".repeat(32_768), () => resolve()));
 }
 
 const send = (obj: any) => process.stdout.write(JSON.stringify(obj) + "\n");
