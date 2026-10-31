@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 import { request as httpRequest, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 
+import { attachRelayErrorHandlers } from "./relay-sockets.ts";
+
 export interface ViewerDevice {
   id?: string;
   cloudDesktopAccess: boolean;
@@ -155,6 +157,15 @@ export class CompanionViewerRelay {
     }
   }
 
+  /** Drop every open viewer (upgraded WebSockets included) so shutdown can exit. */
+  closeAll(): void {
+    while (this.#sessions.size > 0) {
+      const session = this.#sessions.values().next().value as ViewerSession | undefined;
+      if (!session) break;
+      this.#remove(session);
+    }
+  }
+
   rewriteJoinResponse(path: string, value: unknown, deviceId?: string, controlLeaseId?: string | null): unknown {
     const join = BOT_JOIN_PATH.exec(path);
     const botId = join?.[1];
@@ -303,6 +314,7 @@ export class CompanionViewerRelay {
       };
       socket.once("close", release);
       remote.once("close", release);
+      attachRelayErrorHandlers(socket, remote);
       if (head.length) remote.write(head);
       if (remoteHead.length) socket.write(remoteHead);
       socket.pipe(remote).pipe(socket);

@@ -29,6 +29,7 @@ import {
   isMessageFileDownload,
   isSandboxViewerAccess,
 } from "./routes.ts";
+import { attachRelayErrorHandlers } from "./relay-sockets.ts";
 import { sendTunnelJson } from "./tunnel-gzip.ts";
 import { CompanionViewerRelay } from "./viewer-relay.ts";
 import { createSseScrubber, isJson, scrub } from "./wire.ts";
@@ -845,6 +846,7 @@ export function createProxyHandler(options: ProxyOptions) {
         );
         if (head.length) remote.write(head);
         if (remoteHead.length) socket.write(remoteHead);
+        attachRelayErrorHandlers(socket, remote);
         socket.pipe(remote).pipe(socket);
       });
       upstream.once("response", (response) => {
@@ -867,6 +869,15 @@ export function createProxyHandler(options: ProxyOptions) {
     if (!open) return;
     capabilityStreams.delete(deviceId);
     for (const close of open) close();
+  };
+  // Upgraded WebSockets are not ordinary HTTP connections: closeAllConnections
+  // alone can leave them open and block companion.close() forever.
+  handle.closeAllRelays = (): void => {
+    viewers.closeAll();
+    for (const open of capabilityStreams.values()) {
+      for (const close of open) close();
+    }
+    capabilityStreams.clear();
   };
   return handle;
 }

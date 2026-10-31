@@ -15,11 +15,14 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { resolveCompanionEntry } from "./companion-entry.mjs";
+import { waitCompanionExit } from "./companion-exit.mjs";
 import {
   cleanupCompanionOriginEndpoint,
   companionOriginHealth,
   createCompanionOriginEndpoint,
 } from "./companion-origin-gateway.mjs";
+
+export { waitCompanionExit };
 
 // Passed to the fork rather than left to the sidecar's own defaults, so the
 // port this file fetches the control API on cannot drift from the port the
@@ -348,18 +351,8 @@ async function stop() {
   }
   // kill() asks. Returning before the process is actually gone means the
   // next start races a sidecar still holding the port, and the user sees the
-  // toggle fail for a reason that has already stopped being true. Wait for
-  // the exit, bounded — a wedged child must not leave Settings stuck either.
-  await new Promise((resolve) => {
-    let done = false;
-    const finish = () => {
-      if (done) return;
-      done = true;
-      resolve();
-    };
-    child.once("exit", finish);
-    setTimeout(finish, 5_000).unref?.();
-  });
+  // toggle fail for a reason that has already stopped being true.
+  await waitCompanionExit(child);
   return companionState();
 }
 

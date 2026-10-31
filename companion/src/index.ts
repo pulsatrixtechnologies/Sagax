@@ -325,6 +325,9 @@ const shutdown = async (signal: string): Promise<void> => {
   // line just withdrew
   watcher.stop();
   await mdns.stop().catch(() => {});
+  // Upgraded viewer WebSockets stay open through closeAllConnections alone;
+  // tear them down first so close() can finish and process.exit runs.
+  proxy.closeAllRelays?.();
   // close() waits for open connections, and an SSE stream never ends on its
   // own — drop the sockets so "stop" means stopped, now.
   companion.closeAllConnections?.();
