@@ -7,7 +7,7 @@
 // this only asks for them, and asks again when a turn settles.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ListChecks, RefreshCw, X } from "lucide-react";
-import { openBotThread, useStore, type Bot } from "@/state/store";
+import { api, openBotThread, useStore, type Bot } from "@/state/store";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
@@ -21,6 +21,7 @@ import {
   type ChipTone,
 } from "@/lib/activity";
 import { listenLiveFrames } from "@/lib/live-events";
+import { readableError } from "@/lib/plain-error";
 
 const LIMIT = 300;
 
@@ -43,17 +44,15 @@ export function ActivityPanel({ bot }: { bot: Bot }) {
     const controller = new AbortController();
     loadAbort.current = controller;
     try {
-      const res = await fetch(`/api/bots/${bot.id}/activity?limit=${LIMIT}`, { signal: controller.signal });
-      if (!res.ok) throw new Error(`${res.status}`);
-      // SAFETY: this same-version renderer calls the harness's typed
-      // activity endpoint; malformed transport data is handled by catch.
-      const next = (await res.json()) as { rows: ActivityRow[] };
+      const next = await api<{ rows: ActivityRow[] }>(`/api/bots/${bot.id}/activity?limit=${LIMIT}`, {
+        signal: controller.signal,
+      });
       if (controller.signal.aborted) return;
       setRows(next.rows);
       setError(null);
     } catch (e) {
       if (controller.signal.aborted) return;
-      setError(e instanceof Error ? e.message : String(e));
+      setError(readableError(e));
     } finally {
       if (loadAbort.current === controller) loadAbort.current = null;
     }
