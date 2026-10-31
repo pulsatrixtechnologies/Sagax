@@ -7,7 +7,11 @@
 #   PARITY_WAIT=14 ios/parity/capture.sh         seconds to wait per screen (10)
 #   PARITY_SKIN=lagoon ios/parity/capture.sh     wear a skin (DEBUG -paritySkin;
 #                                                "system" follows the simulator)
-#   PARITY_APPEARANCE=light ios/parity/capture.sh  the simulator's appearance
+#   PARITY_APPEARANCE=light ios/parity/capture.sh  the simulator's appearance;
+#                                                also forces -paritySkin system so
+#                                                the app's pinned theme (default
+#                                                Black/Black) does not keep the
+#                                                shot dark
 #   PARITY_OUT=/tmp/shots ios/parity/capture.sh  where the PNGs go
 #   PARITY_EXTRA_ARGS="-companion.prefs.rosterChromeAtTop YES" ...  more launch arguments
 #   PARITY_HOME=primary ios/parity/capture.sh 01-home  one centred Primary Bot,
@@ -35,6 +39,13 @@ IOS="$(cd "$HERE/.." && pwd)"
 OUT="${PARITY_OUT:-$HERE/out}"
 SKIN="${PARITY_SKIN:-}"
 APPEARANCE="${PARITY_APPEARANCE:-dark}"
+# Light captures: the app theme wins over simctl appearance. The default
+# selection is Black twice, which pins dark (ThemeSelection.pinsAppearance).
+# With no explicit PARITY_SKIN, force -paritySkin system so the shot follows
+# the light simulator (ThemeStore: suggestedLight on the light half).
+if [ -z "$SKIN" ] && [ "$APPEARANCE" = "light" ]; then
+  SKIN=system
+fi
 BUILD="$HERE/build"
 DEVICE_NAME="${PARITY_DEVICE:-parity-17pro}"
 BUNDLE_ID="ca.pulsatrix.sagax"
