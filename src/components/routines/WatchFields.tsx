@@ -14,6 +14,7 @@ import type { LocaleKey } from "@/locales";
 import { cn } from "@/lib/cn";
 import type { RoutineWatchCondition, RoutineWatchOp, RoutineWatchPrecheck, RoutineWatchSourceType } from "../../../shared/routine-watch";
 import { ROUTINE_WATCH_LIMITS, ROUTINE_WATCH_OPS } from "../../../shared/routine-watch";
+import { readableError } from "@/lib/plain-error";
 
 export type WatchConditionChoice = "none" | "json_path" | "contains" | "exit_code";
 
@@ -157,7 +158,7 @@ export function WatchFields({ draft, onChange, botId, routineId, runOn }: {
         body: JSON.stringify({ botId, precheck: built.watch, ...(routineId ? { routineId } : {}), ...(runOn ? { runOn } : {}) }),
       }) as CheckAnswer);
     } catch (cause) {
-      setAnswer({ ok: false, error: cause instanceof Error ? cause.message : String(cause) });
+      setAnswer({ ok: false, error: readableError(cause) });
     } finally {
       setChecking(false);
     }

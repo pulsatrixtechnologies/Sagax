@@ -15,6 +15,7 @@ import { api, useStore, type Bot } from "@/state/store";
 import { canManageBotWebhooks } from "@/components/bot-settings/BotWebhooks";
 import { maskedToken, statusFor } from "@/components/WebhooksPanel";
 import { whenLabel } from "@/lib/schedule-label";
+import { readableError } from "@/lib/plain-error";
 
 const ROW = "flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2";
 const LABEL = "w-24 shrink-0 text-[11.5px] font-medium text-ink-secondary";
@@ -67,7 +68,7 @@ export function RoutineWebhookPanel({ routine, bot }: { routine?: Routine; bot?:
       setCredential(response.credential);
       setShown(true);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setWorking("");
     }
@@ -81,7 +82,7 @@ export function RoutineWebhookPanel({ routine, bot }: { routine?: Routine; bot?:
       const response = await api(`/api/routines/${routine.id}`, { method: "PATCH", body: JSON.stringify({ schedule: { type: "webhook" } }) });
       dispatch({ type: "routinePatched", routine: response.routine });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setWorking("");
     }

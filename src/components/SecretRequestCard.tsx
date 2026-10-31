@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 import { api, useStore, type ConfigStatus, type Message } from "@/state/store";
 import { ASK_FIELD, ASK_PRIMARY_BUTTON, ASK_QUIET_BUTTON, AskCard, AskSettledLine, returnFocusToComposer } from "./AskCard";
 import { VaultRequestCard } from "./VaultRequestCard";
+import { readableError } from "@/lib/plain-error";
 
 // The key a bot asked for. It waits in the shared ask card with a masked
 // field, and once saved folds into one line that names the key and never
@@ -80,7 +81,7 @@ function ApiKeyRequestCard({
         body: JSON.stringify({ threadId }),
       });
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : String(error));
+      setLocalError(readableError(error));
     } finally {
       setSaving(false);
     }
@@ -107,7 +108,7 @@ function ApiKeyRequestCard({
       await notifyProvided();
       returnFocusToComposer();
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : String(error));
+      setLocalError(readableError(error));
     } finally {
       setSaving(false);
     }

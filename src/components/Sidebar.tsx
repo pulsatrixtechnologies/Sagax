@@ -185,6 +185,7 @@ import { plainPreviewText } from "@/lib/plain-preview";
 import { openSideThread } from "@/lib/side-thread";
 import { moveRailFocus } from "@/lib/sidebar-rail";
 import { isClientCancellation } from "../../shared/client-cancel";
+import { readableError } from "@/lib/plain-error";
 
 
 
@@ -1652,7 +1653,7 @@ function ThreadTree({ ownerId, ownerName, owner, folderOwner, openThreadId, task
       setReadStatus(t("folder.markedRead"));
       onSaved();
     } catch (error) {
-      setReadError(error instanceof Error ? error.message : String(error));
+      setReadError(readableError(error));
       setReadStatus("");
     } finally { setMarkingRead(false); }
   };
@@ -2094,7 +2095,7 @@ export function BotListItem({
                 if (remoteClient) {
                   void api(`/api/bots/${bot.id}/profile`, { method: "PATCH", body: JSON.stringify({ name }) })
                     .then(({ bot: updated }) => dispatch({ type: "botPatched", bot: updated }))
-                    .catch((cause) => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }));
+                    .catch((cause) => dispatch({ type: "error", message: readableError(cause) }));
                 } else {
                   dispatch({ type: "updateBot", botId: bot.id, patch: { name } });
                 }
@@ -2337,7 +2338,7 @@ export function ArchivedBotsPanel({
       onRestored(t("sidebar.archived.restored", { name: bot.name }));
       if (bots.length === 1) onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusyId(null);
     }
@@ -2365,7 +2366,7 @@ export function ArchivedBotsPanel({
       );
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setRestoringAll(false);
     }
@@ -2752,7 +2753,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       body: JSON.stringify({ name: section, botIds: [id] }),
     })
       .then(({ bots }) => bots.forEach((bot: Bot) => dispatch({ type: "botPatched", bot })))
-      .catch((cause) => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }));
+      .catch((cause) => dispatch({ type: "error", message: readableError(cause) }));
   };
   const [roomMenu, setRoomMenu] = useState<{ groupId: string; x: number; y: number } | null>(null);
   const [roomSectionPicker, setRoomSectionPicker] = useState<{ groupId: string; x: number; y: number } | null>(null);
@@ -2887,7 +2888,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
         restoreBot: { id: bot.id, name: bot.name },
       });
     } catch (cause) {
-      setTeamFeedback({ error: true, text: cause instanceof Error ? cause.message : String(cause) });
+      setTeamFeedback({ error: true, text: readableError(cause) });
     }
   };
 
@@ -2902,7 +2903,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       setPrimaryPicker(null);
       setTeamFeedback({ error: false, text: t("primaryBot.made", { name: primary.name }) });
     } catch (cause) {
-      const text = cause instanceof Error ? cause.message : String(cause);
+      const text = readableError(cause);
       if (fromPicker) setPrimaryPicker((open) => (open ? { ...open, pending: false, error: text } : open));
       else setTeamFeedback({ error: true, text });
     }
@@ -2919,7 +2920,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
       openBot(dispatch, response.bot, showThreads);
       setTeamFeedback({ error: false, text: t("sidebar.archived.restored", { name: bot.name }) });
     } catch (cause) {
-      setTeamFeedback({ error: true, text: cause instanceof Error ? cause.message : String(cause) });
+      setTeamFeedback({ error: true, text: readableError(cause) });
     }
   };
 
@@ -3490,7 +3491,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
               onClick={() => {
                 for (const bot of chosen) {
                   void markBotRead(bot, api, (updated) => dispatch({ type: "botPatched", bot: updated }))
-                    .catch((cause) => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }));
+                    .catch((cause) => dispatch({ type: "error", message: readableError(cause) }));
                 }
                 clearSelection();
               }}><CheckCheck size={16} /></button>
@@ -3673,7 +3674,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
           setTeamDeletePending(true);
           void api<{ sections: string[] }>(`/api/sidebar-sections?section=${encodeURIComponent(name)}`, { method: "DELETE" })
             .then(({ sections }) => { dispatch({ type: "sectionDeleted", section: name, sections }); setDeletingTeam(null); })
-            .catch(cause => setTeamFeedback({ error: true, text: cause instanceof Error ? cause.message : String(cause) }))
+            .catch(cause => setTeamFeedback({ error: true, text: readableError(cause) }))
             .finally(() => { teamDeleteRunning.current = false; setTeamDeletePending(false); });
         }} />
       {moveToTeam && <TeamDialog section={moveToTeam} onClose={() => setMoveToTeam(null)} />}
@@ -3695,7 +3696,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
               // one request for the whole selection
               void api("/api/sidebar-sections", { method: "POST", body: JSON.stringify({ name: section, botIds: ids }) })
                 .then(({ bots }) => bots.forEach((bot: Bot) => dispatch({ type: "botPatched", bot })))
-                .catch((cause) => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }));
+                .catch((cause) => dispatch({ type: "error", message: readableError(cause) }));
             } else {
               for (const id of ids) assignSection("bot", id, section);
             }

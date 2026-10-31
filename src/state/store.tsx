@@ -113,6 +113,7 @@ import { ARTIFACTS_EVENT } from "@/lib/artifact-events";
 import { BOT_TASKS_EVENT } from "@/lib/bot-task-events";
 import { makeConfidentialBody } from "@/lib/confidential-thread";
 import { bindModerationApi, blockedDmSender, notifyReportsChanged } from "@/lib/moderation";
+import { readableError } from "@/lib/plain-error";
 
 bindModerationApi(api);
 
@@ -3917,7 +3918,7 @@ export async function createBotWithRole(role?: BotRole, request: typeof api = ap
     });
     return { bot: { ...bot, ...patched, messages: bot.messages } };
   } catch (error) {
-    return { bot, profileError: error instanceof Error ? error.message : String(error) };
+    return { bot, profileError: readableError(error) };
   }
 }
 
@@ -3965,12 +3966,14 @@ export async function api<T = any>(path: string, init?: RequestInit & { timeoutM
     // neutral, translated line takes its place (src/lib/no-route.ts). The
     // server's words stay in `body` for routeMissingOnServer.
     if (res.status === 404 && isNoRouteText(error)) throw new ApiError(t("serverRoute.needsUpdate"), res.status, body);
-    const message = permissionMissingMessage(body)
+    // Prefer a sentence the person can read. status and body keep the
+    // original for callers that diagnose beyond the line on screen (#1723).
+    const raw = permissionMissingMessage(body)
       ?? teamSetupErrorMessage(body)
       ?? engineErrorMessage(body)
       ?? serverErrorMessage(body)
       ?? (typeof error === "string" ? error : typeof error?.message === "string" ? error.message : `${res.status} ${res.statusText}`);
-    throw new ApiError(message, res.status, body);
+    throw new ApiError(readableError(raw), res.status, body);
   }
   return body;
 }
@@ -4100,7 +4103,7 @@ export async function persistBotUpdate(
       } catch (error) {
         throw new Error(
           `The cancelled ${approvalMode === "full" ? "Full access" : "Custom approval"} grant could not be revoked: ${
-            error instanceof Error ? error.message : String(error)
+            readableError(error)
           }`,
         );
       }
@@ -4433,7 +4436,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const olderPagesInFlight = new Set<string>();
     let creatingBot = false;
     const showError = (e: unknown) => {
-      rawDispatch({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      rawDispatch({ type: "error", message: readableError(e) });
     };
     /** Where a card action's message lives, and the card on it. A card asked
      * inside a room belongs to the room's list, never to one member's. */
@@ -4722,7 +4725,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         case "loadDataSheet":
           api(withDataThread(DATA_ROUTES.sheet(action.botId), action.threadId))
             .then((body) => rawDispatch({ type: "dataSheet", sheet: dataSheetFromResponse(body, action.botId), tables: dataTablesFromResponse(body), ...(action.threadId ? { threadId: action.threadId } : {}) }))
-            .catch((error) => (action.onError ?? showError)(error instanceof Error ? error.message : String(error)));
+            .catch((error) => (action.onError ?? showError)(readableError(error)));
           break;
         case "markRoutineRunSeen":
           api(`/api/routine-runs/${action.runId}/seen`, { method: "POST" }).catch(showError);
@@ -4968,7 +4971,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               // A settings flush failure deliberately stops the response;
               // otherwise it could resume work under a stale approval level.
               showError(error);
-              action.onError?.(error instanceof Error ? error.message : String(error));
+              action.onError?.(readableError(error));
             });
           break;
         }
@@ -5060,7 +5063,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               }
             })
             .catch((error) => {
-              if (action.onError) action.onError(error instanceof Error ? error.message : String(error));
+              if (action.onError) action.onError(readableError(error));
               else showError(error);
             })
             .finally(() => {
@@ -5282,7 +5285,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             rawDispatch({ type: "taskMadeConfidential", botId: action.botId, threadId: action.threadId });
             action.onDone?.();
           }).catch((error: unknown) => {
-            if (action.onError) action.onError(error instanceof Error ? error.message : String(error));
+            if (action.onError) action.onError(readableError(error));
             else showError(error);
           });
           break;
@@ -5330,22 +5333,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             .then((answer) => {
               applyFolderOwner(dispatch, action, answer);
               action.onCreated?.(answer.project);
-            }).catch((error) => { showError(error); action.onError?.(error instanceof Error ? error.message : String(error)); });
+            }).catch((error) => { showError(error); action.onError?.(readableError(error)); });
           break;
         case "updateProject":
           api(`${folderOwnerPath(action)}/projects/${action.projectId}`, { method: "PATCH", body: JSON.stringify(action.patch) })
             .then((answer) => { applyFolderOwner(dispatch, action, answer); action.onSaved?.(); })
-            .catch((error) => { showError(error); action.onError?.(error instanceof Error ? error.message : String(error)); });
+            .catch((error) => { showError(error); action.onError?.(readableError(error)); });
           break;
         case "deleteProject":
           api(`${folderOwnerPath(action)}/projects/${action.projectId}`, { method: "DELETE" })
             .then((answer) => { applyFolderOwner(dispatch, action, answer); action.onDeleted?.(); })
-            .catch((error) => { showError(error); action.onError?.(error instanceof Error ? error.message : String(error)); });
+            .catch((error) => { showError(error); action.onError?.(readableError(error)); });
           break;
         case "reorderProjects":
           api(`${folderOwnerPath(action)}/projects/order`, { method: "PATCH", body: JSON.stringify({ projectIds: action.projectIds }) })
             .then((answer) => { applyFolderOwner(dispatch, action, answer); action.onSaved?.(); })
-            .catch((error) => { showError(error); action.onError?.(error instanceof Error ? error.message : String(error)); });
+            .catch((error) => { showError(error); action.onError?.(readableError(error)); });
           break;
         case "interrupt": {
           const interruptBody = {
@@ -5394,7 +5397,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
               if (action.type === "switchTask" && navigation.get(action.botId) === revision) {
                 rawDispatch({ type: "switchTaskFailed", botId: action.botId, threadId: action.threadId });
               }
-              if (action.type === "newTask" && action.onError) action.onError(error instanceof Error ? error.message : String(error));
+              if (action.type === "newTask" && action.onError) action.onError(readableError(error));
               else showError(error);
             });
           break;

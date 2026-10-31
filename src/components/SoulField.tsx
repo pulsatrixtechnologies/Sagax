@@ -13,6 +13,7 @@ import { useStore, type Bot } from "@/state/store";
 import { useBotEditor } from "./bot-settings/BotEditorContext";
 import { MarkdownEditor } from "./markdown/MarkdownEditor";
 import { HelpTip } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 type SoulRead = { soul: string; revision: string; bytes: number; limit: number; file: string; drift: boolean; fileText?: string };
 
@@ -72,7 +73,7 @@ export function SoulField({
         body: JSON.stringify({ fileText: info.fileText, expectedRevision: info.revision }),
       });
     } catch (error: unknown) {
-      dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
+      dispatch({ type: "error", message: readableError(error) });
     } finally {
       await refresh();
       setResolving(false);

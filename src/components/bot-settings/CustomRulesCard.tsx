@@ -28,6 +28,7 @@ import { compileRule, impliedRiskScope, RISK_CLASSES, TURN_STARTS, type Compiled
 import { OrgRuleBadge, RISK_LABEL, RuleTextDiff, riskList } from "../CustomRuleNotice";
 import { PaneEmpty, PaneSection } from "./PaneSection";
 import { RuleTestButton } from "../approvals/RuleTest";
+import { readableError } from "@/lib/plain-error";
 
 export type CustomRuleRow = CustomRule & { compiled?: { recognized: boolean } };
 
@@ -94,7 +95,7 @@ export function customRuleError(failure: unknown): string {
   if (failure instanceof ApiError && failure.body?.code === "exact_command_from_card") return t("customRules.exactFromCard");
   if (failure instanceof ApiError && failure.body?.code === "exact_command_no_cwd") return t("customRules.exactNoCwd");
   if (failure instanceof ApiError && failure.body?.code === "exact_command_one_bot") return t("customRules.exactOneBot");
-  return t("customRules.error", { error: failure instanceof Error ? failure.message : String(failure) });
+  return t("customRules.error", { error: readableError(failure) });
 }
 
 /** The editor of one rule. `risks` are the kinds the person must tick for

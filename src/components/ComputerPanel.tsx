@@ -70,6 +70,7 @@ import { browserTeachPending, onBrowserTeachRequest } from "@/lib/teach-request"
 import { withTeachBot } from "@/lib/computer-teach-client";
 
 import { useDesktopBridgeStatus } from "@/lib/desktop-bridge";
+import { readableError } from "@/lib/plain-error";
 
 /** Keep local failure copy translatable while it remains in panel state. */
 class LocalizedPanelError extends Error {
@@ -86,7 +87,8 @@ function panelErrorText(error: Error | string | null): string | null {
   if (error instanceof LocalizedPanelError) {
     return t(error.key, error.fallbackKey ? { problem: error.problem ?? t(error.fallbackKey) } : undefined);
   }
-  return error instanceof Error ? error.message : error;
+  if (error == null) return null;
+  return readableError(error);
 }
 
 interface VpsComputerStatus {
@@ -832,7 +834,7 @@ export function ComputerPanel({
         // the panel banner every tick.
         if (!controller.signal.aborted) {
           retryDelay = 5000;
-          if (initialAttempt) setError(e instanceof Error ? e.message : String(e));
+          if (initialAttempt) setError(readableError(e));
           else setPreviewError(e instanceof Error ? e : new LocalizedPanelError("computer.err.screenUnavailable"));
         }
       } finally {
@@ -949,7 +951,7 @@ export function ComputerPanel({
       await transitionControl(action);
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
       return false;
     } finally {
       setControlPending(false);
@@ -1116,7 +1118,7 @@ export function ComputerPanel({
       }
     } catch (e) {
       if (controller.signal.aborted) return;
-      setError(e instanceof Error ? e.message : String(e));
+      setError(readableError(e));
       setPhase("vm-unavailable");
     } finally {
       if (vmActionController.current === controller && !controller.signal.aborted) {
@@ -1145,7 +1147,7 @@ export function ComputerPanel({
       setPhase(result.ready ? "ready" : "error");
       if (!result.ready) setError(result.problem ?? new LocalizedPanelError("computer.err.vpsReplaceNotReady"));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(readableError(e));
       setPhase("error");
     } finally {
       setPending(null);

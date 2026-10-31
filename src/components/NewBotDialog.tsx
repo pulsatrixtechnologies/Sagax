@@ -44,6 +44,7 @@ import { refreshModelHealth, startingModel, type StartingModel } from "@/lib/mod
 import { useMyEngines, usePerspicaxOrg } from "@/lib/perspicax-org";
 import { useOfferedInstances } from "@/lib/offered-instances";
 import { openModelKeysSettings } from "@/lib/settings-link";
+import { readableError } from "@/lib/plain-error";
 
 // New bot is one page (2026-10-14): where to start from, the avatar, the
 // name, the description and the team. Every other setting sits under More
@@ -123,7 +124,7 @@ export function CompanionNewBotDialog({ onClose, onCreated, section, preserveSel
         <button type="button" onClick={close} className={PILL}>{t("common.cancel")}</button>
         <button type="button" disabled={state.botCreationPending} onClick={() => dispatch({ type: "newBot", settings: memberNewBotSettings(state.config, { ...(approval ? { approvalMode: approval } : {}), ...(proactive !== PROACTIVE_MODE_DEFAULT ? { proactiveMode: proactive } : {}) }), ...(section !== undefined ? { section } : {}), ...(preserveSelection ? { preserveSelection } : {}), onCreated: bot => {
           close();
-          if (bot && onCreated) void Promise.resolve(onCreated(bot)).catch(cause => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }));
+          if (bot && onCreated) void Promise.resolve(onCreated(bot)).catch(cause => dispatch({ type: "error", message: readableError(cause) }));
         } })}
           className={PRIMARY_PILL}>{t("newBot.create")}</button>
       </div>
@@ -317,10 +318,10 @@ export function LocalNewBotDialog({ defaultsMode = false, onClose, section, onCr
         parent.dispatch({ type: "botAdded", bot, preserveSelection });
         if (warnings.length) parent.dispatch({ type: "error", message: warnings.join("\n") });
         try { await onCreated?.(bot); }
-        catch (cause) { parent.dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }); }
+        catch (cause) { parent.dispatch({ type: "error", message: readableError(cause) }); }
       }
       savingRef.current = false; if (alive.current) closeRef.current();
-    } catch (cause) { if (alive.current) setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { if (alive.current) setError(readableError(cause)); }
     finally {
       savingRef.current = false;
       parent.dispatch({ type: "botCreationPending", on: false });
@@ -539,7 +540,7 @@ export function StartingRole({ draft, defaultsMode, onImported }: { draft: BotCr
         presetPicture.current = false;
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     }
   };
   const remove = async (preset: BotPreset) => {
@@ -549,7 +550,7 @@ export function StartingRole({ draft, defaultsMode, onImported }: { draft: BotCr
       if (draft.preset?.id === preset.id) draft.choosePreset(undefined);
       setLoads(value => value + 1);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     }
   };
   const canImport = !defaultsMode && showBotZipImport(state.config);

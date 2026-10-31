@@ -110,7 +110,7 @@ describe("Connecting Whop from its card", () => {
     await act(async () => { testRequest!.resolve(Promise.reject(new Error("504 Gateway Timeout"))); });
     await settle();
     expect(card().querySelector('[role="alert"]')?.textContent)
-      .toBe("Signed in, but Whop’s tools could not be loaded: 504 Gateway Timeout. Please connect again to retry.");
+      .toBe("Signed in, but Whop’s tools could not be loaded: That took too long. Try again. Please connect again to retry.");
   });
 
   it("closes the test request when the person cancels", async () => {

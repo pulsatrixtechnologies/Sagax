@@ -13,6 +13,7 @@ import { ClaudeSignIn } from "./ClaudeSignIn";
 import { keyRowForEngine, openProviderKeyDialog } from "./settings/ProviderKeys";
 import { EngineApiKeyField } from "./EngineApiKeyField";
 import { RefreshEngines } from "./EngineLibrary";
+import { readableError } from "@/lib/plain-error";
 
 type Platform = "darwin" | "win32" | "linux";
 
@@ -218,7 +219,7 @@ function ServerEngineInstall({ instance, mode, command }: { instance: InstanceIn
       setDone(true);
       await refreshModels(instance.instanceId).catch(() => {});
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(false);
     }
@@ -322,7 +323,7 @@ function ManagedEngineSetup({ instance, signInOnly }: { instance: InstanceInfo; 
     setBusy(kind);
     setError(null);
     try { await action(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) { setError(readableError(cause)); }
     finally { setBusy(null); }
   };
 

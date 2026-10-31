@@ -13,6 +13,7 @@ import { openExternalLink } from "./app-links";
 import { endCall, startCall } from "./call";
 import { desktopCapabilitiesNow } from "./desktop";
 import { t } from "./i18n";
+import { readableError } from "./plain-error";
 
 export type LiveMediaPhase = "idle" | "starting" | "live" | "ending" | "ended" | "failed";
 
@@ -314,7 +315,7 @@ export async function startLiveCall(target: { botId: string; threadId: string })
     // Trying again cannot help a window without WebRTC or a refused
     // sign-in: each needs a person to change something first.
     const hopeless = error instanceof LiveUnsupportedError || (error instanceof ApiError && error.status === 401);
-    set({ ...failed, action: hopeless ? null : "retry", notice: error instanceof Error ? error.message : String(error) });
+    set({ ...failed, action: hopeless ? null : "retry", notice: readableError(error) });
   }
 }
 

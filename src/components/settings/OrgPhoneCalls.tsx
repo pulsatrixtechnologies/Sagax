@@ -12,6 +12,7 @@ import { t } from "@/lib/i18n";
 import { api } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { DescribedRow, FIELD, PILL, Switch } from "../SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 export interface PhoneCallSettings {
   enabled: boolean;
@@ -39,7 +40,7 @@ export function OrgPhoneCalls({ initial = null }: { initial?: PhoneCallSettings 
       setCallback(body.settings.callbackNumber ? shown(body.settings.callbackNumber) : "");
       setError(null);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(readableError(failure));
     }
   }, []);
   useEffect(() => { if (!initial) void load(); }, [load, initial]);
@@ -52,7 +53,7 @@ export function OrgPhoneCalls({ initial = null }: { initial?: PhoneCallSettings 
       setSettings(body.settings);
       return true;
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(readableError(failure));
       return false;
     } finally {
       setBusy(false);

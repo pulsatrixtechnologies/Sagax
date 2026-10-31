@@ -32,6 +32,7 @@ import {
   type VoiceTtsProvider,
 } from "../../../shared/voice-providers";
 import { CompactRow, DescribedRow, GROUP_CARD, PILL, PillSelect, SettingsGroup, type PillOption } from "../SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 type Pick<P extends string> = "inherit" | "auto" | P;
 
@@ -73,7 +74,7 @@ export function VoiceProviderSettings({ bot }: { bot?: { id: string; name: strin
     fetchVoiceProviders(botId, controller.signal, { tts: view.tts, stt: view.stt }).then((next) => {
       if (!controller.signal.aborted) setResolution({ botId, tts: view.tts, stt: view.stt, status: next });
     }, (error: unknown) => {
-      if (!controller.signal.aborted) setFailed(error instanceof Error ? error.message : String(error));
+      if (!controller.signal.aborted) setFailed(readableError(error));
     });
     return () => controller.abort();
   }, [botId, view.tts, view.stt]);
@@ -122,7 +123,7 @@ export function VoiceProviderSettings({ bot }: { bot?: { id: string; name: strin
       player.onended = () => URL.revokeObjectURL(player.src);
       await player.play().catch(() => {});
     } catch (error) {
-      setNote(t("voiceProviders.testFailed", { error: error instanceof Error ? error.message : String(error) }));
+      setNote(t("voiceProviders.testFailed", { error: readableError(error) }));
     } finally {
       setTesting(false);
     }

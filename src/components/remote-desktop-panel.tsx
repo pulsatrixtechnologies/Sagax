@@ -12,6 +12,7 @@ import { api, ApiError, useStore, type Bot } from "@/state/store";
 import { RoutineEditor } from "./RoutinesPage";
 
 import { activeLocale, t } from "@/lib/i18n";
+import { readableError } from "@/lib/plain-error";
 function viewerAddress(raw: unknown): string {
   if (typeof raw !== "string" || !raw) throw new Error("The host did not return a live desktop link");
   if (raw.startsWith("/vps-viewer/")) return new URL(raw, window.location.origin).toString();
@@ -191,7 +192,7 @@ export function RemoteDesktopPanel({ bot }: { bot: Bot }) {
         method: "POST",
         body: "{}",
       }).catch(() => {});
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setPending(false);
     }

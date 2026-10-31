@@ -6,6 +6,7 @@ import { imageAttachmentFromFile } from "./composer-attachments";
 import type { BotVisibility } from "../../shared/wire";
 import { botAvatarUrlFromStoredPath } from "../../shared/bot-avatar";
 import { isMemberBotField } from "../../shared/viewer-capabilities";
+import { readableError } from "./plain-error";
 
 /** Fields an organization member may send: the member set, and a field
  * their permissions open (`mayWrite`, BOT_FIELD_PERMISSIONS; the server's
@@ -121,7 +122,7 @@ export async function createConfiguredBot(
     }
     try { await request(`/api/bots/${bot.id}`, { method: "DELETE" }); }
     catch { cleanup.push(`bot ${bot.name} (${bot.id})`); }
-    const message = error instanceof Error ? error.message : String(error);
+    const message = readableError(error);
     throw new Error(cleanup.length ? `${message}. Cleanup failed for ${cleanup.join(", ")}; remove them before retrying.` : message);
   }
   // Creation is complete. Activation failures leave a visible, configured
@@ -136,12 +137,12 @@ export async function createConfiguredBot(
       });
       bot = { ...bot, ...result.bot };
     } catch (error) {
-      warnings.push(`Review this bot's Primary Bot setting: ${error instanceof Error ? error.message : String(error)}`);
+      warnings.push(`Review this bot's Primary Bot setting: ${readableError(error)}`);
     }
   }
   for (const routine of routines.filter(routine => routine.enabled)) {
     try { await request(`/api/routines/${routine.id}`, { method: "PATCH", body: JSON.stringify({ enabled: true }) }); }
-    catch (error) { warnings.push(`Could not activate a routine: ${error instanceof Error ? error.message : String(error)}`); }
+    catch (error) { warnings.push(`Could not activate a routine: ${readableError(error)}`); }
   }
   return { bot, warnings };
 }

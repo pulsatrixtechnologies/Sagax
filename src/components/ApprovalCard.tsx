@@ -21,6 +21,7 @@ import { cronLocale, niceDate, niceTime, scheduleLabel } from "@/lib/schedule-la
 import { cronIsDescribed, cronScheduleLabel } from "../../shared/cron-label";
 import { PROFILE_REQUEST_FIELDS, type ProfileRequestField } from "../../shared/profile-request";
 import type { RoutineRequestSchedule } from "../../shared/routine-request";
+import { readableError } from "@/lib/plain-error";
 
 interface ToolLabels {
   [tool: string]: LocaleKey;
@@ -378,7 +379,7 @@ function AppliedChangeLine({
       .catch((failure: unknown) => {
         setError(failure instanceof ApiError && failure.body?.code === "changed-since"
           ? t("approval.applied.changedSince")
-          : t("approval.applied.undoFailed", { error: failure instanceof Error ? failure.message : String(failure) }));
+          : t("approval.applied.undoFailed", { error: readableError(failure) }));
       })
       .finally(() => setUndoing(false));
   };

@@ -80,6 +80,7 @@ import { TableFileButton } from "./TableFilePreview";
 import { exportableMermaidSource, inlineDiagramMaxHeight, inlineDiagramSize, svgSize } from "@/lib/diagram-view";
 import { youtubeVideoId } from "../../shared/video-widget.ts";
 import { YouTubeMiniPlayer } from "./video/YouTubeMiniPlayer";
+import { readableError } from "@/lib/plain-error";
 
 // highlighted code, so revisiting a thread doesn't re-tokenize settled
 // blocks; keys are content hashes. The two-theme HTML is about 20 to 28 times
@@ -723,7 +724,7 @@ export function MermaidDiagram({ code }: MermaidDiagramProps) {
       })
       .catch((cause: unknown) => {
         if (!alive) return;
-        const message = cause instanceof Error ? cause.message : String(cause);
+        const message = readableError(cause);
         setError(message.length > 300 ? `${message.slice(0, 300)}…` : message);
       });
     return () => {

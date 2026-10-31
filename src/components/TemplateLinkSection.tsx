@@ -13,6 +13,7 @@ import { openExternalLink } from "@/lib/app-links";
 import { copyText } from "@/lib/copy-text";
 import { t, activeLocale } from "@/lib/i18n";
 import { api } from "@/state/store";
+import { readableError } from "@/lib/plain-error";
 
 export interface TemplateLink {
   id: string;
@@ -67,7 +68,7 @@ export function TemplateLinkSection({ name, description, picture, request = api 
       setLinks((current) => [...(current ?? []), answer.link]);
       if ((await copyText(answer.link.url)) === "copied") setCopied(answer.link.id);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(false);
     }
@@ -79,7 +80,7 @@ export function TemplateLinkSection({ name, description, picture, request = api 
       await request(`/api/template-links/${id}`, { method: "DELETE" });
       setLinks((current) => (current ?? []).filter((link) => link.id !== id));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(false);
     }
@@ -93,7 +94,7 @@ export function TemplateLinkSection({ name, description, picture, request = api 
       setLinks((current) => (current ?? []).map((link) => (link.id === id ? answer.link : link)));
       setUpdated(id);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(false);
     }

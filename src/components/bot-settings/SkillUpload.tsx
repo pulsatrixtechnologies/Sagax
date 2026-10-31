@@ -13,6 +13,7 @@ import type { LocaleKey } from "@/locales";
 import { ApiError } from "@/state/store";
 import { useBotEditor } from "./BotEditorContext";
 import { PILL, PRIMARY_PILL } from "../SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 /** Mirrors server/skill-upload.ts. */
 export const SKILL_UPLOAD_MAX_FILES = 10;
@@ -152,7 +153,7 @@ export function SkillUpload({ botId, disabled, onAdded }: { botId: string; disab
       setItems(result.items);
     } catch (cause) {
       setItems(null);
-      setError(t("botPanel.skills.upload.error", { detail: cause instanceof Error ? cause.message : String(cause) }));
+      setError(t("botPanel.skills.upload.error", { detail: readableError(cause) }));
     } finally {
       setPhase("idle");
     }
@@ -179,7 +180,7 @@ export function SkillUpload({ botId, disabled, onAdded }: { botId: string; disab
       await preview(await Promise.all(files.map(async (file) => ({ name: file.name, data: await base64(file) }))));
     } catch (cause) {
       setPhase("idle");
-      setError(t("botPanel.skills.upload.error", { detail: cause instanceof Error ? cause.message : String(cause) }));
+      setError(t("botPanel.skills.upload.error", { detail: readableError(cause) }));
     }
   };
 
@@ -198,7 +199,7 @@ export function SkillUpload({ botId, disabled, onAdded }: { botId: string; disab
     } catch (cause) {
       const body = cause instanceof ApiError ? cause.body : undefined;
       if (Array.isArray(body?.items)) setItems(body.items as UploadPreviewItem[]);
-      else setError(t("botPanel.skills.upload.error", { detail: cause instanceof Error ? cause.message : String(cause) }));
+      else setError(t("botPanel.skills.upload.error", { detail: readableError(cause) }));
     } finally {
       setPhase("idle");
     }

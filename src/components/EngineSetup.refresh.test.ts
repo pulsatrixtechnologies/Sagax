@@ -75,5 +75,5 @@ it("never opens a local terminal to install on a paired remote server", () => {
   mount(createElement(EngineSetup, { instance: engine }));
   expect(host.textContent).not.toContain("Open install in Terminal");
   expect(host.textContent).toContain("fixture-install");
-  expect(host.textContent).toContain("server—not this device");
+  expect(host.textContent).toContain("server, not this device");
 });

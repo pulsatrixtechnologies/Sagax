@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { t } from "@/lib/i18n";
 import { api } from "@/state/store";
 import { DescribedRow, Switch } from "../SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 export function LifecycleHooksRow({ botId }: { botId: string }) {
   const [enabled, setEnabled] = useState(false);
@@ -37,7 +38,7 @@ export function LifecycleHooksRow({ botId }: { botId: string }) {
       body: JSON.stringify({ enabled: next }),
     }).catch((cause: unknown) => {
       setEnabled(!next);
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     });
   };
 

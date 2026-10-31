@@ -12,6 +12,7 @@ import { t, activeLocale } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { api, ApiError } from "@/state/store";
 import { PillSelect } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 import {
   DEFAULT_PAGES_POLICY,
   PAGE_ACCESS,
@@ -80,7 +81,7 @@ export function pageGone(cause: unknown): boolean {
 /** A refusal in words: a closed public-link switch proposes My organization. */
 export function pageErrorText(cause: unknown): string {
   if (cause instanceof ApiError && cause.body?.code === "link_sharing_off") return t("pages.linkOffError");
-  return cause instanceof Error ? cause.message : String(cause);
+  return readableError(cause);
 }
 
 /** The organization's switch for public links, as this person reads it. */

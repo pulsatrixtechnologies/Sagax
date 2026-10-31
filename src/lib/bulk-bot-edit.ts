@@ -24,6 +24,7 @@ import {
   type CommonValue,
 } from "../../shared/bulk-bot-edit";
 import type { Bot } from "@/state/store";
+import { readableError } from "./plain-error";
 
 /** The bot editor's sections a bulk change offers, in the dialog's order. */
 export const BULK_SECTIONS = ["model", "sharing", "worksOn", "access", "voice", "permissions", "perspicax"] as const;
@@ -268,7 +269,7 @@ export interface BulkDeps {
   enabledServers?: readonly string[];
 }
 
-const reasonOf = (error: unknown) => (error instanceof Error ? error.message : String(error)) || "Refused";
+const reasonOf = (error: unknown) => (readableError(error)) || "Refused";
 
 type Profiles = { selected?: Array<{ id: string }> };
 

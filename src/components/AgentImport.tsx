@@ -20,6 +20,7 @@ import type { BotZipImportResult } from "../../shared/bot-zip";
 import type { GrokLeftOut } from "../../shared/grok-import";
 import { BotZipImportPanel } from "./BotZipImport";
 import { GrokImportBox, GrokLeftOutList } from "./GrokImportBox";
+import { readableError } from "@/lib/plain-error";
 
 export type AgentSource = "grok" | "claude";
 
@@ -74,7 +75,7 @@ function ClaudeCodePicker({ onPrepared }: { onPrepared: (prepared: Prepared) => 
       const { document, leftOut } = claudeCodeToPackage(folder.files, { folderName: folder.folderName, skippedSecrets: folder.skippedSecrets, timeZone: timeZone() });
       onPrepared({ source: "claude", file: packageFile(document), pending: teamImportPreview(document), leftOut });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(false);
       if (input.current) input.current.value = "";

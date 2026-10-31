@@ -23,6 +23,7 @@ import type { OutboundCallResult, OutboundCard as OutboundCardData } from "../..
 import { ORDER_STEPPER, orderStepIndex, type OrderStep, type OrderTracking } from "../../shared/order-tracking";
 import { cn } from "@/lib/cn";
 import { openExternalLink } from "@/lib/app-links";
+import { readableError } from "@/lib/plain-error";
 
 export function formatMoney(amount: string | undefined, currency: string | undefined, locale = activeLocale()): string {
   if (!amount) return "";
@@ -131,7 +132,7 @@ export function OutboundCard({ message, transcriptOpen = false }: { message: Mes
       }
       setAnswered(yes ? "approved" : "denied");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }

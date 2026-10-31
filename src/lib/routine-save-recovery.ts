@@ -4,6 +4,7 @@
 // failure, so a retry never makes a duplicate. Same guard for the full
 // editor, calendar quick-create, and /loop (store createRoutine).
 import type { Routine } from "./routines";
+import { readableError } from "./plain-error";
 
 /** Gateway or transport codes: the server's answer never reached the app. */
 const LOST_ANSWER_STATUSES = new Set([408, 499, 502, 503, 504]);
@@ -32,8 +33,9 @@ export function isRawStatusText(message: string): boolean {
 
 /** Readable line for a lost or raw-status create failure. */
 export function createAnswerErrorMessage(error: unknown, lostFallback: string): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return answerWasLost(error) || isRawStatusText(message) ? lostFallback : message;
+  const raw = error instanceof Error ? error.message : String(error);
+  if (answerWasLost(error) || isRawStatusText(raw)) return lostFallback;
+  return readableError(error);
 }
 
 /** The routine this create made, among those listed after it: new since the

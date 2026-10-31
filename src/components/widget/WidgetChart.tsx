@@ -10,6 +10,7 @@ import { vegaConfig } from "../../../shared/vega-config";
 import type { WidgetNode } from "../../../shared/widget";
 import { WIDGET_CHART_WIDTH, widgetChartHeight, widgetChartSpec } from "../../../shared/widget-chart";
 import { boxStyle } from "./widget-style";
+import { readableError } from "@/lib/plain-error";
 
 function chartCite(node: WidgetNode): { pieces: string; asOf?: string } | null {
   const sources = Array.isArray(node.sources) ? node.sources as Array<{ piece?: unknown; asOf?: unknown }> : [];
@@ -65,7 +66,7 @@ export function WidgetChart({ node }: { node: WidgetNode }) {
       if (!alive) { result.finalize(); return; }
       drawn.current = result;
     })().catch((cause) => {
-      if (alive) setFailed(cause instanceof Error ? cause.message : String(cause));
+      if (alive) setFailed(readableError(cause));
     });
     return () => {
       alive = false;

@@ -9,6 +9,7 @@ import { useMenuMotion } from "./MenuMotion";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { azureOpenAIEndpoint, looksLikeAzureUrl } from "../../shared/azure-openai";
+import { readableError } from "@/lib/plain-error";
 
 export type ConfigSection = "box" | "opencodeGo" | "anthropic" | "openai" | "openrouter" | "openaiCompat" | "azureFoundry" | "xai" | "mistral" | "cerebras" | "groq" | "elevenlabs" | "fishAudio" | "openaiImage" | "customImage";
 /** Sections whose key can be tried against the provider from the server. */
@@ -349,7 +350,7 @@ export function ApiKeyRow({
             : t("keys.testUnexpected", { status: String(result.status ?? "?") });
       setVerdict(`${t("keys.testSaved")} ${outcome}`);
     } catch (cause) {
-      if (generation === testGeneration.current) setVerdict(cause instanceof Error ? cause.message : String(cause));
+      if (generation === testGeneration.current) setVerdict(readableError(cause));
     } finally {
       if (generation === testGeneration.current) setTesting(false);
     }

@@ -5,6 +5,7 @@
 // Soul; MEMORY.md and memory/ stay on the admin memory routes (src/lib/memory.ts).
 import { ApiError, api } from "@/state/store";
 import type { MemoryDoc } from "@/lib/memory";
+import { readableError } from "@/lib/plain-error";
 
 export const RULES_PATH = "RULES.md";
 export const DOCS_DIR = "docs";
@@ -88,7 +89,7 @@ export async function saveWorkspaceDoc(botId: string, path: string, text: string
   if (response.status === 409 && typeof body.current === "string" && typeof body.currentHash === "string") {
     return { ok: false, conflict: true, current: body.current, currentHash: body.currentHash };
   }
-  if (!response.ok) throw new ApiError(typeof body.error === "string" ? body.error : `${response.status} ${response.statusText}`, response.status);
+  if (!response.ok) throw new ApiError(readableError(typeof body.error === "string" ? body.error : `${response.status} ${response.statusText}`), response.status);
   return { ok: true, doc: { path: String(body.path), text: String(body.text), hash: String(body.hash), exists: body.exists === true } };
 }
 

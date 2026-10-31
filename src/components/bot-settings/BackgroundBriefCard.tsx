@@ -12,6 +12,7 @@ import { routeMissingOnServer } from "@/lib/server-route";
 import { Switch } from "../SettingsPrimitives";
 import { useBotEditor } from "./BotEditorContext";
 import { PaneSection } from "./PaneSection";
+import { readableError } from "@/lib/plain-error";
 
 interface BriefView {
   apps?: number;
@@ -46,7 +47,7 @@ export function BackgroundBriefCard({ botId }: { botId: string }) {
       setNeedsUpdate(false);
     } catch (err) {
       if (routeMissingOnServer(err)) { setNeedsUpdate(true); return; }
-      setError(err instanceof Error ? err.message : String(err));
+      setError(readableError(err));
     }
   }, [api, botId]);
 
@@ -58,7 +59,7 @@ export function BackgroundBriefCard({ botId }: { botId: string }) {
       await api(`/api/bots/${botId}/background-brief/pass`, { method: "POST", body: JSON.stringify({ costUsd: 0 }) });
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(readableError(err));
     }
   };
 
@@ -68,7 +69,7 @@ export function BackgroundBriefCard({ botId }: { botId: string }) {
       await api(`/api/bots/${botId}/background-brief`, { method: "PUT", body: JSON.stringify(briefSchedulePatch(change)) });
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(readableError(err));
     }
   };
 

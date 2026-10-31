@@ -6,6 +6,7 @@ import { t, tFromServer } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import type { PackageDocument, PackageSummary } from "../../shared/package-format";
 import { skillChoicesFrom, startingTicks } from "./team-share-skills";
+import { readableError } from "./plain-error";
 
 // The skill choices are pure and shared with the server's export tests.
 export { includedSkills, requestedSkills, skillChoicesFrom, startingTicks, tickedSkills } from "./team-share-skills";
@@ -91,7 +92,7 @@ export function shareRefused(view: ShareView, cause: unknown): ShareView {
     ...view,
     preview: null,
     available: skillChoicesFrom(body) ?? view.available,
-    error: cause instanceof Error ? cause.message : String(cause),
+    error: readableError(cause),
   };
 }
 

@@ -16,6 +16,7 @@ import { ConfirmDialog } from "../ConfirmDialog";
 import { HelpTip, SettingsGroup } from "../SettingsPrimitives";
 import { clampPageOffset, SETTINGS_DEFAULT_PAGE_SIZE, SettingsPager } from "../SettingsPager";
 import type { OwnerRuleRow } from "../bot-settings/OwnerPermissionsCard";
+import { readableError } from "@/lib/plain-error";
 
 /** The rules in the order the list shows them: by bot name, then by what
  * they allow; a rule for every bot last. */
@@ -55,7 +56,7 @@ export function MyApprovalRules({ initialPageSize = SETTINGS_DEFAULT_PAGE_SIZE, 
     setError(null);
     void api(`/api/approval-rules/${rule.id}`, { method: "DELETE" })
       .then(() => load())
-      .catch((failure: unknown) => setError(t("botPanel.rules.error", { error: failure instanceof Error ? failure.message : String(failure) })));
+      .catch((failure: unknown) => setError(t("botPanel.rules.error", { error: readableError(failure) })));
   };
 
   if (rules === null) return null;

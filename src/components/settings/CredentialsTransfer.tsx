@@ -23,8 +23,9 @@ import {
   type VaultExportFormat,
 } from "../../../shared/credential-vault-transfer";
 import { EditorBox, EditorField, FIELD, PILL, PillSelect, PRIMARY_PILL, SwitchRow } from "../SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+const message = (error: unknown) => (readableError(error));
 const inputClass = FIELD;
 const DROPPED: readonly VaultDroppedField[] = ["totp", "attachments", "customFields", "passkeys", "extraSites"];
 const SKIPS_SHOWN = 50;

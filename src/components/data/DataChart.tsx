@@ -7,6 +7,7 @@ import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
 import type { ColorScheme } from "@/lib/color-scheme";
 import { rowObjects, type Cell } from "./data-format";
+import { readableError } from "@/lib/plain-error";
 
 export interface DataChartProps {
   botId: string;
@@ -137,7 +138,7 @@ export function DataChart({ botId, dataThread, cardId, spec, rowCount, theme, re
       setState({ loading: false, error: null });
     })().catch((cause) => {
       if (!committed) discardCandidate();
-      if (alive) setState({ loading: false, error: cause instanceof Error ? cause.message : String(cause) });
+      if (alive) setState({ loading: false, error: readableError(cause) });
     });
     return () => {
       alive = false;

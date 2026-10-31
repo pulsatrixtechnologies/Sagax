@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { VoiceKeyInfo, VoiceModeRefusalCause, VoiceModeSettings, VoiceModeStatus, VoiceProviderFailure } from "../../../shared/voice-mode";
 import { encodeProviderVoices, isVoiceTtsProvider, VOICE_TTS_PROVIDERS, type VoiceProviderId, type VoiceTtsProvider, type VoiceTtsChoice, type VoiceSttChoice } from "../../../shared/voice-providers";
 import { readVoiceModeSettings, voiceSettingsForBot } from "./settings";
+import { readableError } from "../plain-error";
 
 /** What a voice request says about who speaks (2026-10-29): the providers
  * this bot speaks and hears with for this person, and a voice for each.
@@ -213,13 +214,13 @@ export async function checkVoiceMode(botId: string, signal?: AbortSignal): Promi
     const res = await fetch(`${base(botId)}/status`, { signal, cache: "no-store" });
     if (!res.ok) {
       const body = (await res.json().catch(() => ({}))) as { error?: string };
-      return { state: "error", error: body.error ?? `HTTP ${res.status}`, missing: res.status === 404 && !body.error };
+      return { state: "error", error: readableError(body.error ?? `HTTP ${res.status}`), missing: res.status === 404 && !body.error };
     }
     const body = (await res.json()) as VoiceModeStatus;
     if (!body || body.provider !== "xai") return { state: "error", error: "unexpected answer", missing: false };
     return { state: "ready", status: body };
   } catch (error) {
-    return { state: "error", error: error instanceof Error ? error.message : String(error), missing: false };
+    return { state: "error", error: readableError(error), missing: false };
   }
 }
 

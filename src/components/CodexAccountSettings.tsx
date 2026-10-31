@@ -5,6 +5,7 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ChatGptPlanStatus } from "./ChatGptPlanStatus";
+import { readableError } from "@/lib/plain-error";
 
 export function AddProviderAccount({ antigravityInstanceId }: { antigravityInstanceId?: string } = {}) {
   const antigravity = antigravityInstanceId !== undefined;
@@ -24,7 +25,7 @@ export function AddProviderAccount({ antigravityInstanceId }: { antigravityInsta
       dispatch({ type: "instances", instances });
       setOpen(false);
       setDisplayName("");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { setError(readableError(cause)); }
     finally { setSaving(false); }
   };
 
@@ -65,7 +66,7 @@ export function CodexAccountSettings({ instance }: { instance: InstanceInfo }) {
     setBusy("check");
     setError(null);
     try { await refreshInstances(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) { setError(readableError(cause)); }
     finally { setBusy(null); }
   };
 
@@ -80,7 +81,7 @@ export function CodexAccountSettings({ instance }: { instance: InstanceInfo }) {
       // otherwise leave the signed-out account displayed as connected.
       dispatch({ type: "instances", instances });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }

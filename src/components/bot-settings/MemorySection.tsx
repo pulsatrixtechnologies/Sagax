@@ -54,6 +54,7 @@ import { AdvancedFold } from "./AdvancedFold";
 import { MarkdownEditor } from "../markdown/MarkdownEditor";
 import { inputCls } from "./field";
 import { PaneEmpty, PaneSection } from "./PaneSection";
+import { readableError } from "@/lib/plain-error";
 
 // Settings' grey pill (2026-10-16).
 const buttonCls = PILL;
@@ -115,7 +116,7 @@ export function TeamMemorySharingCard({ value, disabled, onChange }: { value: "s
   );
 }
 
-const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const errorText = (e: unknown) => (readableError(e));
 
 /** The file body lives in this dialog, not in the settings column. Escape
  * and the backdrop close it. A dirty draft asks before it is dropped. */
@@ -712,7 +713,7 @@ export function SemanticRecallCard({
     try {
       await onSave(patch);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(false);
     }

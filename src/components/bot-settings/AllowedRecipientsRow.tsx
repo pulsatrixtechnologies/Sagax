@@ -12,6 +12,7 @@ import { useOrgApprovalPolicy } from "@/lib/org-approval-policy";
 import { api, useStore, type Bot } from "@/state/store";
 import { parseRecipientEntry, recipientEntryKey } from "../../../shared/allowed-recipients";
 import { DescribedRow, PILL } from "../SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 /** How one entry reads: an address or a number as it is; a bot by its name,
  * never its id (AGENTS.md), a deleted one by a plain word, the id kept for
@@ -46,7 +47,7 @@ export function AllowedRecipientsRow({ bot }: { bot: Bot }) {
         setDraft("");
       })
       .catch((cause: unknown) => {
-        const text = cause instanceof Error ? cause.message : String(cause);
+        const text = readableError(cause);
         setError(/allowedRecipients must be|invalid_recipients/.test(text) ? t("botPanel.recipients.invalid") : text);
       })
       .finally(() => setSaving(false));

@@ -10,6 +10,7 @@ import { formatBytes } from "@/lib/server-environment";
 import type { LocaleKey } from "@/locales";
 import { DescribedRow, PILL, PillSelect, SettingsGroup, SwitchRow } from "../SettingsPrimitives";
 import { ComputerRecoverRow } from "./ComputerRecoverRow";
+import { readableError } from "@/lib/plain-error";
 
 export interface MaintenanceSchedule {
   enabled: boolean;
@@ -130,7 +131,7 @@ export function ComputerCareSettings() {
         if (response.status === 403 || response.status === 409 || response.status === 404) { setUnavailable(true); return; }
         setView(await readJson<MaintenanceView>(response));
       })
-      .catch((e) => { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : String(e)); });
+      .catch((e) => { if (!controller.signal.aborted) setError(readableError(e)); });
     return () => controller.abort();
   }, []);
 
@@ -147,7 +148,7 @@ export function ComputerCareSettings() {
       });
       setView(await readJson<MaintenanceView>(response));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(readableError(e));
     } finally {
       setSaving(false);
     }
@@ -162,7 +163,7 @@ export function ComputerCareSettings() {
       setPreview(next);
       setSelected(defaultSelection(next));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(readableError(e));
     } finally {
       setScanning(false);
     }
@@ -187,7 +188,7 @@ export function ComputerCareSettings() {
       setPreview(result.preview);
       setSelected(defaultSelection(result.preview));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(readableError(e));
     } finally {
       setCleaning(false);
     }

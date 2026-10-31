@@ -4,6 +4,7 @@ import { Check, Copy, Download, Loader2, RefreshCw, X } from "lucide-react";
 import { t } from "@/lib/i18n";
 import { useCopyFeedback } from "@/lib/copy-text";
 import { api, useStore, type InstanceInfo } from "@/state/store";
+import { readableError } from "@/lib/plain-error";
 
 const UPDATE_COMMAND = "claude update";
 
@@ -43,7 +44,7 @@ export function ClaudeUpdatePrompt({
         await Promise.resolve(refreshInstances()).catch(() => {});
       })
       .catch((error: unknown) =>
-        setPhase({ kind: "failed", error: error instanceof Error ? error.message : String(error) }),
+        setPhase({ kind: "failed", error: readableError(error) }),
       );
   };
 

@@ -19,6 +19,7 @@ import type { LocaleKey } from "@/locales";
 import { api, type Bot } from "@/state/store";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { FoldRow, HelpTip, PILL, PillSelect, PRIMARY_PILL, SettingsGroup } from "../SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 export type RuleBehavior = "allow" | "ask" | "deny";
 
@@ -182,14 +183,14 @@ export function OwnerPermissionsCard({ bot, leading }: { bot: Pick<Bot, "id" | "
         setEditing(null);
         return loadRules();
       })
-      .catch((failure: unknown) => setError(t("botPanel.rules.error", { error: failure instanceof Error ? failure.message : String(failure) })));
+      .catch((failure: unknown) => setError(t("botPanel.rules.error", { error: readableError(failure) })));
   };
 
   const removeRule = (rule: OwnerRuleRow) => {
     setError(null);
     void api(`/api/approval-rules/${rule.id}`, { method: "DELETE" })
       .then(() => loadRules())
-      .catch((failure: unknown) => setError(t("botPanel.rules.error", { error: failure instanceof Error ? failure.message : String(failure) })));
+      .catch((failure: unknown) => setError(t("botPanel.rules.error", { error: readableError(failure) })));
   };
 
   const groupTitle = t("botPanel.permissions.approvals");

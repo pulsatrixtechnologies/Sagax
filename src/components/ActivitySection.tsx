@@ -12,6 +12,7 @@ import { t, activeLocale } from "@/lib/i18n";
 import { ACTIVITY_WHATS, activityQuery, describeEntry, formatValue, whoLabel, type ActivityEntry, type ActivityFilters, type ActivityWhat } from "@/lib/activity";
 import type { LocaleKey } from "@/locales";
 import { Card, cardCount } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 const inputClass = "rounded-lg border border-hairline/40 bg-inset px-3 py-2 text-[13px] text-ink placeholder:text-ink-secondary focus:outline-none [color-scheme:dark]";
 
@@ -73,7 +74,7 @@ export function ActivitySection() {
       setTotal(body.total);
       setDays(body.retentionDays);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setLoading(false);
     }

@@ -13,6 +13,7 @@ import { cn } from "@/lib/cn";
 import { botZipLineText, discardStagedBotZip, importStagedBotZip, previewStagedBotZip, uploadBotZip, type StagedBotZip } from "@/lib/bot-zip";
 import type { BotZipImportResult, BotZipPreviewLine } from "../../shared/bot-zip";
 import { Switch } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 const EXCLUDED_KEYS: LocaleKey[] = ["botZip.excluded.secrets", "botZip.excluded.session", "botZip.excluded.person", "botZip.excluded.rooms"];
 
@@ -54,7 +55,7 @@ export function BotZipImportPanel({ onImported, onCancel, autoFocus = false, fil
   // A staged file nobody imported is let go when the panel closes.
   useEffect(() => () => { if (stagedId.current) discardStagedBotZip(stagedId.current); }, []);
 
-  const fail = (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause));
+  const fail = (cause: unknown) => setError(readableError(cause));
 
   const choose = async (file: Blob | undefined) => {
     if (!file || busy) return;

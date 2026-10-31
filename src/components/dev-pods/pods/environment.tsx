@@ -16,6 +16,7 @@ import { DEV_WINDOW } from "../detector";
 import { DEV_MENU_ITEM, DevMenu } from "../DevMenu";
 import { registerDevPod, type DevPodContext } from "../registry";
 import { currentBranch, folderLabel, isParallelTaskBranch } from "../sources";
+import { readableError } from "@/lib/plain-error";
 
 export interface EnvironmentData {
   place: EffectivePlace;
@@ -159,7 +160,7 @@ function EnvironmentBody({ data, ctx }: { data: EnvironmentData; ctx: DevPodCont
       await saveFolder(ctx.bot, chosen);
       setNotice(null);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : String(error));
+      setNotice(readableError(error));
     }
   };
   const reveal = async () => {

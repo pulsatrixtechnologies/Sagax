@@ -25,6 +25,7 @@ import { PageSharePopover } from "./PageShare";
 import { useWidgetTheme } from "./WidgetFrame";
 import { encodeSkinTokens } from "@/lib/page-theme";
 import { openPage } from "@/lib/open-page";
+import { readableError } from "@/lib/plain-error";
 
 export { expiryFromHours, previewSrc };
 
@@ -323,7 +324,7 @@ export function OrganizationPages() {
   useEffect(() => {
     api<{ pages: Array<PublishedPageSummary & { ownerId: string | null }> }>("/api/admin/pages")
       .then((answer) => setPages(answer.pages))
-      .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+      .catch((cause) => setError(readableError(cause)));
   }, []);
   const revoke = async (id: string) => {
     setBusy(id);

@@ -21,6 +21,7 @@ import {
 } from "../../../shared/bot-avatar";
 import { BotAvatar } from "../Avatar";
 import { useBotEditor } from "../bot-settings/BotEditorContext";
+import { readableError } from "@/lib/plain-error";
 
 export type AvatarPatch = Partial<
   Pick<Bot, "avatarCrop" | "avatarUrl" | "avatarZoom" | "avatarFocusX" | "avatarFocusY" | "color" | "mascotExpression" | "mascotBody" | "mascotSkin" | "mascotLook">
@@ -67,7 +68,7 @@ export function useAvatarSources(bot: Bot, onPatch: (patch: AvatarPatch) => void
         avatarFocusY: AVATAR_FOCUS_CENTER,
       });
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : String(uploadError));
+      setError(readableError(uploadError));
     } finally {
       setUploading(false);
     }
@@ -104,7 +105,7 @@ export function useAvatarSources(bot: Bot, onPatch: (patch: AvatarPatch) => void
         avatarCrop: latestCrop === cropAtStart ? (result.bot.avatarCrop ?? "circle") : latestCrop,
       });
     } catch (generateError) {
-      setError(generateError instanceof Error ? generateError.message : String(generateError));
+      setError(readableError(generateError));
     } finally {
       setGenerating(false);
     }

@@ -10,6 +10,7 @@ import { t } from "@/lib/i18n";
 import type { OfferedOrgSkill } from "@/lib/org-library";
 import { useBotEditor } from "./BotEditorContext";
 import { PaneSection } from "./PaneSection";
+import { readableError } from "@/lib/plain-error";
 
 export function OrgSkillsCard({ bot, onAdded }: { bot: Bot; onAdded: () => void }) {
   const { request, draft } = useBotEditor();
@@ -60,7 +61,7 @@ export function OrgSkillsCard({ bot, onAdded }: { bot: Bot; onAdded: () => void 
       await refresh();
       onAdded();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setWorking("");
     }

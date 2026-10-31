@@ -18,8 +18,9 @@ import { EditorBox, EditorField, FIELD, PILL, PillSelect, PRIMARY_PILL, Settings
 import { ExportPanel, ImportPanel, importOutcomeText } from "./CredentialsTransfer";
 import { PhoneCardScanButton, scannedCardFields } from "./PhoneCardScanButton";
 import { botLabel } from "@/lib/human-label";
+import { readableError } from "@/lib/plain-error";
 
-const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
+const message = (error: unknown) => (readableError(error));
 const inputClass = FIELD;
 
 export type Draft = {

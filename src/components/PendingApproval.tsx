@@ -24,6 +24,7 @@ import { CustomRuleNoticeLine, riskList } from "./CustomRuleNotice";
 import { customRuleError } from "./bot-settings/CustomRulesCard";
 import { recipientKeysForSendCard } from "../../shared/send-card-recipients";
 import { parseRecipientEntry } from "../../shared/allowed-recipients";
+import { readableError } from "@/lib/plain-error";
 
 interface ApprovalLabels {
   [tool: string]: LocaleKey;
@@ -655,7 +656,7 @@ function AlwaysAllowRecipients({ bot, keys, className, onSaved }: {
               dispatch({ type: "botPatched", bot: response.bot });
               onSaved();
             })
-            .catch((failure: unknown) => setError(failure instanceof Error ? failure.message : String(failure)))
+            .catch((failure: unknown) => setError(readableError(failure)))
             .finally(() => setBusy(false));
         }}
       >

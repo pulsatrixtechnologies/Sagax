@@ -37,6 +37,7 @@ import { useHeldMenuMotion } from "../MenuMotion";
 import { navigateThreadMenu } from "../BotProjects";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { Switch } from "../SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 /** Where the menu opens: under the "..." button, or at a right click. */
 export interface BotActionsMenuAnchor {
@@ -80,7 +81,7 @@ export function BotActionsMenu({ bot, anchor, onAnchor, onRename, data }: {
   const archiveBlocked = archiveBlockReason(state.bots, bot);
   const zipAllowed = showBotZipExport(state.config, bot);
   const messages = visibleMessages(bot);
-  const fail = (cause: unknown) => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) });
+  const fail = (cause: unknown) => dispatch({ type: "error", message: readableError(cause) });
 
   // Kept inside the window, measured after every render (labels change
   // with the locale and the bot's state).

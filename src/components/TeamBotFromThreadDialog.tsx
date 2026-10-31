@@ -24,6 +24,7 @@ import { mcpServersForBot, useMcpServers } from "@/lib/mcp-servers";
 import { closeTeamBotFromThread, setTeamBotSources, useTeamBotFromThreadRequest, type TeamBotFromThreadRequest } from "@/lib/teambot-from-thread";
 import { viewerCanCreateBots } from "@/lib/viewer";
 import { api, useStore, type Bot } from "@/state/store";
+import { readableError } from "@/lib/plain-error";
 
 export interface TeamBotDraft { name: string; title: string; description: string; instructions: string; source: "model" | "excerpt" }
 interface DraftAnswer { draft: TeamBotDraft }
@@ -111,7 +112,7 @@ function TeamBotFromThreadDialog({ request, onClose }: { request: TeamBotFromThr
       setChoices((current) => ({ ...initialCarryChoices({ plugins: installed, connectors: [] }), connectors: current.connectors }));
       setStage("ready");
     }).catch((cause) => {
-      if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+      if (!cancelled) setError(readableError(cause));
     });
     return () => { cancelled = true; };
   }, [request.botId, request.threadId]);
@@ -154,7 +155,7 @@ function TeamBotFromThreadDialog({ request, onClose }: { request: TeamBotFromThr
       bot = { ...bot, ...patched.bot };
     } catch (cause) {
       if (bot) await api(`/api/bots/${bot.id}`, { method: "DELETE" }).catch(() => undefined);
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
       setStage("ready");
       return;
     }
@@ -164,14 +165,14 @@ function TeamBotFromThreadDialog({ request, onClose }: { request: TeamBotFromThr
       try {
         await api(`/api/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ mcpServers: chosenConnectors }) });
       } catch (cause) {
-        notes.push(t("teamBotFromThread.warn.connectors", { reason: cause instanceof Error ? cause.message : String(cause) }));
+        notes.push(t("teamBotFromThread.warn.connectors", { reason: readableError(cause) }));
       }
     }
     for (const plugin of (plugins ?? []).filter((entry) => choices.plugins.has(entry.key))) {
       try {
         await api(`/api/bots/${bot.id}/plugins/install`, { method: "POST", body: JSON.stringify({ marketplace: plugin.marketplace, plugin: plugin.name }), timeoutMs: 120_000 });
       } catch (cause) {
-        notes.push(t("teamBotFromThread.warn.plugin", { name: plugin.name, reason: cause instanceof Error ? cause.message : String(cause) }));
+        notes.push(t("teamBotFromThread.warn.plugin", { name: plugin.name, reason: readableError(cause) }));
         continue;
       }
       const values = pluginConfigCarry(plugin);
@@ -179,7 +180,7 @@ function TeamBotFromThreadDialog({ request, onClose }: { request: TeamBotFromThr
       try {
         await api(`/api/bots/${bot.id}/plugins/${encodeURIComponent(plugin.key)}/config`, { method: "PUT", body: JSON.stringify({ values }) });
       } catch (cause) {
-        notes.push(t("teamBotFromThread.warn.config", { name: plugin.name, reason: cause instanceof Error ? cause.message : String(cause) }));
+        notes.push(t("teamBotFromThread.warn.config", { name: plugin.name, reason: readableError(cause) }));
       }
     }
     if (choices.rules) {
@@ -198,7 +199,7 @@ function TeamBotFromThreadDialog({ request, onClose }: { request: TeamBotFromThr
           }
         }
       } catch (cause) {
-        notes.push(t("teamBotFromThread.warn.rules", { reason: cause instanceof Error ? cause.message : String(cause) }));
+        notes.push(t("teamBotFromThread.warn.rules", { reason: readableError(cause) }));
       }
     }
     dispatch({ type: "botAdded", bot });

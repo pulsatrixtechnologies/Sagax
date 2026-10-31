@@ -11,8 +11,9 @@ import { api } from "@/state/store";
 import { t, tFromServer } from "@/lib/i18n";
 import { copyText } from "@/lib/copy-text";
 import { teamImportPreview, type PendingTeamImport } from "@/lib/team-import";
+import { readableError } from "@/lib/plain-error";
 import {
-  GROK_EXPORT_PROMPT, GrokImportError, grokExportToPackage, grokStarterPackage, isGrokLink, parseGrokExport,
+  GROK_EXPORT_PROMPT, grokExportToPackage, grokStarterPackage, isGrokLink, parseGrokExport,
   type GrokLeftOut, type GrokTemplateCard,
 } from "../../shared/grok-import";
 
@@ -38,7 +39,7 @@ export function GrokImportBox({ onPreview }: { onPreview: (pending: PendingTeamI
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const fail = (cause: unknown) => setError(cause instanceof GrokImportError || cause instanceof Error ? cause.message : String(cause));
+  const fail = (cause: unknown) => setError(readableError(cause));
 
   const loadCard = async () => {
     if (!link.trim() || busy) return;

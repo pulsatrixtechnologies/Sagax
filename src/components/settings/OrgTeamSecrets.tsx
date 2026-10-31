@@ -10,6 +10,7 @@ import { api, useStore } from "@/state/store";
 import type { OrgBotSecretPublic } from "../../../shared/org-bot-secrets";
 import { cn } from "@/lib/cn";
 import { DescribedRow, EditorBox, EditorField, FIELD, PILL, PillSelect, PRIMARY_PILL } from "../SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 export function OrgTeamSecrets() {
   const { state } = useStore();
@@ -30,7 +31,7 @@ export function OrgTeamSecrets() {
       setSecrets(body.secrets);
       setError(null);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(readableError(failure));
     }
   }, []);
   useEffect(() => { void load(); }, [load]);
@@ -50,7 +51,7 @@ export function OrgTeamSecrets() {
       setSecrets(body.secrets);
       close();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(readableError(failure));
     } finally {
       setBusy(false);
     }
@@ -66,7 +67,7 @@ export function OrgTeamSecrets() {
       });
       setSecrets(body.secrets);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(readableError(failure));
     } finally {
       setBusy(false);
     }

@@ -11,6 +11,7 @@ import { api, useStore, type ConfigStatus } from "@/state/store";
 import { Switch } from "./SettingsPrimitives";
 import { McpResultBudgetField, resultBudgetDraft, withResultBudget, type McpMessage, type McpResultBudgetDraft, type McpResultBudgetListing } from "./McpResultBudgetField";
 import { WHOP_MCP_URL, isWhopServer, whopServerName } from "@/lib/whop-integration";
+import { readableError } from "@/lib/plain-error";
 
 /** A server this computer starts (a command) or one reached at a URL —
  * the two shapes the server stores. Secrets arrive as names only. */
@@ -108,7 +109,7 @@ export async function signedInToolsCheck(
     tested = await request(`/api/mcp/servers/${name}/test`, { method: "POST", signal });
   } catch (cause) {
     if (signal.aborted) throw cause;
-    tested = { ok: false, error: cause instanceof Error ? cause.message : String(cause) };
+    tested = { ok: false, error: readableError(cause) };
   }
   if (tested.ok) return tested;
   // A proxy's "504 Gateway Timeout" or a browser's "Failed to fetch" has no
@@ -282,7 +283,7 @@ export function useMcpServers() {
       setImportText("");
       setImportOpen(false);
     } catch (cause) {
-      if (generation === loadGeneration.current) setError(cause instanceof Error ? cause.message : String(cause));
+      if (generation === loadGeneration.current) setError(readableError(cause));
     } finally {
       if (generation === loadGeneration.current) setBusy(null);
     }
@@ -301,7 +302,7 @@ export function useMcpServers() {
         }
       })
       .catch((cause) => {
-        if (generation === loadGeneration.current) setError(cause instanceof Error ? cause.message : String(cause));
+        if (generation === loadGeneration.current) setError(readableError(cause));
       })
       .finally(() => {
         if (generation === loadGeneration.current) setBusy(null);
@@ -434,7 +435,7 @@ export function useMcpServers() {
         return;
       }
       enableAfterSignIn.current.delete(name);
-      setOauthError((current) => ({ ...current, [name]: cause instanceof Error ? cause.message : String(cause) }));
+      setOauthError((current) => ({ ...current, [name]: readableError(cause) }));
     } finally {
       setBusy(null);
     }
@@ -466,7 +467,7 @@ export function useMcpServers() {
       updateMcpServers(result.servers ?? []);
       setNotice({ key: "mcp.oauth.disconnected", params: { name } });
     } catch (cause) {
-      setOauthError((current) => ({ ...current, [name]: cause instanceof Error ? cause.message : String(cause) }));
+      setOauthError((current) => ({ ...current, [name]: readableError(cause) }));
     } finally {
       setBusy(null);
     }
@@ -528,7 +529,7 @@ export function useMcpServers() {
       setNotice({ key: needsSignIn && editing === "new" ? "mcp.oauth.addedNeedsSignIn" : editing === "new" ? "mcp.saved" : "mcp.updated", params: { name } });
       closeEditor();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }
@@ -551,7 +552,7 @@ export function useMcpServers() {
         stateKey: server.enabled ? "mcp.state.off" : "mcp.state.on",
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }
@@ -572,7 +573,7 @@ export function useMcpServers() {
     } catch (cause) {
       setProbe((current) => ({
         ...current,
-        [server.name]: { ok: false, error: cause instanceof Error ? cause.message : String(cause) },
+        [server.name]: { ok: false, error: readableError(cause) },
       }));
     } finally {
       setBusy(null);
@@ -598,7 +599,7 @@ export function useMcpServers() {
       updateMcpServers(enabled.servers ?? []);
       setNotice({ key: "whop.connected" });
     } catch (cause) {
-      if (mounted.current && !controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
+      if (mounted.current && !controller.signal.aborted) setError(readableError(cause));
     } finally {
       if (whopCheck.current === controller) whopCheck.current = null;
       if (mounted.current) setWhopLoading(false);
@@ -633,7 +634,7 @@ export function useMcpServers() {
       added = result.servers?.find((server: McpServerListing) => server.name === name && isRemoteMcpListing(server) && isWhopServer(server));
       if (!added) throw new Error(t("whop.setupFailed"));
     } catch (cause) {
-      if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));
+      if (mounted.current) setError(readableError(cause));
     } finally { if (mounted.current) setBusy(null); }
     if (added && mounted.current) {
       enableAfterSignIn.current.add(added.name);
@@ -664,7 +665,7 @@ export function useMcpServers() {
       });
       if (editing === server.name) closeEditor();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }
@@ -688,7 +689,7 @@ export function useMcpServers() {
       updateMcpServers(result.servers ?? []);
       setNotice({ key: "mcp.reserved.renamed", params: { from: server.name, to: next } });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }
@@ -709,7 +710,7 @@ export function useMcpServers() {
       setServers(result.servers ?? []);
       updateMcpServers(result.servers ?? []);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
       void reloadQuietly();
     } finally {
       setBusy(null);

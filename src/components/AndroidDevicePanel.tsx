@@ -3,6 +3,7 @@ import { ArrowLeft, Circle, Loader2, RotateCcw, ShieldCheck, Smartphone, Usb } f
 import { usePageVisible } from "@/lib/page-visible";
 import { t } from "@/lib/i18n";
 import type { AndroidDeviceInput, AndroidDeviceStatus, AndroidUsbDevice } from "@/types/ogb";
+import { readableError } from "@/lib/plain-error";
 
 type UnitPoint = { x: number; y: number };
 
@@ -27,7 +28,7 @@ export function useAndroidUsbDevices() {
             available: false,
             devices: [],
             reasonCode: "adb-failed",
-            message: cause instanceof Error ? cause.message : String(cause),
+            message: readableError(cause),
           });
         }
       }
@@ -90,7 +91,7 @@ export function AndroidDevicePanel({ status }: { status: AndroidDeviceStatus }) 
           setError(null);
         }
       } catch (cause) {
-        if (alive) setError(cause instanceof Error ? cause.message : String(cause));
+        if (alive) setError(readableError(cause));
       } finally {
         if (alive) timer = window.setTimeout(() => void capture(), 850);
       }
@@ -112,7 +113,7 @@ export function AndroidDevicePanel({ status }: { status: AndroidDeviceStatus }) 
   const send = (payload: AndroidDeviceInput) => {
     if (!bridge || !selected || selected.state !== "device") return;
     void bridge.input(selected.serial, payload).catch((cause) => {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     });
   };
 

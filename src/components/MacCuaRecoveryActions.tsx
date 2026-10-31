@@ -2,6 +2,7 @@ import { useState } from "react";
 import { missingMacCuaPermissions, type MacCuaPermission } from "@/lib/mac-cua-permissions";
 import { t } from "@/lib/i18n";
 import { useDesktopCapabilities } from "./DesktopCapabilities";
+import { readableError } from "@/lib/plain-error";
 
 const paneName: Record<MacCuaPermission, "computer.mac.permission.screenSettings" | "computer.mac.permission.accessibilitySettings"> = {
   screen: "computer.mac.permission.screenSettings",
@@ -23,7 +24,7 @@ export function MacCuaRecoveryActions({ reason }: { reason: string }) {
       await window.ogb?.permOpenSettings(permission);
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     }
   };
 
@@ -32,7 +33,7 @@ export function MacCuaRecoveryActions({ reason }: { reason: string }) {
       await window.ogb?.relaunch?.();
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     }
   };
 

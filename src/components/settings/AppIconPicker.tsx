@@ -26,6 +26,7 @@ import {
 import { appIconGlyphSvg } from "@/lib/app-icon-glyphs";
 import { elementToArt, fileToArt, loadImage, renderAppIcon, type IconArt } from "@/lib/app-icon-render";
 import { stageBot } from "@/lib/app-icon-apply";
+import { readableError } from "@/lib/plain-error";
 
 const STAGE = 256;
 const TILE = 128;
@@ -122,7 +123,7 @@ export function AppIconPicker() {
       setCurrent(saved.id ?? DEFAULT_APP_ICON_ID);
       reportAchievement("appicon.changed");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }

@@ -10,6 +10,7 @@ import { DataCard, RunningStatus } from "./DataCard";
 import { DataResultFooter } from "./DataGrid";
 import { SqlEditor } from "./SqlEditor";
 import { cardsLatestFirst } from "./data-format";
+import { readableError } from "@/lib/plain-error";
 
 const QUERY_MIN_HEIGHT = 128;
 const RESULT_MIN_HEIGHT = 180;
@@ -24,7 +25,7 @@ const clampHeight = (height: number, bounds: { min: number; max: number }) => Ma
  * table on the server and interrupts the previous one, so one keystroke
  * burst should be one query, not one per character; 50 ms still feels live. */
 export const LIVE_RUN_DELAY_MS = 50;
-const reason = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
+const reason = (cause: unknown) => readableError(cause);
 
 /** One result at a time, following the latest update until History or
  * another result is selected. Older cards remain intact on the sheet. */

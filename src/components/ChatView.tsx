@@ -81,7 +81,7 @@ import { MacCuaRecoveryActions } from "./MacCuaRecoveryActions";
 import { macCuaPermissionMessage, missingMacCuaPermissions } from "@/lib/mac-cua-permissions";
 import { failedTurnCause, signedOutEngine } from "@/lib/failed-turn";
 import { localizedEngineCause } from "@/lib/engine-error-text";
-import { plainErrorLine } from "@/lib/plain-error";
+import { plainErrorLine, readableError } from "@/lib/plain-error";
 import { openPlaceAction, placeRowViewFor, usePlaceSeat, worksOnSimpleLabel } from "@/lib/place-view";
 import type { PlaceRow } from "../../shared/place-view";
 import { isPureLeakedSystemHarnessMessage, stripLeakedSystemHarnessMessages } from "../../shared/system-message-guard.ts";
@@ -1028,7 +1028,7 @@ function EmptyChat({ bot }: { bot: Bot }) {
           if (window.ogb?.remoteClient?.active) {
             void api(`/api/bots/${bot.id}/profile`, { method: "PATCH", body: JSON.stringify({ name }) })
               .then(({ bot: updated }) => dispatch({ type: "botPatched", bot: updated }))
-              .catch((cause) => dispatch({ type: "error", message: cause instanceof Error ? cause.message : String(cause) }));
+              .catch((cause) => dispatch({ type: "error", message: readableError(cause) }));
           } else {
             dispatch({ type: "updateBot", botId: bot.id, patch: { name } });
           }

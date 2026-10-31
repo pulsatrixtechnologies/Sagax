@@ -21,6 +21,7 @@ import { normalizeAccessEntry, withEntry, withoutEntry, type SignInLists } from 
 import { Card, cardCount } from "./SettingsPrimitives";
 import { SettingsText } from "./SettingsLink";
 import { fetchEnvironmentDescriptor } from "@/lib/environment-descriptor";
+import { readableError } from "@/lib/plain-error";
 
 export type Role = "admin" | "member";
 
@@ -222,7 +223,7 @@ export function PeopleSection() {
       if (typeof domain?.publicUrl === "string" && domain.publicUrl) setBase(domain.publicUrl);
       setEmailOffered(environment?.capabilities?.emailSignIn === true ? true : environment ? false : null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setLoading(false);
     }
@@ -242,7 +243,7 @@ export function PeopleSection() {
       await api("/api/config", { method: "PUT", body: JSON.stringify({ signIn: next }) });
       await load();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(false);
     }

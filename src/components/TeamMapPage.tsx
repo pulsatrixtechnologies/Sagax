@@ -27,6 +27,7 @@ import { CanvasComputers } from "./CanvasComputers";
 import { MarkdownEditor } from "./markdown/MarkdownEditor";
 import type { TeamComputer } from "../../shared/team-computer";
 import { useMacInsetChrome } from "./DesktopCapabilities";
+import { readableError } from "@/lib/plain-error";
 
 /** One hand-off between two bots. It opens the thread doing the work, the
  * room it ran in, or else the bot it went to, as its own row would. */
@@ -151,7 +152,7 @@ export function SectionContextDialog({ section, label, onClose }: { section: str
         setMaxBytes(result.maxBytes);
       })
       .catch((cause) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause));
+        if (!cancelled) setError(readableError(cause));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -175,7 +176,7 @@ export function SectionContextDialog({ section, label, onClose }: { section: str
       setUpdatedAt(result.updatedAt);
       setMaxBytes(result.maxBytes);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setSaving(false);
     }

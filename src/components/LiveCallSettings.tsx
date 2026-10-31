@@ -7,6 +7,7 @@ import { api, useStore } from "@/state/store";
 import type { LiveSettings } from "../../shared/wire";
 import { SettingsText } from "./SettingsLink";
 import { PillSelect, SwitchRow } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 const IDLE_CHOICES = [1, 2, 3, 5, 10, 15, 30, 60];
 
@@ -23,7 +24,7 @@ function useLiveSettingsEditor() {
       const body = await api<{ live: LiveSettings }>("/api/live/settings", { method: "PATCH", body: JSON.stringify(patch) });
       if (state.config) dispatch({ type: "configStatus", config: { ...state.config, live: body.live } });
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : String(saveError));
+      setError(readableError(saveError));
     } finally {
       setSaving(false);
     }

@@ -14,6 +14,7 @@ import type { LocaleKey } from "@/locales";
 import { normalizeImageGenerationUrl, type AvatarImageProvider } from "../../../shared/image-generation";
 import { KeyInKeys, type KeyRowId } from "./ProviderKeys";
 import { DescribedRow, PILL, PillSelect } from "../SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 const PROVIDER_LABEL: Record<AvatarImageProvider, LocaleKey> = {
   openai: "imageGen.provider.openai",
@@ -80,7 +81,7 @@ export function ImageGenerationSettings({ keysLink = true }: { keysLink?: boolea
     try {
       await saveConfig({ imageGen: { provider: next } });
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : String(saveError));
+      setError(readableError(saveError));
     } finally {
       setProviderDraft(null);
       setSaving(false);
@@ -106,7 +107,7 @@ export function ImageGenerationSettings({ keysLink = true }: { keysLink?: boolea
       setUrlDraft(null);
       setModelDraft(null);
     } catch (saveError) {
-      setError(saveError instanceof Error ? saveError.message : String(saveError));
+      setError(readableError(saveError));
     } finally {
       setSaving(false);
     }

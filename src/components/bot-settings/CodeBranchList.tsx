@@ -32,6 +32,7 @@ import { navigateThreadMenu } from "../BotProjects";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { DialogFrame, DialogLayer, FIELD, PILL, PRIMARY_PILL } from "../SettingsPrimitives";
 import { DiffView } from "../code/DiffView";
+import { readableError } from "@/lib/plain-error";
 
 const ERROR_KEYS: Record<string, LocaleKey> = {
   auth: "botPanel.branch.error.auth",
@@ -65,7 +66,7 @@ export function branchErrorText(error: unknown): string {
     if (ERROR_KEYS[code]) return t(ERROR_KEYS[code]!);
     return error.message;
   }
-  return error instanceof Error ? error.message : String(error);
+  return readableError(error);
 }
 
 const TONE_ICON: Record<BranchTone, { icon: typeof GitBranch; className: string }> = {

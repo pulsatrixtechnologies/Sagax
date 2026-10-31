@@ -11,6 +11,7 @@ import { withoutIds } from "@/lib/approvals-inbox";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { api } from "@/state/store";
+import { readableError } from "./plain-error";
 
 export async function loadJournal(days: number): Promise<JournalPayload> {
   return api<JournalPayload>(`/api/approvals/journal?days=${days}`);
@@ -34,7 +35,7 @@ export function useJournal(active: boolean, days: number): { data: JournalPayloa
       if (next.days === daysRef.current) setData(next);
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     }
   }, []);
   useEffect(() => {

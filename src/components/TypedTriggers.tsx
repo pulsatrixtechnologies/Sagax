@@ -38,6 +38,7 @@ import { api, useStore, type Bot } from "@/state/store";
 
 import { Switch } from "./SettingsPrimitives";
 import { outcomeLabel, outcomeTone, relativeTime, statusFor, webhookActivity } from "./WebhooksPanel";
+import { readableError } from "@/lib/plain-error";
 
 const GRAPH_TYPES = new Set<TriggerSourceType>(["teams", "email", "calendar"]);
 
@@ -565,7 +566,7 @@ export function TypedTriggerRow({
     try {
       await action();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setWorking(null);
     }

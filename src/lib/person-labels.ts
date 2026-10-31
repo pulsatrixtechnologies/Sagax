@@ -6,13 +6,14 @@
 import { useEffect, useSyncExternalStore } from "react";
 
 import { normalizePersonLabel } from "../../shared/person-label";
+import { readableError } from "@/lib/plain-error";
 
 // Plain fetch, not the store's api(): the store imports this module for the
 // `person.label` frame.
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { headers: { "content-type": "application/json" }, ...init });
   const body = await res.json().catch(() => ({})) as T & { error?: string };
-  if (!res.ok) throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+  if (!res.ok) throw new Error(readableError(body.error ?? `${res.status} ${res.statusText}`));
   return body;
 }
 

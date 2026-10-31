@@ -12,6 +12,7 @@ import { ChatMarkdown } from "../ChatMarkdown";
 import { DataGrid, DataResultFooter, type DataGridHandle } from "./DataGrid";
 import { DataChart } from "./DataChart";
 import { formatCount, markdownTable } from "./data-format";
+import { readableError } from "@/lib/plain-error";
 
 export interface DataCardProps {
   bot: Bot;
@@ -54,7 +55,7 @@ export function useExportMenu(botId: string, target: Omit<DataExportRequest, "fo
       const result = await api<{ path?: string }>(withDataThread(DATA_ROUTES.export(botId), dataThread), { method: "POST", body: JSON.stringify({ ...target, format }) });
       if (result?.path) say("status", t("data.card.exported", { path: result.path }));
     } catch (cause) {
-      say("alert", t("data.card.exportFailed", { reason: cause instanceof Error ? cause.message : String(cause) }));
+      say("alert", t("data.card.exportFailed", { reason: readableError(cause) }));
     } finally {
       setBusy(false);
     }

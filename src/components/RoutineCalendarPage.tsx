@@ -124,6 +124,7 @@ import { createAnswerErrorMessage, recoverCreatedRoutineAfterLostAnswer } from "
 import { RoutineScheduleNote } from "./RoutineScheduleNote";
 import { readTiming, RoutineTimingFields, withRoutineTiming } from "./routines/RoutineTimingFields";
 import { BOT_CALENDAR_DRAG_TYPE } from "@/lib/bot-drag";
+import { readableError } from "@/lib/plain-error";
 
 const HOUR_HEIGHT = 64;
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
@@ -2023,7 +2024,7 @@ export function EventDetails({
       if (response.routine) dispatch({ type: "routinePatched", routine: response.routine });
       if (response.run) dispatch({ type: "routineRunPatched", run: response.run });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setWorking(false);
     }
@@ -2047,7 +2048,7 @@ export function EventDetails({
       routineId: routine.id,
       // Prefer subsequent SSE records over this response, which may already be stale.
       onStarted: setSubmittedRun,
-      onError: (cause) => setError(cause instanceof Error ? cause.message : String(cause)),
+      onError: (cause) => setError(readableError(cause)),
       onSettled: () => {
         runNowPending.current = false;
         setStarting(false);
@@ -2065,7 +2066,7 @@ export function EventDetails({
       dispatch({ type: "groupPatched", group: created });
       onOpenRoom(created.id);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setWorking(false);
     }
@@ -2083,7 +2084,7 @@ export function EventDetails({
         onCallChanged(call.id);
         onClose();
       } catch (cause) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(readableError(cause));
       } finally {
         setWorking(false);
       }
@@ -2349,7 +2350,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
       const response = await api("/api/calendar-calls");
       setCalls(response.calls ?? []);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     }
   }, []);
   useEffect(() => {
@@ -2394,7 +2395,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
         dispatch({ type: "routineRunsRemoved", ids: Array.isArray(removed) ? removed : [] });
         void scoped.reload();
       })
-      .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+      .catch((cause) => setError(readableError(cause)));
   };
   // 2026-10-29: a routine's row menu in the list (right click, its "…"):
   // Run now or Stop, Pause or Resume, Rename in place, Open, Duplicate, Delete.
@@ -2484,7 +2485,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
         upsertCall(response.call);
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     }
   };
   const resizeEvent = async (item: CalendarEventItem, durationMinutes: number) => {
@@ -2497,7 +2498,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
         upsertCall(response.call);
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     }
   };
 

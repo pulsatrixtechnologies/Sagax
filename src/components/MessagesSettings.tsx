@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { t } from "@/lib/i18n";
 import { api } from "@/state/store";
 import { SwitchRow } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 export function MessagesSettings() {
   const [useMessages, setUseMessages] = useState(false);
@@ -33,7 +34,7 @@ export function MessagesSettings() {
       body: JSON.stringify({ useMessages: next }),
     }).catch((cause: unknown) => {
       setUseMessages(!next);
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     });
   };
 

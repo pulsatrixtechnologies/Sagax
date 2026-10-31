@@ -3,6 +3,7 @@
 // the browser must hold a session cookie from pairing (see /pair).
 
 import { isDefinitiveSessionRefusal, sessionRetryDelay, UNKNOWN_SESSION_RETRIES } from "../../shared/session-refusal";
+import { readableError } from "./plain-error";
 
 export interface EnvironmentDescriptor {
   environmentId: string;
@@ -51,7 +52,7 @@ export async function readSessionState(fetchImpl: typeof fetch = fetch): Promise
   try {
     res = await fetchImpl("/api/auth/session", { credentials: "same-origin", cache: "no-store" });
   } catch (error) {
-    return { kind: "unreachable", error: error instanceof Error ? error.message : String(error) };
+    return { kind: "unreachable", error: readableError(error) };
   }
   const body: unknown = await res.json().catch(() => ({}));
   const record = Object(body) as Record<string, unknown>; // SAFETY: read with typeof checks below; never trusted as a shape
@@ -62,7 +63,7 @@ export async function readSessionState(fetchImpl: typeof fetch = fetch): Promise
       ...(typeof record.code === "string" ? { code: record.code } : {}),
     };
   }
-  if (!res.ok) return { kind: "unreachable", error: `${res.status} ${res.statusText}`, status: res.status };
+  if (!res.ok) return { kind: "unreachable", error: readableError(`${res.status} ${res.statusText}`), status: res.status };
   if (record.kind === "session" && typeof record.id === "string") {
     return {
       kind: "session",
@@ -228,7 +229,7 @@ export async function pairWithCode(
       body: JSON.stringify({ code: input.code, label: input.label, cookie: true, attemptId: input.attemptId ?? newAttemptId(), ...(input.browser ? { browser: true } : {}) }),
     });
   } catch (error) {
-    return { ok: false, error: `could not reach the server (${error instanceof Error ? error.message : String(error)})` };
+    return { ok: false, error: readableError(error) };
   }
   const body: unknown = await res.json().catch(() => ({}));
   if (res.ok) return { ok: true };
@@ -236,7 +237,7 @@ export async function pairWithCode(
   // The server restarted since the code was made: open codes live in memory
   // only, so it is gone and a fresh sign-in is the only way forward.
   const restarted = Reflect.get(Object(body), "code") === "server_restarted";
-  return { ok: false, error: typeof error === "string" ? error : `${res.status} ${res.statusText}`, status: res.status, ...(restarted ? { restarted: true as const } : {}) };
+  return { ok: false, error: typeof error === "string" ? error : readableError(`${res.status} ${res.statusText}`), status: res.status, ...(restarted ? { restarted: true as const } : {}) };
 }
 
 /** Whether this server's /api/auth/pair answers `preview: true` without
@@ -363,12 +364,12 @@ async function postAuth(path: string, body: Record<string, unknown>, fetchImpl: 
   try {
     res = await fetchImpl(path, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   } catch (error) {
-    return { ok: false, error: `could not reach the server (${error instanceof Error ? error.message : String(error)})` };
+    return { ok: false, error: readableError(error) };
   }
   const parsed: unknown = await res.json().catch(() => ({}));
   if (res.ok) return { ok: true };
   const error = Reflect.get(Object(parsed), "error");
-  return { ok: false, error: typeof error === "string" ? error : `${res.status} ${res.statusText}` };
+  return { ok: false, error: typeof error === "string" ? error : readableError(`${res.status} ${res.statusText}`) };
 }
 
 /** Ask the server to email a sign-in code (the server checks its allow-list first). */
