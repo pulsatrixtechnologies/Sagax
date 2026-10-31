@@ -128,7 +128,7 @@ ios/
     NewGroupSheet.swift          make a channel from the phone
     NewSectionSheet.swift        tap or swipe bots together into a section
     ChatView.swift               transcript, tailed bubbles, approval cards, composer
-    SpeechDictation.swift        on-device speech recognition, press-to-stop
+    SpeechDictation.swift        composer mic: xAI listen socket (LiveDictation) or Apple on-device
     ComputerView.swift           opt-in live view of a bot's computer
     MarkdownText.swift           the supported Markdown presentation layer
     SettingsView.swift           status, computer switcher, and pairing removal

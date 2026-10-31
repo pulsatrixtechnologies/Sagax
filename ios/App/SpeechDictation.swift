@@ -2,11 +2,13 @@
 // `dictationEngine` in src/lib/composer-dictation.ts):
 //
 // - xAI on the server (`.xai`), whenever a key serves the person
-//   (Session.dictationEars asks `GET /voice/status`): the microphone is
-//   recorded at 16 kHz and the clip is sent once it stops (`POST
-//   /voice/transcribe`, the same ears, keyterms and formatting as the
-//   call); the words join the field then ("processing" meanwhile). A
-//   failure says why and about which key (VoiceWords), never a raw line.
+//   (Session.dictationEars asks `GET /voice/status`): audio streams over
+//   the call's listen socket (`GET /voice/listen`, LiveDictation) while
+//   the person speaks; partials join the field as they come; the stop
+//   only waits for xAI's answer to finalize (at most
+//   DICTATION_FINAL_TIMEOUT_MS). The whole clip is uploaded
+//   (`POST /voice/transcribe`) only when the socket cannot open. Same
+//   design as the desktop/web grey mic since #1673.
 // - Apple on this iPhone (`.apple`): `SFSpeechRecognizer` on an
 //   `AVAudioEngine` tap, partials streamed into the text field, press to
 //   stop, the same engine as the desktop helper. Only when no xAI key
@@ -35,11 +37,12 @@ final class SpeechDictation: ObservableObject {
         "kAFAssistantErrorDomain": [216],
     ]
 
-    /// xAI's ears on the server: a turn's samples (16 kHz) to its words.
+    /// xAI's ears on the server: stream when the listen socket opens, else
+    /// upload the clip once it stops.
     struct ServerEars {
         /// the key the status named (the provider line)
         let key: VoiceKeyInfo?
-        let transcribe: ([Float]) async throws -> VoiceTranscription
+        let makeTranscriber: () -> LiveDictation
     }
 
     /// Who hears this dictation (Session.dictationEars).
@@ -57,7 +60,8 @@ final class SpeechDictation: ObservableObject {
     /// Publishing it keeps the frozen composer base protected while the
     /// system permission sheets are still in flight.
     @Published private(set) var isStarting = false
-    /// xAI is turning the clip into words (the field waits for them).
+    /// Waiting for xAI's last words after the stop (a few hundred ms when
+    /// streaming; the whole clip when the socket did not open).
     @Published private(set) var isProcessing = false
     /// Who heard the last or current dictation.
     @Published private(set) var engine: Engine = .apple
@@ -88,6 +92,7 @@ final class SpeechDictation: ObservableObject {
     private var samples: [Float] = []
     private var captureConverter: AVAudioConverter?
     private var serverEars: ServerEars?
+    private var live: LiveDictation?
     private var processingTask: Task<Void, Never>?
     private static let serverFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: CallAudio.sampleRate, channels: 1, interleaved: false)!
 
@@ -120,18 +125,19 @@ final class SpeechDictation: ObservableObject {
                 engine = .xai
                 appleReason = nil
                 serverEars = server
-                await actuallyStartServer(generation: gen)
+                await actuallyStartServer(generation: gen, ears: server)
             case let .apple(reason):
                 engine = .apple
                 appleReason = reason
                 serverEars = nil
+                live = nil
                 await actuallyStart(generation: gen)
             }
         }
     }
 
-    /// Stop listening. With xAI's ears the clip goes to the server now and
-    /// the words come back into the field (`isProcessing` meanwhile).
+    /// Stop listening. With xAI's ears, wait for the last streamed words
+    /// (or upload the clip when the socket never opened).
     func stop() {
         startTask?.cancel()
         startTask = nil
@@ -142,9 +148,18 @@ final class SpeechDictation: ObservableObject {
         isListening = false
         let recorded = samples
         samples = []
+        let transcriber = live
+        live = nil
         teardown()
-        if wasListening, engine == .xai, let serverEars, !recorded.isEmpty {
-            send(recorded, to: serverEars)
+        if wasListening, engine == .xai, let transcriber {
+            finishStreaming(transcriber)
+        } else if wasListening, engine == .xai, let serverEars, !recorded.isEmpty {
+            // connect never produced a LiveDictation (should not happen)
+            let fallback = serverEars.makeTranscriber()
+            for chunk in stride(from: 0, to: recorded.count, by: 1024).map({ Array(recorded[$0..<min($0 + 1024, recorded.count)]) }) {
+                fallback.push(chunk)
+            }
+            finishStreaming(fallback)
         }
     }
 
@@ -153,34 +168,40 @@ final class SpeechDictation: ObservableObject {
         processingTask?.cancel()
         processingTask = nil
         isProcessing = false
+        live?.close()
+        live = nil
         samples = []
         stop()
         samples = []
     }
 
-    private func send(_ recorded: [Float], to ears: ServerEars) {
+    private func finishStreaming(_ transcriber: LiveDictation) {
         processingTask?.cancel()
         isProcessing = true
         processingTask = Task { [weak self] in
-            do {
-                let heard = try await ears.transcribe(recorded)
-                guard let self, !Task.isCancelled else { return }
-                if let line = heard.key.fallbackLine { keyNotice = line }
+            let heard = await transcriber.finish()
+            let uploadError = transcriber.uploadError
+            transcriber.close()
+            guard let self, !Task.isCancelled else { return }
+            if heard.failed {
+                if let failure = uploadError as? VoiceFailure {
+                    self.error = LocalizedStringKey(VoiceWords.line(failure))
+                } else {
+                    self.error = LocalizedStringKey(String(localized: "xAI could not hear that\(uploadError.map { " (\($0.localizedDescription))" } ?? ""). Try again."))
+                }
+            } else {
+                if let line = heard.key.fallbackLine { self.keyNotice = line }
                 let words = heard.text.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !words.isEmpty { transcript = words }
-            } catch {
-                guard let self, !Task.isCancelled else { return }
-                if let failure = error as? VoiceFailure { self.error = LocalizedStringKey(VoiceWords.line(failure)) }
-                else { self.error = LocalizedStringKey(String(localized: "xAI could not hear that (\(error.localizedDescription)). Try again.")) }
+                if !words.isEmpty { self.transcript = words }
             }
-            self?.isProcessing = false
-            self?.processingTask = nil
+            self.isProcessing = false
+            self.processingTask = nil
         }
     }
 
     // MARK: - xAI on the server
 
-    private func actuallyStartServer(generation gen: Int) async {
+    private func actuallyStartServer(generation gen: Int, ears: ServerEars) async {
         let mic = await MicrophonePermission.request()
         guard gen == generation, !Task.isCancelled else { return }
         guard mic else {
@@ -188,19 +209,32 @@ final class SpeechDictation: ObservableObject {
             error = Self.micDeniedMessage
             return
         }
+        let transcriber = ears.makeTranscriber()
+        live = transcriber
+        transcriber.onPartial { [weak self] words in
+            Task { @MainActor in
+                guard let self, self.generation == gen, self.isListening || self.isStarting else { return }
+                self.transcript = Dictation.updateTranscript(self.transcript, new: words)
+            }
+        }
+        // the ears open while the microphone does: frames heard before the
+        // socket is ready wait in the utterance and go out once it is
+        Task { await transcriber.connect() }
         do {
-            try beginServerCapture()
+            try beginServerCapture(generation: gen, transcriber: transcriber)
             isStarting = false
         } catch {
             isStarting = false
             self.error = "Couldn't start the microphone."
+            transcriber.close()
+            if live === transcriber { live = nil }
             teardown()
         }
     }
 
-    /// The microphone to 16 kHz mono samples (the call's capture), kept
-    /// until the person stops.
-    private func beginServerCapture() throws {
+    /// The microphone to 16 kHz mono samples, pushed to the listen socket
+    /// (and kept for the upload fallback).
+    private func beginServerCapture(generation gen: Int, transcriber: LiveDictation) throws {
         VoiceNoteCenter.shared.beginInputOwnership(.dictation)
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.record, mode: .measurement)
@@ -215,7 +249,11 @@ final class SpeechDictation: ObservableObject {
         samples = []
         input.installTap(onBus: 0, bufferSize: 1024, format: format) { [weak self] buffer, _ in
             guard let self, let out = Self.resampled(buffer, with: converter) else { return }
-            Task { @MainActor in self.samples += out }
+            Task { @MainActor in
+                guard self.generation == gen, self.live === transcriber else { return }
+                self.samples += out
+                transcriber.push(out)
+            }
         }
         tapInstalled = true
         engine.prepare()
