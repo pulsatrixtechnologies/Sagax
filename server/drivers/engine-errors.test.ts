@@ -87,6 +87,16 @@ describe("stopCause", () => {
     expect(stopCause("  ")).toBeUndefined();
     expect(stopCause(null)).toBeUndefined();
   });
+
+  it("labels person cancel, engine empty and harness quiet-cut as three different strings", () => {
+    expect(stopCause("interrupted")).toBe("The person stopped this turn.");
+    expect(stopCause("cancelled")).toBe("The person stopped this turn.");
+    expect(stopCause("reasoning_only")).toBe("The model returned only its reasoning and no final answer.");
+    expect(stopCause("empty_turn")).toBe("The engine ended the turn with no reply, image, or tool result.");
+    expect(stopCause("stuck")).toBe("The harness ended the turn after the engine went quiet with no tool running.");
+    expect(stopCause("reasoning_only")).not.toMatch(/stopped by user/i);
+    expect(stopCause("stuck")).not.toMatch(/stopped by user/i);
+  });
 });
 
 describe("localModelFailureMessage", () => {

@@ -154,7 +154,9 @@ const REASONING_CONTINUE_NUDGE =
 
 /** How many times a reasoning-only empty response is nudged before the turn
  * ends gracefully. One by default; SAGAX_ACP_REASONING_CONTINUE_MAX overrides
- * it (0 turns the continuation off and surfaces the failure as before). */
+ * it (0 turns the continuation nudge off). A reasoning_only failure still
+ * settles soft with stopReason reasoning_only either way: never the raw
+ * Internal error (session/prompt). */
 function reasoningContinueMax(): number {
   const raw = Number(process.env.SAGAX_ACP_REASONING_CONTINUE_MAX);
   return Number.isInteger(raw) && raw >= 0 ? raw : 1;
@@ -174,6 +176,9 @@ function isReasoningOnlyEmpty(error: unknown): boolean {
     .join(" ");
   return /\breasoning_only\b/i.test(text);
 }
+
+const REASONING_ONLY_SOFT_MESSAGE =
+  "kept returning its reasoning without a final answer. Nothing was changed. Send the message again, or lower this bot's reasoning effort.";
 
 export interface AcpConfig {
   cli: string;
@@ -2827,11 +2832,12 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             // engine that mirrors it) can spend a turn's whole output budget on
             // reasoning and commit no content and no tool call. Grok reports
             // exactly that over session/prompt as an rpc -32603 whose detail is
-            // "empty response from model (reasoning_only)". Nothing streamed,
-            // nothing ran and nothing was approved, so the live session is
-            // healthy: nudge it to finish on the same session instead of
-            // breaking the bot with a hard internal error. Bounded, so a model
-            // that only ever reasons ends gracefully rather than looping.
+            // "empty response from model (reasoning_only)". Thought chunks, or
+            // a leaked assistant delta that never became an item, must not
+            // block recovery or let the raw Internal error through: nudge the
+            // live session when nothing was committed, else soft-settle with
+            // stopReason reasoning_only. Bounded, so a model that only ever
+            // reasons ends gracefully rather than looping.
             const reasoningMax = reasoningContinueMax();
             let reasoningRetries = 0;
             for (;;) {
@@ -2861,29 +2867,37 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                   result = await sendPrompt(reasoningRetries === 0 ? text : REASONING_CONTINUE_NUDGE);
                 }
               } catch (promptError) {
-                // Only a reasoning-only empty response that produced nothing is
-                // safe to re-prompt: with content buffered or an item emitted,
-                // a nudge could duplicate work, so fall through to surface it.
-                const reasoningOnly = isReasoningOnlyEmpty(promptError) && !state.producedItem && !state.text.trim();
-                if (reasoningOnly && reasoningRetries < reasoningMax
-                    && !state.stopped && !state.settled && !session.closing
-                    && session.current === current && session.sessionId === sessionId
-                    && session.child.exitCode === null) {
+                const reasoningOnly = isReasoningOnlyEmpty(promptError);
+                // An item (reply, image, tool) or an open ask/tool means a
+                // nudge could duplicate work. Uncommitted assistant deltas are
+                // abandoned: they are not a final answer, and keeping them
+                // used to force the raw Internal error through (#1820).
+                const canNudge = reasoningOnly
+                  && !state.producedItem
+                  && current.asks.size === 0
+                  && current.runningTools.size === 0
+                  && reasoningRetries < reasoningMax
+                  && !state.stopped && !state.settled && !session.closing
+                  && session.current === current && session.sessionId === sessionId
+                  && session.child.exitCode === null;
+                if (canNudge) {
+                  state.text = "";
                   reasoningRetries += 1;
                   // Internal detail for the logs, not a row in the chat.
                   console.warn(`[acp] ${support.displayName} returned its reasoning without an answer, so Sagax asked it to finish.`);
                   continue;
                 }
                 if (reasoningOnly) {
-                  // Bound reached: end the turn with a plain, non-alarming line
-                  // the bot can act on, never the raw "Internal error …
-                  // (session/prompt)". Evict the session so the next turn
-                  // resumes clean, exactly as the generic rpc-failure path does.
+                  // Bound reached, nudge disabled, or work already committed:
+                  // soft-end. Never the raw "Internal error … (session/prompt)".
+                  // Drop uncommitted deltas so settle does not flush a leak as
+                  // a reply beside the soft error.
+                  if (!state.producedItem) state.text = "";
                   console.log(`[acp] ${support.displayName} returned reasoning only after ${reasoningRetries} continuation(s); turn ended gracefully (${threadId})`);
                   emit({
                     ...base(threadId, turnId),
                     type: "runtime.error",
-                    message: `${support.displayName} kept returning its reasoning without a final answer. Nothing was changed. Send the message again, or lower this bot's reasoning effort.`,
+                    message: `${support.displayName} ${REASONING_ONLY_SOFT_MESSAGE}`,
                   });
                   if (session.child.exitCode === null && !session.closing) closeSession(threadId, "reasoning-only");
                   settle(threadId, session, false, "reasoning_only");
