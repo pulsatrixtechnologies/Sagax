@@ -3,13 +3,13 @@
 // reset reading: codexLimitResetsAt, the Claude CLI's rate_limit_info).
 // Pure: the clock is passed in (#3120: the reset is always read against the
 // injected clock, never Date.now() behind the caller's back).
-import { classifyError } from "./drivers/retry.ts";
+import { classifyError, PROVIDER_NOT_CONFIGURED } from "./drivers/retry.ts";
 
 export type LimitKind = "quota" | "rate_limited";
 
 /** Words of a spent balance that the shared classifier leaves to "unknown"
  * (xAI, OpenRouter, OpenCode Go, Gemini, the Anthropic API). */
-const SPENT = /\b(?:insufficient[_ ](?:account[_ ])?(?:funds|balance|credits?|quota)|(?:balance|credits?|quota) (?:is |are |has been )?(?:exhausted|used up|depleted|too low)|resource[_ ]exhausted|spending limit|credit balance is too low|usage balance)\b/i;
+const SPENT = /\b(?:insufficient[_ ](?:account[_ ])?(?:funds|balance|credits?|quota)|(?:balance|credits?|quota) (?:is |are |has been )?(?:exhausted|used up|depleted|too low)|resource[_ ]exhausted|spending limit|billing (?:hard )?limit|credit balance is too low|usage balance)\b/i;
 /** What a local server must say for its refusal to be a spent quota. */
 const LOCAL_QUOTA = /\binsufficient[_ ]quota\b|\bquota (?:is |has been )?(?:exceeded|reached|exhausted)\b|\bexceeded (?:your|its) (?:current )?quota\b|\busage limit (?:reached|exceeded)\b/i;
 /** A driver's stop token for the same thing. */
@@ -17,9 +17,13 @@ const LIMIT_STOPS = new Set(["quota", "usage_limit", "usage_limit_reached", "ins
 
 /** "quota" for a spent usage limit or balance (hours away), "rate_limited"
  * for a 429 the driver already retried and gave up on, null otherwise. A
- * sign-in, a refused key or a bad request is never a limit. */
+ * sign-in, a refused key, a configuration refusal or a bad request is never
+ * a limit. */
 export function limitKindOf(cause: string | undefined, stopReason?: string | null, options: { local?: boolean } = {}): LimitKind | null {
   const text = cause ?? "";
+  // A configuration refusal (provider_not_configured; "API billing will not
+  // be used") is never a usage limit (#1758).
+  if (PROVIDER_NOT_CONFIGURED.test(text)) return null;
   // A model on a local or computer-shared server has no usage limit: a 402,
   // a 429, a stop token or a word like "subscription" there is the server
   // being busy, unreachable or misconfigured, never hours to wait. Only a
