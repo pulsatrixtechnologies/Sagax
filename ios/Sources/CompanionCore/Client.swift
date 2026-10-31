@@ -446,16 +446,16 @@ public enum APIError: Error, LocalizedError, Sendable {
             }
             if let message { return message }
             switch code {
-            case 401: return "This phone is not paired with that computer."
-            case 403: return "That can only be done on the computer itself."
-            case 404: return "That is no longer there."
-            case 409: return "The bot is busy. Stop it first."
-            default: return "The computer answered with an error (\(code))."
+            case 401: return String(localized: "This phone is not paired with that computer.")
+            case 403: return String(localized: "That can only be done on the computer itself.")
+            case 404: return String(localized: "That is no longer there.")
+            case 409: return String(localized: "The bot is busy. Stop it first.")
+            default: return String(localized: "The computer answered with an error (\(String(code))).")
             }
         case let .transport(detail):
             return detail
         case .badURL:
-            return "That address doesn't look right."
+            return String(localized: "That address doesn't look right.")
         }
     }
 
