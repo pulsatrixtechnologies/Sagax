@@ -744,6 +744,12 @@ export class Store {
   private listeners = new Set<(change: StoreChange) => void>();
   /** A broken team registry must not prevent loading independent chat data. */
   private registeringInitialSections = true;
+  /** bots.json existed but could not be read or was not an array. Saves and
+   * first-run seed refuse while set so an empty in-memory list never replaces
+   * whatever is still on disk (#1712). Missing means a first run. */
+  private botsUnreadable = false;
+  /** Same guard for groups.json (#1712). */
+  private groupsUnreadable = false;
   /** Room turns and old callers have their own activity slot. Clearing
    * that slot must not clear a concurrently running independent task. */
   private legacyActivities = new Map<string, BotActivity>();
@@ -771,15 +777,33 @@ export class Store {
     // as "every member was deleted".
     let botsLoaded = false;
     try {
-      this.bots = JSON.parse(readFileSync(BOTS_FILE, "utf8"));
-      botsLoaded = Array.isArray(this.bots);
-    } catch {
+      const raw: unknown = JSON.parse(readFileSync(BOTS_FILE, "utf8"));
+      if (!Array.isArray(raw)) throw new Error("bots.json must be an array");
+      this.bots = raw;
+      botsLoaded = true;
+    } catch (error) {
       this.bots = [];
+      // Missing means no bots yet. Any other read/parse failure disables
+      // overwriting the file and first-run seed (#1712).
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        this.botsUnreadable = true;
+        const reason = error instanceof SyntaxError ? "invalid JSON"
+          : error instanceof Error ? error.message : "unable to read bots";
+        console.error(`store: ignoring unreadable ${BOTS_FILE}: ${reason}`);
+      }
     }
     try {
-      this.groups = JSON.parse(readFileSync(GROUPS_FILE, "utf8"));
-    } catch {
+      const raw: unknown = JSON.parse(readFileSync(GROUPS_FILE, "utf8"));
+      if (!Array.isArray(raw)) throw new Error("groups.json must be an array");
+      this.groups = raw;
+    } catch (error) {
       this.groups = [];
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        this.groupsUnreadable = true;
+        const reason = error instanceof SyntaxError ? "invalid JSON"
+          : error instanceof Error ? error.message : "unable to read groups";
+        console.error(`store: ignoring unreadable ${GROUPS_FILE}: ${reason}`);
+      }
     }
     this.rememberSections([...this.bots, ...this.groups].map((record) => record.section));
     // busy never survives a restart — no turn does either. Rooms saved
@@ -1346,6 +1370,9 @@ export class Store {
   }
 
   private saveBots(bots: BotRecord[] = this.bots, registerSections = true) {
+    if (this.botsUnreadable) {
+      throw Object.assign(new Error("Saved bots could not be read. Repair bots.json before changing them."), { status: 503 });
+    }
     if (registerSections) this.rememberSections([...this.bots, ...bots].map((bot) => bot.section));
     writeFileAtomicIfChanged(BOTS_FILE, JSON.stringify(bots.map(({ busy: _busy, activity: _activity, ...bot }) => ({
       ...bot,
@@ -1354,6 +1381,9 @@ export class Store {
   }
 
   private saveGroups(groups: GroupRecord[] = this.groups, registerSections = true) {
+    if (this.groupsUnreadable) {
+      throw Object.assign(new Error("Saved rooms could not be read. Repair groups.json before changing them."), { status: 503 });
+    }
     if (registerSections) this.rememberSections(groups.map((group) => group.section));
     writeFileAtomicIfChanged(GROUPS_FILE, JSON.stringify(groups.map(({ busyBotId: _busyBotId, turnStartedAt: _turnStartedAt, ...g }) => ({
       ...g,
@@ -3754,9 +3784,10 @@ export class Store {
     return bot;
   }
 
-  /** A first run: no bot yet, so seedIfEmpty makes one. */
+  /** A first run: no bot yet, so seedIfEmpty makes one. An unreadable
+   * bots.json is not empty (#1712): refuse seed so the file stays intact. */
   needsSeed() {
-    return this.bots.length === 0;
+    return !this.botsUnreadable && this.bots.length === 0;
   }
 
   /** First-run seed: one bot so the app never opens empty — it gets a

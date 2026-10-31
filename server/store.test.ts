@@ -1700,6 +1700,50 @@ describe("Store", () => {
     expect(reloaded.bots).toHaveLength(1);
   });
 
+  it.each(["{truncated", "null", '{"id":"not-an-array"}'])("keeps an unreadable bots.json intact and refuses seed or writes: %s", (broken) => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const original = new Store(selection);
+      const bot = original.createBot({ name: "Keeper" });
+      const file = join(DATA_DIR, "bots.json");
+      const saved = readFileSync(file, "utf8");
+      writeFileSync(file, broken);
+      const restored = new Store(selection);
+      expect(restored.bots).toEqual([]);
+      expect(restored.needsSeed()).toBe(false);
+      restored.seedIfEmpty();
+      expect(restored.bots).toEqual([]);
+      expect(() => restored.createBot({ name: "Must not appear" })).toThrow(/Repair bots\.json/);
+      expect(readFileSync(file, "utf8")).toBe(broken);
+      expect(logged.mock.calls.flat().join("\n")).toMatch(/ignoring unreadable/);
+      expect(logged.mock.calls.flat().join("\n")).not.toContain(broken);
+      writeFileSync(file, saved);
+      expect(new Store(selection).bot(bot.id)?.name).toBe("Keeper");
+    } finally { logged.mockRestore(); }
+  });
+
+  it.each(["{truncated", "null", '{"id":"not-an-array"}'])("keeps an unreadable groups.json intact and refuses room writes: %s", (broken) => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const original = new Store(selection);
+      const bot = original.createBot({ name: "Host" });
+      const room = original.createGroup("Launch", [bot.id], false);
+      const file = join(DATA_DIR, "groups.json");
+      const saved = readFileSync(file, "utf8");
+      writeFileSync(file, broken);
+      const restored = new Store(selection);
+      expect(restored.groups).toEqual([]);
+      expect(restored.bots.map((candidate) => candidate.id)).toEqual([bot.id]);
+      expect(restored.bot(bot.id)?.name).toBe("Host");
+      expect(() => restored.createGroup("Must not appear", [bot.id], false)).toThrow(/Repair groups\.json/);
+      expect(readFileSync(file, "utf8")).toBe(broken);
+      expect(logged.mock.calls.flat().join("\n")).toMatch(/ignoring unreadable/);
+      expect(logged.mock.calls.flat().join("\n")).not.toContain(broken);
+      writeFileSync(file, saved);
+      expect(new Store(selection).group(room.id)?.name).toBe("Launch");
+    } finally { logged.mockRestore(); }
+  });
+
   it("chains appended messages and keeps the newest as active leaf", () => {
     const store = new Store(selection);
     const bot = store.createBot();
@@ -1797,13 +1841,20 @@ describe("Store", () => {
   });
 
 
-  it("tolerates a corrupt bots.json by starting empty", () => {
-    const store = new Store(selection);
-    store.createBot();
-    writeFileSync(join(DATA_DIR, "bots.json"), "{not json");
+  it("loads an empty in-memory roster from a corrupt bots.json without overwriting it", () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const store = new Store(selection);
+      store.createBot();
+      const broken = "{not json";
+      writeFileSync(join(DATA_DIR, "bots.json"), broken);
 
-    const reloaded = new Store(selection);
-    expect(reloaded.bots).toEqual([]);
+      const reloaded = new Store(selection);
+      expect(reloaded.bots).toEqual([]);
+      expect(reloaded.needsSeed()).toBe(false);
+      expect(readFileSync(join(DATA_DIR, "bots.json"), "utf8")).toBe(broken);
+      expect(logged.mock.calls.flat().join("\n")).toMatch(/ignoring unreadable/);
+    } finally { logged.mockRestore(); }
   });
 
   it("busy is wiped even when bots.json says otherwise", () => {
