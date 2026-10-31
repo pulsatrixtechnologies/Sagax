@@ -13438,6 +13438,8 @@
       "code.subscription.expired": "71ba5c5bc4cfa2409780b212561946830b8dc7ee304cd2ac833e2dbcb3914694",
       "code.subscription.refused": "3c4446c1f3f2b12e14863f4ca6bcdd5740287b9a489ff5075c4c45c47a25deb1",
       "limitFailover.switched": "89bb4bb6b98b427d5f085bfef183ce9fb90e11a95610eba8aac3a32f8bb7bdc4",
+      "limitFailover.modelSwitched": "e746916cf03fa843a2e2d81805bbeada544af6cac70d468d6f36c2c4da44421a",
+      "limitFailover.modelSwitchedAuto": "a90446f9e2597c72c990bb57a3e4683c3eef941f830ab0b86c5c148cdfc282ce",
       "limitFailover.back": "6e21499e41666eb166b13eed78a1d2cf4dcf8114b73a0f8c52caee3ba8e65c58",
       "limitFailover.waiting": "279877c388bc2a96e615cdb17c7eab72b31af223a2b36a9cbb9f5dc675eefecc",
       "limitFailover.waitingRoutine": "1724617439a2871f99d8528b4448a7162d9a0f88fbb1ab1700739d689cd01811",

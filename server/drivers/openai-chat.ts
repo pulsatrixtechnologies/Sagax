@@ -212,6 +212,12 @@ const MAX_MODEL_SWITCHES = 3;
 export const noModelLeftMessage = (label: string) =>
   `This model is not supported for conversations (${label}), and no other model of this engine could take over. Choose another model.`;
 
+/** #1696: the engine itself is out of conversation models; the host may move
+ * the same turn to another engine (limit-failover-host.ts), as a usage limit does. */
+export function isEngineExhaustedRefusal(message: string | undefined): boolean {
+  return typeof message === "string" && /no other model of this engine could take over/i.test(message);
+}
+
 /** One turn's safety stops: model steps, and tool calls across all of them.
  * Tool-heavy models (a memory server, a browser) take dozens of steps, and
  * a stopped turn cannot simply be continued — the next turn is rebuilt from

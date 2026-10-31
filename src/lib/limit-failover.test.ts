@@ -28,6 +28,17 @@ describe("the usage-limit line", () => {
     expect(limitFailoverLineText({ ...switched, resetsAt: tomorrow }, NOW)).toMatch(/around Tue 9:30 AM/);
   });
 
+  it("names a cross-engine move when the engine had no conversation model left (#1696)", () => {
+    setLocale("en");
+    expect(limitFailoverLineText({ kind: "switched", from: "OpenAI", to: "Claude", resetsAt: AT, reason: "model" }, NOW))
+      .toBe("OpenAI had no model left for this conversation: continuing on Claude.");
+    expect(limitFailoverLineText({ kind: "switched", from: "OpenAI", to: "Auto", resetsAt: AT, reason: "model" }, NOW))
+      .toBe("OpenAI had no model left for this conversation: Auto continued the same turn on another engine.");
+    setLocale("fr");
+    expect(limitFailoverLineText({ kind: "switched", from: "OpenAI", to: "Claude", resetsAt: AT, reason: "model" }, NOW))
+      .toBe("OpenAI n'avait plus de modèle pour cette conversation : je continue sur Claude.");
+  });
+
   it("is a recovery status row the transcript never folds, whatever its English words", () => {
     setLocale("fr");
     const message = { id: "x", at: NOW, role: "bot", kind: "activity",

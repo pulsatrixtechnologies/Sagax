@@ -14609,7 +14609,7 @@ const limitFailoverStore = new LimitFailoverStore({ file: join(DATA_DIR, "limit-
  * know of stays a `recovery:` row in the chat. */
 function limitFailoverRow(threadId: string, line: LimitFailoverLine): NonNullable<Message["tool"]> {
   const quiet = line.kind === "switched" || line.kind === "back";
-  const words = line.kind === "switched" && line.to === "Auto"
+  const words = line.kind === "switched" && line.to === "Auto" && line.reason !== "model"
     ? `${line.from} reached its usage limit during this turn: Auto continued the same turn on another model that works, with the steps already taken; ${line.from} is picked again once its limit resets (around ${limitClockText(line.resetsAt)}).`
     : limitFailoverText(line, limitClockText);
   if (quiet) {

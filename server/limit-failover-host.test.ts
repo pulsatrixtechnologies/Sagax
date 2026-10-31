@@ -148,6 +148,45 @@ describe("a turn its engine's limit refused", () => {
     expect(w.state.switches).toEqual([C]);
   });
 
+  it("continues on another engine when this one had no conversation model left (#1696)", async () => {
+    const exhausted = "This model is not supported for conversations (gpt-6.1-terra), and no other model of this engine could take over. Choose another model.";
+    const w = world();
+    w.dispatch();
+    expect(w.host.turnFailed({ threadId: "thread", turnId: "turn-1", cause: exhausted })).toBe(true);
+    await w.host.idle();
+    expect(w.state.resent).toEqual([{ messageId: "m1", on: B }]);
+    expect(w.state.lines).toEqual([{ threadId: "thread", replaced: "turn-1",
+      line: { kind: "switched", from: "Claude", to: "Codex", resetsAt: w.clock.now, reason: "model" } }]);
+    // No engine block and no return after a reset: the thread stays on the backup.
+    expect(w.store.blockedUntil("server", "claude")).toBeNull();
+    expect(w.store.failover("bot", "thread")).toBeUndefined();
+    expect(w.host.beforeTurn("bot", "thread", undefined)).toBeNull();
+    expect(w.state.selection).toEqual(B);
+  });
+
+  it("lets Auto continue when the engine had no conversation model left (#1696)", async () => {
+    const exhausted = "This model is not supported for conversations (gpt-6.1-terra), and no other model of this engine could take over. Choose another model.";
+    const w = world();
+    w.state.selection = { ...A, auto: true };
+    w.dispatch(w.state.selection);
+    expect(w.host.turnFailed({ threadId: "thread", turnId: "turn-1", cause: exhausted })).toBe(true);
+    await w.host.idle();
+    expect(w.state.resent).toEqual([{ messageId: "m1", on: w.state.selection }]);
+    expect(w.state.lines[0]!.line).toMatchObject({ kind: "switched", from: "Claude", to: "Auto", reason: "model" });
+    expect(w.state.switches).toEqual([]);
+  });
+
+  it("leaves the engine's own error when no other engine can take over an exhausted catalog (#1696)", async () => {
+    const exhausted = "This model is not supported for conversations (gpt-6.1-terra), and no other model of this engine could take over. Choose another model.";
+    const w = world({ allowed: ["claude"] });
+    w.dispatch();
+    expect(w.host.turnFailed({ threadId: "thread", turnId: "turn-1", cause: exhausted })).toBe(true);
+    await w.host.idle();
+    expect(w.state.resent).toEqual([]);
+    expect(w.state.lines).toEqual([]);
+    expect(w.store.resumes()).toEqual([]);
+  });
+
   it("does not take a failure that is not a limit, a stopped request, or someone else's turn", async () => {
     const w = world();
     w.dispatch();

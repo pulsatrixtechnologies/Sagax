@@ -6,6 +6,7 @@
 // server/limit-failover.e2e.test.ts.
 import type { LimitFailoverLine } from "../shared/limit-failover.ts";
 import type { ModelSelection } from "../shared/wire.ts";
+import { isEngineExhaustedRefusal } from "./drivers/openai-chat.ts";
 import { limitBackupAllowed, pickLimitBackup, type LimitCandidate, type LimitEngine, type LimitFailoverStore } from "./limit-failover.ts";
 import { limitKindOf, limitResetFromText, limitResetOrEstimate } from "./limit-reset-time.ts";
 
@@ -183,7 +184,8 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
   };
 
   const failed = async (threadId: string, turnId: string | undefined, dispatch: LimitDispatch, resetsAt: number,
-    own: { messageId: string } | null, run: { id: string; routineId: string } | null, auto: { modelOnly: boolean } | null = null) => {
+    own: { messageId: string } | null, run: { id: string; routineId: string } | null,
+    auto: { modelOnly: boolean } | null = null, exhausted = false) => {
     const failover = store.failover(dispatch.botId, threadId);
     // The engine the thread goes back to: the one it started on.
     const home = failover && same(failover.to, dispatch.selection) ? failover : null;
@@ -192,9 +194,25 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
     const backup = await pick(dispatch.botId, threadId, dispatch.speaker, dispatch.engine, dispatch.payer).catch(() => null);
     if (run) {
       if (backup && store.takeResend(`routine:${run.id}`)) {
+        // #1696: no conversation model left on this engine. Move the routine
+        // onto the backup for good (no return after a reset).
+        if (exhausted) {
+          const refused = deps.switchThread(dispatch.botId, threadId, backup);
+          if (!refused && deps.rerunRoutine(run.routineId)) {
+            deps.replaceFailure(threadId, turnId, {
+              kind: "switched", from: deps.engineName(dispatch.engine.instanceId), to: deps.engineName(backup.instanceId),
+              resetsAt: deps.now(), reason: "model",
+            }, dispatch.at);
+            return;
+          }
+          if (refused) console.warn(`[limit-failover] ${threadId}: could not move to ${backup.instanceId}: ${refused}`);
+          return;
+        }
         // The next run starts on the backup (beforeTurn) and says so there.
         if (deps.rerunRoutine(run.routineId)) return;
       }
+      // Exhausted with no backup: leave the engine's own error (no reset to wait for).
+      if (exhausted) return;
       store.schedule({ kind: "routine", routineId: run.routineId, engine: homeEngine.instanceId, at: homeReset + store.afterResetMs });
       deps.replaceFailure(threadId, turnId, { kind: "waitingRoutine", from: deps.engineName(homeEngine.instanceId), resetsAt: homeReset }, dispatch.at);
       arm();
@@ -207,25 +225,40 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
     // that works, picked as Auto picks, with the steps it already took; the
     // chat shows nothing, the Events lens says why. Another model of the same
     // engine still runs when only this model's window refused it.
-    if (auto && (backup || auto.modelOnly) && store.takeResend(own.messageId, AUTO_MAX_RESENDS)) {
+    // #1696: same when the engine had no conversation model left.
+    if (auto && (backup || auto.modelOnly || exhausted) && store.takeResend(own.messageId, AUTO_MAX_RESENDS)) {
       const from = deps.engineName(dispatch.engine.instanceId);
-      deps.replaceFailure(threadId, turnId, { kind: "switched", from, to: "Auto", resetsAt }, dispatch.at);
+      deps.replaceFailure(threadId, turnId, {
+        kind: "switched", from, to: "Auto", resetsAt, ...(exhausted ? { reason: "model" as const } : {}),
+      }, dispatch.at);
       await deps.resend(dispatch.botId, threadId, own.messageId, dispatch.speaker, dispatch.trigger, turnId ? { turnId } : {});
       return;
     }
     if (!auto && backup && store.takeResend(own.messageId)) {
       const refused = deps.switchThread(dispatch.botId, threadId, backup);
       if (!refused) {
-        const kept = store.record({ botId: dispatch.botId, threadId, from: dispatch.selection, to: backup, resetsAt, at: deps.now() });
-        deps.replaceFailure(threadId, turnId, {
-          kind: "switched", from: deps.engineName(kept.from.instanceId), to: deps.engineName(backup.instanceId), resetsAt: kept.resetsAt,
-          ...(dispatch.owner ? { owner: true as const } : {}),
-        }, dispatch.at);
+        // #1696: stay on the backup (no return after a reset). A usage limit
+        // still records the failover so the thread goes back after the reset.
+        if (exhausted) {
+          deps.replaceFailure(threadId, turnId, {
+            kind: "switched", from: deps.engineName(dispatch.engine.instanceId), to: deps.engineName(backup.instanceId),
+            resetsAt: deps.now(), reason: "model",
+            ...(dispatch.owner ? { owner: true as const } : {}),
+          }, dispatch.at);
+        } else {
+          const kept = store.record({ botId: dispatch.botId, threadId, from: dispatch.selection, to: backup, resetsAt, at: deps.now() });
+          deps.replaceFailure(threadId, turnId, {
+            kind: "switched", from: deps.engineName(kept.from.instanceId), to: deps.engineName(backup.instanceId), resetsAt: kept.resetsAt,
+            ...(dispatch.owner ? { owner: true as const } : {}),
+          }, dispatch.at);
+        }
         await deps.resend(dispatch.botId, threadId, own.messageId, dispatch.speaker, dispatch.trigger, turnId ? { turnId } : {});
         return;
       }
       console.warn(`[limit-failover] ${threadId}: could not move to ${backup.instanceId}: ${refused}`);
     }
+    // Exhausted with no backup: leave the engine's own error (choose another model).
+    if (exhausted) return;
     // Nothing can take over: the message goes again once the limit resets, once.
     if (!store.schedule({
       kind: "message", botId: dispatch.botId, threadId, messageId: own.messageId, engine: homeEngine.instanceId,
@@ -292,16 +325,23 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
       dispatches.delete(threadId);
       errors.delete(threadId);
       try {
-        const kind = limitKindOf(cause ?? error?.message, stopReason, { local: dispatch?.local === true });
-        if (!kind || !dispatch) return false;
+        if (!dispatch) return false;
+        const message = cause ?? error?.message;
+        const kind = limitKindOf(message, stopReason, { local: dispatch.local === true });
+        // #1696: the engine had no conversation model left. Same host path as
+        // a usage limit (another engine continues), without blocking the
+        // engine or waiting for a reset.
+        const exhausted = !kind && isEngineExhaustedRefusal(message);
+        if (!kind && !exhausted) return false;
         const now = deps.now();
         const said = error?.resetsAt ?? limitResetFromText(cause, now) ?? limitResetFromText(error?.message, now);
-        const { resetsAt } = limitResetOrEstimate(kind, said, now);
+        const { resetsAt } = kind ? limitResetOrEstimate(kind, said, now) : { resetsAt: now };
         // Known from now on, whatever happens to this turn: no other turn of
         // this payer starts on it before the reset. A refusal that binds
         // only this model (its extra-usage credits, its own weekly window)
-        // leaves the engine to the payer's other models.
-        if (error?.scope !== "model") store.block(dispatch.payer, dispatch.engine.instanceId, resetsAt);
+        // leaves the engine to the payer's other models. An exhausted catalog
+        // never blocks the whole engine: other models may still work later.
+        if (kind && error?.scope !== "model") store.block(dispatch.payer, dispatch.engine.instanceId, resetsAt);
         if (!deps.enabled()) return false;
         const current = deps.threadSelection(dispatch.botId, threadId);
         if (!current) return false;
@@ -309,13 +349,13 @@ export function createLimitFailoverHost(deps: LimitFailoverHostDeps): LimitFailo
         // model moves to a backup, unless the person changed it meanwhile.
         const auto = current.auto === true;
         if (!auto && !same(current, dispatch.selection)) return false;
-        if (auto) deps.autoRefuse?.(threadId, dispatch.payer, resetsAt);
+        if (auto && kind) deps.autoRefuse?.(threadId, dispatch.payer, resetsAt);
         const run = routineRun ? { id: routineRun.id, routineId: routineRun.routineId } : null;
         const request = run ? undefined : deps.request(threadId);
         const own = request && !request.stopped && request.origin?.kind === "user" && request.messageId &&
           (!request.turnId || !turnId || request.turnId === turnId) ? { messageId: request.messageId } : null;
         if (!run && !own) return false;
-        track(failed(threadId, turnId, dispatch, resetsAt, own, run, auto ? { modelOnly: error?.scope === "model" } : null).catch((failure) => {
+        track(failed(threadId, turnId, dispatch, resetsAt, own, run, auto ? { modelOnly: error?.scope === "model" || exhausted } : null, exhausted).catch((failure) => {
           console.warn(`[limit-failover] ${threadId}: ${failure instanceof Error ? failure.message : String(failure)}`);
         }));
         return true;
