@@ -7,6 +7,7 @@ import type { MascotColorName as MausColor } from "./mascot-colors.ts";
 import type { MascotLook } from "./mascot-look.ts";
 import type { MascotSkinId } from "./mascot-skins.ts";
 import type { BotAvatarCrop } from "./bot-avatar.ts";
+import type { RoutineSchedule } from "./routines.ts";
 
 /** Same plain string as `MausExpression` on the wire. Named here so this
  * module does not import `wire.ts`, which already imports this catalogue. */
@@ -95,6 +96,8 @@ export interface BotCatalogDetail {
    * bot published to the organisation and not shared with them). */
   memories: string[] | null;
   skills: Array<{ name: string; description: string }>;
-  routines: Array<{ name: string; schedule: string; enabled: boolean }>;
+  /** Structured schedule: the client formats it in the person's locale and
+   * time zone (never a pre-baked English/UTC/cron string). */
+  routines: Array<{ name: string; schedule: RoutineSchedule; enabled: boolean }>;
   integrations: Array<{ name: string; kind: "mcp" | "app" | "browser" }>;
 }

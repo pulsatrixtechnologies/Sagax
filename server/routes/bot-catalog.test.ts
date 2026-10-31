@@ -58,7 +58,7 @@ async function serve(options: { organization?: boolean; bots?: FakeBot[] } = {})
       soul: `You are ${botId}.`,
       memories: memories ? [`${botId} knows a fact`] : null,
       skills: [{ name: "triage", description: "Sort the inbox" }],
-      routines: [{ name: "Morning digest", schedule: "Every day at 08:00", enabled: true }],
+      routines: [{ name: "Morning digest", schedule: { type: "daily", time: "08:00", weekdays: [0, 1, 2, 3, 4, 5, 6] }, enabled: true }],
       integrations: [{ name: "github", kind: "mcp" }],
     }),
     setListing: (botId, listing: BotCatalogListing | null) => {
@@ -175,6 +175,7 @@ describe("/api/bot-catalog", () => {
     expect(shared.soul).toBe("You are ben-shared.");
     expect(shared.memories).toEqual(["ben-shared knows a fact"]);
     expect(shared.skills).toEqual([{ name: "triage", description: "Sort the inbox" }]);
+    expect(shared.routines).toEqual([{ name: "Morning digest", schedule: { type: "daily", time: "08:00", weekdays: [0, 1, 2, 3, 4, 5, 6] }, enabled: true }]);
     const published = (await call(ANA, "/api/bot-catalog/ben-published")).body as BotCatalogDetail;
     expect(published.memories).toBeNull();
     expect((await call(ANA, "/api/bot-catalog/ben-private")).status).toBe(404);

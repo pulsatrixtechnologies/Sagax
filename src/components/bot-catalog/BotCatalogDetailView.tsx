@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { itemCreator, itemDescription, itemName, type BotCatalogDetail, type CatalogItem } from "@/lib/bot-catalog";
+import { scheduleLabel } from "@/lib/schedule-label";
 import { ChatMarkdown } from "../ChatMarkdown";
 import { Breadcrumb, type Crumb } from "../Breadcrumb";
 import { CatalogMascot, itemLook, nameColor } from "./BotCatalogView";
@@ -76,7 +77,7 @@ function TabBody({ tab, content }: { tab: CatalogTab; content: CatalogDetailCont
           <li key={index} className="flex items-center gap-2 rounded-lg bg-ink/[0.04] px-3 py-2">
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[13px] font-medium text-ink">{routine.name}</span>
-              <span className="block truncate text-[12px] text-ink-secondary">{routine.schedule}</span>
+              <span className="block truncate text-[12px] text-ink-secondary">{scheduleLabel(routine.schedule)}</span>
             </span>
             {!routine.enabled && <span className="shrink-0 text-[11.5px] text-ink-tertiary">{t("botCatalog.routine.paused")}</span>}
           </li>
