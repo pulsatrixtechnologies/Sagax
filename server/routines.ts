@@ -2611,9 +2611,12 @@ export class RoutineManager {
     this.ticking = true;
     try {
       const now = this.now();
+      // Run limit clocks only active work. A run waiting on the person (question,
+      // approval) stays waiting; the next occurrence may supersede it later
+      // without counting that wait as a failure (#1745).
       for (const run of this.runs) {
         if (
-          !["running", "waiting"].includes(run.status) ||
+          run.status !== "running" ||
           run.startedAt == null ||
           run.timeoutMinutes == null ||
           now - run.startedAt < run.timeoutMinutes * 60_000
