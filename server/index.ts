@@ -491,7 +491,7 @@ import { ContentKeyUnavailable, WORKSPACE_OWNER } from "./content-keys.ts";
 import { contentEncryptionFromEnv } from "./content-encryption-env.ts";
 import { briefCrossingLabel, claimRecallCrossings, recallCrossingLabel } from "./recall-disclosure.ts";
 import { LOCAL_RECENT_WORK_LINES, parseSince, parseUntil, recentWork, recentWorkPrompt, turnOutcomeLine } from "./recent-work.ts";
-import { chiefForBot, INCIDENTS_THREAD_TITLE, IncidentLedger, incidentChip, incidentRequest, incidentText, type Incident, type IncidentKind } from "./incidents.ts";
+import { chiefForBot, INCIDENTS_THREAD_TITLE, IncidentLedger, incidentChip, incidentRequest, incidentText, isEngineEmptyFailure, type Incident, type IncidentKind } from "./incidents.ts";
 
 /** A session_read answer competes with the transcript for the context
  * window; a computer-use turn's output can run to hundreds of KB. */
@@ -45819,9 +45819,21 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (reportedAt !== undefined && store.activePath(threadId).some(line => line.turnSucceeded === true && line.at > reportedAt)) {
           return json(res, 409, { error: "that thread has finished a run since it was reported — there is nothing to retry; read what it did before deciding anything else" });
         }
+        // reasoning_only / empty model: at most one identical retry_thread.
+        // After that the Primary Bot must lower effort or switch model (#1820).
+        const lastCause = latestFailedTurnCause(threadId);
+        const engineEmpty = isEngineEmptyFailure(lastCause);
+        if (engineEmpty && incidentLedger.countInWindow(threadId) > 1) {
+          return json(res, 409, {
+            error: `that thread already had an empty model response retried — lower ${target.name}'s reasoning effort or switch its model before retrying again`,
+          });
+        }
         requireActiveInternalCapability();
         const unattended = isUnattended(from.id, fromThreadId);
-        const text = `[Retry requested by ${peerName(from.name)}, your Primary Bot, after this thread's last run stopped.${note ? ` Note from ${peerName(from.name)}: ${quoteInNote(note, 300)}` : ""} Continue the request above from where it stopped and finish it. If the same problem comes back, say exactly what is blocking and stop.]`;
+        const retryLead = engineEmpty
+          ? `after this thread's last run ended with an empty model response`
+          : `after this thread's last run failed`;
+        const text = `[Retry requested by ${peerName(from.name)}, your Primary Bot, ${retryLead}.${note ? ` Note from ${peerName(from.name)}: ${quoteInNote(note, 300)}` : ""} Continue the request above and finish it. If the same problem comes back, say exactly what is blocking and stop${engineEmpty ? "; do not identical-retry an empty reasoning response — lower reasoning effort or switch model first" : ""}.]`;
         try {
           await startTurn(target.id, text, { threadId, unattended, peerAsk: { botId: from.id, name: from.name, ...(unattended ? { unattended: true } : {}) }, speaker: peerSpeaker(from.id, fromThreadId) });
         } catch (error) {

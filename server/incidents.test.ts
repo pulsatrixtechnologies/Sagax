@@ -1,7 +1,7 @@
 // Who hears about a broken run, how often, and in what words.
 import { describe, expect, it } from "vitest";
 
-import { chiefForBot, INCIDENT_HARD_LIMIT, INCIDENT_RETRY_LIMIT, IncidentLedger, incidentChip, incidentRequest, incidentText, type Incident } from "./incidents.ts";
+import { chiefForBot, INCIDENT_HARD_LIMIT, INCIDENT_RETRY_LIMIT, IncidentLedger, incidentChip, incidentRequest, incidentText, isEngineEmptyFailure, type Incident } from "./incidents.ts";
 import { withPeerProvenance } from "./peer-provenance.ts";
 
 const bots = [
@@ -84,7 +84,7 @@ describe("incidentRequest", () => {
   });
 
   it("reads past a line that is only a note to the request above it, and keeps the person's own words whole", () => {
-    const retry = "[Retry requested by Clive, your Chief of Staff, after this thread's last run stopped. Continue the request above.]";
+    const retry = "[Retry requested by Clive, your Chief of Staff, after this thread's last run failed. Continue the request above and finish it.]";
     expect(incidentRequest([
       { role: "user", kind: "text", text: "[Delegated by @Ada] is how I'd label it" },
       { role: "bot", kind: "text", text: "On it" },
@@ -126,9 +126,43 @@ describe("incident wording", () => {
   });
 
   it("words a stall, a start failure, a routine and a room each in their own terms", () => {
-    expect(incidentChip({ ...incident, kind: "stalled", detail: "" })).toBe("Incident: Ada's run in its thread #Invoice reconciliation stopped after showing no activity");
+    expect(incidentChip({ ...incident, kind: "stalled", detail: "" })).toBe("Incident: Ada's run in its thread #Invoice reconciliation stalled after showing no activity");
     expect(incidentChip({ ...incident, kind: "could-not-start", title: null })).toContain("Ada's run in its main conversation could not start");
     expect(incidentChip({ ...incident, kind: "routine-failed", title: "Inbox digest" })).toContain("Ada's scheduled routine in its thread #Inbox digest failed");
     expect(incidentChip({ ...incident, room: "Standup" })).toContain('Ada\'s run in the room "Standup" failed');
+  });
+
+  it("labels an empty model response apart from a person cancel, and caps identical retries", () => {
+    const empty = {
+      ...incident,
+      detail: "Grok kept returning its reasoning without a final answer. Nothing was changed. Send the message again, or lower this bot's reasoning effort.",
+    };
+    expect(isEngineEmptyFailure(empty.detail)).toBe(true);
+    expect(isEngineEmptyFailure("reasoning_only")).toBe(true);
+    expect(isEngineEmptyFailure("The person stopped this turn.")).toBe(false);
+    const chip = incidentChip(empty);
+    expect(chip).toContain("ended with an empty model response");
+    expect(chip).not.toMatch(/stopped by user|last run stopped/i);
+    const first = incidentText(empty, { count: 1, mayRetry: true, muted: false });
+    expect(first).toContain("retry_thread");
+    expect(first).toMatch(/once|lower Ada's reasoning effort|switch its model/i);
+    const second = incidentText(empty, { count: 2, mayRetry: true, muted: false });
+    expect(second).toContain("Do not call retry_thread again");
+    expect(second).not.toMatch(/Otherwise call retry_thread/);
+    expect(second).toMatch(/lower Ada's reasoning effort|switch its model/i);
+  });
+});
+
+describe("IncidentLedger.countInWindow", () => {
+  it("reads the window without recording another incident", () => {
+    let now = 1_000;
+    const ledger = new IncidentLedger({ now: () => now, windowMs: 10_000 });
+    expect(ledger.countInWindow("t1")).toBe(0);
+    ledger.note("t1");
+    expect(ledger.countInWindow("t1")).toBe(1);
+    ledger.note("t1");
+    expect(ledger.countInWindow("t1")).toBe(2);
+    now = 20_000;
+    expect(ledger.countInWindow("t1")).toBe(0);
   });
 });

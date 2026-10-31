@@ -101,6 +101,13 @@ export class IncidentLedger {
     };
   }
 
+  /** How many incidents this thread already has in the window, without recording another. */
+  countInWindow(threadId: string): number {
+    const now = this.options.now?.() ?? Date.now();
+    const windowMs = this.options.windowMs ?? INCIDENT_WINDOW_MS;
+    return (this.at.get(threadId) ?? []).filter((time) => now - time < windowMs).length;
+  }
+
   forget(threadId: string): void {
     this.at.delete(threadId);
   }
@@ -119,17 +126,31 @@ const fold = (text: string, max: number): string => {
 
 const ordinal = (n: number): string => (n === 1 ? "first" : n === 2 ? "second" : n === 3 ? "third" : `${n}th`);
 
+/** Engine emptied the turn (reasoning only, or no reply at all): not a person
+ * cancel and not a harness quiet-cut. Guides Primary Bot / auto retry. */
+export function isEngineEmptyFailure(detail: string | null | undefined): boolean {
+  const text = detail?.trim() ?? "";
+  if (!text) return false;
+  return /\breasoning_only\b/i.test(text)
+    || /\breasoning without a final answer\b/i.test(text)
+    || /\bno reply, image, or tool result\b/i.test(text)
+    || /\bonly its reasoning and no final answer\b/i.test(text);
+}
+
 function whatHappened(incident: Incident): string {
   const where = incident.room ? `in the room "${incident.room}"` : incident.title ? `in its thread #${fold(incident.title, 60)}` : "in its main conversation";
   const detail = incident.detail ? `: "${fold(incident.detail, 240)}"` : "";
   switch (incident.kind) {
     case "stalled":
-      return `${incident.bot.name}'s run ${where} stopped after showing no activity${detail}`;
+      return `${incident.bot.name}'s run ${where} stalled after showing no activity${detail}`;
     case "could-not-start":
       return `${incident.bot.name}'s run ${where} could not start${detail}`;
     case "routine-failed":
       return `${incident.bot.name}'s scheduled routine ${where} failed${detail}`;
     default:
+      if (isEngineEmptyFailure(incident.detail)) {
+        return `${incident.bot.name}'s run ${where} ended with an empty model response${detail}`;
+      }
       return `${incident.bot.name}'s run ${where} failed${detail}`;
   }
 }
@@ -163,11 +184,22 @@ export function incidentText(incident: Incident, count: IncidentCount): string {
   if (incident.lastRequest) lines.push(`The request there was: "${fold(incident.lastRequest, 300)}"`);
   if (incident.lastReply) lines.push(`${incident.bot.name} last said: "${fold(incident.lastReply, 300)}"`);
   if (count.count > 1) lines.push(`This is the ${ordinal(count.count)} incident on that thread within the hour.`);
+  const engineEmpty = isEngineEmptyFailure(incident.detail);
+  // reasoning_only / empty model: one identical retry_thread at most, then
+  // lower effort or switch model. Never imply the person cancelled.
+  if (engineEmpty && count.count > 1) {
+    lines.push(
+      `This was an empty model response (reasoning only or no final answer), not a person cancel. Do not call retry_thread again with the same settings: lower ${incident.bot.name}'s reasoning effort or switch its model, then retry once, or tell the person what is blocking in one or two plain sentences and stop.`,
+    );
+    return lines.join("\n");
+  }
   lines.push(count.mayRetry
     ? [
       "Decide, in this order:",
       "1. If the cause is something only the person can fix — a sign-in, a missing credential, an unanswered question, a setting — say so here in one or two plain sentences and stop.",
-      `2. Otherwise call retry_thread with bot_id "${incident.bot.id}" and thread_id "${incident.threadId}" to resume that thread where it stopped; use coordinate_bots with a corrected brief instead when the request itself needs to change.`,
+      engineEmpty
+        ? `2. Otherwise call retry_thread with bot_id "${incident.bot.id}" and thread_id "${incident.threadId}" once to resume that thread; if the same empty response comes back, lower ${incident.bot.name}'s reasoning effort or switch its model before any further retry. Use coordinate_bots with a corrected brief instead when the request itself needs to change.`
+        : `2. Otherwise call retry_thread with bot_id "${incident.bot.id}" and thread_id "${incident.threadId}" to resume that thread; use coordinate_bots with a corrected brief instead when the request itself needs to change.`,
       "3. Report in one or two sentences what failed and what you did. Never retry the same thread more than twice.",
     ].join("\n")
     : "Retries for that thread are used up. Do not retry it again: say in one or two plain sentences what is blocking and what the person should do, then stop.");

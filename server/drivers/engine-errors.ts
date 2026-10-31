@@ -105,11 +105,24 @@ export function outOfCreditsMessage(provider: string, text: string): string {
   return engineFailureKind(text) === "credits" ? engineFailureMessage(provider, text, { kind: "credits" })! : text;
 }
 
+/** Known stop tokens with plain words. Person cancel, engine empty and harness
+ * cut stay distinct: never "stopped by user" unless the person cancelled. */
+const STOP_CAUSE_LABELS: Record<string, string> = {
+  interrupted: "The person stopped this turn.",
+  cancelled: "The person stopped this turn.",
+  reasoning_only: "The model returned only its reasoning and no final answer.",
+  empty_turn: "The engine ended the turn with no reply, image, or tool result.",
+  // Quiet / idle cut: the harness ended the turn, not the person.
+  stuck: "The harness ended the turn after the engine went quiet with no tool running.",
+};
+
 /** A failed turn's stop reason as its cause: a bare provider token ("stop_sequence", "rpc_error") is never the whole
- * message, and the token stays in it so its class still reads. */
+ * message, and the token stays in it so its class still reads. Known tokens get a plain label. */
 export function stopCause(stopReason: string | null | undefined): string | undefined {
   const reason = stopReason?.trim();
   if (!reason) return undefined;
+  const labeled = STOP_CAUSE_LABELS[reason];
+  if (labeled) return labeled;
   return /^[a-z][a-z0-9_]*$/i.test(reason) ? `The engine stopped without saying why (stop reason: ${reason}).` : reason;
 }
 

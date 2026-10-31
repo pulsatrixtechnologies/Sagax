@@ -1127,7 +1127,13 @@ function handle(msg: any) {
         // After that it answers normally, so one fixture drives both the nudge
         // recovery and the bounded give-up. Each failure is counted to
         // FAKE_ACP_REASONING_COUNT_FILE so a test can prove the bound.
+        // FAKE_ACP_REASONING_LEAK_TEXT: also stream a leaked assistant delta
+        // before the error (production Grok sometimes does); recovery must
+        // still nudge / soft-settle, never the raw Internal error (#1820).
         out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "agent_thought_chunk", content: { text: "thinking hard, producing no answer" } } } });
+        if (process.env.FAKE_ACP_REASONING_LEAK_TEXT) {
+          out({ jsonrpc: "2.0", method: "session/update", params: { update: { sessionUpdate: "agent_message_chunk", content: { text: process.env.FAKE_ACP_REASONING_LEAK_TEXT } } } });
+        }
         const failTimes = process.env.FAKE_ACP_REASONING_FAIL_TIMES === undefined
           ? Infinity
           : Number(process.env.FAKE_ACP_REASONING_FAIL_TIMES);

@@ -245,9 +245,14 @@ describe("ACP turns (fake CLI)", () => {
   };
 
   let savedAgyModel: string | undefined;
+  let savedGrokAgent: string | undefined;
   beforeEach(() => {
     savedAgyModel = process.env.AGY_ACP_DEFAULT_MODEL;
     delete process.env.AGY_ACP_DEFAULT_MODEL;
+    // Host GROK_AGENT (e.g. a personal profile name) must not leak into org
+    // turns: withholdHostTools refuses any profile other than grok-build.
+    savedGrokAgent = process.env.GROK_AGENT;
+    delete process.env.GROK_AGENT;
     ensureDirs();
     chmodSync(FAKE_CLI, 0o755);
     scratch = mkdtempSync(join(tmpdir(), "omb-acp-test-"));
@@ -264,6 +269,7 @@ describe("ACP turns (fake CLI)", () => {
     delete process.env.FAKE_ACP_RPC_FAILURE_AFTER_OUTPUT;
     delete process.env.FAKE_ACP_REASONING_FAIL_TIMES;
     delete process.env.FAKE_ACP_REASONING_COUNT_FILE;
+    delete process.env.FAKE_ACP_REASONING_LEAK_TEXT;
     delete process.env.SAGAX_ACP_REASONING_CONTINUE_MAX;
     delete process.env.FAKE_ACP_RPC_FAILURE_AFTER_USAGE;
     delete process.env.FAKE_ACP_LOAD_ERROR;
@@ -282,6 +288,8 @@ describe("ACP turns (fake CLI)", () => {
     delete process.env.SAGAX_TTS_KEY;
     if (savedAgyModel !== undefined) process.env.AGY_ACP_DEFAULT_MODEL = savedAgyModel;
     else delete process.env.AGY_ACP_DEFAULT_MODEL;
+    if (savedGrokAgent !== undefined) process.env.GROK_AGENT = savedGrokAgent;
+    else delete process.env.GROK_AGENT;
     for (const name of Object.keys(CONTROL_PLANE_FIXTURE)) delete process.env[name];
     delete process.env.FAKE_ACP_MODELS;
     delete process.env.FAKE_ACP_MODEL_STICKS;
@@ -2606,6 +2614,35 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     expect(done).toMatchObject({ ok: false, stopReason: "rpc_error" });
     const err = recorder.events.find((e) => e.type === "runtime.error") as { message?: string } | undefined;
     expect(err?.message).toContain("database connection lost");
+  });
+
+  it("reasoning_only with leaked assistant text still recovers, never a raw Internal error", async () => {
+    // Production Grok sometimes streams a short assistant delta before the
+    // reasoning_only rpc. The old gate (!text.trim()) let the raw error
+    // through; recovery must abandon the leak and nudge (#1820).
+    process.env.FAKE_ACP_REASONING_FAIL_TIMES = "1";
+    process.env.FAKE_ACP_REASONING_LEAK_TEXT = "partial leak before cut";
+    await create(GrokAgentDriver, "reasoning-only-error");
+    await instance.adapter.sendTurn({ threadId: "t-reason-leak-recover", text: "go" });
+    const done = await recorder.until((e) => e.type === "turn.completed");
+    expect(done).toMatchObject({ ok: true, stopReason: null });
+    expect(recorder.events.some((e) => e.type === "item.completed" && (e as any).itemType === "assistant_text")).toBe(true);
+    expect(recorder.events.some((e) => e.type === "content.delta" && (e as any).streamKind === "reasoning_text")).toBe(true);
+    expect(recorder.events.some((e) => e.type === "runtime.error")).toBe(false);
+    expect(recorder.events.find((e) => e.type === "runtime.error")?.message ?? "").not.toMatch(/Internal error|session\/prompt/);
+  });
+
+  it("reasoning_only with leaked text soft-settles when the nudge bound is reached", async () => {
+    process.env.FAKE_ACP_REASONING_FAIL_TIMES = "99";
+    process.env.FAKE_ACP_REASONING_LEAK_TEXT = "still leaking";
+    process.env.SAGAX_ACP_REASONING_CONTINUE_MAX = "1";
+    await create(GrokAgentDriver, "reasoning-only-error");
+    await instance.adapter.sendTurn({ threadId: "t-reason-leak-giveup", text: "go" });
+    const done = await recorder.until((e) => e.type === "turn.completed");
+    expect(done).toMatchObject({ ok: false, stopReason: "reasoning_only" });
+    const err = recorder.events.find((e) => e.type === "runtime.error") as { message?: string } | undefined;
+    expect(err?.message).toMatch(/reasoning without a final answer/i);
+    expect(err?.message).not.toMatch(/Internal error|session\/prompt|reasoning_only/);
   });
 
   it("preserves ACP error codes for provider setup classification", async () => {
