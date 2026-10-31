@@ -826,11 +826,11 @@ Thinking.
   the event stream carries the step, the turn ends and the line names
   nothing). Captures: `node scripts/capture-working-step.mjs`.
 
-## A full context goes on in a fresh session (2026-10-29)
+## A full context goes on in a fresh session (2026-10-29, #1697)
 
 A turn never shows an engine's "context is full" words ("Autocompact is
 thrashing … use /clear", a prompt past the window, Codex's
-contextWindowExceeded). Two halves:
+contextWindowExceeded). Three halves:
 
 - Machine tools Sagax serves are cut to 30,000 characters where the harness
   answers them (`server/tool-output-bound.ts`): the person's computer
@@ -840,14 +840,21 @@ contextWindowExceeded). Two halves:
   how many lines and how to ask for the rest; a base64 file and images stay
   whole. Their transport bounds (256 KB to 1 MB) were what refilled a Claude
   Code session right after it compacted.
-- Claude Code (`server/drivers/claude.ts`, `claudeContextFull`): the turn
-  closes its process and goes on in a fresh session with the chat's rebuild
-  and a bounded note of the steps it took (`server/context-renewal.ts`); the
-  Events lens gets `contextRenewedNotice`, the chat nothing. A second
-  overflow in that session is one plain error (`contextFullMessage`) and the
-  next send starts fresh (`freshNextTurn`), as Codex does after its own.
-  Fake CLI: `[fake:context-thrash]`, `FAKE_CLAUDE_THRASH_AGAIN=1`. Tests:
-  `server/drivers/claude.test.ts` ("fresh session"),
+- Claude Code and Codex (`server/drivers/claude.ts`, `server/drivers/codex.ts`,
+  `claudeContextFull` / `codexContextFull`): the turn closes its process and
+  goes on in a fresh session with the chat's rebuild and a bounded note of
+  the steps it took (`server/context-renewal.ts`); the Events lens gets
+  `contextRenewedNotice`, the chat nothing. A second overflow in that session
+  is one plain error (`contextFullMessage`) and the next send starts fresh
+  (`freshNextTurn`). Fake CLI: `[fake:context-thrash]` /
+  `[fake:context-full]`, `FAKE_CLAUDE_THRASH_AGAIN=1` /
+  `FAKE_CODEX_CONTEXT_FULL_AGAIN=1`.
+- Grok and other ACP engines (`server/drivers/acp/core.ts`): a context-full
+  failure closes the pooled session and marks `freshNextTurn`, so Retry
+  starts a lightened session from the chat's rebuild instead of reopening
+  the already-full native session. Tests: `server/drivers/claude.test.ts`
+  ("fresh session"), `server/drivers/codex.test.ts` ("fresh Codex thread"),
+  `server/drivers/acp/acp.test.ts` ("lightened Grok session"),
   `server/tool-output-bound.test.ts`, `server/context-renewal.test.ts`.
 
 ## Recall by meaning, on by default (#1327, 2026-10-29)

@@ -97,6 +97,7 @@ import { acpWrittenFiles, filesField } from "../../thread-files.ts";
 import { acpToolEndEvents } from "./tool-items.ts";
 import { redactSecretsInText } from "../../redact.ts";
 import { recoveryPromptFor } from "../../resume-recovery.ts";
+import { contextRenewedNotice } from "../../context-renewal.ts";
 import { sessionIdlePolicy } from "../session-idle.ts";
 import { newTurnLatency, noteTurnActivity, turnLatencyLine, type TurnLatency } from "./turn-latency.ts";
 import { classifyError } from "../retry.ts";
@@ -903,6 +904,10 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
         ? new LinkSignInController(support.linkSignIn, { cli: config.cli, environment: () => childEnv(), onAuthenticated: refreshModels })
         : null;
       const listeners = new Set<RuntimeEventListener>();
+      /** Threads whose native session ran out of context room: the next turn
+       * (Retry) starts a fresh session from the chat's rebuild instead of
+       * reopening the already-full one (server/context-renewal.ts). */
+      const freshNextTurn = new Set<string>();
       let disposing = false;
       const requireRunning = () => {
         if (disposing) throw new Error(`${support.displayName} is shutting down`);
@@ -2017,6 +2022,25 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
           throw new Error(`${support.displayName}: native tool selection is not supported by this engine. Keep native:* in the selection or choose a supported engine.`);
         }
         const { threadId } = turn;
+        // The last native session filled up: Retry (or any new message) must
+        // not reopen it. Start fresh from the chat's rebuild; a warm only
+        // prepares a process, so it leaves the mark for the turn that follows.
+        let renewedFromChat = false;
+        if (turn.warmOnly !== true && freshNextTurn.has(threadId)) {
+          freshNextTurn.delete(threadId);
+          if (typeof turn.resumeCursor === "string" && !turn.sessionReset) {
+            const recovery = turn.recoveryText?.trim() && turn.recoveryText.trim() !== turn.text.trim()
+              ? turn.recoveryText : undefined;
+            turn = {
+              ...turn,
+              resumeCursor: undefined,
+              sessionReset: true,
+              recoveryText: undefined,
+              ...(recovery ? { text: recovery } : {}),
+            };
+            renewedFromChat = Boolean(recovery);
+          }
+        }
         if (turn.warmOnly === true && (!support.warmSession || turn.sessionReset)) {
           // Nothing to keep: a reset turn closes whatever a warm would start.
           return { turnId: newId() };
@@ -2489,7 +2513,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
             let init = session.initResult;
 
             let promptTurn = turn;
-            let rebuiltFromReplay = false;
+            let rebuiltFromReplay = renewedFromChat;
             for (;;) {
               const liveSessionId = session.sessionId;
               if (liveSessionId !== null && session.sessionKey === sessionKey && (cursor === null || cursor === liveSessionId)) {
@@ -2592,6 +2616,9 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 model: selectedModel ?? init?._meta?.modelState?.currentModelId ?? cliTurn.model ?? null,
                 ...(rebuiltFromReplay ? { rebuilt: true } : {}),
               });
+              if (renewedFromChat) {
+                emit({ ...base(threadId, turnId), type: "runtime.notice", message: contextRenewedNotice(support.displayName) });
+              }
             };
 
             try {
@@ -2977,12 +3004,16 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                 : typeof result?.message === "string" && result.message
                   ? result.message
                   : `Model turn failed: ${reason ?? "unknown error"}`;
+              if (engineFailureKind(errorMessage) === "context_full") {
+                freshNextTurn.add(threadId);
+                if (session.child.exitCode === null && !session.closing) closeSession(threadId, "context-full");
+              }
               emit({
                 ...base(threadId, turnId),
                 type: "runtime.error",
                 message: engineFailureMessage(support.displayName, errorMessage) ?? errorMessage,
               });
-              settle(threadId, session, false, reason ?? "failed");
+              settle(threadId, session, false, engineFailureKind(errorMessage) === "context_full" ? "context_full" : (reason ?? "failed"));
             }
           } catch (e) {
             // A rejected prompt can still have compacted native history. Its
@@ -3045,6 +3076,8 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
                   stopReason: state.stopped ? "cancelled" : "rpc_error", cost: null });
                 return;
               }
+              const contextFull = engineFailureKind(message) === "context_full";
+              if (contextFull) freshNextTurn.add(threadId);
               emit({
                 ...base(threadId, turnId),
                 type: "runtime.error",
@@ -3055,10 +3088,12 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               // like a silent prompt. Evict before completion listeners can
               // start the next turn. Never replay this accepted prompt: it
               // may already have executed tools. The next explicit turn can
-              // resume the recorded session on a fresh process.
+              // resume the recorded session on a fresh process. A context-full
+              // failure must not leave the already-full native session pooled
+              // either: Retry starts lightened from the chat rebuild.
               if (!needsAuth && !accountError && ((e as any)?.acpPromptStall === true || (e as any)?.acpSessionFailure === true
-                  || code === "upstream_outage") && session.child.exitCode === null && !session.closing) {
-                closeSession(threadId, (e as any)?.acpPromptStall === true ? "prompt-stall" : "rpc-failure");
+                  || code === "upstream_outage" || contextFull) && session.child.exitCode === null && !session.closing) {
+                closeSession(threadId, contextFull ? "context-full" : ((e as any)?.acpPromptStall === true ? "prompt-stall" : "rpc-failure"));
               } else if (approvalUnconfirmed && session.child.exitCode === null && !session.closing) {
                 // Fail closed: the session may still hold a looser mode from
                 // an earlier turn. Nothing was prompted; the next turn starts
@@ -3068,7 +3103,7 @@ export function createAcpDriver(support: AcpSupport): ProviderDriver<AcpConfig> 
               } else if (staleProcess && !state.promptSent && session.child.exitCode === null && !session.closing) {
                 closeSession(threadId, "stale-models");
               }
-              settle(threadId, session, false, needsAuth ? "auth_required" : "rpc_error");
+              settle(threadId, session, false, needsAuth ? "auth_required" : contextFull ? "context_full" : "rpc_error");
             }
           }
         })();
