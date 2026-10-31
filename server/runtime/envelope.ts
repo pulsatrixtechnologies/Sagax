@@ -135,6 +135,11 @@ function evidenceLine(evidence: TurnEvidence | undefined): string {
     parts.push(files.length ? `${count(files.length, "file")} changed (${shown.join(", ")}${more})` : "no files changed");
   }
   if (evidence.toolCalls !== undefined) parts.push(count(evidence.toolCalls, "tool call"));
+  if (evidence.tools?.length) {
+    const shown = evidence.tools.slice(0, 8).map((name) => quote(name, NAME_MAX)).filter(Boolean);
+    const more = evidence.tools.length > 8 ? `, +${evidence.tools.length - 8} more` : "";
+    parts.push(`tools (${shown.join(", ")}${more})`);
+  }
   const summary = quote(evidence.summary, QUOTE_MAX);
   if (!parts.length && !summary) return "The harness observed nothing of this turn.";
   return `Observed by the harness: ${parts.join(", ")}${summary ? `${parts.length ? "; " : ""}${summary}` : ""}.`;

@@ -930,4 +930,73 @@ describe("Runtime: a requester that asked the person while its teammates worked"
     expect(runsOf(w, l.id).filter(r => r.input.settled?.some(s => s.id === helperId))).toHaveLength(1);
     invariants(w);
   });
+
+  // ── #1818: ack-as-done and busy-hub decision cards ─────────────────
+
+  it("does not settle completed on a progress-only acknowledgement (#1818)", async () => {
+    const w = world(() => ({ kind: "completed", text: "Je lis le plan, les dry-runs et le checklist…" }));
+    const root = w.runtime.begin(beginReq());
+    const child = ok(w.runtime.enqueue(toBot("harrie", root.id, "Reply PASS or FAIL with evidence.")));
+    w.runtime.tick();
+    await flush();
+    expect(w.store.get(child.id)).toMatchObject({
+      status: "failed",
+      outcome: "incomplete",
+      outcomeDetail: expect.stringMatching(/progress acknowledgement only/),
+    });
+    expect(w.runner.reports).toHaveLength(1);
+    invariants(w);
+  });
+
+  it("settles failed(incomplete) when done_when first_line is unmet (#1818)", async () => {
+    const w = world(() => ({ kind: "completed", text: "Je relis les payloads…" }));
+    const root = w.runtime.begin(beginReq());
+    const child = ok(w.runtime.enqueue(toBot("harrie", root.id, "Verify the dry-runs.", {
+      doneWhen: "first_line:PASS|FAIL",
+    })));
+    expect(child.doneWhen).toBe("first_line:PASS|FAIL");
+    w.runtime.tick();
+    await flush();
+    expect(w.store.get(child.id)).toMatchObject({
+      status: "failed",
+      outcome: "incomplete",
+      outcomeDetail: expect.stringMatching(/first line must be PASS\|FAIL/),
+    });
+    invariants(w);
+  });
+
+  it("settles completed when done_when first_line and required tool are met (#1818)", async () => {
+    const w = world(() => ({
+      kind: "completed",
+      text: "PASS\nDry-run matches the plan.",
+      evidence: { toolCalls: 1, tools: ["ask_choice"] },
+    }));
+    const root = w.runtime.begin(beginReq());
+    const child = ok(w.runtime.enqueue(toBot("melonie", root.id, "Pose the GO card.", {
+      doneWhen: "first_line:PASS|FAIL; tool:ask_choice",
+    })));
+    w.runtime.tick();
+    await flush();
+    expect(w.store.get(child.id)).toMatchObject({ status: "completed", outcome: "done" });
+    invariants(w);
+  });
+
+  it("expires decision-card work queued behind a busy hub within decisionCardQueueMs (#1818)", async () => {
+    const w = world(undefined, { decisionCardQueueMs: 1_000, queueMs: 1e9 });
+    w.runner.canStartAnswer = false;
+    const root = w.runtime.begin(beginReq());
+    const child = ok(w.runtime.enqueue(toBot("melonie", root.id, "Pose a GO card to JC.", {
+      doneWhen: "tool:ask_choice",
+    })));
+    w.runtime.tick();
+    expect(w.store.get(child.id)?.status).toBe("queued");
+    w.clock.advance(1_001);
+    w.runtime.tick();
+    expect(w.store.get(child.id)).toMatchObject({
+      status: "failed",
+      outcome: "expired",
+      outcomeDetail: expect.stringMatching(/decision card never started while hub was busy/),
+    });
+    invariants(w);
+  });
 });

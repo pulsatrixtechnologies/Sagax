@@ -701,11 +701,14 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
         isError: true,
       };
     }
+    const doneWhen = typeof canonical.done_when === "string" ? canonical.done_when.trim()
+      : typeof canonical.doneWhen === "string" ? String(canonical.doneWhen).trim() : "";
     const r = await api("/api/internal/coordinate-bots", { method: "POST", body: JSON.stringify({
       groupId: canonical.group_id, botIds: ids, message: canonical.message,
       rework: canonical.rework,
       ...(canonical.mode === "work" || canonical.mode === "consult" ? { mode: canonical.mode } : {}),
       ...(canonical.relay === true ? { relay: true } : {}),
+      ...(doneWhen ? { doneWhen } : {}),
     }) });
     return { text: JSON.stringify(r), ...(r.error ? { isError: true } : {}) };
   }

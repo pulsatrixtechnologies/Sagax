@@ -2685,6 +2685,19 @@ describe("coordinate_bots arguments (room turn)", () => {
     expect(text).toContain("message");
     expect(lastCoordinateBody).toBeNull();
   });
+
+  it("forwards done_when for structured completion (#1818)", async () => {
+    const listed = await roomRpc("tools/list");
+    const tool = listed.result.tools.find((entry: { name: string }) => entry.name === "coordinate_bots");
+    expect(tool.inputSchema.properties.done_when).toBeTruthy();
+    const res = await roomRpc("tools/call", { name: "coordinate_bots", arguments: {
+      bot_ids: ["bot-helper"], message: "Reply PASS or FAIL.", done_when: "first_line:PASS|FAIL",
+    } });
+    expect(res.result.isError).toBeFalsy();
+    expect(lastCoordinateBody).toMatchObject({
+      botIds: ["bot-helper"], message: "Reply PASS or FAIL.", doneWhen: "first_line:PASS|FAIL",
+    });
+  });
 });
 
 // Enforce mode at the proxy: a viewer is refused before any route is called,

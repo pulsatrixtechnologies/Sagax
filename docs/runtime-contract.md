@@ -17,10 +17,11 @@ This replaces the two delegation systems, the six wake lanes, the dozen clocks a
 | `mode` | `work`, `consult` (answer, act on nothing), `notify` (one-way). |
 | `reply` | `resume` (wake the requester), `poll` (inbox only), `none`. |
 | `relay` | Optional, direct threads only (coordinate_bots `relay`): the requester only passes the request on. When every settled child of a resume relays and completed, the host shows the replies in the requester's conversation and the resume completes without a model turn. |
+| `doneWhen` | Optional requester completion criterion (`coordinate_bots` `done_when`). Structured clauses the harness checks: `tool:<name>`, `first_line:<A>\|<B>`; free text is advisory in the envelope. Unmet (or a mode:work progress-only acknowledgement) settles `failed(incomplete)`, not `completed` (#1818). Decision-card `tool:ask_choice` (and native equivalents) also use a shorter queue bound (`decisionCardQueueMs`, 15 minutes) so a busy hub cannot hold a GO forever. |
 | `status`, `outcome`, `outcomeDetail` | Section 2. |
 | `level`, `levelSource` | Section 3. Computed at enqueue, recorded, never patched onto a thread. |
 | `executions`, `restarts`, `restart` | Turns started; restart bookkeeping (section 5). |
-| `result`, `evidence` | What the assignee said, and what the harness observed of the turn. |
+| `result`, `evidence` | What the assignee said, and what the harness observed of the turn (`evidence.tools` for `done_when tool:…`). |
 
 Storage: SQLite (`node:sqlite`, like `messages.db`) in `DATA_DIR/runtime.db`: `assignments` (one row per record), `assignment_events` (append-only audit trail, every transition), `inbox` (the wake lane). `:memory:` for tests. Every state change is one transaction that writes the row and its event before the runtime acts on it, so a crash keeps the accept and loses nothing it had acknowledged.
 

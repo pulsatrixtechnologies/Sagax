@@ -20,6 +20,7 @@ const evidenceSchema = z.object({
   commands: z.number().int().nonnegative().optional(),
   filesChanged: z.array(z.string()).optional(),
   toolCalls: z.number().int().nonnegative().optional(),
+  tools: z.array(z.string()).optional(),
   summary: z.string().optional(),
 });
 
@@ -56,7 +57,7 @@ const assignmentSchema = z.object({
   doneWhen: z.string().optional(),
   status: z.enum(["queued", "running", "needs_input", "waiting", "resume", "completed", "failed", "cancelled"]),
   outcome: z.enum(["done", "needs_input", "cap_continued", "stalled", "interrupted", "budget", "provider_error", "denied",
-    "expired", "stopped", "refused", "duplicate"]).optional(),
+    "expired", "stopped", "refused", "duplicate", "incomplete"]).optional(),
   outcomeDetail: z.string().optional(),
   level: z.enum(APPROVAL_MODES),
   levelSource: z.enum(["own", "chief", "engine_cap"]),
