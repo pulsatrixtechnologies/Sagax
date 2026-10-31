@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Plus, X } from "lucide-react";
 import { api, useStore, type Bot } from "@/state/store";
+import { teamMapMutationError } from "@/lib/team-map-access";
 import { BotPickerList } from "./BotPickerList";
 import { NewBotDialog } from "./lazy-screens";
 import { t } from "@/lib/i18n";
@@ -59,7 +60,7 @@ export function TeamDialog({ section, rename = false, onClose, onRenamed }: {
       if (rename && section !== undefined) onRenamed?.(section, name.trim());
       onCloseRef.current();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(teamMapMutationError(cause));
       setSaving(false);
     }
   };
