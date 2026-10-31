@@ -65,6 +65,8 @@ describe("resize handles", () => {
       expect(source).toContain("useDockedPanelWidth()");
       expect(source).toContain("<DockedPanelResizeHandle");
       expect(source).toContain("style={{ width: dockedPanel.width }}");
+      // Below lg the overlay must fill inset-0; `!` beats the inline width (#1662).
+      expect(source).toContain("max-lg:w-auto!");
       expect(source).not.toContain('role="separator"');
       expect(source).not.toContain("omb-settings-panel-width");
     });
