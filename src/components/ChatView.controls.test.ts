@@ -11,14 +11,29 @@ import { providerReplyCutMessage } from "../../shared/provider-reply-cut";
 const fixture = vi.hoisted(() => {
   vi.stubGlobal("window", {});
   vi.stubGlobal("localStorage", { getItem: () => null, setItem: () => {} });
-  return { dispatch: vi.fn(), canWrite: null as boolean | null, showToolCalls: false, platform: "other", localReasonCode: "cua-driver-unavailable", localMessage: "", model: null as ComponentProps<typeof ModelPicker> | null,
-    approval: null as ComponentProps<typeof ApprovalModeSelector> | null };
+  return {
+    dispatch: vi.fn(),
+    canWrite: null as boolean | null,
+    showToolCalls: false,
+    /** Organization member without engines.manage: no Claude update offer. */
+    memberViewer: false,
+    platform: "other",
+    localReasonCode: "cua-driver-unavailable",
+    localMessage: "",
+    model: null as ComponentProps<typeof ModelPicker> | null,
+    approval: null as ComponentProps<typeof ApprovalModeSelector> | null,
+  };
 });
 vi.mock("@/state/store", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/state/store")>();
   return { ...original, useStore: () => ({
-    state: { ...original.initialState, config: fixture.showToolCalls ? { features: { showToolCalls: true } } : null,
-      instances: [{ instanceId: "test", driverKind: "codex", displayName: "Test" } as InstanceInfo] },
+    state: {
+      ...original.initialState,
+      config: fixture.memberViewer
+        ? { viewer: { role: "member", operator: false, principalId: "bob", email: "bob@example.test", name: "Bob", permissions: [] } }
+        : fixture.showToolCalls ? { features: { showToolCalls: true } } : null,
+      instances: [{ instanceId: "test", driverKind: "codex", displayName: "Test" } as InstanceInfo],
+    },
     dispatch: fixture.dispatch,
   }) };
 });
@@ -198,13 +213,18 @@ describe("thread control placement", () => {
     const generic = renderToStaticMarkup(createElement(FailedTurnRow, { tool: { name: "error: Network timeout", ok: false }, engine: claude, onRetry: () => {} }));
     expect(generic).toContain("Network timeout");
     expect(generic).toContain("Retry</button>");
-    // an update offer is not a sign-in: the row keeps the engine's words,
-    // on a company-managed Claude too (chat cannot update it, so no offer
-    // shows, but the row is still about the update, as the list says)
+    // an update offer is not a sign-in: the row keeps the engine's words in
+    // the list; on a company-managed or pinned Claude chat cannot update it,
+    // so the row says the model is unavailable on this server instead
     const update = { name: "error: Claude Code 2.1.268 does not support this model", ok: false, setup: true, claudeUpdate: true };
-    for (const engine of [claude, { ...claude, readOnly: true }]) {
+    const offered = renderToStaticMarkup(createElement(FailedTurnRow, { tool: update, engine: claude }));
+    expect(offered).toContain(">Claude Code 2.1.268 does not support this model</span>");
+    expect(offered).not.toContain("isn&#x27;t signed in");
+    expect(activityPreview(update, claude)).toBe("Claude Code 2.1.268 does not support this model");
+    for (const engine of [{ ...claude, readOnly: true }, { ...claude, pinned: true }]) {
       const row = renderToStaticMarkup(createElement(FailedTurnRow, { tool: update, engine }));
-      expect(row).toContain(">Claude Code 2.1.268 does not support this model</span>");
+      expect(row).toContain("This model is not available on this server");
+      expect(row).not.toContain("Update Claude for me");
       expect(row).not.toContain("isn&#x27;t signed in");
       expect(activityPreview(update, engine)).toBe("Claude Code 2.1.268 does not support this model");
     }
@@ -233,10 +253,30 @@ describe("thread control placement", () => {
     // the offer replaces the plain Retry until they pick a path
     expect(markup).not.toContain(">Retry<");
   });
+  it("does not offer Update Claude for me to an organization member who cannot update", () => {
+    fixture.memberViewer = true;
+    try {
+      const claude = { instanceId: "claude", driverKind: "claudeAgent", displayName: "Claude", snapshot: { state: "available", authenticated: true } } as InstanceInfo;
+      const update = { name: "error: Claude Code 2.1.268 does not support this model", ok: false, setup: true, claudeUpdate: true };
+      const row = renderToStaticMarkup(createElement(FailedTurnRow, { tool: update, engine: claude }));
+      expect(row).toContain("This model is not available on this server");
+      expect(row).not.toContain("Update Claude for me");
+      expect(row).not.toContain("claude update");
+    } finally {
+      fixture.memberViewer = false;
+    }
+  });
   it("updates only a local Claude Code engine from chat", () => {
     const claude = { instanceId: "claude", driverKind: "claudeAgent", displayName: "Claude" } as InstanceInfo;
+    // solo / admin who can manage engines: offer the update
     expect(claudeUpdateTarget(claude)).toBe(claude);
+    expect(claudeUpdateTarget(claude, { canManageEngines: true })).toBe(claude);
+    // member without engines.manage: never offer "Update Claude for me"
+    expect(claudeUpdateTarget(claude, { canManageEngines: false })).toBeUndefined();
+    // company-managed or image-pinned: the organisation updates the image, not chat
     expect(claudeUpdateTarget({ ...claude, readOnly: true })).toBeUndefined();
+    expect(claudeUpdateTarget({ ...claude, pinned: true })).toBeUndefined();
+    expect(claudeUpdateTarget({ ...claude, pinned: true }, { canManageEngines: true })).toBeUndefined();
     expect(claudeUpdateTarget({ ...claude, driverKind: "codex" })).toBeUndefined();
     expect(claudeUpdateTarget(undefined)).toBeUndefined();
   });

@@ -5,7 +5,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { CLAUDE_CODE_PACKAGE, isAppInstalledClaude, updateClaudeCli, type AppCopy } from "./claude-update.ts";
+import {
+  CLAUDE_CODE_PACKAGE,
+  PINNED_CLAUDE_UPDATE_CODE,
+  PINNED_CLAUDE_UPDATE_ERROR,
+  isAppInstalledClaude,
+  pinnedClaudeUpdateRefusal,
+  updateClaudeCli,
+  type AppCopy,
+} from "./claude-update.ts";
 import { ClaudeDriver } from "./drivers/claude.ts";
 import { npmPackageOf } from "./engine-install.ts";
 import { registerPathDir, resetPathCacheForTests } from "./env-path.ts";
@@ -13,6 +21,18 @@ import { registerPathDir, resetPathCacheForTests } from "./env-path.ts";
 type Callback = (error: Error | null, stdout: string, stderr?: string) => void;
 
 const noAppCopy: AppCopy = { owns: () => false, reinstall: async () => { throw new Error("not the app's copy"); } };
+
+describe("pinnedClaudeUpdateRefusal", () => {
+  it("refuses an in-place update when the image pins Claude Code", () => {
+    expect(pinnedClaudeUpdateRefusal(false)).toBeNull();
+    expect(pinnedClaudeUpdateRefusal(true)).toEqual({
+      status: 409,
+      code: PINNED_CLAUDE_UPDATE_CODE,
+      error: PINNED_CLAUDE_UPDATE_ERROR,
+    });
+    expect(PINNED_CLAUDE_UPDATE_ERROR).toContain("engines.lock.json");
+  });
+});
 
 describe("updateClaudeCli", () => {
   it("runs the official updater before verifying the installed version", async () => {

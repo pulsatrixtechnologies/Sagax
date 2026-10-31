@@ -163,7 +163,7 @@ import { useShowInspectorButton } from "@/lib/inspector-preferences";
 import { t, activeLocale } from "@/lib/i18n";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { showPrivateConversationHint } from "@/lib/private-threads";
-import { viewerActorId } from "@/lib/viewer";
+import { viewerActorId, viewerCan } from "@/lib/viewer";
 import { isViewersPrimaryBot } from "@/lib/primary-bot";
 import { repeatedFailureIds } from "../../shared/failure-dedup";
 import { groupTranscript, isHiddenStatusActivity, isStatusActivity, isTurnStoppedNotice, type TranscriptItem } from "@/lib/activity-runs";
@@ -435,10 +435,16 @@ function PlaceFailedRow({ place, botId, threadId, onRetry }: {
   return <ErrorRow message={view.line} action={view.action && onClick ? { label: view.action.label, onClick } : null} />;
 }
 
-/** Only a local, editable Claude Code engine can be updated from chat; a
- * company-managed one is the organisation's to update. */
-export function claudeUpdateTarget(engine: InstanceInfo | undefined): InstanceInfo | undefined {
-  return engine?.driverKind === "claudeAgent" && !engine.readOnly ? engine : undefined;
+/** Only a local, editable Claude Code engine can be updated from chat: not a
+ * company-managed one, not one this server's image pins, and not when the
+ * viewer cannot manage engines (a member without engines.manage). */
+export function claudeUpdateTarget(
+  engine: InstanceInfo | undefined,
+  options: { canManageEngines?: boolean } = {},
+): InstanceInfo | undefined {
+  if (!engine || engine.driverKind !== "claudeAgent" || engine.readOnly || engine.pinned) return undefined;
+  if (options.canManageEngines === false) return undefined;
+  return engine;
 }
 
 /** A failed turn's stored row ("error: …", src/lib/failed-turn.ts), shown
@@ -455,6 +461,7 @@ export function FailedTurnRow({ tool, engine, onRetry, botId, threadId }: {
   threadId?: string;
 }) {
   "use memo";
+  const config = useStoreSelector((current) => current.config);
   if (tool.place && botId) return <PlaceFailedRow place={tool.place} botId={botId} threadId={threadId} onRetry={onRetry} />;
   const signedOut = signedOutEngine(tool, engine);
   // A signed-out engine: its sign-in card is the whole answer, no error row or
@@ -475,13 +482,22 @@ export function FailedTurnRow({ tool, engine, onRetry, botId, threadId }: {
       </div>
     );
   }
+  const updateTarget = tool.claudeUpdate
+    ? claudeUpdateTarget(engine, { canManageEngines: viewerCan(config, "engines.manage") })
+    : undefined;
+  // Claude Code too old for the model, but this viewer cannot update it (a
+  // member, a pinned image, or a company-managed engine): say so, never offer
+  // "Update Claude for me" or a Terminal command that would not reach the server.
+  const pinnedUnavailable = Boolean(tool.claudeUpdate && !updateTarget);
   return (
     <ErrorRow
       message={cause}
-      headline={signedOut ? t("chat.error.signedOut", { name: signedOut.displayName }) : plainErrorLine(cause)}
-      onRetry={onRetry}
-      setupInstance={tool.setup ? engine : undefined}
-      claudeUpdateInstance={tool.claudeUpdate ? claudeUpdateTarget(engine) : undefined}
+      headline={pinnedUnavailable
+        ? t("chat.claudeUpdate.unavailable")
+        : signedOut ? t("chat.error.signedOut", { name: signedOut.displayName }) : plainErrorLine(cause)}
+      onRetry={pinnedUnavailable ? undefined : onRetry}
+      setupInstance={tool.setup && !pinnedUnavailable ? engine : undefined}
+      claudeUpdateInstance={updateTarget}
     />
   );
 }

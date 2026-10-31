@@ -1217,6 +1217,8 @@ export interface InstanceInfo {
   icon?: import("../../shared/provider-icon").ProviderIcon;
   /** Company instances are owned by the desktop parent, never editable here. */
   readOnly?: boolean;
+  /** This server's image pins the engine (engines.lock.json): do not update it in place. */
+  pinned?: boolean;
   managed?: { organizationId: string; organizationName: string };
   /** The enrolled organisation's desktop policy does not allow bots to run on
    * this instance: shown, but disabled, with the server's reason. */
