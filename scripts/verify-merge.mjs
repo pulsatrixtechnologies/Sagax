@@ -28,13 +28,35 @@
 // the commit it ran on. A PR whose head commit has no OK comment was pushed
 // around the gate (`--no-verify`), and that shows. Nothing on GitHub blocks
 // a merge: no CI runs on a private PR. `--no-report` keeps it local.
+//
+// On OK, writes a stamp under the common git dir (`sagax-verify-merge/ok-<sha>`)
+// so the pre-push hook can skip a re-run for the same HEAD. Strips every GIT_*
+// from the process env before any stage so a leaked hook GIT_DIR cannot make a
+// test commit into the branch being pushed (issue #1705).
 import { spawnSync, execFileSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const VITEST = join(ROOT, "node_modules", "vitest", "vitest.mjs");
+const STAMP_FOLDER = "sagax-verify-merge";
+
+/** Strip every GIT_* key so a hook's GIT_DIR (worktree) cannot leak into
+ * tests that run git commit / init. Same idea as server/checkpoints gitEnv. */
+export function sanitizeGitEnv(env = process.env) {
+  for (const key of Object.keys(env)) {
+    if (key.startsWith("GIT_")) delete env[key];
+  }
+  return env;
+}
+
+/** Absolute stamp path for a HEAD sha under the common git dir, or null. */
+export function stampPathFor(commonDir, sha, root = ROOT) {
+  if (!commonDir || !sha || /[^0-9a-f]/.test(sha)) return null;
+  const common = commonDir.startsWith("/") ? commonDir : join(root, commonDir);
+  return join(common, STAMP_FOLDER, `ok-${sha}`);
+}
 
 /** Tests that hold main to a line: a key nothing reads, a route without a
  * policy row, a golden or a budget. They fail for the PR that merged last,
@@ -79,6 +101,22 @@ function parseArgs(argv) {
 
 function git(args) {
   return execFileSync("git", args, { cwd: ROOT, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+}
+
+function writeOkStamp() {
+  let common;
+  let sha;
+  try {
+    common = git(["rev-parse", "--git-common-dir"]);
+    sha = git(["rev-parse", "HEAD"]);
+  } catch {
+    return;
+  }
+  const path = stampPathFor(common, sha);
+  if (!path) return;
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `ok ${new Date().toISOString()}\n`);
+  console.log(`verify:merge: stamped OK for ${sha.slice(0, 7)} (${path})`);
 }
 
 /** Files changed since the merge base with `base`: committed, staged,
@@ -165,6 +203,9 @@ function report(outcome) {
 }
 
 function main() {
+  // Before any git call or child process: a pre-push hook exports GIT_DIR and
+  // friends; leaving them set lets a test commit into the branch being pushed.
+  sanitizeGitEnv(process.env);
   const options = parseArgs(process.argv.slice(2));
   const { changed, tests, electronTests, ios } = plan(options);
   const guards = GUARD_TESTS.filter((file) => existsSync(join(ROOT, file)));
@@ -208,7 +249,10 @@ function main() {
   }
   const seconds = ((Date.now() - started) / 1000).toFixed(0);
   console.log(`\nverify:merge OK in ${seconds}s: ${results.map((r) => `${r.label} ${r.seconds}s`).join("; ")}`);
+  writeOkStamp();
   if (options.report) report({ ok: true, seconds, stages: results });
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}
