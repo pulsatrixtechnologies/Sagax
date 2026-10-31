@@ -212,17 +212,56 @@ describe("CalendarCallManager", () => {
     expect(manager(file).list()).toEqual([]);
   });
 
-  it("keeps valid calls when another persisted record is malformed", () => {
-    const file = tempFile();
-    const calls = manager(file);
-    const valid = calls.create(input());
-    const persisted = JSON.parse(readFileSync(file, "utf8")) as { version: 1; calls: unknown[] };
-    persisted.calls.unshift({ id: "broken", name: 42, botIds: [] });
-    writeFileSync(file, JSON.stringify(persisted));
+  it.each([
+    "{truncated",
+    "null",
+    JSON.stringify({ version: 2, calls: [] }),
+    JSON.stringify({ version: 1, calls: [{ id: "broken", name: 42, botIds: [] }] }),
+  ])("keeps an unreadable calendar-calls.json intact and refuses writes: %s", (broken) => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const file = tempFile();
+      const calls = manager(file);
+      const valid = calls.create(input());
+      const saved = readFileSync(file, "utf8");
+      writeFileSync(file, broken);
+      const restored = manager(file);
+      expect(restored.list()).toEqual([]);
+      expect(() => restored.create(input({ name: "Must not appear" }))).toThrow(/Repair calendar-calls\.json/);
+      expect(restored.removeBot("researcher")).toBe(0);
+      expect(readFileSync(file, "utf8")).toBe(broken);
+      expect(logged).toHaveBeenCalled();
+      expect(logged.mock.calls.flat().join(" ")).toMatch(/ignoring unreadable/);
+      writeFileSync(file, saved);
+      expect(manager(file).get(valid.id)?.name).toBe("Planning call");
+    } finally { logged.mockRestore(); }
+  });
 
-    expect(manager(file).list()).toEqual([
-      expect.objectContaining({ id: valid.id, name: "Planning call" }),
-    ]);
+  it("logs a tick save failure from start() instead of an unhandled rejection", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const rejections: unknown[] = [];
+    const onRejection = (reason: unknown) => { rejections.push(reason); };
+    process.on("unhandledRejection", onRejection);
+    try {
+      const file = tempFile();
+      const now = 2_000;
+      const calls = new CalendarCallManager({
+        file,
+        now: () => now,
+        botExists: () => true,
+      });
+      calls.create(input({ schedule: { type: "once", at: 2_000 }, durationMinutes: 15 }));
+      rmSync(file, { force: true });
+      mkdirSync(file);
+      calls.start();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      calls.stop();
+      expect(rejections).toEqual([]);
+      expect(logged.mock.calls.flat().some((line) => String(line).includes("scheduler pass failed"))).toBe(true);
+    } finally {
+      process.off("unhandledRejection", onRejection);
+      logged.mockRestore();
+    }
   });
 
   it("rolls back memory if the atomic persistence step fails", () => {

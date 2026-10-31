@@ -179,6 +179,10 @@ export class CalendarCallManager {
   private calls: CalendarCall[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private ticking = false;
+  /** The file existed but could not be read (corrupt JSON or a row that
+   * fails validation). Saves are refused while set so a fresh empty state
+   * can never overwrite whatever is on disk (#1712). Missing means a first run. */
+  private unreadable = false;
 
   constructor(options: CalendarCallManagerOptions) {
     this.file = options.file ?? join(DATA_DIR, "calendar-calls.json");
@@ -188,19 +192,29 @@ export class CalendarCallManager {
     let migrated = false;
     try {
       const parsed = fileSchema.safeParse(JSON.parse(readFileSync(this.file, "utf8")));
-      this.calls = parsed.success
-        ? parsed.data.calls.flatMap((candidate) => {
-            const call = callSchema.safeParse(candidate);
-            if (!call.success) return [];
-            if (call.data.nextRunAt === undefined) migrated = true;
-            const nextRunAt = call.data.nextRunAt === undefined
-              ? this.loadedOccurrence(call.data.schedule)
-              : call.data.nextRunAt;
-            return [cloneCall({ ...call.data, nextRunAt })];
-          })
-        : [];
-    } catch {
+      if (!parsed.success) throw parsed.error;
+      this.calls = parsed.data.calls.map((candidate) => {
+        const call = callSchema.safeParse(candidate);
+        if (!call.success) throw new Error("invalid call entry");
+        if (call.data.nextRunAt === undefined) migrated = true;
+        const nextRunAt = call.data.nextRunAt === undefined
+          ? this.loadedOccurrence(call.data.schedule)
+          : call.data.nextRunAt;
+        return cloneCall({ ...call.data, nextRunAt });
+      });
+    } catch (error) {
       this.calls = [];
+      // Missing means no calls yet. Any other read/validation failure
+      // disables overwriting the file: the next save must not replace it
+      // with nothing (#1712).
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        this.unreadable = true;
+        // JSON.parse echoes a fragment of its input in some messages, so a
+        // malformed file must never be copied into the server log.
+        const reason = error instanceof SyntaxError ? "invalid JSON"
+          : error instanceof Error ? error.message : "unable to read calendar calls";
+        console.error(`calendar calls: ignoring unreadable ${this.file}: ${reason}`);
+      }
     }
     if (migrated) {
       try {
@@ -221,6 +235,7 @@ export class CalendarCallManager {
   }
 
   create(input: CalendarCallInput): CalendarCall {
+    this.assertWritable();
     const clean = cleanInput(input, this.botExists);
     const timestamp = this.now();
     const call: CalendarCall = {
@@ -231,11 +246,12 @@ export class CalendarCallManager {
       updatedAt: timestamp,
     };
     this.commit(() => this.calls.push(call));
-    if (this.timer) queueMicrotask(() => void this.tick());
+    if (this.timer) queueMicrotask(() => this.tickInBackground());
     return cloneCall(call);
   }
 
   update(id: string, patch: CalendarCallPatch): CalendarCall {
+    this.assertWritable();
     const index = this.calls.findIndex((call) => call.id === id);
     if (index < 0) throw new Error("Call not found");
     const previous = this.calls[index]!;
@@ -258,11 +274,12 @@ export class CalendarCallManager {
     this.commit(() => {
       this.calls[index] = updated;
     });
-    if (this.timer) queueMicrotask(() => void this.tick());
+    if (this.timer) queueMicrotask(() => this.tickInBackground());
     return cloneCall(updated);
   }
 
   linkRoom(id: string, roomId: string): CalendarCall {
+    this.assertWritable();
     const call = this.calls.find((candidate) => candidate.id === id);
     if (!call) throw new Error("Call not found");
     if (call.roomId === roomId) return cloneCall(call);
@@ -273,6 +290,7 @@ export class CalendarCallManager {
   }
 
   remove(id: string): boolean {
+    this.assertWritable();
     const index = this.calls.findIndex((call) => call.id === id);
     if (index < 0) return false;
     this.commit(() => {
@@ -284,6 +302,7 @@ export class CalendarCallManager {
   /** Keep calendar plans usable when a participant is archived permanently.
    * A call with other guests survives; an empty call no longer has meaning. */
   removeBot(botId: string): number {
+    if (this.unreadable) return 0;
     const affected = this.calls.filter((call) => call.botIds.includes(botId)).length;
     if (!affected) return 0;
     this.commit(() => {
@@ -300,14 +319,21 @@ export class CalendarCallManager {
 
   start(): void {
     if (this.timer) return;
-    void this.tick();
-    this.timer = setInterval(() => void this.tick(), 10_000);
+    this.tickInBackground();
+    this.timer = setInterval(() => this.tickInBackground(), 10_000);
     this.timer.unref?.();
   }
 
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+
+  /** A scheduler pass nobody awaits (the timer, a wake after create/update).
+   * A failure in it (a save on a full disk) is logged here: unhandled, the
+   * rejection would take the server down (#1713). */
+  private tickInBackground(): void {
+    this.tick().catch((error) => console.error("calendar calls: a scheduler pass failed", error));
   }
 
   async tick(): Promise<void> {
@@ -359,7 +385,17 @@ export class CalendarCallManager {
     }
   }
 
+  private assertWritable(): void {
+    if (this.unreadable) {
+      throw Object.assign(new Error("Saved calendar calls could not be read. Repair calendar-calls.json before changing them."), { status: 503 });
+    }
+  }
+
   private save(): void {
+    // The file on disk failed to load, so it may still hold calls this
+    // process cannot see. Management writes refuse above; background saves
+    // (ticks) skip here rather than replacing it with nothing (#1712).
+    if (this.unreadable) return;
     mkdirSync(dirname(this.file), { recursive: true });
     writeFileAtomic(this.file, JSON.stringify({ version: 1, calls: this.calls } satisfies CalendarCallFile, null, 2), {
       mode: 0o600,
