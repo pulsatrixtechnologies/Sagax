@@ -10,6 +10,7 @@ import { placeLabelKey, type EffectivePlace } from "@/lib/place";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import type { Bot } from "@/state/store";
 
+import { useBotEditor } from "../bot-settings/BotEditorContext";
 import { useBotSettingsDerived } from "../bot-settings/useBotSettingsDerived";
 
 /** null is Auto. This computer and the cloud computer are kept. A Local VM
@@ -36,27 +37,36 @@ export function worksOnTip(mode: WorksOnMode): string {
 }
 
 /** The view part, without the store: the panel feeds it, tests render it. */
-export function WorksOnControl({ value, onChange, organization = true }: {
+export function WorksOnControl({ value, onChange, organization = true, mixed = false }: {
   value: WorksOnMode;
   onChange: (mode: WorksOnMode) => void;
   /** Organization labels say what Auto does there. Solo labels say Auto. */
   organization?: boolean;
+  /** Bulk edit: bots differ; no place looks selected (#1701). */
+  mixed?: boolean;
 }) {
   return (
     // The editor's Workspace page titles it already (2026-10-15): the
     // heading stays for the radio group's name, read by assistive tech only,
     // and the explanation shows under the page title.
-    <section aria-labelledby="works-on-setting" aria-describedby="works-on-setting-hint" data-works-on-setting={value ?? "auto"} data-works-on-org={organization ? "1" : "0"}>
+    <section
+      aria-labelledby="works-on-setting"
+      aria-describedby="works-on-setting-hint"
+      data-works-on-setting={mixed ? "mixed" : (value ?? "auto")}
+      data-works-on-org={organization ? "1" : "0"}
+      data-works-on-mixed={mixed ? "" : undefined}
+    >
       <h3 id="works-on-setting" className="sr-only">{t("computer.worksOn")}</h3>
       <p id="works-on-setting-hint" className="text-[12.5px] leading-relaxed text-ink-secondary">{t("worksOn.autoOnlyHelp")}</p>
+      {mixed && <p data-works-on-mixed-note className="mt-2 text-[12px] text-ink-secondary">{t("bulkEdit.mixed")}</p>}
       <div role="radiogroup" aria-labelledby="works-on-setting" className="mt-3 grid grid-cols-2 gap-0.5 rounded-lg bg-control p-0.5">
         {WORKS_ON_MODES.map((mode) => {
           const key = (mode ?? "auto") as EffectivePlace;
-          const selected = mode === value;
+          const selected = !mixed && mode === value;
           return (
             <button key={key} type="button" role="radio" aria-checked={selected}
               title={worksOnTip(mode)} data-works-on-choice={key}
-              onClick={() => { if (!selected) onChange(mode); }}
+              onClick={() => { if (mixed || !selected) onChange(mode); }}
               className={cn("min-h-[36px] truncate whitespace-nowrap rounded-md border px-2 py-1 text-[12px] md:min-h-0",
                 selected ? "border-accent-border bg-selected font-medium text-ink shadow-sm" : "border-transparent text-ink-secondary hover:bg-raised-hover hover:text-ink")}>
               {t(placeLabelKey(key, organization))}
@@ -74,11 +84,14 @@ export function WorksOnControl({ value, onChange, organization = true }: {
 export function WorksOnSetting({ bot }: { bot: Bot }) {
   const derived = useBotSettingsDerived(bot);
   const organization = usePerspicaxOrg() !== null;
+  const { bulk, mixedFields } = useBotEditor();
   if (!derived.canEdit("computer")) return null;
+  const mixed = Boolean(bulk && mixedFields?.has("computer"));
   return (
     <WorksOnControl
       value={worksOnMode(bot.computer)}
       organization={organization}
+      mixed={mixed}
       onChange={(mode) => derived.patch({ computer: mode })}
     />
   );

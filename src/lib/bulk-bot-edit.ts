@@ -7,17 +7,21 @@
 import {
   applyListEdit,
   botLevelPatch,
+  BULK_CONSENT_KEYS,
   commonListItems,
+  commonValue,
   grantRevertSteps,
   grantSteps,
   mcpServersAfter,
   patchFields,
   patchForBot,
   revertPatch,
+  stableValueKey,
   type BulkBotOutcome,
   type BulkGrant,
   type BulkListEdit,
   type BulkListMode,
+  type CommonValue,
 } from "../../shared/bulk-bot-edit";
 import type { Bot } from "@/state/store";
 
@@ -36,6 +40,73 @@ export const BULK_SECTION_FIELDS: Record<BulkSectionId, readonly string[]> = {
   permissions: ["approvalMode", "proactiveMode", "outbound", "chiefOfStaff", "managedSections", "approvePeerComms", "peers"],
   perspicax: [],
 };
+
+const CONSENT = new Set<string>(BULK_CONSENT_KEYS);
+
+/** A baseline marker for a field the selected bots do not share: any real
+ * write differs from it, so picking the first bot's own value still counts. */
+function mixedBaseline(field: string): { __bulkMixed: true; field: string } {
+  return { __bulkMixed: true, field };
+}
+
+export type SectionFieldStates = Record<string, CommonValue<unknown>>;
+
+/** Each section field's common value, or mixed with every bot's own. */
+export function sectionFieldStates(
+  bots: readonly Bot[],
+  section: BulkSectionId,
+  fieldValue: (bot: Bot, field: string) => unknown,
+): SectionFieldStates {
+  const out: SectionFieldStates = {};
+  for (const field of BULK_SECTION_FIELDS[section]) {
+    out[field] = commonValue(bots.map((bot) => ({ botId: bot.id, value: fieldValue(bot, field) })));
+  }
+  return out;
+}
+
+export function mixedFieldsOf(states: SectionFieldStates): Set<string> {
+  return new Set(Object.entries(states).filter(([, state]) => state.mixed).map(([field]) => field));
+}
+
+/** Opening baseline for dirty detection: the shared value, or a mixed marker. */
+export function sectionBaseline(states: SectionFieldStates): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [field, state] of Object.entries(states)) {
+    out[field] = state.mixed ? mixedBaseline(field) : state.value;
+  }
+  return out;
+}
+
+/** Only fields the person changed from the opening baseline. Consent flags
+ * ride along when a real field changed. A mixed field is always dirty once
+ * written, even when the value matches one of the bots. */
+export function dirtyPatch(
+  baseline: Readonly<Record<string, unknown>>,
+  patch: Readonly<Record<string, unknown>>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  let changes = false;
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
+    if (CONSENT.has(key)) { out[key] = value; continue; }
+    if (stableValueKey(baseline[key]) === stableValueKey(value)) continue;
+    out[key] = value;
+    changes = true;
+  }
+  if (!changes) return {};
+  return out;
+}
+
+/** mcpAccounts from the draft is often a single server the person touched;
+ * fold it into each bot instead of replacing the whole map (#1701). */
+export function mergeMcpAccounts(
+  current: Record<string, string> | null | undefined,
+  patch: Record<string, string> | null,
+): Record<string, string> | null {
+  if (patch === null) return null;
+  const next = { ...current, ...patch };
+  return Object.keys(next).length ? next : null;
+}
 
 type Request = <T = unknown>(path: string, init?: RequestInit) => Promise<T>;
 
@@ -72,14 +143,23 @@ export function mergedPatch(changes: BulkChanges): Record<string, unknown> {
   return out;
 }
 
-/** The bot a section's real controls edit: the first selected bot's values,
- * an id of its own (so nothing reaches a real bot), the viewer as owner (the
- * server decides each bot's rights at Apply), never busy, and the section's
- * change on top. A list shows the edit's items: empty to start with Add and
- * Remove, what every bot has to start with Replace (listStart). */
-export function bulkDraftBot(id: string, bots: readonly Bot[], viewerId: string | null, change: BulkSectionChange | undefined): Bot {
+/** The bot a section's real controls edit: shared values where the bots
+ * agree, mixed section fields left unset (so the UI does not look like every
+ * bot matches the first), an id of its own, the viewer as owner, never busy,
+ * and the section's change on top. Lists show the edit's items: empty to
+ * start with Add and Remove, what every bot has to start with Replace. */
+export function bulkDraftBot(
+  id: string,
+  bots: readonly Bot[],
+  viewerId: string | null,
+  change: BulkSectionChange | undefined,
+  opts?: {
+    section?: BulkSectionId;
+    fieldValue?: (bot: Bot, field: string) => unknown;
+  },
+): Bot {
   const first = bots[0]!;
-  return {
+  const draft: Record<string, unknown> = {
     ...first,
     id,
     threadId: id,
@@ -90,10 +170,19 @@ export function bulkDraftBot(id: string, bots: readonly Bot[], viewerId: string 
     host: undefined,
     directGrants: undefined,
     ...(viewerId ? { ownerUserId: viewerId } : {}),
-    ...change?.patch,
-    mcpServers: change?.mcpServers?.items ?? [],
-    grants: (change?.grants?.grants ?? []).map((grant) => ({ ...grant, by: viewerId ?? "", at: 0 })),
-  } as Bot;
+  };
+  if (opts?.section && opts.fieldValue) {
+    for (const field of BULK_SECTION_FIELDS[opts.section]) {
+      const common = commonValue(bots.map((bot) => ({ botId: bot.id, value: opts.fieldValue!(bot, field) })));
+      // Mixed: clear so controls start empty / indeterminate, not on the
+      // first bot's value (#1701). Shared: seed the agreed value.
+      draft[field] = common.mixed ? undefined : common.value;
+    }
+  }
+  Object.assign(draft, change?.patch);
+  draft.mcpServers = change?.mcpServers?.items ?? [];
+  draft.grants = (change?.grants?.grants ?? []).map((grant) => ({ ...grant, by: viewerId ?? "", at: 0 }));
+  return draft as unknown as Bot;
 }
 
 /** Where a list starts when its mode is picked: Replace begins from what
@@ -104,11 +193,20 @@ export function listStart(mode: BulkListMode, lists: ReadonlyArray<readonly stri
 
 /** The transport a section's own controls use inside the dialog
  * (BotEditorContext.request): a PATCH of the draft bot and its grants are
- * kept as the section's change; anything else answers that it needs one bot. */
+ * kept as the section's change; anything else answers that it needs one bot.
+ * When `baseline` is set, only fields that differ from the opening values
+ * enter the change (#1701 dirty-only). */
 export function bulkSectionRequest(draftId: string, read: () => BulkSectionChange, write: (next: BulkSectionChange) => void, draftBot: () => Bot,
   /** A person's or team's name (the directory), never an id on screen. */
-  label: (target: string) => string = (target) => target): Request {
+  label: (target: string) => string = (target) => target,
+  baseline: () => Record<string, unknown> = () => ({}),
+): Request {
   const base = `/api/bots/${draftId}`;
+  const take = (fields: Record<string, unknown>) => {
+    const next = dirtyPatch(baseline(), { ...read().patch, ...fields });
+    // Consent flags that rode with a cleared field must drop too.
+    return next;
+  };
   return (async (path: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
     const body = typeof init?.body === "string" ? JSON.parse(init.body) as Record<string, unknown> : {};
@@ -117,8 +215,8 @@ export function bulkSectionRequest(draftId: string, read: () => BulkSectionChang
       const { stepUp: _stepUp, ...fields } = body;
       if (Array.isArray(fields.mcpServers)) {
         const { mcpServers, ...rest } = fields;
-        write({ ...change, patch: { ...change.patch, ...rest }, mcpServers: { mode: change.mcpServers?.mode ?? "add", items: mcpServers as string[] } });
-      } else write({ ...change, patch: { ...change.patch, ...fields } });
+        write({ ...change, patch: take(rest), mcpServers: { mode: change.mcpServers?.mode ?? "add", items: mcpServers as string[] } });
+      } else write({ ...change, patch: take(fields) });
       return { bot: draftBot() };
     }
     const grants = change.grants ?? { mode: "add" as BulkListMode, grants: [] };
@@ -204,6 +302,12 @@ export async function runBulkEdit(bots: readonly Bot[], changes: BulkChanges, de
       }
     }
     const own = patchForBot(bot as unknown as Record<string, unknown>, patch);
+    if (own.mcpAccounts !== undefined) {
+      own.mcpAccounts = mergeMcpAccounts(
+        bot.mcpAccounts,
+        own.mcpAccounts as Record<string, string> | null,
+      );
+    }
     if (patchFields(own).length > 0) {
       try {
         await deps.saveBot(bot, botLevelPatch(own, bot.threadId));

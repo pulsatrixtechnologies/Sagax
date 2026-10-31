@@ -9,6 +9,9 @@ export const BotEditorContext = createContext<{
   /** Several existing bots at once (BulkEditBotsDialog): a draft whose
    * wording speaks of the selected bots, not of a new one. */
   bulk?: boolean;
+  /** Section fields the selected bots do not share (#1701): controls show
+   * a mixed / empty state instead of the first bot's value. */
+  mixedFields?: ReadonlySet<string>;
   uploadAvatar?: (file: File) => Promise<string>;
 }>({ request: api });
 

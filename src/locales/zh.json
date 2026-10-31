@@ -2639,5 +2639,7 @@
   "routines.rename.empty": "例程需要名称。",
   "routines.rename.hint": "双击以重命名",
   "settings.streamReplies.title": "在撰写时显示回复",
-  "settings.streamReplies.show": "在机器人撰写回复时逐字显示，而不是完成后一次显示"
+  "settings.streamReplies.show": "在机器人撰写回复时逐字显示，而不是完成后一次显示",
+  "bulkEdit.mixedOpen": "These fields differ across the selected bots: {fields}. Controls start empty for them; only what you set is written.",
+  "bulkEdit.mixedOpenShort": "Only what you set is written on every selected bot."
 }

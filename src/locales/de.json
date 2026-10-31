@@ -1873,5 +1873,7 @@
   "routines.rename.empty": "Eine Routine braucht einen Namen.",
   "routines.rename.hint": "Zum Umbenennen doppelklicken",
   "settings.streamReplies.title": "Antworten beim Schreiben anzeigen",
-  "settings.streamReplies.show": "Die Antwort eines Bots Wort für Wort beim Schreiben anzeigen, statt erst vollständig am Ende"
+  "settings.streamReplies.show": "Die Antwort eines Bots Wort für Wort beim Schreiben anzeigen, statt erst vollständig am Ende",
+  "bulkEdit.mixedOpen": "These fields differ across the selected bots: {fields}. Controls start empty for them; only what you set is written.",
+  "bulkEdit.mixedOpenShort": "Only what you set is written on every selected bot."
 }

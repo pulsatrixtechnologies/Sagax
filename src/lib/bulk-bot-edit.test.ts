@@ -1,7 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { Bot } from "@/state/store";
-import { bulkDraftBot, bulkSectionRequest, listStart, runBulkEdit, sectionTouched, undoBulkEdit, type BulkSectionChange } from "./bulk-bot-edit";
+import {
+  bulkDraftBot,
+  bulkSectionRequest,
+  dirtyPatch,
+  listStart,
+  mergeMcpAccounts,
+  mixedFieldsOf,
+  runBulkEdit,
+  sectionBaseline,
+  sectionFieldStates,
+  sectionTouched,
+  undoBulkEdit,
+  type BulkSectionChange,
+} from "./bulk-bot-edit";
 
 const bot = (id: string, extra: Partial<Bot> = {}): Bot => ({
   id, threadId: `t-${id}`, name: id, title: "", description: "", notifications: true, color: "green", unread: false,
@@ -161,5 +174,68 @@ describe("the dialog's draft", () => {
   it("starts Replace from the common items, Add and Remove from nothing", () => {
     expect(listStart("replace", [["a", "b"], ["b"]])).toEqual(["b"]);
     expect(listStart("add", [["a"]])).toEqual([]);
+  });
+
+  // #1701: mixed fields must not look like the first bot, and only dirty writes stick
+  it("clears mixed section fields on the draft and keeps shared ones", () => {
+    const bots = [
+      bot("atlas", { computer: "local", approvalMode: "ask", notifications: true }),
+      bot("iris", { computer: "cloud", approvalMode: "ask", notifications: false }),
+    ];
+    const fieldValue = (target: Bot, field: string) => (target as unknown as Record<string, unknown>)[field];
+    const draft = bulkDraftBot("bulk-z", bots, "pr_me", { patch: {} }, { section: "worksOn", fieldValue });
+    expect(draft.computer).toBeUndefined();
+    const perms = bulkDraftBot("bulk-p", bots, "pr_me", { patch: {} }, { section: "permissions", fieldValue });
+    expect(perms.approvalMode).toBe("ask");
+    expect(mixedFieldsOf(sectionFieldStates(bots, "permissions", fieldValue)).has("approvalMode")).toBe(false);
+    const voiceDraft = bulkDraftBot("bulk-v", bots, "pr_me", { patch: {} }, { section: "voice", fieldValue });
+    expect(voiceDraft.notifications).toBeUndefined();
+    expect(mixedFieldsOf(sectionFieldStates(bots, "voice", fieldValue)).has("notifications")).toBe(true);
+  });
+
+  it("marks only dirty fields against the opening baseline, including a mixed pick", () => {
+    const bots = [bot("atlas", { computer: "local" }), bot("iris", { computer: "cloud" })];
+    const fieldValue = (target: Bot, field: string) => (target as unknown as Record<string, unknown>)[field];
+    const baseline = sectionBaseline(sectionFieldStates(bots, "worksOn", fieldValue));
+    expect(dirtyPatch(baseline, { computer: "local" })).toEqual({ computer: "local" });
+    expect(dirtyPatch(baseline, { computer: "cloud" })).toEqual({ computer: "cloud" });
+    const shared = sectionBaseline(sectionFieldStates(
+      [bot("a", { computer: "local" }), bot("b", { computer: "local" })],
+      "worksOn",
+      fieldValue,
+    ));
+    expect(dirtyPatch(shared, { computer: "local" })).toEqual({});
+    expect(dirtyPatch(shared, { computer: "off", confirmFullAccess: true })).toEqual({ computer: "off", confirmFullAccess: true });
+  });
+
+  it("filters PATCH writes through the baseline so echoing a shared value is not a change", async () => {
+    let change: BulkSectionChange = { patch: {} };
+    const bots = [bot("atlas", { cwd: "/a" }), bot("iris", { cwd: "/a" })];
+    const fieldValue = (target: Bot, field: string) => (target as unknown as Record<string, unknown>)[field];
+    const baseline = sectionBaseline(sectionFieldStates(bots, "access", fieldValue));
+    const request = bulkSectionRequest(
+      "bulk-d",
+      () => change,
+      (next) => { change = next; },
+      () => bulkDraftBot("bulk-d", bots, "pr_me", change, { section: "access", fieldValue }),
+      (target) => target,
+      () => baseline,
+    );
+    await request("/api/bots/bulk-d", { method: "PATCH", body: JSON.stringify({ cwd: "/a" }) });
+    expect(change.patch).toEqual({});
+    await request("/api/bots/bulk-d", { method: "PATCH", body: JSON.stringify({ cwd: "/b" }) });
+    expect(change.patch).toEqual({ cwd: "/b" });
+  });
+
+  it("merges mcpAccounts onto each bot instead of replacing the map", async () => {
+    expect(mergeMcpAccounts({ linear: "old", notes: "keep" }, { linear: "new" }))
+      .toEqual({ linear: "new", notes: "keep" });
+    const fake = server();
+    await runBulkEdit(
+      [bot("atlas", { mcpAccounts: { linear: "old", notes: "keep" } as never })],
+      { access: { patch: { mcpAccounts: { linear: "new" } } } },
+      { request: fake.request as never, saveBot: fake.saveBot },
+    );
+    expect(fake.saved).toEqual([{ id: "atlas", patch: { mcpAccounts: { linear: "new", notes: "keep" } } }]);
   });
 });
