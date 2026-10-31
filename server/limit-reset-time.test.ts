@@ -34,6 +34,17 @@ describe("limitKindOf", () => {
     expect(limitKindOf("interrupted")).toBeNull();
     expect(limitKindOf("the run ended without a result")).toBeNull();
   });
+
+  // #1758: codexUserError's plan sentence for provider_not_configured.
+  it("never reads a Codex configuration refusal as a usage limit", () => {
+    const phrase =
+      "provider_not_configured: ChatGPT has not enabled this model for the selected account. Refresh models or reconnect ChatGPT plan in Settings. API billing will not be used.";
+    expect(limitKindOf(phrase)).toBeNull();
+    expect(limitKindOf(phrase, "quota")).toBeNull();
+    expect(limitKindOf("The model gpt-5.2-codex requires a Pro subscription")).toBeNull();
+    expect(limitKindOf("billing")).toBeNull();
+    expect(limitKindOf("subscription")).toBeNull();
+  });
 });
 
 describe("limitResetFromText", () => {

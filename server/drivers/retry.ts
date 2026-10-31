@@ -57,14 +57,24 @@ const TRANSIENT_PATTERNS: Array<{ pattern: RegExp; reason: TransientReason }> = 
  * per-minute "rate limit" stays transient. */
 export const USAGE_LIMIT = /\busage limits?\b|\breached (?:your|its) (?:(?:weekly|daily|monthly|session|5-hour|plan|subscription) )?limits?\b|\bhit your (?:(?!rate\b)[\w'’-]+ ){0,3}(?:limit|budget)\b|\b(?:weekly|daily|monthly|subscription|usage|session|5-hour) limit reached\b|\bout of (?:usage(?: credits)?|extra usage|credits)\b/i;
 
+/** A provider or model that is not enabled for this account. Mentions of
+ * billing here only say it will not be used (#1758); that is config/auth,
+ * never a spent usage limit. */
+export const PROVIDER_NOT_CONFIGURED = /\bprovider_not_configured\b|\bbilling will not be used\b/i;
+
 const TERMINAL_PATTERNS: Array<{ pattern: RegExp; reason: TerminalReason }> = [
   {
     pattern: /\b(?:40[13]|unauthorized|forbidden|invalid api key|missing bearer|authentication required|not logged in|logged out)\b/i,
     reason: "auth",
   },
+  // Config refusal before the quota words: bare "billing"/"subscription" in
+  // these sentences must not block the engine for an hour (#1758).
+  { pattern: PROVIDER_NOT_CONFIGURED, reason: "auth" },
   // every terminal pattern is read before the transient 429 one
   { pattern: USAGE_LIMIT, reason: "quota" },
-  { pattern: /\b402\b|\bquota\b|\bbilling\b|\bsubscription\b/i, reason: "quota" },
+  // 402 / quota / a real billing or subscription limit. Bare "billing" or
+  // "subscription" alone is config or prose, not a spent limit (#1758).
+  { pattern: /\b402\b|\bquota\b|\bbilling (?:hard )?limit\b|\b(?:subscription|billing) (?:limit|exhausted|exceeded|reached)\b/i, reason: "quota" },
   { pattern: /\bmodel not found\b|\bunknown model\b|\bdoes not exist for model\b|\bunsupported model\b/i, reason: "unknown_model" },
   { pattern: /\b400\b|\b422\b|\binvalid request\b|\bmalformed\b|\bunexpected status\b/i, reason: "invalid_request" },
   { pattern: /\b404\b|\bno such thread\b|\bthread gone\b/i, reason: "not_found" },

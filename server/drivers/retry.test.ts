@@ -149,4 +149,20 @@ describe("classifyError — usage limits", () => {
       expect(classifyError({ text }), text).toEqual({ transient: true, reason: "rate_limited" });
     }
   });
+
+  // #1758: Codex's provider_not_configured plan sentence ends with
+  // "API billing will not be used." Bare billing/subscription words must not
+  // read as a spent usage limit (that blocked the engine for 1 h).
+  it("treats a Codex configuration refusal as auth, never as quota", () => {
+    const phrase =
+      "provider_not_configured: ChatGPT has not enabled this model for the selected account. Refresh models or reconnect ChatGPT plan in Settings. API billing will not be used.";
+    expect(classifyError({ text: phrase })).toEqual({ transient: false, reason: "auth" });
+    expect(classifyError({ exitCode: 1, stderr: phrase })).toEqual({ transient: false, reason: "auth" });
+    expect(classifyError({ text: "provider_not_configured" })).toEqual({ transient: false, reason: "auth" });
+    expect(classifyError({ text: "API billing will not be used." })).toEqual({ transient: false, reason: "auth" });
+    expect(classifyError({ text: "Company model access is unavailable. Reconnect your organization; personal billing will not be used." }))
+      .toEqual({ transient: false, reason: "auth" });
+    expect(classifyError({ text: "The model gpt-5.2-codex requires a Pro subscription" }).reason).not.toBe("quota");
+    expect(classifyError({ text: "Billing hard limit has been reached" })).toEqual({ transient: false, reason: "quota" });
+  });
 });
