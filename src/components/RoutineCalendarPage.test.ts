@@ -181,6 +181,7 @@ describe("the Automations header (Owner, 2026-10-27: one row, secondary controls
     expect(html).toContain('aria-label="Previous dates"');
     expect(html).toContain(">Today</button>");
     expect(html).toContain("data-automations-range");
+    expect(html).toContain("data-automations-create");
     expect(html).toContain('aria-label="Create an automation"');
     // the bot and range selects sit inside the Filters popover, not on the row
     const filters = html.slice(html.indexOf("data-automations-filters"));
