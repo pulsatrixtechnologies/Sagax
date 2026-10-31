@@ -54,13 +54,12 @@ it("keeps no Data string that nothing reads", () => {
 // literal t("…") or t('…'), or through a template on its parent.
 const STILL_SORTING = new Set([
   "access", "achievements", "activity", "approval", "approvalMode", "apps", "attach", "attention",
-  "backgroundWork", "backup", "botAccess", "botPanel", "botSettings", "botSetup", "botWizard", "botZip",
-  "browser", "call", "canvas", "chat", "cloudAccount", "cloudCredit", "cloudHome", "cloudHowTo",
-  "cloudIntro", "cloudNotice", "cloudSignIn", "code", "commandAllowlist", "composer", "computer",
+  "backup", "botAccess", "botPanel", "botSettings", "botWizard", "botZip",
+  "browser", "call", "canvas", "chat", "cloudSignIn", "code", "commandAllowlist", "composer", "computer",
   "connectApps", "connectors", "customRules", "cw", "devPods", "engines", "engineSetup", "floatingBots",
-  "folder", "groupPanel", "keys", "leftOut", "library", "manageMembers", "mascot", "mcp", "model",
-  "myConnections", "myEngines", "newBot", "notice", "onboarding", "org", "organization", "orgComputer",
-  "orgImport", "pair", "people", "persona", "personLabel", "phoneApp", "place", "planUsage", "pro",
+  "folder", "groupPanel", "keys", "leftOut", "manageMembers", "mascot", "mcp", "model",
+  "myConnections", "myEngines", "newBot", "onboarding", "org", "organization", "orgComputer",
+  "orgImport", "pair", "people", "persona", "personLabel", "place", "planUsage", "pro",
   "question", "releaseNotes", "remote", "remoteControl", "remoteSession", "remoteSessionsAdmin", "room",
   "routines", "serverEnvironment", "settings", "sidebar", "star", "step", "stream", "task", "teach",
   "team", "teamBotFromThread", "toolDetail", "triggers", "update", "usage", "vm", "voice", "voiceMode",

@@ -10,7 +10,7 @@
 //
 // Stages, in order:
 //   1. light checks, always: lint, typecheck, locale catalogs, source terms,
-//      skin contrast (about 30 s together)
+//      skin contrast, unused files (about 30 s together)
 //   2. guard tests, always: the ratchets, goldens and source scans that break
 //      main silently when another PR lands (about 30 s)
 //   3. the tests of the diff: every changed test file, the tests beside a
@@ -84,6 +84,7 @@ const LIGHT_CHECKS = [
   ["locale catalogs", ["pnpm", "i18n:check"]],
   ["source terms", ["pnpm", "check:terms"]],
   ["skin contrast", ["pnpm", "check:contrast"]],
+  ["unused files", ["pnpm", "check:unused"]],
 ];
 
 function parseArgs(argv) {

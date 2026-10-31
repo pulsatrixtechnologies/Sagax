@@ -19,7 +19,6 @@ const translated = [
   "botPanel.avatar.generateAvatar",
   "settings.profile.uploadPhoto",
   "routines.empty",
-  "backgroundWork.title",
 ] as const;
 
 it("translates Bot panel and Settings card copy into French", () => {
@@ -33,5 +32,4 @@ it("translates Bot panel and Settings card copy into French", () => {
   expect(en["botPanel.access.placeholder"]).toBe("Private bot folder, or an absolute path");
   expect(fr["botSettings.nav.soul"]).toBe("Personnalité");
   expect(fr["routines.empty"]).toBe("Aucune routine pour l'instant.");
-  expect(fr["backgroundWork.title"]).toBe("Activités en cours");
 });
