@@ -125,6 +125,7 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
   const [cursor, setCursor] = useState(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
@@ -151,6 +152,8 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
       return next;
     });
     setQuery("");
+    // keep the focus in the search field after each selection (#1797)
+    searchRef.current?.focus();
   };
 
   const activate = (row: ComposeRow | undefined) => {
@@ -171,6 +174,8 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
       if (mode === "browse") {
         setMode("group");
         setQuery("");
+        // keep the focus in the search field when entering group mode (#1797)
+        searchRef.current?.focus();
         return;
       }
       // A group holds a bot, or at least one other person (people-only group, #1150).
@@ -285,6 +290,8 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
                   <button
                     type="button"
                     aria-label={`${t("compose.remove")} ${label}`}
+                    // keep the focus in the search field
+                    onMouseDown={(event) => event.preventDefault()}
                     onClick={() => togglePicked(id)}
                     className="flex size-5 items-center justify-center rounded-full text-ink-secondary hover:bg-app hover:text-ink"
                   >
@@ -302,6 +309,8 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
                 <button
                   type="button"
                   aria-label={`${t("compose.remove")} ${bot.name}`}
+                  // keep the focus in the search field
+                  onMouseDown={(event) => event.preventDefault()}
                   onClick={() => togglePicked(id)}
                   className="flex size-5 items-center justify-center rounded-full text-ink-secondary hover:bg-app hover:text-ink"
                 >
@@ -311,6 +320,7 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
             );
           })}
           <input
+            ref={searchRef}
             autoFocus
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -407,6 +417,8 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
                   data-compose-action="create-group"
                   disabled={disabled}
                   onMouseEnter={() => setCursor(index)}
+                  // keep the focus in the search field when entering group mode
+                  onMouseDown={(event) => { if (mode === "browse") event.preventDefault(); }}
                   onClick={() => activate(row)}
                   className={cn(
                     "flex w-full items-center gap-3 px-3 py-2 text-left text-[14px] text-ink disabled:opacity-40",
@@ -433,6 +445,8 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
                   aria-selected={selected || pickedPerson}
                   data-compose-person={person.principalId}
                   onMouseEnter={() => setCursor(index)}
+                  // keep the focus in the search field after each selection (#1797)
+                  onMouseDown={(event) => { if (mode === "group") event.preventDefault(); }}
                   onClick={() => activate(row)}
                   className={cn(
                     "group flex w-full items-center gap-3 px-3 py-2 text-left text-[14px] text-ink",
@@ -466,6 +480,8 @@ export function ComposeToPicker({ onClose, startInGroup = false }: { onClose: ()
                 aria-selected={selected || member}
                 data-compose-bot={bot.id}
                 onMouseEnter={() => setCursor(index)}
+                // keep the focus in the search field after each selection (#1797)
+                onMouseDown={(event) => { if (mode === "group") event.preventDefault(); }}
                 onClick={() => activate(row)}
                 className={cn(
                   "group flex w-full items-center gap-3 px-3 py-2 text-left text-[14px] text-ink",
