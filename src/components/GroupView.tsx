@@ -34,6 +34,7 @@ import { stepLabel } from "@/lib/step-label";
 import { ThreadRefText } from "./ThreadRefs";
 import { TurnPresence } from "./TurnPresence";
 import { LiveReply } from "./LiveReply";
+import { useOnCall } from "@/lib/call";
 import { showToolCallsEnabled } from "@/lib/feature-flags";
 import { showToolCallRows } from "@/lib/tool-activity-rows";
 import { CompactionChip, DigestChip } from "./DigestChip";
@@ -1318,6 +1319,8 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
     Boolean(speaker && showWorkingDots(true, group.messages.at(-1), speaker.id)) || awaited !== undefined;
   const wasWaiting = useRef(false);
   // the reply was drawn as it was written (LiveReply): it settles in place
+  // On a call the words are spoken, not typed out (same as iOS ChatLiveTail).
+  const onCall = useOnCall() === group.id;
   const liveShown = useRef(false);
   const [popping, setPopping] = useState<{ id: string; botId?: string } | null>(null);
   const poppingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1718,7 +1721,7 @@ export function GroupView({ group: stored, pane }: { group: Group; pane?: SideCh
               </button>
             </div>
           )}
-          {speaker && <LiveReply threadId={group.threadId} botId={speaker.id} mentionPeers={members} label={speaker.name} room shownRef={liveShown} />}
+          {speaker && <LiveReply threadId={group.threadId} botId={speaker.id} mentionPeers={members} label={speaker.name} room hidden={onCall} shownRef={liveShown} />}
           {(speaker || presenceVisible) && (
             <TurnPresence
               // the speaker's colour and mascot, as in ChatView

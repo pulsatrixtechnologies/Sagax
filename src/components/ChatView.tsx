@@ -157,6 +157,7 @@ import { CitationSelectionToolbar, SentCitations } from "./CitationUI";
 
 import { SpeakMenuItem } from "./SpeakButton";
 import { CallOverlay, VoiceCallDock } from "./CallView";
+import { useOnCall } from "@/lib/call";
 import { effectivePlace, toolPlace, type EffectivePlace } from "@/lib/place";
 import { cn } from "@/lib/cn";
 import { useShowInspectorButton } from "@/lib/inspector-preferences";
@@ -2209,6 +2210,8 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
   );
   const wasWaiting = useRef(false);
   // the reply was drawn as it was written (LiveReply): it settles in place
+  // On a call the words are spoken, not typed out (same as iOS ChatLiveTail).
+  const onCall = useOnCall() === bot.id;
   const liveShown = useRef(false);
   const [popping, setPopping] = useState<string | null>(null);
   const poppingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2510,7 +2513,7 @@ export function ChatView({ bot: stored, side }: { bot: Bot; side?: SideChat }) {
               </div>
             </div>
           )}
-          <LiveReply threadId={bot.threadId} botId={bot.id} mentionPeers={mentionPeers} shownRef={liveShown} />
+          <LiveReply threadId={bot.threadId} botId={bot.id} mentionPeers={mentionPeers} hidden={onCall} shownRef={liveShown} />
           <TurnPresence
             ultracode={ultracodeFromSelection(bot.modelSelection)}
             bot={bot}
