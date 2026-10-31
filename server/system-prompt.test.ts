@@ -452,6 +452,9 @@ describe("verify-first rule (2026-10-19)", () => {
     expect(VERIFY_FIRST_PROMPT).toContain("AskUserQuestion, ask_user_question, request_user_input or ask_user");
     expect(VERIFY_FIRST_PROMPT).toContain("the Sagax tool ask_choice");
     expect(VERIFY_FIRST_PROMPT).toContain("the one you recommend first");
+    expect(VERIFY_FIRST_PROMPT).toContain("a next step their request already covers is not a decision: do it");
+    expect(VERIFY_FIRST_PROMPT).toContain("Never use that tool to ask permission for work their request already authorized");
+    expect(VERIFY_FIRST_PROMPT).toContain("Ask before contacting bots is off");
     expect(VERIFY_FIRST_PROMPT).toContain("Never put the question or a list of choices");
     expect(VERIFY_FIRST_PROMPT).toContain("never how far you check");
     expect(VERIFY_FIRST_PROMPT).toContain("call sagax_help before you answer or say it is impossible");

@@ -693,7 +693,7 @@ import { SoloGoals, soloGoalCommand, soloGoalContinuePrompt, soloGoalLine, soloG
 import { soloGoalLineText, type SoloGoalLine } from "../shared/solo-goal-line.ts";
 import { handoffModel } from "../shared/handoff-model.ts";
 import { chooseRelayEngine, relayAccountLabel, relayOpening, relayResultText, relayThreadLevel } from "./run-with-engine.ts";
-import { approvalLevelPrompt } from "./approval-level-prompt.ts";
+import { approvalLevelPrompt, peerContactPrompt } from "./approval-level-prompt.ts";
 import { expandLearnTurnText, learnSource } from "./skill-learn.ts";
 import { expandSetupTurnText, setupModeActive, setupSystemPrompt } from "./setup-mode.ts";
 import type { SkillRequestCardData } from "../shared/skill-request.ts";
@@ -23532,6 +23532,11 @@ async function startTurn(
         { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(liveBot ?? bot, instance, speaker, { level: promptApprovalLevel, relay: Boolean(integrations.agents) && commsDepth === 0 }) },
         // the level this turn really runs at (approvalModeForTurn), so Full never asks for a typed GO
         { id: "approval-level", label: "Approval level", text: approvalLevelPrompt(promptApprovalLevel) },
+        // #1819: effective ask-before-contact (Full skips the Sagax peer card)
+        { id: "peer-contact", label: "Peer contact", text: peerContactPrompt({
+          canContact: Boolean(coordinationPrompt),
+          asksBeforeContact: peerReviewRequired(liveBot ?? bot, threadId),
+        }) },
         // 2026-10-30: the bot knows it is proactive, and how (server/proactive-wake.ts)
         { id: "proactive", label: "Proactive", text: proactivePrompt(proactiveModeFor(liveBot ?? bot)) },
         // what this turn reaches, in one line: "what connectors do you have" needs no tool call (server/turn-reach.ts)
@@ -27375,6 +27380,11 @@ async function runGroupMemberTurn(
     { id: "perspicax", label: "Perspicax", text: roomPerspicaxPrompt },
     { id: "claude-ai", label: "Claude connectors", text: engineConnectorsPromptFor(readyBot, instance, roomSpeakerId ? { origin: "person", principalId: roomSpeakerId, groupId } : roomRoutineSpeaker(threadId) ?? { origin: "operator" }, { level: roomPromptLevel }) },
     { id: "approval-level", label: "Approval level", text: approvalLevelPrompt(roomPromptLevel) },
+    // #1819: effective ask-before-contact (Full skips the Sagax peer card)
+    { id: "peer-contact", label: "Peer contact", text: peerContactPrompt({
+      canContact: Boolean(integrations.agents) && !roomPeerHop,
+      asksBeforeContact: peerReviewRequired(readyBot, threadId),
+    }) },
     { id: "computer", label: "Computer", text: computerPrompt(roomComputerPromptKind) },
     { id: "team-computer", label: "Team computer", text: teamComputerPrompt(roomTeamComputer) },
     { id: "plan", label: "Surface", text: surfacePrompt({ computer: roomTeamComputer ? "cloud" : roomVmTarget ? "vm" : surfaceOfComputerKind(roomComputerKind), browser: Boolean(integrations.browser) }, { note: roomPlan.note, cloudHome: Boolean(CLOUD_HOME) }) },

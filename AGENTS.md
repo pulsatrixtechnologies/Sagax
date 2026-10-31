@@ -1293,6 +1293,18 @@ and recipients outside the allowed list hold a call, and Sagax shows that
 itself. Below Full the card asks, never a typed word. The connectors
 section says the same for mail, Teams and calendar (`outwardRule`).
 
+## Approve for me and ask-before-contact: no invented may-I cards (#1819, 2026-10-30)
+
+Under Approve for me (and Full / Auto-accept edits), bots still posed
+`ask_choice` for next steps already covered by the person's request, and
+asked before contacting teammates when Ask before contacting bots was off.
+The approval-level section now says not to invent a second person gate for
+in-scope work; a Peer contact section states the effective flag
+(`peerReviewRequired`: `approvePeerComms` and not Full). `VERIFY_FIRST_PROMPT`
+and the `ask_choice` tool description match. Fleet merge/release/deploy GO
+in chat is unchanged. Tests: `server/approval-level-prompt.test.ts`,
+`server/system-prompt.test.ts`, `server/bot-overview.test.ts`.
+
 ## Work style: one section every turn reads (2026-10-29)
 
 Measured against the reference app, our bots asked for what one search
