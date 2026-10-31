@@ -7574,6 +7574,7 @@
   "team.closeDialog": "Fermer la boîte de l'équipe",
   "team.create": "Créer une équipe",
   "team.createIntro": "Commencez à vide, ou choisissez des bots existants à déplacer ici.",
+  "team.adminOnly": "Seul un administrateur de l'organisation peut créer ou modifier les équipes sur cette carte. Pour ranger vos propres bots, utilisez les sections de la barre latérale.",
   "team.deleteAria": "Supprimer l'équipe {name}",
   "team.deleteDescription": "Ceci supprime l'équipe vide et ses instructions partagées. Cette action est irréversible.",
   "team.deleteEmpty": "Supprimer l'équipe vide",

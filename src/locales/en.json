@@ -6596,6 +6596,7 @@
   "team.closeDialog": "Close team dialog",
   "team.create": "Create team",
   "team.createIntro": "Start empty, or choose existing bots to move here.",
+  "team.adminOnly": "Only an organization admin can create or change teams on this map. To organize your own bots, use sections in the sidebar.",
   "team.delete": "Delete team",
   "team.deleteAria": "Delete {name} team",
   "team.deleteDescription": "This deletes the empty team and its shared instructions. This cannot be undone.",

@@ -11,11 +11,13 @@ import {
   type TeamMapEdge,
   type TeamMapSnapshot,
 } from "@/lib/team-map";
+import { canManageTeamMap, teamMapMutationError } from "@/lib/team-map-access";
 import { cn } from "@/lib/cn";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { useCaptionChrome } from "@/components/DesktopCapabilities";
 import { placeOffered } from "@/lib/place";
 import { boatComputerEnabled } from "@/lib/feature-flags";
+import { readSessionState } from "@/lib/session";
 import { TeamCanvas } from "./TeamCanvas";
 import { TeamDialog } from "./TeamDialog";
 import { TeamMemoryDialog } from "./TeamMemoryDialog";
@@ -284,9 +286,23 @@ export function TeamMapPage() {
   const [computerDrop, setComputerDrop] = useState<{ id: string; section: string } | null>(null);
   const clearComputerDrop = useCallback(() => setComputerDrop(null), []);
   const [pendingMove, setPendingMove] = useState<{ bot: Bot; destination: string; resolve: (moved: boolean) => void } | null>(null);
+  // null until the session answers: never flash Create team at a member.
+  const [canManageTeams, setCanManageTeams] = useState<boolean | null>(null);
   const pendingMoveRef = useRef(pendingMove);
   pendingMoveRef.current = pendingMove;
   useEffect(() => () => pendingMoveRef.current?.resolve(false), []);
+  useEffect(() => {
+    if (remoteClient) {
+      setCanManageTeams(false);
+      return;
+    }
+    let alive = true;
+    void readSessionState()
+      .then((session) => { if (alive) setCanManageTeams(canManageTeamMap(session, false)); })
+      .catch(() => { if (alive) setCanManageTeams(false); });
+    return () => { alive = false; };
+  }, [remoteClient]);
+  const manageTeams = canManageTeams === true;
   const bots = useMemo(() => state.bots.filter((bot) => !bot.hidden), [state.bots]);
   const sections = useMemo(() => {
     const names = [...new Set([...(state.sections ?? []), ...state.groups.flatMap((group) => group.section ? [group.section] : [])])];
@@ -300,7 +316,7 @@ export function TeamMapPage() {
       setSnapshot(await api("/api/team-map"));
       setRefreshError(null);
     } catch (requestError) {
-      setRefreshError(requestError instanceof Error ? requestError.message : String(requestError));
+      setRefreshError(teamMapMutationError(requestError));
     }
   }, []);
 
@@ -321,7 +337,7 @@ export function TeamMapPage() {
       dispatch({ type: "sections", sections: result.sections });
       for (const patched of result.bots) dispatch({ type: "botPatched", bot: patched });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(teamMapMutationError(cause));
       throw cause;
     }
   };
@@ -348,8 +364,8 @@ export function TeamMapPage() {
           <p className="mt-1 text-[12px] text-ink-secondary">{t("canvas.description")}</p>
         </div>
         {!remoteClient && <div style={controlsShiftStyle} className="flex items-center gap-2">
-          <button onClick={() => setComputersOpen((value) => !value)} aria-label={t("settings.group.computers")} aria-expanded={computersOpen} className="flex size-9 items-center justify-center rounded-lg border border-hairline/50 bg-panel text-ink-secondary hover:bg-raised hover:text-ink"><Monitor size={16} /></button>
-          <details className="relative" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute("open"); }} onKeyDown={(event) => {
+          {manageTeams && <button onClick={() => setComputersOpen((value) => !value)} aria-label={t("settings.group.computers")} aria-expanded={computersOpen} className="flex size-9 items-center justify-center rounded-lg border border-hairline/50 bg-panel text-ink-secondary hover:bg-raised hover:text-ink"><Monitor size={16} /></button>}
+          {manageTeams && <details className="relative" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.removeAttribute("open"); }} onKeyDown={(event) => {
             if (event.key === "Escape") { event.currentTarget.removeAttribute("open"); event.currentTarget.querySelector("summary")?.focus(); }
           }}>
             <summary aria-label={t("teamMap.addAria")} className="flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-hairline/50 bg-panel px-3 text-[12px] font-medium text-ink hover:bg-raised [&::-webkit-details-marker]:hidden"><Plus size={15} /> {t("common.add")}</summary>
@@ -361,27 +377,28 @@ export function TeamMapPage() {
               {/* An OMB Cloud home has no Local VM (shared/cloud-home.ts). */}
               {placeOffered("vm", state.config) && <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] leading-[18px] text-ink hover:bg-hover" onClick={() => dispatch({ type: "toggleAppSettings", section: "computer", open: true })}><Monitor size={16} />{t("teamMap.localVm")}</button>}
             </div>
-          </details>
+          </details>}
         </div>}
       </header>
       <div className="content-card-body flex min-h-0 flex-1 flex-col">
+      {canManageTeams === false && !remoteClient && <p data-team-map-admin-only className="shrink-0 border-b border-hairline/40 bg-panel px-6 py-2 text-[12px] text-ink-secondary">{t("team.adminOnly")}</p>}
       {(error || refreshError) && <div role="alert" className="flex shrink-0 items-center justify-between gap-3 border-b border-danger/20 bg-danger/10 px-6 py-2 text-[12px] text-danger">
         {error || refreshError}
         <button aria-label={t("common.close")} className="rounded p-1 hover:bg-danger/10" onClick={() => { setError(null); setRefreshError(null); }}><X size={14} /></button>
       </div>}
       <div className="relative flex min-h-0 flex-1">
-      <TeamCanvas sections={sections} canManage={!remoteClient} onMove={requestMove}
+      <TeamCanvas sections={sections} canManage={manageTeams} onMove={requestMove}
         connectedBotIds={state.settingsOpen ? edges.flatMap((edge) => edge.sourceBotId === state.selectedId ? [edge.targetBotId] : edge.targetBotId === state.selectedId ? [edge.sourceBotId] : []) : []}
         onComputer={(bot) => dispatch({ type: "toggleSettings", botId: bot.id, section: "access", open: true })}
         teamComputers={Object.fromEntries(computers.filter((computer) => computer.section !== null).map((computer) => [computer.section!, { name: computer.name, state: computer.state }]))}
         onTeamComputer={() => setComputersOpen(true)}
-        onComputerDrop={(id, section) => { if (!remoteClient) { setComputersOpen(true); setComputerDrop({ id, section }); } }}
+        onComputerDrop={(id, section) => { if (manageTeams) { setComputersOpen(true); setComputerDrop({ id, section }); } }}
         onInstructions={(section, label) => setContextEditor({ section, label })}
         onMemory={(section, label) => setMemoryEditor({ section, label })}
         onEditTeam={(section, rename) => setTeamEditor({ section, rename })}
         onDeleteTeam={setDeletingTeam}
         isEmpty={(key) => ![...state.bots, ...state.groups].some((record) => record.section?.trim() === key)} />
-      {!remoteClient && <CanvasComputers open={computersOpen} createRequest={createComputerRequest} drop={computerDrop} sections={sections}
+      {manageTeams && <CanvasComputers open={computersOpen} createRequest={createComputerRequest} drop={computerDrop} sections={sections}
         onClose={() => setComputersOpen(false)} onDropHandled={clearComputerDrop} onChange={setComputers} />}
       </div>
       {edges.length > 0 && <details className="shrink-0 border-t border-hairline/40 bg-panel px-6 py-3">
@@ -414,7 +431,7 @@ export function TeamMapPage() {
           if (!name) return;
           void api(`/api/sidebar-sections?section=${encodeURIComponent(name)}`, { method: "DELETE" })
             .then(({ sections: names }) => dispatch({ type: "sections", sections: names }))
-            .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+            .catch((cause) => setError(teamMapMutationError(cause)));
         }} />
     </main>
   );
