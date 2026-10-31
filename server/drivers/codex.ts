@@ -66,7 +66,7 @@ import { CODEX_MISSING_CREDENTIALS, CODEX_SIGN_IN_EXPIRED, codexContextFull, cod
 import { codexLoginCheck, codexLoginStatus, storedCodexLogin } from "./codex-login.ts";
 import { keyRejected, noteKeyAccepted, noteKeyRejected } from "../key-rejections.ts";
 import { classifyResumeFailure, mayReplay, rebuiltSessionNotice, recoveryPromptFor } from "../resume-recovery.ts";
-import { contextRenewedNotice } from "../context-renewal.ts";
+import { contextFullMessage, contextRenewedNotice, pushRenewalStep, renewalPrompt, type RenewalStep } from "../context-renewal.ts";
 import { extractMcpImages } from "../mcp-tool-images.ts";
 import { parseProtocolAskQuestions, questionAnswersById, questionChoices } from "../../shared/ask-question.ts";
 import { codexVersionBehind, readLatestCodexRelease } from "./codex-release.ts";
@@ -888,6 +888,9 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
      * (Retry, or any new message) starts a new Codex thread from the chat's
      * rebuild instead of resuming the full one (server/context-renewal.ts). */
     const freshNextTurn = new Set<string>();
+    /** Logical turns that already used their one in-turn context renewal. A
+     * second overflow fails in plain words and marks freshNextTurn. */
+    const renewedTurns = new Set<string>();
 
     const emit = (event: RuntimeEvent) => {
       for (const l of Array.from(listeners)) l(event);
@@ -985,6 +988,12 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
       // tests so a fake's transient failures don't stall real seconds
       const retryScale = Number(process.env.FAKE_CODEX_RETRY_SCALE ?? "1");
       let announced = false;
+      // Steps and text kept across an in-turn context renewal (each launchAttempt
+      // has its own process state; these outlive it for renewalPrompt).
+      const renewalSteps: RenewalStep[] = [];
+      let renewalLastText = "";
+      /** Prompt for the fresh Codex thread when this turn renews mid-flight. */
+      let inTurnRenewal: string | null = null;
       const waitForLaunchSlot = async (attempt: number) => {
         const waiting: Turn = { stop: async () => { stopRequested = true; stopSignal.abort(); return true; }, turnId, asks: new Map() };
         active.set(threadId, waiting);
@@ -1221,6 +1230,8 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         retryError: "",
         // Codex started recovering its model provider's sign-in this turn
         authRecovery: false,
+        // second context overflow this logical turn: settle as context_full
+        contextFullStop: false,
         lastText: "",
         sawStreamDelta: false,
         streamed: false,
@@ -1365,6 +1376,25 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           return settle(false, failedStop);
         }
         await interruptibleDelay(Math.max(1, Math.round(delayMs * retryScale)), stopSignal.signal).promise;
+        if (!stopRequested) void launchAttempt(attempt).catch(() => {});
+        else await settle(false, "interrupted");
+      };
+
+      // Context filled mid-turn: close this app-server and continue the same
+      // logical turn on a fresh Codex thread with the chat rebuild and the
+      // steps already taken (server/context-renewal.ts). No turn.retrying row:
+      // the person sees nothing; Events gets contextRenewedNotice on start.
+      const renewContext = async () => {
+        abandoned = true;
+        releaseSlot();
+        const exited = child.exitCode !== null || child.signalCode !== null;
+        if (!exited && !(await terminate()) && !(await waitForExit(child, RELAUNCH_EXIT_WAIT_MS))) {
+          inTurnRenewal = null;
+          renewedTurns.delete(turnId);
+          freshNextTurn.add(threadId);
+          emit({ ...base(threadId, turnId), type: "runtime.error", message: contextFullMessage("Codex") });
+          return settle(false, "context_full");
+        }
         if (!stopRequested) void launchAttempt(attempt).catch(() => {});
         else await settle(false, "interrupted");
       };
@@ -1625,9 +1655,25 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           (state.authRecovery && !/\b403\b|forbidden/i.test(raw) && /\b401\b|unauthorized/i.test(raw)));
         if (retryLoginRace(raw, refused)) return;
         if (refused) loginRefused();
+        // Out of context room: continue this turn once in a fresh Codex thread
+        // (Claude's path). A second overflow fails in plain words and marks
+        // the next send (Retry) to start fresh instead of resuming the full one.
+        if (!refused && codexContextFull(raw, error.codexErrorInfo)) {
+          if (!stopRequested && !renewedTurns.has(turnId) && inTurnRenewal === null) {
+            renewedTurns.add(turnId);
+            const conversation = turn.recoveryText?.trim() ? turn.recoveryText : turn.text;
+            inTurnRenewal = renewalPrompt({
+              base: conversation,
+              steps: renewalSteps,
+              lastText: renewalLastText || state.lastText,
+            });
+            void renewContext().catch(() => {});
+            return;
+          }
+          freshNextTurn.add(threadId);
+          state.contextFullStop = true;
+        }
         const message = refused ? codexSignInExpired(raw) : codexUserError(raw, route, error.codexErrorInfo);
-        // Out of context room: the next turn starts a new Codex thread.
-        if (!refused && codexContextFull(raw, error.codexErrorInfo)) freshNextTurn.add(threadId);
         const setup = refused || classifyError({ text: raw }).reason === "auth";
         if (message === state.lastError && (state.lastErrorSetup || !setup)) return;
         state.lastError = message;
@@ -1723,6 +1769,15 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
                       ? "web_search"
                       : null;
             if (title) {
+              if (typeof item.id === "string") {
+                pushRenewalStep(renewalSteps, {
+                  id: item.id,
+                  name: title,
+                  summary: item.type === "commandExecution"
+                    ? commandSummary({ command: item.command }) ?? String(item.command ?? "").slice(0, 200)
+                    : toolDetailPreview(item.type === "mcpToolCall" ? (runs ? item.arguments?.arguments ?? {} : item.arguments) : item.type === "fileChange" ? item.changes : item.query)?.slice(0, 200),
+                });
+              }
               emit({
                 ...base(threadId, turnId),
                 type: "item.started",
@@ -1747,6 +1802,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
             if (item.type === "agentMessage") {
               if (item.text?.trim()) {
                 state.lastText = item.text;
+                renewalLastText = item.text.slice(-2_000);
                 if (!state.sawStreamDelta) {
                   emit({ ...base(threadId, turnId), type: "content.delta", streamKind: "assistant_text", delta: item.text });
                 }
@@ -1770,16 +1826,25 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
                 });
               }
             } else if (["commandExecution", "fileChange", "mcpToolCall", "webSearch"].includes(item.type)) {
+              const ok = item.status !== "failed" && item.status !== "declined";
+              const output = item.type === "mcpToolCall" && isPhoneToolCallName(typeof item.tool === "string" ? item.tool : undefined)
+                ? PHONE_TOOL_OUTPUT_NOT_KEPT
+                : toolDetailPreview(item.type === "commandExecution" ? { output: item.aggregatedOutput, exitCode: item.exitCode } : item.type === "mcpToolCall" ? item.error ?? item.result : item.type === "fileChange" ? item.changes : item.action);
+              if (typeof item.id === "string") {
+                const step = renewalSteps.find((entry) => entry.id === item.id);
+                if (step) {
+                  step.ok = ok;
+                  if (output) step.output = output.slice(0, 240);
+                }
+              }
               emit({
                 ...base(threadId, turnId),
                 type: "item.completed",
                 itemType: "tool",
                 itemId: item.id,
-                ok: item.status !== "failed" && item.status !== "declined",
+                ok,
                 // a phone's answer reaches the model, never the event log or the chat (phone_tool)
-                output: item.type === "mcpToolCall" && isPhoneToolCallName(typeof item.tool === "string" ? item.tool : undefined)
-                  ? PHONE_TOOL_OUTPUT_NOT_KEPT
-                  : toolDetailPreview(item.type === "commandExecution" ? { output: item.aggregatedOutput, exitCode: item.exitCode } : item.type === "mcpToolCall" ? item.error ?? item.result : item.type === "fileChange" ? item.changes : item.action),
+                output,
                 ...(item.type === "mcpToolCall" && !item.error && typeof item.tool === "string"
                   ? cwToolResult(typeof item.server === "string" ? `${item.server}__${item.tool}` : item.tool, item.result)
                   : {}),
@@ -1842,6 +1907,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
             const t = p.turn ?? {};
             if (t.status === "completed") {
               if (chatgptTurn) loginAccepted();
+              renewedTurns.delete(turnId);
             } else if (typeof t.error?.message === "string") {
               turnError(t.error);
             } else if (t.status === "failed" && !state.lastError && state.retryError) {
@@ -1850,7 +1916,9 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
             }
             if (abandoned) break;
             void settle(t.status === "completed", t.status === "completed" ? null :
-              (classifyError({ text: state.lastError }).reason === "provider_safety" ? "provider_safety" : (state.lastError || t.status || "failed")));
+              (state.contextFullStop ? "context_full"
+                : classifyError({ text: state.lastError }).reason === "provider_safety" ? "provider_safety"
+                  : (state.lastError || t.status || "failed")));
             break;
           }
           case "error": {
@@ -2120,10 +2188,14 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
             : decodeCodexSelection(turn.model);
         // The last Codex thread filled up: resuming it would fill up again.
         // A new thread starts from the chat's rebuild (its turn text alone
-        // when there is nothing to replay).
-        const renewFull = freshNextTurn.has(threadId) && typeof turn.resumeCursor === "string";
+        // when there is nothing to replay). An in-turn renewal (inTurnRenewal)
+        // is the same idea mid-turn: no resume, prompt already carries the
+        // rebuild and the steps taken.
+        const renewFull = !inTurnRenewal && freshNextTurn.has(threadId) && typeof turn.resumeCursor === "string";
         freshNextTurn.delete(threadId);
-        const cursor = typeof turn.resumeCursor === "string" && !renewFull ? turn.resumeCursor : null;
+        const renewingNow = Boolean(inTurnRenewal);
+        const cursor = renewingNow || renewFull ? null
+          : (typeof turn.resumeCursor === "string" ? turn.resumeCursor : null);
         let startedModel: string | null = null;
         let resumedNativeThread = false;
         let rebuiltFromReplay = false;
@@ -2131,7 +2203,11 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
         // `$name` with the skill's file (shared/harness-commands.ts).
         const skill = turn.harnessCommand?.path ? turn.harnessCommand : undefined;
         let promptText = skill ? `$${skill.name}${skill.args ? ` ${skill.args}` : ""}` : turn.text;
-        if (renewFull && !skill && turn.recoveryText?.trim() && turn.recoveryText.trim() !== turn.text.trim()) {
+        if (renewingNow && inTurnRenewal) {
+          promptText = inTurnRenewal;
+          inTurnRenewal = null;
+          rebuiltFromReplay = Boolean(turn.recoveryText?.trim());
+        } else if (renewFull && !skill && turn.recoveryText?.trim() && turn.recoveryText.trim() !== turn.text.trim()) {
           promptText = turn.recoveryText;
           rebuiltFromReplay = true;
         }
@@ -2233,7 +2309,7 @@ export const CodexDriver: ProviderDriver<CodexConfig> = {
           );
         }
         emit({ ...base(threadId, turnId), type: "session.started", sessionId: codexThreadId, model: startedModel ?? turn.model ?? null, ...(rebuiltFromReplay ? { rebuilt: true } : {}) });
-        if (renewFull) emit({ ...base(threadId, turnId), type: "runtime.notice", message: contextRenewedNotice("Codex") });
+        if (renewingNow || renewFull) emit({ ...base(threadId, turnId), type: "runtime.notice", message: contextRenewedNotice("Codex") });
         else if (rebuiltFromReplay) emit({ ...base(threadId, turnId), type: "runtime.notice", message: rebuiltSessionNotice("Codex") });
         const turnInput = [
           ...(skill?.path ? [{ type: "skill" as const, name: skill.name, path: skill.path }] : []),

@@ -11,7 +11,11 @@
 //                     config-profile-unsupported | config-read-error | image |
 //                     logged-in-stdout | logged-out | unauthorized | late-request |
 //                     retry-then-complete | signin-refused | auth-recovery | mcp-401 | legacy-error |
-//                     key-401 | recovered-403 | recovered-401 | recovering-403 | usage-limit
+//                     key-401 | recovered-403 | recovered-401 | recovering-403 | usage-limit |
+//                     context-full (one shell step, then contextWindowExceeded; a prompt that
+//                     already carries Sagax's fresh-session note answers normally unless
+//                     FAKE_CODEX_CONTEXT_FULL_AGAIN=1)
+//   A turn/start whose text carries [fake:context-full] behaves like context-full mode.
 //   FAKE_CODEX_MISSING_BEARER  the first N launches fail their turn as codex-cli 0.160.1 holding no login does
 //                              (count in FAKE_CODEX_STATE)
 //   FAKE_CODEX_LAUNCH_CRASHES  die at turn/start (before ack) with transient stderr,
@@ -748,6 +752,34 @@ process.stdin.on("data", (chunk) => {
           notify("error", { willRetry: false, error });
           notify("turn/completed", { turn: { status: "failed", error } });
           break;
+        }
+        // Context filled mid-turn: one tool step, then contextWindowExceeded.
+        // A prompt that already carries Sagax's fresh-session note is the
+        // in-turn renewal and answers normally, unless the test asks for a
+        // second overflow (FAKE_CODEX_CONTEXT_FULL_AGAIN=1).
+        {
+          const inputText = JSON.stringify(msg.params?.input ?? []);
+          const wantsFull = mode === "context-full" || inputText.includes("[fake:context-full]");
+          const renewed = inputText.includes("ran out of context space");
+          if (wantsFull && (!renewed || process.env.FAKE_CODEX_CONTEXT_FULL_AGAIN === "1")) {
+            out({ jsonrpc: "2.0", id: msg.id, result: { turn: { id: nativeTurnId } } });
+            notify("item/started", { item: { id: "i-full", type: "commandExecution", command: "nmap -p- 192.0.2.10" } });
+            notify("item/completed", {
+              item: {
+                id: "i-full", type: "commandExecution", command: "nmap -p- 192.0.2.10",
+                status: "completed", exitCode: 0,
+                aggregatedOutput: "PORT STATE SERVICE\n22/tcp open ssh",
+              },
+            });
+            const error = {
+              message: "Codex ran out of room in the model's context window. Start a new thread or clear earlier history before retrying.",
+              codexErrorInfo: "contextWindowExceeded",
+              additionalDetails: null,
+            };
+            notify("error", { willRetry: false, error });
+            notify("turn/completed", { turn: { status: "failed", error } });
+            break;
+          }
         }
         if (mode === "unauthorized") {
           out({

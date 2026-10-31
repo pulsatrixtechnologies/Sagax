@@ -20,6 +20,7 @@ import { TurnNotStartedError } from "../../contracts.ts";
 import { recordEvents, type EventRecorder } from "../../testing/events.ts";
 import { promptSplitFingerprints, writePromptSplitReceipt } from "../prompt-split.ts";
 import { GROK_TOOL_REUSE_HINT as HINT } from "./grok.ts";
+import { contextFullMessage, contextRenewedNotice } from "../../context-renewal.ts";
 import { createAcpDriver, DEFAULT_ACP_PROMPT_IDLE_MS, skipSubscriptionAuthForLocalInject, type AcpSupport } from "./core.ts";
 import { GrokAgentDriver, grokAcceptsUnadvertisedImages, grokCloudConnectorEnv, grokConfigDeclaresMcp, grokConnectableConnectors, grokPermissionMode } from "./grok.ts";
 import { grokAccountReach } from "./grok-tool-catalog.ts";
@@ -2760,6 +2761,56 @@ createInterface({ input: process.stdin }).on("line", (line) => {
     });
     expect(await recorder.until((e) => e.type === "turn.completed")).toMatchObject({ ok: true });
     expect(recorder.events.find((e) => e.type === "session.started")).toMatchObject({ rebuilt: true });
+    const prompt = JSON.parse(readFileSync(`${dump}.prompt.json`, "utf8"));
+    expect(prompt).toEqual([{ type: "text", text: `Keep current bot instructions.${HINT}\n\n${recoveryText}` }]);
+  });
+
+  // #1697: after a context-full failure, Retry must not reopen the same full
+  // session. It starts fresh from the chat rebuild (Codex's renewFull path).
+  it("after a context-full failure, Retry starts a lightened Grok session from the chat rebuild", async () => {
+    const failureFile = join(scratch, "context-full.json");
+    const dump = join(scratch, "context-retry.json");
+    const rpcFile = join(scratch, "context-rpc.json");
+    writeFileSync(failureFile, JSON.stringify({
+      code: -32603,
+      message: "Internal error: prompt is too long: maximum context length exceeded",
+    }));
+    process.env.FAKE_ACP_RPC_FAILURE_FILE = failureFile;
+    process.env.FAKE_ACP_RPC_DUMP = rpcFile;
+    await create(GrokAgentDriver);
+    const failed = await instance.adapter.sendTurn({
+      threadId: "t-context-full", text: "Continue the long work", resumeCursor: "fake-acp-session",
+    });
+    await expect(recorder.until((e) => e.type === "turn.completed" && e.turnId === failed.turnId))
+      .resolves.toMatchObject({ ok: false, stopReason: "context_full" });
+    expect(recorder.events.filter((e) => e.type === "runtime.error" && e.turnId === failed.turnId)).toEqual([
+      expect.objectContaining({ message: contextFullMessage("Grok") }),
+    ]);
+    expect(instance.adapter.hasSession("t-context-full")).toBe(false);
+    unlinkSync(failureFile);
+    delete process.env.FAKE_ACP_RPC_FAILURE_FILE;
+    process.env.FAKE_ACP_DUMP = dump;
+    process.env.FAKE_ACP_DUMP_PROMPT = "1";
+    writeFileSync(rpcFile, "[]");
+    const recoveryText = "Earlier: a long tool-heavy turn.\nContinue the long work";
+    const retry = await instance.adapter.sendTurn({
+      threadId: "t-context-full",
+      text: "Continue the long work",
+      resumeCursor: "fake-acp-session",
+      recoveryText,
+      system: "Keep current bot instructions.",
+    });
+    await expect(recorder.until((e) => e.type === "turn.completed" && e.turnId === retry.turnId))
+      .resolves.toMatchObject({ ok: true });
+    expect(recorder.events.filter((e) => e.type === "session.started" && e.turnId === retry.turnId)).toEqual([
+      expect.objectContaining({ rebuilt: true }),
+    ]);
+    expect(recorder.events.filter((e) => e.type === "runtime.notice" && e.turnId === retry.turnId)).toEqual([
+      expect.objectContaining({ message: contextRenewedNotice("Grok") }),
+    ]);
+    const methods = JSON.parse(readFileSync(rpcFile, "utf8"));
+    expect(methods).toContain("session/new");
+    expect(methods).not.toContain("session/load");
     const prompt = JSON.parse(readFileSync(`${dump}.prompt.json`, "utf8"));
     expect(prompt).toEqual([{ type: "text", text: `Keep current bot instructions.${HINT}\n\n${recoveryText}` }]);
   });

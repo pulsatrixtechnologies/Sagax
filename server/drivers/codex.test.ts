@@ -29,7 +29,7 @@ import {
 } from "./codex.ts";
 import { codexCliOverrides } from "./codex-process.ts";
 import { CODEX_SIGN_IN_EXPIRED, codexContextFull, codexNotSignedIn, codexSignInRefused, codexUserError } from "./codex-errors.ts";
-import { contextFullMessage } from "../context-renewal.ts";
+import { contextFullMessage, contextRenewedNotice } from "../context-renewal.ts";
 import { CODEX_USAGE_LIMIT_REACHED } from "../../shared/codex-usage-limit.ts";
 import { removeTempDir } from "../testing/cleanup.ts";
 import { rebuiltSessionNotice } from "../resume-recovery.ts";
@@ -427,6 +427,7 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     delete process.env.FAKE_CODEX_STEER_TIMEOUT_MS;
     delete process.env.FAKE_CODEX_INTERRUPT_SILENT;
     delete process.env.FAKE_CODEX_INTERRUPT_GRACE_MS;
+    delete process.env.FAKE_CODEX_CONTEXT_FULL_AGAIN;
     delete process.env.OPENAI_API_KEY;
     delete process.env.BOX_TOKEN;
     delete process.env.SAGAX_TTS_KEY;
@@ -3742,5 +3743,74 @@ process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:m.id,result})+'\\n');});`)
     const seen = JSON.parse(readFileSync(dump, "utf8"));
     const turnStart = seen.calls.find((c: any) => c.method === "turn/start");
     expect(turnStart.params).not.toHaveProperty("effort");
+  });
+
+  // #1697: contextWindowExceeded mid-turn continues once in a fresh Codex
+  // thread (Claude's path), with the chat rebuild and the step already taken.
+  // mode "resume" so the first launch really resumes the full thread before
+  // overflowing; the renewal must not resume it again.
+  it("goes on in a fresh Codex thread when the context fills mid-turn, without the engine's advice", async () => {
+    const dump = join(scratch, "context-full.json");
+    process.env.FAKE_CODEX_DUMP = dump;
+    await create({ mode: "resume" });
+    const turn = await instance.adapter.sendTurn({
+      threadId: "t-context-full",
+      text: "Check the ports [fake:context-full]",
+      resumeCursor: "fixture-full-thread",
+      recoveryText: "Earlier: the person asked about this VM.\nCheck the ports [fake:context-full]",
+    });
+    const done = await recorder.until((event) => event.type === "turn.completed" && event.turnId === turn.turnId);
+    expect(done).toMatchObject({ ok: true });
+    expect(recorder.events.filter((event) => event.type === "runtime.error")).toEqual([]);
+    expect(JSON.stringify(recorder.events)).not.toMatch(/Start a new thread|clear earlier history/i);
+    expect(recorder.events.filter((event) => event.type === "runtime.notice")).toEqual([
+      expect.objectContaining({ message: contextRenewedNotice("Codex") }),
+    ]);
+    expect(recorder.events.filter((event) => event.type === "turn.completed")).toHaveLength(1);
+    const started = recorder.events.filter((event) => event.type === "session.started");
+    expect(started).toHaveLength(2);
+    expect(started[1]).toMatchObject({ rebuilt: true });
+    const fresh = JSON.parse(readFileSync(dump, "utf8"));
+    expect(fresh.calls.some((call: { method: string }) => call.method === "thread/resume")).toBe(false);
+    expect(fresh.calls.filter((call: { method: string }) => call.method === "thread/start")).toHaveLength(1);
+    const prompt = JSON.stringify(fresh.calls.find((call: { method: string }) => call.method === "turn/start")?.params?.input);
+    expect(prompt).toContain("Earlier: the person asked about this VM.");
+    expect(prompt).toContain("ran out of context space");
+    expect(prompt).toContain("nmap -p- 192.0.2.10");
+    expect(prompt).toContain("22/tcp open ssh");
+  });
+
+  it("says a second Codex overflow in plain words, then starts the next turn fresh", async () => {
+    const dump = join(scratch, "context-full-again.json");
+    process.env.FAKE_CODEX_DUMP = dump;
+    process.env.FAKE_CODEX_CONTEXT_FULL_AGAIN = "1";
+    await create({ mode: "resume" });
+    const turn = await instance.adapter.sendTurn({
+      threadId: "t-context-full-again",
+      text: "Find the keys [fake:context-full]",
+      resumeCursor: "fixture-full-thread",
+      recoveryText: "Earlier: find the keys on the server.\nFind the keys [fake:context-full]",
+    });
+    await expect(recorder.until((event) => event.type === "turn.completed" && event.turnId === turn.turnId))
+      .resolves.toMatchObject({ ok: false, stopReason: "context_full" });
+    expect(recorder.events.filter((event) => event.type === "runtime.error")).toEqual([
+      expect.objectContaining({ message: contextFullMessage("Codex") }),
+    ]);
+    expect(JSON.stringify(recorder.events.filter((event) => event.type === "runtime.error")))
+      .not.toMatch(/Start a new thread|clear earlier history/i);
+    expect(recorder.events.filter((event) => event.type === "session.started")).toHaveLength(2);
+    delete process.env.FAKE_CODEX_CONTEXT_FULL_AGAIN;
+    const retry = await instance.adapter.sendTurn({
+      threadId: "t-context-full-again",
+      text: "Find the keys",
+      resumeCursor: "fixture-full-thread",
+      recoveryText: "Earlier: find the keys on the server.\nFind the keys",
+    });
+    await expect(recorder.until((event) => event.type === "turn.completed" && event.turnId === retry.turnId))
+      .resolves.toMatchObject({ ok: true });
+    const seen = JSON.parse(readFileSync(dump, "utf8"));
+    expect(seen.calls.some((call: { method: string }) => call.method === "thread/resume")).toBe(false);
+    const prompt = JSON.stringify(seen.calls.find((call: { method: string }) => call.method === "turn/start")?.params?.input);
+    expect(prompt).toContain("Earlier: find the keys on the server.");
   });
 });
