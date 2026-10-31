@@ -21,9 +21,9 @@ function world(options: { replyAfterPolls?: number; reply?: (prompt: string) => 
   let clock = 1_791_500_000_000;
   let ids = 0;
   const agents: AgentSummary[] = [
-    { id: "bot-a", name: "Alpha", description: "Answers questions about invoices", status: "idle" },
-    { id: "bot-b", name: "Beta", description: "Dispatch and scheduling of technicians", status: "idle" },
-    { id: "bot-c", name: "Gamma Reports", description: "Writes weekly reports", status: "running" },
+    { id: "bot-a", name: "Alpha", description: "Answers questions about invoices", status: "idle", owner: null },
+    { id: "bot-b", name: "Beta", description: "Dispatch and scheduling of technicians", status: "idle", owner: null },
+    { id: "bot-c", name: "Gamma Reports", description: "Writes weekly reports", status: "running", owner: null },
   ];
   const threads = new Map<string, { agentId: string; owner: string; title: string; hidden: boolean }>();
   const messages = new Map<string, StoredMessage[]>();
@@ -57,7 +57,8 @@ function world(options: { replyAfterPolls?: number; reply?: (prompt: string) => 
   const deps: AgentApiDeps = {
     agents: (caller) => agents.filter((agent) => !archived.includes(agent.id) && (options.reachable ? options.reachable(caller, agent) : true)),
     async createAgent(caller, input) {
-      const agent = { id: `bot-${++ids}`, name: input.name, description: input.description, status: "idle" as const, temporary: true };
+      const owner = { principal_id: key(caller), name: "Owner" };
+      const agent = { id: `bot-${++ids}`, name: input.name, description: input.description, status: "idle" as const, temporary: true, owner };
       agents.push(agent);
       owners.set(agent.id, key(caller));
       created.push({ name: input.name, ...(input.idleHours !== undefined ? { idleHours: input.idleHours } : {}), ...(input.workspace ? { workspace: input.workspace } : {}) });
@@ -194,7 +195,7 @@ describe("list_agents / find_agents", () => {
   it("list_agents answers id, name, description and status of reachable agents only", async () => {
     const w = world({ reachable: (caller, agent) => caller.id !== "outsider" || agent.id === "bot-b" });
     const r = await w.api.call(bot("bot-x"), "list_agents", {});
-    expect(r.body.agents).toEqual(w.agents.map(({ id, name, description, status }) => ({ id, name, description, status, temporary: false })));
+    expect(r.body.agents).toEqual(w.agents.map(({ id, name, description, status, owner }) => ({ id, name, description, status, temporary: false, owner })));
     const isolated = await w.api.call(bot("outsider"), "list_agents", {});
     expect((isolated.body.agents as AgentSummary[]).map((a) => a.id)).toEqual(["bot-b"]);
   });
@@ -217,6 +218,34 @@ describe("list_agents / find_agents", () => {
     const w = world({ reachable: (_caller, agent) => agent.id !== "bot-c" });
     const r = await w.api.call(bot("x"), "find_agents", { query: "reports" });
     expect(r.body.agents).toEqual([]);
+  });
+
+  it("list_agents and find_agents include owner matching get_agent without calling profile (#1637)", async () => {
+    const w = world();
+    const owner = { principal_id: "pr_alice", name: "Owner" };
+    w.agents[0]!.owner = owner;
+    w.owners.set("bot-a", "pr_alice");
+    let profileCalls = 0;
+    const inner = w.deps.profile!;
+    w.deps.profile = (caller, agentId) => {
+      profileCalls += 1;
+      return inner(caller, agentId);
+    };
+    const api = createAgentApi(w.deps);
+
+    const listed = await api.call(bot("x"), "list_agents", {});
+    expect(profileCalls).toBe(0);
+    const fromList = (listed.body.agents as AgentSummary[]).find((a) => a.id === "bot-a");
+    expect(fromList?.owner).toEqual(owner);
+    expect((listed.body.agents as AgentSummary[]).find((a) => a.id === "bot-b")?.owner).toBeNull();
+
+    const found = await api.call(bot("x"), "find_agents", { query: "Alpha" });
+    expect(profileCalls).toBe(0);
+    expect((found.body.agents as AgentSummary[])[0]?.owner).toEqual(owner);
+
+    const got = await api.call(person("pr_1"), "get_agent", { agent_id: "bot-a" });
+    expect(profileCalls).toBe(1);
+    expect(got.body.owner).toEqual(fromList?.owner);
   });
 });
 

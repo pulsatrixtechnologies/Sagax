@@ -41779,12 +41779,15 @@ function agentTurnState(agentId: string, threadId: string): TurnState {
   return "idle";
 }
 function agentSummary(bot: BotRecord): AgentSummary {
+  // Same owner source as profile() / get_agent: no per-agent profile call.
+  const ownerId = bot.temporary?.ownerPrincipalId ?? (recordedBotOwner(bot) ?? null);
   return {
     id: bot.id,
     name: bot.name,
     description: (bot.description || bot.title || "").slice(0, 600),
     status: bot.busy || store.tasks(bot.id).some((task) => threadBusy(bot.id, task.threadId)) ? "running" : "idle",
     ...(bot.temporary ? { temporary: true } : {}),
+    owner: ownerId ? { principal_id: ownerId, name: adminPerson(ownerId).name } : null,
   };
 }
 /** The bots a bot may reach: its team, the teams it was allowed, its allow-list.

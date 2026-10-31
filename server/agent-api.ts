@@ -172,6 +172,9 @@ export interface AgentSummary {
   status: AgentStatus;
   /** A temporary agent (create_agent): it expires when idle and can be deleted. */
   temporary?: boolean;
+  /** The person who owns this agent, as get_agent answers it. Null when none
+   * is known to the caller. `principal_id` is the value to pass to sagax_nudge. */
+  owner: { principal_id: string; name: string } | null;
 }
 
 /** What get_agent answers beyond the summary (the dependencies fill it). */
@@ -525,7 +528,14 @@ function collectEntries(deps: AgentApiDeps, threads: readonly TranscriptThread[]
 }
 
 /** An agent as list_agents, find_agents and create_agent answer it. */
-const wireSummary = (agent: AgentSummary) => ({ id: agent.id, name: agent.name, description: agent.description, status: agent.status, temporary: agent.temporary === true });
+const wireSummary = (agent: AgentSummary) => ({
+  id: agent.id,
+  name: agent.name,
+  description: agent.description,
+  status: agent.status,
+  temporary: agent.temporary === true,
+  owner: agent.owner ?? null,
+});
 
 const keyOf = (entry: TranscriptEntry): CursorKey => ({ at: entry.at, threadId: entry.thread_id, id: entry.id });
 

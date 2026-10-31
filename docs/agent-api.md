@@ -30,7 +30,10 @@ names, parameters and limits as the reference design's agent tools, plus `get_ag
 | `read_transcript_cold` | read | `agents.read` | the stored transcript only: pages of 50 by `cursor`; never reads live state, never wakes a computer or sandbox |
 
 `list_agents`, `find_agents` and `create_agent` answer each agent as `{id,
-name, description, status, temporary}`.
+name, description, status, temporary, owner}`. `owner` is
+`{principal_id, name}` or `null` (same source as `get_agent`, with no
+per-agent profile call). Pass `owner.principal_id` to `sagax_nudge` to
+reach that agent's owner.
 
 `get_agent` answers `agent` (the summary and its `title`), `owner`
 (`principal_id`, `name`), `profile`, `temporary` and `profile_url` (the
