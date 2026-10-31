@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import type { ApnsTransport } from "./apns.ts";
 import { readApnsConfig, type ApnsConfigResult } from "./config.ts";
-import { PushRateLimiter, shouldPush, waitsForGrace } from "./decide.ts";
+import { bypassesPushRateLimit, PushRateLimiter, shouldPush, waitsForGrace } from "./decide.ts";
 import { createPushDeviceStore } from "./devices.ts";
 import { PushHub } from "./hub.ts";
 import type { PushMessage } from "./payload.ts";
@@ -40,13 +40,20 @@ describe("should push", () => {
     expect(limiter.tryTake("pr_b", 2)).toBe(true);
     expect(limiter.tryTake("pr_a", 1001)).toBe(true);
   });
+  it("approvals and questions skip the per-person ceiling", () => {
+    expect(bypassesPushRateLimit("approval")).toBe(true);
+    expect(bypassesPushRateLimit("message")).toBe(false);
+    expect(bypassesPushRateLimit("routine")).toBe(false);
+    expect(bypassesPushRateLimit("nudge")).toBe(false);
+    expect(bypassesPushRateLimit("achievement")).toBe(false);
+  });
 });
 
 describe("push hub", () => {
   const dirs: string[] = [];
   afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
 
-  function setup(options: { connected?: boolean; activeTokens?: string[]; answer?: (token: string) => { status: number; reason?: string }; config?: ApnsConfigResult } = {}) {
+  function setup(options: { connected?: boolean; activeTokens?: string[]; answer?: (token: string) => { status: number; reason?: string }; config?: ApnsConfigResult; limiter?: PushRateLimiter } = {}) {
     const dir = mkdtempSync(join(tmpdir(), "sagax-push-"));
     dirs.push(dir);
     let now = 10_000;
@@ -67,6 +74,7 @@ describe("push hub", () => {
       now: () => now,
       log: { info: (line) => logs.push(line), warn: (line) => logs.push(line) },
       schedule: (run) => { timers.push(run); return () => {}; },
+      limiter: options.limiter,
     });
     const fire = async () => { for (const run of timers.splice(0)) run(); await hub.drain(); };
     return { dir, store, hub, sent, fire, logs, tick: (ms: number) => { now += ms; } };
@@ -224,6 +232,26 @@ describe("push hub", () => {
     await hub.drain();
     expect(sent).toHaveLength(1);
     expect(sent[0]!.headers["apns-priority"]).toBe("10");
+  });
+
+  it("logs and drops a message when the per-person ceiling is full, and still pushes an approval", async () => {
+    const limiter = new PushRateLimiter(1, 60_000);
+    const { store, hub, sent, logs } = setup({ connected: false, limiter });
+    store.register("pr_bob", { token: TOKEN_A, platform: "ios", environment: "production", appVersion: "", deviceName: "" });
+    hub.submit(message({ body: "first" }));
+    await hub.drain();
+    expect(sent).toHaveLength(1);
+    hub.submit(message({ body: "second", threadId: "t2" }));
+    await hub.drain();
+    expect(sent).toHaveLength(1);
+    expect(logs.some((line) => line.includes("push: rate limited (message thread t2)"))).toBe(true);
+    hub.submit(message({ kind: "approval", prompt: "approval", title: "Allow?", body: "Run echo hi.", requestId: "r1", threadId: "t3" }));
+    await hub.drain();
+    expect(sent).toHaveLength(2);
+    expect((sent[1]!.body as { kind: string }).kind).toBe("approval");
+    hub.submit(message({ kind: "approval", prompt: "question", title: "Which?", body: "Pick one.", requestId: "q1", threadId: "t4" }));
+    await hub.drain();
+    expect(sent).toHaveLength(3);
   });
 
   it("pushes at once when no client of the person is connected", async () => {
