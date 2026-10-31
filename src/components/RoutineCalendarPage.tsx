@@ -2562,7 +2562,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
               <PageMenuItem icon={CheckCheck} onClick={() => { closeNavMenu(); dispatch({ type: "markAllRoutineRunsSeen" }); }}>{t("routines.markAllSeen")}</PageMenuItem>
           </PageMenu>
           <details ref={newMenuRef} className="group relative">
-            <summary role="button" aria-label={t("routineCalendar.createAutomation")} title={t("routineCalendar.createAutomation")} className={cn(PAGE_HEADER_BUTTON, "border-transparent bg-accent px-3 text-[12px] font-medium text-white hover:bg-accent/90")}>
+            <summary role="button" data-automations-create aria-label={t("routineCalendar.createAutomation")} title={t("routineCalendar.createAutomation")} className={cn(PAGE_HEADER_BUTTON, "border-transparent bg-accent px-3 text-[12px] font-medium text-white hover:bg-accent/90")}>
               <Plus size={15} aria-hidden="true" /><span className="@max-[30rem]/page-header:sr-only">{t("sidebar.new")}</span>
             </summary>
             <div role="group" aria-label={t("routineCalendar.newAutomation")} className={cn(PAGE_POPOVER, "w-[280px] min-w-[200px] gap-0.5 p-1.5")}>

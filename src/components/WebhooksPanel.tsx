@@ -131,7 +131,7 @@ export function WebhookEditor({ webhook, bots, onClose, onCredential }: { webhoo
     return () => {
       dialog.removeEventListener("keydown", onKey);
       if (previousFocus?.getClientRects().length) previousFocus.focus();
-      else document.querySelector<HTMLElement>('summary[aria-label="Create an automation"]')?.focus();
+      else document.querySelector<HTMLElement>("[data-automations-create]")?.focus();
     };
   }, []);
 
