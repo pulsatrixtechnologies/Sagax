@@ -132,13 +132,36 @@ export function parseWorkflowYaml(text: string): WorkflowFile | string {
   return { name, steps };
 }
 
+/** After a clock write fails, skip that run until this delay so it does not
+ * repost every tick. Other due runs keep moving. */
+export const WORKFLOW_CLOCK_BACKOFF_MS = 60_000;
+
 export class WorkflowStore {
   private readonly dataDir: string;
   /** Clock waits only. Rebuilt once from disk, then updated by writeRun. */
   private waiting = new Map<string, number>();
+  /** Run ids that failed a clock write; value is when they may be due again. */
+  private failedUntil = new Map<string, number>();
+  /** Serializes approval answers for one run so a double click cannot advance twice. */
+  private readonly answerLocks = new Map<string, Promise<unknown>>();
   private indexed = false;
   private nextPrune = 0;
   constructor(dataDir: string) { this.dataDir = dataDir; }
+
+  /** One answer at a time per run. The second waiter re-reads and gets 409. */
+  withRunLock<T>(id: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.answerLocks.get(id) ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(work);
+    const tail = run.catch(() => undefined);
+    this.answerLocks.set(id, tail);
+    void tail.then(() => { if (this.answerLocks.get(id) === tail) this.answerLocks.delete(id); });
+    return run;
+  }
+
+  /** Keep the run out of `due` until `until` so a failed write cannot spam. */
+  suppressDue(id: string, until: number): void {
+    this.failedUntil.set(id, until);
+  }
 
   private dir(scope: WorkflowScope): string {
     return scopeDir(this.dataDir, scope);
@@ -214,6 +237,7 @@ export class WorkflowStore {
     writeFileAtomic(path, `${JSON.stringify(run)}\n`, { mode: 0o600 });
     if (run.status === "waiting" && run.waitUntil !== undefined && !run.approval) this.waiting.set(run.id, run.waitUntil);
     else this.waiting.delete(run.id);
+    if (run.status === "done" || run.status === "stopped") this.failedUntil.delete(run.id);
   }
 
   /** Drop finished runs older than an hour. Approvals stay. */
@@ -258,6 +282,11 @@ export class WorkflowStore {
     const due: WorkflowRun[] = [];
     for (const [id, at] of this.waiting) {
       if (at > now) continue;
+      const failUntil = this.failedUntil.get(id);
+      if (failUntil !== undefined) {
+        if (failUntil > now) continue;
+        this.failedUntil.delete(id);
+      }
       const run = this.getRun(id);
       if (run?.status === "waiting" && run.waitUntil !== undefined && run.waitUntil <= now && !run.approval) due.push(run);
       else this.waiting.delete(id);

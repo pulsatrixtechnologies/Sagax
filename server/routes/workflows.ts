@@ -2,7 +2,7 @@
 // start a model turn. A send step posts a bot message in the conversation.
 // An approval stays waiting until this person answers.
 import type { RequestAuth } from "../request-auth.ts";
-import { advanceWorkflow, parseWorkflowYaml, workflowScopeKey, type WorkflowEffects, type WorkflowScope, type WorkflowStore } from "../workflows.ts";
+import { advanceWorkflow, parseWorkflowYaml, WORKFLOW_CLOCK_BACKOFF_MS, workflowScopeKey, type WorkflowEffects, type WorkflowScope, type WorkflowStore } from "../workflows.ts";
 import { PASS, type RouteHandler } from "./table.ts";
 
 export const WORKFLOWS_PATH = "/api/me/workflows";
@@ -50,19 +50,27 @@ export function createWorkflowRoutes(deps: WorkflowRouteDeps): RouteHandler {
       return json(res, 200, publicRun(run));
     }
     if (runMatch && method === "POST" && rest.endsWith("/answer")) {
-      const run = deps.store.getRun(runMatch[1]!);
-      if (!run || run.scopeKey !== workflowScopeKey(scope)) return json(res, 404, { error: "No workflow run with that id." });
+      const runId = runMatch[1]!;
       const body = await readBody(req).catch(() => null);
       const decision = body && typeof body === "object" ? (body as { decision?: unknown }).decision : undefined;
       if (decision !== "yes" && decision !== "no") return json(res, 400, { error: "Send { decision: \"yes\" } or { decision: \"no\" }." });
-      if (!run.approval) return json(res, 409, { error: "This run is not waiting for an answer." });
-      try {
-        const advanced = advanceWorkflow(run, guarded(effects(), auth, deps.owns), decision);
-        deps.store.writeRun(advanced);
-        return json(res, 200, publicRun(advanced));
-      } catch (error) {
-        return json(res, 403, { error: error instanceof Error ? error.message : "The step was refused." });
-      }
+      // Re-read after the body, under a per-run lock. The second concurrent
+      // answer waits, re-reads, sees the step index / approval already moved,
+      // and gets 409 before it can deliver again.
+      return await deps.store.withRunLock(runId, async () => {
+        const run = deps.store.getRun(runId);
+        if (!run || run.scopeKey !== workflowScopeKey(scope)) return json(res, 404, { error: "No workflow run with that id." });
+        if (!run.approval || run.status !== "waiting") {
+          return json(res, 409, { error: "This run is not waiting for an answer." });
+        }
+        try {
+          const advanced = advanceWorkflow(run, guarded(effects(), auth, deps.owns), decision);
+          deps.store.writeRun(advanced);
+          return json(res, 200, publicRun(advanced));
+        } catch (error) {
+          return json(res, 403, { error: error instanceof Error ? error.message : "The step was refused." });
+        }
+      });
     }
     const fileMatch = /^\/([a-z][a-z0-9-]{0,40})(\/run)?$/.exec(rest);
     if (!fileMatch) return PASS;
@@ -109,10 +117,37 @@ function publicRun(run: { id: string; name: string; status: string; index: numbe
   };
 }
 
-/** Resume waits whose clock has passed. Approvals stay until the person answers. */
-export function resumeDueWorkflows(store: WorkflowStore, effects: WorkflowEffects, ownsRun: (runScopeKey: string) => boolean): void {
-  for (const run of store.due(effects.now())) {
+/** Resume waits whose clock has passed. Approvals stay until the person answers.
+ * One failed run is logged and stopped (or backed off) so it does not repost
+ * every tick; the rest of the due list still runs. `effectsFor` may close over
+ * the run (for example its scope key when posting). */
+export function resumeDueWorkflows(
+  store: WorkflowStore,
+  now: () => number,
+  effectsFor: (run: { id: string; scopeKey: string }) => WorkflowEffects,
+  ownsRun: (runScopeKey: string) => boolean,
+  log: (line: string) => void = (line) => console.warn(line),
+): void {
+  for (const run of store.due(now())) {
     if (!ownsRun(run.scopeKey)) continue;
-    store.writeRun(advanceWorkflow(run, effects));
+    const effects = effectsFor(run);
+    try {
+      store.writeRun(advanceWorkflow(run, effects));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      log(`workflows: run ${run.id} failed (${detail})`);
+      try {
+        store.writeRun({
+          ...run,
+          status: "stopped",
+          error: "clock_failed",
+          updatedAt: now(),
+        });
+      } catch (stopError) {
+        const stopDetail = stopError instanceof Error ? stopError.message : String(stopError);
+        log(`workflows: run ${run.id} could not be stopped after failure (${stopDetail})`);
+        store.suppressDue(run.id, now() + WORKFLOW_CLOCK_BACKOFF_MS);
+      }
+    }
   }
 }
