@@ -545,6 +545,8 @@ export function createDesktopBridge({
           const modelTimer = setInterval(() => void refreshLocalModels(), LOCAL_MODEL_PROBE_MS);
           live.addEventListener("abort", () => clearInterval(modelTimer), { once: true });
           // The tunnel: the cookie and the secret ride its handshake only.
+          // One listener for the registration, including every reconnect.
+          live.addEventListener("abort", () => tunnel?.close(), { once: true });
           const startTunnel = async () => {
             if (!WebSocketImpl || live.aborted) return;
             try {
@@ -554,7 +556,6 @@ export function createDesktopBridge({
                 network: () => network, resolveProxy, proxyCredentials, lookup, WebSocketImpl, ...(tunnelConnect ? { connect: tunnelConnect } : {}),
                 record: ({ host, port, ok, error, via }) => activity.record({ env, action: "network", detail: `${host}:${port}${via && via !== "direct" ? ` via ${via}` : ""}`, ok, error }),
               });
-              live.addEventListener("abort", () => tunnel?.close(), { once: true });
               await tunnel.ready;
               set({ tunnel: true });
               await tunnel.closed;
