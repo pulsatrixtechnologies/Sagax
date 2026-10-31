@@ -14,7 +14,10 @@ final class BotEditSearchTests: XCTestCase {
     func testAWordLeadsToItsRowInFrenchAndEnglish() {
         XCTAssertEqual(found("mascotte").first, .avatar)
         XCTAssertEqual(found("mascot").first, .avatar)
-        XCTAssertTrue(found("moteur").contains(.model))
+        XCTAssertEqual(found("moteur").first, .model)
+        XCTAssertEqual(found("engine").first, .model)
+        XCTAssertFalse(found("moteur").contains(.identity))
+        XCTAssertFalse(found("engine").contains(.identity))
         XCTAssertTrue(found("voix").contains(.callVoice))
         XCTAssertTrue(found("horaire").contains(.routines))
         XCTAssertTrue(found("approbation").contains(.approvals))

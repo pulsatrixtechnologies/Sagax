@@ -129,7 +129,12 @@ describe("Edit bot search", () => {
     type("mascotte");
     expect(pagesInRail()).toEqual(["appearance"]);
     type("moteur");
-    expect(pagesInRail()).toContain("model");
+    expect(pagesInRail()[0]).toBe("model");
+    expect(pagesInRail()).not.toContain("overview");
+    expect(currentPage()).toBe("model");
+    type("engine");
+    expect(pagesInRail()[0]).toBe("model");
+    expect(pagesInRail()).not.toContain("overview");
     expect(currentPage()).toBe("model");
     type("approbation");
     expect(currentPage()).toBe("permissions");
