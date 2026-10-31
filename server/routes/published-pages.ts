@@ -35,7 +35,7 @@
 //   POST   /api/pages/:id/publish           { version, access, expiresAt|null }
 //          the person's approval: the only way a version is published
 //   POST   /api/pages/:id/decline           { version }
-//   PATCH  /api/pages/:id                   { title? } any time; { access?, expiresAt? } while published
+//   PATCH  /api/pages/:id                   { title?, editors? } any time; { access?, expiresAt? } while published
 //   POST   /api/pages/:id/revoke            stop serving now; the link is gone
 //   DELETE /api/pages/:id
 // Lot R8 (the reference design parity: edit, comments, annotation, Presentation):
@@ -94,7 +94,7 @@ import type { PageError, PageRecord, PageVersionRecord, PublishedPages } from ".
 import { commentAnswerDocument, escapeHtml, pageDocument, parseReaderAssets, splitSlides, wrapperDocument, type ReaderAssets } from "../published-pages-render.ts";
 import type { ReaderBoot } from "../../shared/page-reader.ts";
 import type { PageLive } from "../page-live.ts";
-import { anonymousBy, anonymousName, READER_ID, READER_ID_HEADER, STATE_LIMITS, STATE_PREFIX, stateLevelFor, stateMayWrite, validStateKey, type PageStateEntry, type PageStateView, type StateAccess, type StateRole } from "../../shared/page-state.ts";
+import { anonymousBy, anonymousName, READER_ID, READER_ID_HEADER, STATE_LIMITS, STATE_PREFIX, stateLevelFor, stateMayWrite, stateRoleFor, validStateKey, type PageStateEntry, type PageStateView, type StateAccess, type StateRole } from "../../shared/page-state.ts";
 import { applySuggestion, parsePageQuote, parseSuggestion, parseThreadText, suggestable, type PageThread, type PageThreadsAnswer } from "../../shared/page-threads.ts";
 import { geistFace } from "../geist-face.ts";
 import { decodeSkinTokens, encodeSkinTokens } from "../../src/lib/page-theme.ts";
@@ -116,8 +116,10 @@ import {
   PAGE_SCROLL_MAX,
   PAGE_VIEW_PREFIX,
   pageCsp,
+  pageHasEditor,
   pageInvites,
   parsePageAnchor,
+  parsePageEditors,
   parsePageInvites,
   parsePageTitle,
   validExpiry,
@@ -135,21 +137,30 @@ export type PageViewer = { principalId?: string; computerOwner: boolean } | null
 
 /** Whether this reader may read this page. While the organization's switch
  * for public links is off, a page shared by link reads as "org". A page
- * shared with "People you invite" (`private`) reads for its person and the
- * people and teams they invited (`teamsOf`: the reader's teams). Pure. */
-export function pageReadable(page: Pick<PageRecord, "access" | "ownerId" | "invites">, viewer: PageViewer, policy?: PagesPolicy, teamsOf?: (principalId: string) => readonly string[]): boolean {
+ * shared with "People you invite" (`private`) reads for its person, its
+ * editors (#1704), and the people and teams they invited (`teamsOf`: the
+ * reader's teams). Pure. */
+export function pageReadable(page: Pick<PageRecord, "access" | "ownerId" | "invites" | "editors">, viewer: PageViewer, policy?: PagesPolicy, teamsOf?: (principalId: string) => readonly string[]): boolean {
   if (page.access === "link" && policy?.linkSharing !== false) return true;
   if (!viewer) return false;
   if (page.access === "org" || page.access === "link") return true;
   if (page.ownerId === undefined) return viewer.computerOwner;
   if ((viewer.principalId ?? "").toLowerCase() === page.ownerId.toLowerCase()) return true;
   const principalId = viewer.principalId;
+  if (pageHasEditor(page.editors, principalId)) return true;
   return Boolean(principalId) && pageInvites(page.invites, principalId, principalId && teamsOf ? teamsOf(principalId) : []);
 }
 
 /** Whether this reader is the page's own person (the preview). Pure. */
 export function pageOwnedBy(page: Pick<PageRecord, "ownerId">, viewer: PageViewer): boolean {
   return pageReadable({ access: "private", ownerId: page.ownerId }, viewer);
+}
+
+/** Whether this reader may change the page (#1704): its person, or someone
+ * on its editors list. Pure. */
+export function pageMayEdit(page: Pick<PageRecord, "ownerId" | "editors">, viewer: PageViewer): boolean {
+  if (pageOwnedBy(page, viewer)) return true;
+  return pageHasEditor(page.editors, viewer?.principalId);
 }
 
 const readableBy = (options: PublicPageOptions, page: PageRecord, viewer: PageViewer) =>
@@ -574,10 +585,15 @@ function serveState(options: PublicPageOptions, req: IncomingMessage, res: Serve
   const pages = options.pages!;
   const page = opened.page;
   const owned = pageOwnedBy(page, viewer);
+  const mayEdit = pageMayEdit(page, viewer);
   const annotator = owned ? null : pageAnnotator(page, viewer, { policy: pages.policy(), now: Date.now(), ...(options.teamsOf ? { teamsOf: (id: string) => options.teamsOf!(id) } : {}) });
-  const role: StateRole = owned ? "owner" : annotator ? "signed_in" : "anon";
+  const role: StateRole = stateRoleFor({ owned, mayEdit, signedIn: Boolean(annotator) || (mayEdit && !owned) });
   const readerId = role === "anon" ? readerIdOf(req) : null;
-  const by = owned ? viewer?.principalId ?? "owner" : annotator ? annotator.by : readerId ? pages.anonymousWriter(readerId) : null;
+  const by = owned
+    ? viewer?.principalId ?? "owner"
+    : mayEdit && viewer?.principalId
+      ? viewer.principalId
+      : annotator ? annotator.by : readerId ? pages.anonymousWriter(readerId) : null;
   res.writeHead(200, STATE_HEADERS);
   res.end(method === "HEAD" ? undefined : JSON.stringify(stateAnswer(pages, page, { role, ...(by ? { me: pages.readerHandle(page.id, by) } : {}), nameOf: stateNamer(options, page, language(req)) })));
   return true;
@@ -973,7 +989,7 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
     const by = deps.owner(auth);
     if (!action && method === "PATCH") {
       const body = await readBody(req) as Record<string, unknown> | null;
-      if (!body || typeof body !== "object") return json(res, 400, { error: "Send { title?, access?, expiresAt?, readerComments?, pinned?, keepUpdated? }.", code: "bad_body" });
+      if (!body || typeof body !== "object") return json(res, 400, { error: "Send { title?, access?, expiresAt?, readerComments?, pinned?, keepUpdated?, editors? }.", code: "bad_body" });
       // every field is checked before anything changes: a refused request
       // changes nothing, and nothing a person asked is ever dropped quietly
       let title: string | undefined;
@@ -1002,6 +1018,12 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
         if (typeof body.keepUpdated !== "boolean") return json(res, 400, { error: "keepUpdated: true or false.", code: "bad_keep" });
         keepUpdated = body.keepUpdated;
       }
+      let editors: string[] | undefined;
+      if ("editors" in body) {
+        const parsed = parsePageEditors(body.editors, page.ownerId ?? by);
+        if (!parsed) return json(res, 400, { error: `editors: up to ${PAGE_LIMITS.editors} principal ids, not the page's person.`, code: "bad_editors" });
+        editors = parsed;
+      }
       if ((access !== undefined || expiresAt !== undefined) && page.status !== "published") return json(res, 409, { error: "Publish this page first.", code: "not_published" });
       if (access === "link" && page.access !== "link" && !deps.pages.policy().linkSharing) return json(res, 403, LINK_SHARING_OFF);
       if (readerComments === true && !deps.pages.policy().readerComments) return json(res, 403, READER_COMMENTS_OFF);
@@ -1013,6 +1035,7 @@ export function createPublishedPageRoutes(deps: PublishedPageRouteDeps): RouteHa
       if (!failed(result) && readerComments !== undefined) result = deps.pages.setReaderComments(page.id, readerComments, by);
       if (!failed(result) && pinned !== undefined) result = deps.pages.setPinned(page.id, pinned, by);
       if (!failed(result) && keepUpdated !== undefined) result = deps.pages.setKeepUpdated(page.id, keepUpdated, by);
+      if (!failed(result) && editors !== undefined) result = deps.pages.setEditors(page.id, editors, by);
       return answer(result);
     }
     if (method !== "POST") return PASS;
@@ -1037,16 +1060,25 @@ type Extra = { route: "source" | "edit" | "comments" | "comment" | "uncomment" |
 /** Lot R8: the person's editor (source and own edit), their comments, and
  * the moderation of readers' comments. The same rules as the routes above: a
  * person only, their own pages only, another person's page reads exactly
- * like a missing one. Their own comments never reach a reader. */
+ * like a missing one. Listed editors (#1704) may read the source and save a
+ * new version; share, invite and moderation stay with the page's person. */
 async function pageExtras(deps: PublishedPageRouteDeps, ctx: ExtrasContext, extra: Extra) {
   const { req, res, auth, json, readBody } = ctx;
   const { route, match } = extra;
   const page = deps.pages.get(match[1]!);
   const owner = deps.owner(auth);
-  if (!page || (owner !== undefined && (page.ownerId ?? "").toLowerCase() !== owner.toLowerCase())) {
+  // reader() is the signed-in person; on a one-person server there is no
+  // principal id and the computer owner manages every page
+  const viewer = deps.reader?.(auth) ?? (owner !== undefined
+    ? { principalId: owner, computerOwner: false }
+    : { computerOwner: true as const });
+  const owned = Boolean(page && pageOwnedBy(page, viewer));
+  const mayEdit = Boolean(page && pageMayEdit(page, viewer));
+  const editorOnly = mayEdit && !owned && (route === "edit" || route === "source");
+  if (!page || (!owned && !editorOnly)) {
     return json(res, 404, { error: "This page does not exist.", code: "not_found" });
   }
-  const by = owner;
+  const by = viewer.principalId ?? owner;
   const clean = (text: string) => (deps.redact ? deps.redact(text) : text);
   const outcome = (result: PageRecord | PageError) => failed(result) ? json(res, result.status, { error: result.error, code: result.code }) : json(res, 200, { ok: true });
   if (route === "share") {
@@ -1183,8 +1215,13 @@ async function pageThreads(deps: PublishedPageRouteDeps, ctx: ExtrasContext, thr
   if (route === "state" || route === "stateClear" || route === "stateLock") {
     // the page's shared state (#1544): a reader who may annotate writes the
     // keys the page lets them write (2026-10-29); its person always clears
-    // it or makes a key read-only
-    const role: StateRole = who.owner ? "owner" : "signed_in";
+    // it or makes a key read-only. Editors (#1704) write editors-level keys.
+    const viewer = deps.reader?.(auth) ?? null;
+    const role: StateRole = stateRoleFor({
+      owned: who.owner,
+      mayEdit: pageMayEdit(page, viewer),
+      signedIn: true,
+    });
     const lang = language(req);
     const nameOf = (by: string) => anonymousBy(by) ? anonymousName(lang) : names[by] ?? "";
     let names: Record<string, string> = {};

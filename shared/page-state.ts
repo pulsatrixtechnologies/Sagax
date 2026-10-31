@@ -134,6 +134,15 @@ export type StateRules = Record<string, StateWriteLevel>;
  * allowed to read the page; one who may change the page; its own person. */
 export type StateRole = "anon" | "signed_in" | "editor" | "owner";
 
+/** The reader's role for page state (#1704): owner wins, then a listed
+ * editor, then a signed-in reader, else anon. Pure. */
+export function stateRoleFor(input: { owned: boolean; mayEdit: boolean; signedIn: boolean }): StateRole {
+  if (input.owned) return "owner";
+  if (input.mayEdit) return "editor";
+  if (input.signedIn) return "signed_in";
+  return "anon";
+}
+
 export const STATE_DECLARATION_TYPE = "application/sagax-state+json";
 const STATE_RULES_MAX = 100;
 

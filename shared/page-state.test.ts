@@ -2,7 +2,7 @@
 // values and the messages between the page's frame and its wrapper.
 import { describe, expect, it } from "vitest";
 
-import { parseStateAccess, parseStateAnswer, parseStateRules, parseStateSet, STATE_DEFAULT_LEVEL, STATE_LIMITS, stateLevelFor, stateMayWrite, stateRulesOf, stateValueJson, stateWritable, validStateKey } from "./page-state.ts";
+import { parseStateAccess, parseStateAnswer, parseStateRules, parseStateSet, STATE_DEFAULT_LEVEL, STATE_LIMITS, stateLevelFor, stateMayWrite, stateRoleFor, stateRulesOf, stateValueJson, stateWritable, validStateKey } from "./page-state.ts";
 
 describe("keys and values", () => {
   it("a key is a short name", () => {
@@ -67,6 +67,13 @@ describe("who writes a key (2026-10-29)", () => {
     expect(stateMayWrite("editor", "owner", open)).toBe(false);
     expect(stateMayWrite("owner", "owner", open)).toBe(true);
     expect(stateMayWrite("owner", "anyone", { publicLink: true, locked: true })).toBe(false);
+  });
+
+  it("stateRoleFor: editors stay distinct from owner (#1704)", () => {
+    expect(stateRoleFor({ owned: true, mayEdit: true, signedIn: true })).toBe("owner");
+    expect(stateRoleFor({ owned: false, mayEdit: true, signedIn: true })).toBe("editor");
+    expect(stateRoleFor({ owned: false, mayEdit: false, signedIn: true })).toBe("signed_in");
+    expect(stateRoleFor({ owned: false, mayEdit: false, signedIn: false })).toBe("anon");
   });
 
   it("stateWritable: one key, or at least one", () => {

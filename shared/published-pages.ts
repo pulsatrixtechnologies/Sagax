@@ -40,6 +40,8 @@ export const PAGE_LIMITS = {
   pagesPerOwner: 50,
   pagesPerBot: 50,
   pages: 500,
+  /** People who may edit a page besides its person (#1704). */
+  editors: 50,
   /** Every kept version's content of one person's pages, together. */
   bytesPerOwner: 50 * 1024 * 1024,
   /** Every kept version's content on the server, together. */
@@ -348,6 +350,33 @@ export function pageInvites(invites: PageInvites | undefined, principalId: strin
   return (Array.isArray(invites.teams) ? invites.teams : []).some((id) => typeof id === "string" && mine.has(id.toLowerCase()));
 }
 
+/** The people who may edit a page besides its person (#1704): principal
+ * ids, never a name; without the owner; at most PAGE_LIMITS.editors.
+ * Null for anything malformed. Pure. */
+export function parsePageEditors(value: unknown, ownerId?: string): string[] | null {
+  if (!Array.isArray(value)) return null;
+  const seen = new Set<string>();
+  const out: string[] = [];
+  const skip = ownerId?.toLowerCase();
+  for (const entry of value) {
+    if (typeof entry !== "string" || !INVITE_ID.test(entry.trim())) return null;
+    const id = entry.trim();
+    const key = id.toLowerCase();
+    if (seen.has(key) || (skip && key === skip)) continue;
+    seen.add(key);
+    out.push(id);
+    if (out.length > PAGE_LIMITS.editors) return null;
+  }
+  return out;
+}
+
+/** Whether this principal is on the page's editors list. Pure. */
+export function pageHasEditor(editors: readonly string[] | undefined, principalId: string | undefined): boolean {
+  if (!editors?.length || !principalId) return false;
+  const me = principalId.toLowerCase();
+  return editors.some((id) => typeof id === "string" && id.toLowerCase() === me);
+}
+
 export interface PublishedPageSummary {
   id: string;
   title: string;
@@ -380,6 +409,8 @@ export interface PublishedPageSummary {
   keepUpdated?: boolean;
   /** The people and teams invited to read it (Share). */
   invites?: PageInvites;
+  /** People who may edit this page besides its person (#1704). */
+  editors?: string[];
 }
 
 /** The message field a proposal writes on its bot row (`pagePublish`). */
