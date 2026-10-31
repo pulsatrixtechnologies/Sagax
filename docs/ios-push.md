@@ -13,8 +13,11 @@ production VM) therefore sends real APNs pushes.
 | A person writes to you directly, a bot finishes a turn in your thread | `message` | Nobody saw it (below) |
 | Someone nudges you | `nudge` | Always, at once, priority 10, the nudge sound |
 | An approval, or a bot waiting on your answer | `approval` | Nobody saw it |
+| A bot asks you to take over its computer | `approval` | Nobody saw it. Priority 10 like an approval; the banner has no Allow or Deny (no `requestId`). |
+| A turn that could not start (expired OAuth, missing access) | `message` | Nobody saw it |
+| An incident the person has to look at | `message` | Nobody saw it |
 | A routine of yours finished | `message` | Nobody saw it. The banner names the routine (`Open routine %@`) and opens its report. A bot-to-bot turn stays quiet: the chip in both threads is the notice. |
-| A routine of yours failed | `routine` | Nobody saw it |
+| A routine of yours failed, or waited half an hour behind a busy bot | `routine` | Nobody saw it |
 | An achievement unlocked | `achievement` | No client of yours is connected, and you turned on system notifications for achievements |
 
 "Nobody saw it" is the desktop's own rule (`src/lib/attention.ts`,

@@ -198,6 +198,19 @@ describe("an approval push", () => {
     expect(question.aps.sound).toBe("default");
     expect(question.needsKey).toBeUndefined();
   });
+  it("a takeover rides approval priority with no Allow or Deny", () => {
+    // no requestId: same wire kind as an approval so the phone wakes at once,
+    // but the category stays plain (ios NotificationApproval.category)
+    expect(pushCategory({ kind: "approval" })).toBe("SAGAX_UPDATE");
+    const body = JSON.parse(buildApnsRequest({
+      message: message({ kind: "approval", title: "Scout needs your hands", body: "the login page wants a code", senderName: "Scout", botId: "b1", threadId: "t1" }),
+      bundleId: "x", nowMs: 0,
+    }).body);
+    expect(body.aps.category).toBe("SAGAX_UPDATE");
+    expect(body.aps["interruption-level"]).toBe("time-sensitive");
+    expect(body.requestId).toBeUndefined();
+    expect(body.prompt).toBeUndefined();
+  });
   it("never says the question twice, and a plain ask keeps its line", () => {
     const same = JSON.parse(buildApnsRequest({ message: message({ kind: "approval", prompt: "approval", ask: "Publish 2.4?", body: "Publish 2.4?", requestId: "r" }), bundleId: "x", nowMs: 0 }).body);
     expect(same.aps.alert.body).toBe("Publish 2.4?");

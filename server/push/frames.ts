@@ -1,18 +1,26 @@
 // Which live frames become pushes, and for whom. The server already
 // broadcasts everything a person should hear about (server/index.ts
 // broadcast): a `notify` frame (a person's direct message, a bot that
-// finished, a bot waiting on an answer, an approval, a routine that
-// failed), a `nudge` frame and an `achievements` frame. This reads them and
-// returns the PushMessage of each person concerned; ./hub.ts decides when.
+// finished, a bot waiting on an answer, an approval, a takeover, a turn
+// that could not start, a routine that failed or waited too long, an
+// incident), a `nudge` frame and an `achievements` frame. This reads them
+// and returns the PushMessage of each person concerned; ./hub.ts decides when.
 import { pushAvatarUrl, type PushKind, type PushMessage, type PushSenderLook } from "./payload.ts";
 
-/** The `notify` kinds a phone hears about, as the push kind it carries. */
+/** The `notify` kinds a phone hears about, as the push kind it carries.
+ * Takeover is `approval` so it wakes at once (priority 10) and skips the
+ * rate limit: the bot is blocked on the person. It carries no `prompt` and
+ * no `requestId`, so the banner has no Allow or Deny. */
 export const NOTIFY_PUSH_KINDS: Readonly<Record<string, PushKind>> = Object.freeze({
   message: "message",
   done: "message",
   question: "approval",
   approval: "approval",
+  takeover: "approval",
+  "turn-failed": "message",
+  incident: "message",
   "routine-failed": "routine",
+  "routine-deferred": "routine",
 });
 
 export interface NotifyNote {

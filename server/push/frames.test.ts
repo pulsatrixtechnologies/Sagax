@@ -27,10 +27,26 @@ describe("frames to pushes", () => {
     expect(pushesForFrame(frame, deps({ muted: () => true }))).toEqual([]);
   });
 
-  it("maps approvals, questions and failed routines; ignores the rest", () => {
-    const kinds = ["approval", "question", "routine-failed", "spend", "turn-failed", "admin-action"].map((kind) =>
+  it("maps approvals, questions, takeovers, turn failures, incidents and routines; ignores the rest", () => {
+    const kinds = [
+      "approval", "question", "takeover", "turn-failed", "incident",
+      "routine-failed", "routine-deferred", "spend", "admin-action",
+    ].map((kind) =>
       pushesForFrame({ kind: "notify", notification: { kind, botId: "b1", threadId: "t", title: "x", body: "y" } }, deps())[0]?.kind ?? null);
-    expect(kinds).toEqual(["approval", "approval", "routine", null, null, null]);
+    expect(kinds).toEqual(["approval", "approval", "approval", "message", "message", "routine", "routine", null, null]);
+  });
+
+  it("a takeover wakes like an approval but carries no Allow or Deny", () => {
+    const takeover = pushesForFrame({
+      kind: "notify",
+      notification: { kind: "takeover", botId: "b1", botName: "Scout", threadId: "t", title: "Scout needs your hands", body: "the login page wants a code" },
+    }, deps())[0];
+    expect(takeover).toMatchObject({
+      kind: "approval", botId: "b1", senderName: "Scout", title: "Scout needs your hands",
+      body: "the login page wants a code",
+    });
+    expect(takeover?.prompt).toBeUndefined();
+    expect(takeover?.requestId).toBeUndefined();
   });
 
   it("an approval carries its request and, when the key is required, says so; a question does not", () => {
