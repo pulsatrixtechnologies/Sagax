@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { holdsMessage, prependOlder } from "./use-segment-transcript";
+import { prependOlder } from "./side-thread";
+import { holdsMessage } from "./use-segment-transcript";
 import type { Message } from "@/state/store";
 
 const m = (id: string) => ({ id, role: "bot", kind: "text", text: id, at: 1 }) as Message;

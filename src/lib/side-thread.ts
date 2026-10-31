@@ -7,10 +7,11 @@
 //
 // The column holds its own copy of the thread's messages: the store keeps
 // the transcript of the selected thread only. It loads the newest page
-// (`GET /api/threads/:id/messages`, the same route scrollback reads) and
-// then follows the live stream's `message`, `message.patch` and `thread`
-// frames for that thread (listenLiveFrames), so it works the same on a
-// remote client, whose requests and stream go to its server.
+// (`GET /api/threads/:id/messages`, the same route scrollback reads), older
+// pages on demand (`?before=`), and then follows the live stream's
+// `message`, `message.patch` and `thread` frames for that thread
+// (listenLiveFrames), so it works the same on a remote client, whose
+// requests and stream go to its server.
 import { useSyncExternalStore } from "react";
 import type { Message } from "@/state/store";
 
@@ -79,6 +80,12 @@ export type SideTranscript = {
 };
 
 export const EMPTY_SIDE_TRANSCRIPT: SideTranscript = { messages: [], activeLeafId: null, loaded: false };
+
+/** Older messages in front of the ones already held, without duplicates. */
+export function prependOlder(transcript: SideTranscript, older: readonly Message[]): SideTranscript {
+  const known = new Set(transcript.messages.map((message) => message.id));
+  return { ...transcript, messages: [...older.filter((message) => !known.has(message.id)), ...transcript.messages] };
+}
 
 type SideFrame =
   | { kind: "message"; threadId: string; message: Message }

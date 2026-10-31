@@ -26,7 +26,15 @@ vi.mock("./DesktopCapabilities", () => ({
 // Bot sections wait on their thread: the header (with its pill) is what is
 // tested. A group's thread loads, so its view (and its panel) render.
 vi.mock("@/lib/use-side-transcript", () => ({
-  useSideTranscript: (threadId: string) => ({ loaded: threadId.startsWith("room"), failed: false, messages: [], activeLeafId: null }),
+  useSideTranscript: (threadId: string) => ({
+    loaded: threadId.startsWith("room"),
+    failed: false,
+    messages: [],
+    activeLeafId: null,
+    hasMore: false,
+    loadingOlder: false,
+    loadOlder: () => {},
+  }),
 }));
 
 const { reducer, initialState } = await import("@/state/store");

@@ -9,18 +9,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, MESSAGE_PAGE_SIZE, type Message } from "@/state/store";
 import { listenLiveFrames } from "@/lib/live-events";
-import { applySideFrame, applySidePage, EMPTY_SIDE_TRANSCRIPT, type SideTranscript } from "@/lib/side-thread";
+import { applySideFrame, applySidePage, EMPTY_SIDE_TRANSCRIPT, prependOlder, type SideTranscript } from "@/lib/side-thread";
 
 type Page = { messages?: Message[]; activeLeafId?: string | null; hasMore?: boolean };
 
 /** Pages read back to reach a linked message, at most (200 messages each). */
 export const SEGMENT_REACH_PAGES = 10;
-
-/** Older messages in front of the ones already held, without duplicates. */
-export function prependOlder(transcript: SideTranscript, older: readonly Message[]): SideTranscript {
-  const known = new Set(transcript.messages.map((message) => message.id));
-  return { ...transcript, messages: [...older.filter((message) => !known.has(message.id)), ...transcript.messages] };
-}
 
 /** Whether the transcript holds the message a link names (or none is named). */
 export function holdsMessage(transcript: SideTranscript, messageId: string | undefined): boolean {

@@ -677,4 +677,19 @@ describe("transcript viewport", () => {
 
     expect(dispatched).toEqual([{ type: "loadOlderMessages", threadId: "thread" }]);
   });
+
+  it("calls onLoadOlder for a side transcript instead of the store", () => {
+    const onLoadOlder = vi.fn();
+    const view = mount({ messages: rows(50), hasMore: true, onLoadOlder, loadingOlder: false });
+    expect(view.current.hiddenCount).toBe(0);
+
+    view.act(() => {
+      scroller.scrollTop = 150;
+      view.current.scrollHandlers.onWheel({ deltaY: -40, deltaX: 0 } as never);
+      view.current.scrollHandlers.onScroll();
+    });
+
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+    expect(dispatched).toEqual([]);
+  });
 });

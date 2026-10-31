@@ -59,14 +59,16 @@ function SideThreadColumn({ bot, threadId }: { bot: Bot; threadId: string }) {
   }, [unread, bot.id, threadId]);
   // The chat view reads a bot whose open thread is this one, with this
   // column's messages; the bot's other fields (its threads' busy state,
-  // approvals, model) are the store's, so they stay live.
+  // approvals, model) are the store's, so they stay live. hasMore and
+  // loadOlder stay on this column's transcript: the store only pages the
+  // selected thread.
   const sideBot = useMemo<Bot>(() => ({
     ...bot,
     threadId,
     messages: transcript.messages,
     activeLeafId: transcript.activeLeafId,
-    hasMore: false,
-  }), [bot, threadId, transcript.messages, transcript.activeLeafId]);
+    hasMore: transcript.hasMore,
+  }), [bot, threadId, transcript.messages, transcript.activeLeafId, transcript.hasMore]);
   const openInMain = () => {
     closeSideThread();
     dispatch({ type: "switchTask", botId: bot.id, threadId });
@@ -110,7 +112,7 @@ function SideThreadColumn({ bot, threadId }: { bot: Bot; threadId: string }) {
             : <div role="status" className="flex flex-1 items-center justify-center pt-14 text-ink-secondary"><Loader2 size={18} className="animate-spin" aria-hidden="true" /><span className="sr-only">{t("sideThread.loading")}</span></div>}
         </>
       ) : (
-        <ChatView bot={sideBot} side={{ header, label: t("sideThread.aria", { title }) }} />
+        <ChatView bot={sideBot} side={{ header, label: t("sideThread.aria", { title }), loadOlder: transcript.loadOlder, loadingOlder: transcript.loadingOlder }} />
       )}
     </aside>
   );
