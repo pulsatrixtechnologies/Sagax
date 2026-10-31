@@ -83424,6 +83424,118 @@
           }
         }
       }
+    },
+    "This phone is not paired with that computer.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "This phone is not paired with that computer." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ce téléphone n'est pas jumelé avec cet ordinateur." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Este telefone não está emparelhado com esse computador." } }
+      }
+    },
+    "That can only be done on the computer itself.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "That can only be done on the computer itself." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ça ne peut se faire que sur l'ordinateur lui-même." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Isso só pode ser feito no próprio computador." } }
+      }
+    },
+    "That is no longer there.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "That is no longer there." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ce n'est plus là." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Isso não está mais lá." } }
+      }
+    },
+    "The bot is busy. Stop it first.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The bot is busy. Stop it first." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Le bot est occupé. Arrêtez-le d'abord." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O bot está ocupado. Pare-o primeiro." } }
+      }
+    },
+    "The computer answered with an error (%@).": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The computer answered with an error (%@)." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "L'ordinateur a répondu par une erreur (%@)." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "O computador respondeu com um erro (%@)." } }
+      }
+    },
+    "That address doesn't look right.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "That address doesn't look right." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Cette adresse n'a pas l'air correcte." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Esse endereço não parece correto." } }
+      }
+    },
+    "“%@” didn't resolve. If that's a Tailscale name, this phone may not be on the tailnet.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "“%@” didn't resolve. If that's a Tailscale name, this phone may not be on the tailnet." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "« %@ » ne s'est pas résolu. Si c'est un nom Tailscale, ce téléphone n'est peut-être pas sur le tailnet." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "“%@” não foi resolvido. Se for um nome Tailscale, este telefone pode não estar na tailnet." } }
+      }
+    },
+    "Reached your computer, but Phone access isn't answering on port %@. Open Sagax, then Settings, then Phone.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Reached your computer, but Phone access isn't answering on port %@. Open Sagax, then Settings, then Phone." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Ordinateur joint, mais l'accès Téléphone ne répond pas sur le port %@. Ouvrez Sagax, puis Réglages, puis Téléphone." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Chegou ao computador, mas o acesso Phone não responde na porta %@. Abra o Sagax, depois Settings, depois Phone." } }
+      }
+    },
+    "No route to your computer at %@: different network, or a firewall.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "No route to your computer at %@: different network, or a firewall." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Pas de route vers votre ordinateur à %@ : autre réseau, ou un pare-feu." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Sem rota para o seu computador em %@: outra rede, ou um firewall." } }
+      }
+    },
+    "You're offline.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "You're offline." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Vous êtes hors ligne." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Você está offline." } }
+      }
+    },
+    "Could not reach %@: %@": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Could not reach %@: %@" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "Impossible d'atteindre %@ : %@" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Não foi possível alcançar %@: %@" } }
+      }
+    },
+    " Trying %@ next.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": " Trying %@ next." } },
+        "fr": { "stringUnit": { "state": "translated", "value": " Essai de %@ ensuite." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": " Tentando %@ em seguida." } }
+      }
+    },
+    " The app keeps retrying automatically.": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": " The app keeps retrying automatically." } },
+        "fr": { "stringUnit": { "state": "translated", "value": " L'app réessaie automatiquement." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": " O app continua tentando automaticamente." } }
+      }
+    },
+    "The route through %@ is temporarily unavailable (HTTP %@).": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "The route through %@ is temporarily unavailable (HTTP %@)." } },
+        "fr": { "stringUnit": { "state": "translated", "value": "La route via %@ est temporairement indisponible (HTTP %@)." } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "A rota por %@ está temporariamente indisponível (HTTP %@)." } }
+      }
+    },
+    "Queued. Waiting for an available slot": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "Queued. Waiting for an available slot" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "En file d'attente. En attente d'une place libre" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "Na fila. Aguardando uma vaga disponível" } }
+      }
+    },
+    "%lld messages queued": {
+      "localizations": {
+        "en": { "stringUnit": { "state": "translated", "value": "%lld messages queued" } },
+        "fr": { "stringUnit": { "state": "translated", "value": "%lld messages en file" } },
+        "pt-BR": { "stringUnit": { "state": "translated", "value": "%lld mensagens na fila" } }
+      }
     }
   },
   "version": "1.0"

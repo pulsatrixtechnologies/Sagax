@@ -180,18 +180,18 @@ public enum ConnectionAdvice {
         let advice: String
         switch code {
         case .cannotFindHost:
-            advice = "\u{201C}\(host)\u{201D} didn't resolve. If that's a Tailscale name, this phone may not be on the tailnet."
+            advice = String(localized: "\u{201C}\(host)\u{201D} didn't resolve. If that's a Tailscale name, this phone may not be on the tailnet.")
         case .cannotConnectToHost:
-            advice = "Reached your computer, but Phone access isn't answering on port \(port). Open Sagax, then Settings, then Phone."
+            advice = String(localized: "Reached your computer, but Phone access isn't answering on port \(String(port)). Open Sagax, then Settings, then Phone.")
         case .timedOut:
-            advice = "No route to your computer at \(host): different network, or a firewall."
+            advice = String(localized: "No route to your computer at \(host): different network, or a firewall.")
         case .notConnectedToInternet:
-            advice = "You're offline."
+            advice = String(localized: "You're offline.")
         default:
-            advice = "Could not reach \(host): \(URLError(code).localizedDescription)"
+            advice = String(localized: "Could not reach \(host): \(URLError(code).localizedDescription)")
         }
-        let fallback = next.map { " Trying \($0) next." } ?? ""
-        return advice + fallback + " The app keeps retrying automatically."
+        let fallback = next.map { String(localized: " Trying \($0) next.") } ?? ""
+        return advice + fallback + String(localized: " The app keeps retrying automatically.")
     }
 
     public static func message(
@@ -199,9 +199,9 @@ public enum ConnectionAdvice {
         host: String,
         tryingNext next: String? = nil
     ) -> String {
-        let fallback = next.map { " Trying \($0) next." } ?? ""
-        return "The route through \(host) is temporarily unavailable (HTTP \(code))." +
-            fallback + " The app keeps retrying automatically."
+        let fallback = next.map { String(localized: " Trying \($0) next.") } ?? ""
+        return String(localized: "The route through \(host) is temporarily unavailable (HTTP \(String(code))).") +
+            fallback + String(localized: " The app keeps retrying automatically.")
     }
 }
 

@@ -101,10 +101,10 @@ extension CompanionState {
     private func queuedLine(for held: [QueuedSend]) -> String {
         if held.count == 1 {
             return held[0].reason == "capacity"
-                ? "Queued. Waiting for an available slot"
-                : "Queued"
+                ? String(localized: "Queued. Waiting for an available slot")
+                : String(localized: "Queued")
         }
-        return "\(held.count) messages queued"
+        return String(localized: "\(held.count) messages queued")
     }
 
     private func workingLine(threadId: String) -> String {
