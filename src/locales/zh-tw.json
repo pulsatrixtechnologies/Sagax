@@ -1981,7 +1981,7 @@
   "canvas.assignComputer": "將電腦指派給 {team}",
   "canvas.manageTeam": "管理 {name} 團隊",
   "canvas.dropHere": "將機器人拖曳至此，或從團隊選單新增現有機器人。",
-  "canvas.hint": "在團隊內拖曳以排列 · 拖至另一個團隊以移動 · 捲動以平移",
+  "canvas.hint": "在團隊內拖曳以排列 · 拖至另一個團隊以移動 · 滾輪縮放 · 觸控板或 Shift+滾輪平移",
   "canvas.zoomOut": "縮小",
   "canvas.zoomIn": "放大",
   "canvas.fit": "縮放以檢視所有團隊",

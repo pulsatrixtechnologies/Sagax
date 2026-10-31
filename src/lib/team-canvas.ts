@@ -89,6 +89,33 @@ export function zoomAt(view: View, nextScale: number, point: Point): View {
   };
 }
 
+export type WheelCanvasDelta =
+  | { kind: "zoom"; factor: number }
+  | { kind: "pan"; dx: number; dy: number };
+
+/**
+ * Figma-style wheel: pinch or a plain mouse wheel zooms at the pointer;
+ * Shift+wheel or a trackpad two-finger scroll pans. A trackpad is detected
+ * by a horizontal delta or a fractional pixel deltaY (mouse wheels report
+ * integer line/pixel steps).
+ */
+export function wheelCanvasDelta(
+  event: Pick<WheelEvent, "deltaX" | "deltaY" | "deltaMode" | "ctrlKey" | "metaKey" | "shiftKey">,
+  boundsHeight: number,
+): WheelCanvasDelta {
+  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? boundsHeight : 1;
+  const pinch = event.ctrlKey || event.metaKey;
+  const trackpadPan = !pinch && (Math.abs(event.deltaX) > 0
+    || (event.deltaMode === 0 && !Number.isInteger(event.deltaY)));
+  if (pinch || (!event.shiftKey && !trackpadPan)) {
+    return { kind: "zoom", factor: Math.exp(-event.deltaY * (pinch ? 0.01 : 0.006)) };
+  }
+  if (event.shiftKey && event.deltaX === 0) {
+    return { kind: "pan", dx: event.deltaY * unit, dy: 0 };
+  }
+  return { kind: "pan", dx: event.deltaX * unit, dy: event.deltaY * unit };
+}
+
 export function parsePositions(raw: string | null): Record<string, Point> {
   try {
     const parsed: unknown = JSON.parse(raw ?? "null");

@@ -5,7 +5,7 @@ import { useShowThreads } from "@/lib/thread-preferences";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import { teamMapStatus, type TeamMapSection } from "@/lib/team-map";
-import { COMPUTER_DRAG_TYPE, fitTeams, layoutTeams, loadTeamCanvasLayout, orderBots, parseBotOrders, parsePositions, reorderBot, teamCanvasKeys, zoomAt, type Point, type TeamCanvasKeys, type View } from "@/lib/team-canvas";
+import { COMPUTER_DRAG_TYPE, fitTeams, layoutTeams, loadTeamCanvasLayout, orderBots, parseBotOrders, parsePositions, reorderBot, teamCanvasKeys, wheelCanvasDelta, zoomAt, type Point, type TeamCanvasKeys, type View } from "@/lib/team-canvas";
 import { loadPerspicaxOrg } from "@/lib/perspicax-org";
 import { BotAvatar } from "./Avatar";
 import { InstanceProviderMark, ProviderMark } from "./ProviderIcons";
@@ -95,7 +95,10 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
   const gesture = useRef<Gesture | null>(null);
   const suppressClick = useRef(false);
   const keyboardFocus = useRef(false);
+  const spaceHeld = useRef(false);
   const storageKeys = useRef<TeamCanvasKeys | null>(null);
+  const [spacePan, setSpacePan] = useState(false);
+  const [isPanning, setIsPanning] = useState(false);
   const [positions, setPositions] = useState<Record<string, Point>>({});
   const [botOrders, setBotOrders] = useState<Record<string, string[]>>({});
   const [view, setView] = useState<View>({ x: 40, y: 40, scale: 1 });
@@ -216,27 +219,52 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
       if (gesture.current) return;
       const previous = current.current.view;
       const bounds = element.getBoundingClientRect();
-      if (event.ctrlKey || event.metaKey) {
-        const scale = Math.min(1.5, Math.max(0.3, previous.scale * Math.exp(-event.deltaY * 0.006)));
+      const delta = wheelCanvasDelta(event, bounds.height);
+      if (delta.kind === "zoom") {
+        const scale = Math.min(1.5, Math.max(0.3, previous.scale * delta.factor));
         setView(zoomAt(previous, scale, { x: event.clientX - bounds.left, y: event.clientY - bounds.top }));
-      } else {
-        const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? bounds.height : 1;
-        setView({ ...previous, x: previous.x - event.deltaX * unit, y: previous.y - event.deltaY * unit });
+        return;
       }
+      setView({ ...previous, x: previous.x - delta.dx, y: previous.y - delta.dy });
     };
     element.addEventListener("wheel", wheel, { passive: false });
     return () => element.removeEventListener("wheel", wheel);
   }, []);
 
+  const clearTextSelection = () => {
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) selection.removeAllRanges();
+  };
+
   const start = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || !event.isPrimary || gesture.current) return;
+    if (!event.isPrimary || gesture.current) return;
+    const middle = event.button === 1;
+    const left = event.button === 0;
+    if (!middle && !left) return;
+    const forcePan = middle || spaceHeld.current;
+    if (forcePan) {
+      // Middle-click autoscroll and Space+drag must not select text or activate controls.
+      event.preventDefault();
+      clearTextSelection();
+    }
     const element = event.target as HTMLElement;
+    if (forcePan) {
+      const common = { id: event.pointerId, start: { x: event.clientX, y: event.clientY }, view, positions, moved: false };
+      gesture.current = { ...common, kind: "pan" };
+      suppressClick.current = false;
+      return;
+    }
     const botId = element.closest<HTMLElement>("[data-bot-id]")?.dataset.botId;
     const teamKey = element.closest<HTMLElement>("[data-arrange-team]")?.dataset.arrangeTeam;
     const bot = botId ? sections.flatMap((section) => [...section.chiefs, ...section.members]).find((item) => item.id === botId) : undefined;
     if (!bot && teamKey === undefined && element.closest("button, details, a, input, [data-team-key]")) return;
     if (bot && (moving || !layoutLoaded)) return;
     if (teamKey !== undefined && !layoutLoaded) return;
+    // Empty-space pan: stop the browser from selecting card text under the drag.
+    if (!bot && teamKey === undefined) {
+      event.preventDefault();
+      clearTextSelection();
+    }
     const common = { id: event.pointerId, start: { x: event.clientX, y: event.clientY }, view, positions, moved: false };
     const tile = teamKey === undefined ? undefined : tiles.find((item) => item.key === teamKey);
     gesture.current = bot ? { ...common, kind: "bot", bot } : tile ? { ...common, kind: "team", key: tile.key, origin: tile } : { ...common, kind: "pan" };
@@ -266,9 +294,18 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
     if (event.buttons === 0) { finish(event, true); return; }
     const dx = event.clientX - active.start.x, dy = event.clientY - active.start.y;
     if (!active.moved && Math.hypot(dx, dy) < 5) return;
+    if (!active.moved) {
+      // Crossing the drag threshold: kill any native text selection so the
+      // next pan is not blocked by a lingering selection drag.
+      event.preventDefault();
+      clearTextSelection();
+    }
     active.moved = true;
     event.currentTarget.setPointerCapture(event.pointerId);
-    if (active.kind === "pan") setView({ ...active.view, x: active.view.x + dx, y: active.view.y + dy });
+    if (active.kind === "pan") {
+      setIsPanning(true);
+      setView({ ...active.view, x: active.view.x + dx, y: active.view.y + dy });
+    }
     if (active.kind === "team") setPositions({ ...active.positions, [active.key]: { x: active.origin.x + dx / view.scale, y: active.origin.y + dy / view.scale } });
     if (active.kind === "bot") {
       const bounds = event.currentTarget.getBoundingClientRect();
@@ -287,6 +324,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
     gesture.current = null;
     suppressClick.current = active.moved;
     window.setTimeout(() => { suppressClick.current = false; }, 0);
+    setIsPanning(false);
     setDragged(null);
     setDropKey(null);
     setInsertion(null);
@@ -326,9 +364,11 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
       : null;
 
   return <div ref={viewport} role="region" aria-label={t("canvas.region")} tabIndex={0} data-team-canvas
-    className="relative min-h-0 flex-1 touch-none overflow-clip outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40"
+    className={cn("relative min-h-0 flex-1 touch-none select-none overflow-clip outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40",
+      spacePan && !isPanning && "cursor-grab", isPanning && "cursor-grabbing")}
     style={{ backgroundImage: "radial-gradient(circle, color-mix(in srgb, var(--color-ink-secondary) 18%, transparent) 1px, transparent 1px)", backgroundSize: `${24 * view.scale}px ${24 * view.scale}px`, backgroundPosition: `${view.x}px ${view.y}px` }}
     onPointerDown={start} onPointerMove={move} onPointerUp={(event) => finish(event)} onPointerCancel={(event) => finish(event, true)}
+    onDragStart={(event) => event.preventDefault()}
     onDragOver={(event) => {
       if (!canManage || !onComputerDrop || !event.dataTransfer.types.includes(COMPUTER_DRAG_TYPE)) return;
       const target = (event.target as HTMLElement).closest<HTMLElement>("[data-team-key]");
@@ -365,12 +405,28 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
       if (dx || dy) setView((previous) => ({ ...previous, x: previous.x + dx, y: previous.y + dy }));
     }}
     onClickCapture={(event) => { if (suppressClick.current) { suppressClick.current = false; event.preventDefault(); event.stopPropagation(); } }}
+    onBlur={() => { spaceHeld.current = false; setSpacePan(false); }}
+    onKeyUp={(event) => {
+      if (event.code !== "Space") return;
+      spaceHeld.current = false;
+      setSpacePan(false);
+    }}
     onKeyDown={(event) => {
       if (event.key === "Escape") { finish(undefined, true); event.currentTarget.querySelectorAll("details[open]").forEach((element) => {
         element.querySelector("summary")?.focus({ preventScroll: true });
         element.removeAttribute("open");
       }); }
       if (event.target !== event.currentTarget) return;
+      // Space+drag pans like design tools; only when the canvas shell is focused
+      // so Space still activates a focused card button.
+      if (event.code === "Space") {
+        event.preventDefault();
+        if (!event.repeat && !spaceHeld.current) {
+          spaceHeld.current = true;
+          setSpacePan(true);
+        }
+        return;
+      }
       const directions: Record<string, Point> = { ArrowLeft: { x: 60, y: 0 }, ArrowRight: { x: -60, y: 0 }, ArrowUp: { x: 0, y: 60 }, ArrowDown: { x: 0, y: -60 } };
       const delta = directions[event.key];
       if (delta) { event.preventDefault(); setView({ ...view, x: view.x + delta.x, y: view.y + delta.y }); }

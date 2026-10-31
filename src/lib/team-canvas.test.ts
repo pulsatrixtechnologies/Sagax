@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fitTeams, layoutTeams, loadTeamCanvasLayout, orderBots, parseBotOrders, parsePositions, reorderBot, teamSize, zoomAt, type Tile } from "./team-canvas";
+import { fitTeams, layoutTeams, loadTeamCanvasLayout, orderBots, parseBotOrders, parsePositions, reorderBot, teamSize, wheelCanvasDelta, zoomAt, type Tile } from "./team-canvas";
 import type { TeamMapSection } from "./team-map";
 
 function section(key: string, chiefs = 0, members = 0): TeamMapSection {
@@ -63,6 +63,24 @@ describe("team canvas geometry", () => {
     expect(world.x * next.scale + next.x).toBeCloseTo(point.x);
     expect(world.y * next.scale + next.y).toBeCloseTo(point.y);
     expect(zoomAt(view, view.scale, point)).toEqual(view);
+  });
+});
+
+describe("team canvas wheel controls", () => {
+  const wheel = (partial: Partial<Pick<WheelEvent, "deltaX" | "deltaY" | "deltaMode" | "ctrlKey" | "metaKey" | "shiftKey">>) =>
+    wheelCanvasDelta({ deltaX: 0, deltaY: 0, deltaMode: 0, ctrlKey: false, metaKey: false, shiftKey: false, ...partial }, 800);
+
+  it("zooms for a plain mouse wheel and for a trackpad pinch", () => {
+    expect(wheel({ deltaY: -120, deltaMode: 1 }).kind).toBe("zoom");
+    expect(wheel({ deltaY: 40 }).kind).toBe("zoom");
+    const pinch = wheel({ deltaY: -10, ctrlKey: true });
+    expect(pinch).toEqual({ kind: "zoom", factor: Math.exp(10 * 0.01) });
+  });
+
+  it("pans for Shift+wheel and for a trackpad two-finger scroll", () => {
+    expect(wheel({ deltaY: 45, shiftKey: true })).toEqual({ kind: "pan", dx: 45, dy: 0 });
+    expect(wheel({ deltaX: 12, deltaY: 30 })).toEqual({ kind: "pan", dx: 12, dy: 30 });
+    expect(wheel({ deltaY: 3.25 }).kind).toBe("pan");
   });
 });
 

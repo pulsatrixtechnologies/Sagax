@@ -3093,7 +3093,7 @@
   "canvas.assignComputer": "{team} にコンピューターを割り当て",
   "canvas.manageTeam": "{name} チームを管理",
   "canvas.dropHere": "ここにボットをドラッグするか、チームメニューから既存のボットを追加してください。",
-  "canvas.hint": "チーム内でドラッグして配置 · 別のチームにドロップして移動 · スクロールで表示を移動",
+  "canvas.hint": "チーム内でドラッグして配置 · 別のチームにドロップして移動 · ホイールでズーム · トラックパッドまたは Shift+ホイールで移動",
   "canvas.zoomOut": "縮小",
   "canvas.zoomIn": "拡大",
   "canvas.fit": "チームを画面に収める",

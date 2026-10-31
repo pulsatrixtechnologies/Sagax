@@ -7759,7 +7759,7 @@
   "canvas.fit": "Ajuster les équipes à la vue",
   "canvas.fitHint": "Ajuster les équipes à la vue (0)",
   "canvas.handoffs": "Transferts entre bots",
-  "canvas.hint": "Glissez dans une équipe pour organiser · Déposez dans une autre équipe pour déplacer · Défilez pour vous déplacer",
+  "canvas.hint": "Glissez dans une équipe pour organiser · Déposez dans une autre équipe pour déplacer · Molette pour zoomer · Pavé ou Maj+molette pour défiler",
   "canvas.manageTeam": "Gérer l'équipe {name}",
   "canvas.moveBot": "Déplacer {name} vers {team} · change la composition de l'équipe",
   "canvas.moveCancelled": "Déplacement annulé. La composition de l'équipe est inchangée.",

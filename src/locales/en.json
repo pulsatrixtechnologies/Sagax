@@ -1567,7 +1567,7 @@
   "canvas.fit": "Fit teams to view",
   "canvas.fitHint": "Fit teams to view (0)",
   "canvas.handoffs": "Agent handoffs",
-  "canvas.hint": "Drag within a team to arrange · Drop in another team to move · Scroll to pan",
+  "canvas.hint": "Drag within a team to arrange · Drop in another team to move · Wheel zooms · Trackpad or Shift+wheel pans",
   "canvas.manageTeam": "Manage {name} team",
   "canvas.moveBot": "Move {name} to {team} · changes team membership",
   "canvas.moveCancelled": "Move cancelled. Team membership is unchanged.",
