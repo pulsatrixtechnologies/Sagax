@@ -11,7 +11,7 @@ import { BotEmailAddress } from "../components/bot-settings/BotEmailAddress";
 import { OverviewSection } from "../components/bot-settings/OverviewSection";
 import { EMPTY_TYPED_DRAFT, TypedSourceFields, TypedTriggerRow, type TypedDraft } from "../components/TypedTriggers";
 import type { BotOverview } from "../lib/bot-overview-types";
-import { setLocale, t } from "../lib/i18n";
+import { loadLocale, t } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import type { WebhookTrigger } from "../lib/webhooks";
 import { StoreProvider } from "../state/store";
@@ -20,7 +20,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 
 const overview: BotOverview = {
   who: { name: "Cryptic", title: "Comptabilité", blurb: "Classe les factures et prépare les paiements.", soulLead: "" },

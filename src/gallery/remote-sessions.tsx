@@ -17,7 +17,7 @@ import { RemoteTakeover } from "../components/remote-session/RemoteScreenCard";
 import { RemoteSessionsSection } from "../components/remote-session/RemoteSessionsSection";
 import { RoutineList } from "../components/routines/RoutineList";
 import { TakeControlPill } from "../components/SandboxDesktopView";
-import { setLocale, t } from "../lib/i18n";
+import { loadLocale, t } from "../lib/i18n";
 import type { Routine } from "../lib/routines";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider, type Bot } from "../state/store";
@@ -26,7 +26,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 
 const NOW = Date.now();
 const H = 3_600_000;

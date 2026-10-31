@@ -10,7 +10,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { ActivityDetailModal } from "../components/bot-settings/ActivityDetailModal";
 import { PanelSections } from "../components/bot-settings/ActivitySection";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { BotEditorStore, initialState } from "../state/store";
 import type { BotActivityDetail, BotActivityList } from "../../shared/bot-activity";
@@ -22,7 +22,7 @@ const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
 const lang = params.get("lang") ?? "fr";
-setLocale(lang);
+await loadLocale(lang);
 document.documentElement.lang = lang;
 const view = params.get("view") ?? "panel";
 

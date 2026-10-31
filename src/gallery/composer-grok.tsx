@@ -10,7 +10,7 @@ import { AudioLines, ChevronDown, Globe, Hand, Mic, Paperclip } from "lucide-rea
 import { MentionTextarea } from "../components/MentionTextarea";
 import { ATTACH_ICON, ComposerCtaSeat, ComposerMicButton, ComposerPlusMenu, ComposerSendButton, DictationChip, RecordMark } from "../components/ComposerControls";
 import { cn } from "../lib/cn";
-import { setLocale, t } from "../lib/i18n";
+import { loadLocale, t } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { botCtaColors, CTA_CIRCLE, CTA_DEFAULT, CTA_TONED, ctaStyle } from "../lib/voice-cta";
 import "../styles.css";
@@ -18,7 +18,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 const state = params.get("state") ?? "rest";
 const before = params.get("mode") === "before";
 const color = params.get("color") ?? "teal";

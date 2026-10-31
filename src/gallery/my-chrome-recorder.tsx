@@ -7,7 +7,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { MyChromeRecordDialog } from "../components/MyChromeRecordDialog";
 import { TeachChooserDialog, TeachStepsDialog } from "../components/TeachStepsDialog";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import type { TeachStep } from "../../shared/teach-recording";
 import "../styles.css";
@@ -15,7 +15,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 
 const site = "https://portail.example.com";
 const GALLERY_STEPS: TeachStep[] = [

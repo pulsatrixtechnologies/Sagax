@@ -10,7 +10,7 @@ import { createRoot } from "react-dom/client";
 import { RoutineRunRow } from "../components/ChatView";
 import { RoutinesPage } from "../components/RoutineCalendarPage";
 import { SideThreadPanel } from "../components/SideThreadPanel";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider, useStore, type Bot, type Message } from "../state/store";
 import type { Routine, RoutineRun } from "../lib/routines";
@@ -19,7 +19,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale("en");
+await loadLocale("en");
 const width = Number(params.get("width") ?? 1200);
 const height = Number(params.get("height") ?? 760);
 

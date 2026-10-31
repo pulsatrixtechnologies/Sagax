@@ -1,7 +1,12 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { documentLanguage, elideFrench, resolveLocale, setLocale, t, tFromServer } from "./i18n";
-import { en, localeChoices, locales } from "@/locales";
+import { en, localeChoices, localeTags, locales } from "@/locales";
+
+const here = dirname(fileURLToPath(import.meta.url));
 
 afterEach(() => {
   setLocale("en");
@@ -71,22 +76,30 @@ describe("t", () => {
   });
 
   it("resolves every registered locale to itself", () => {
-    const available = new Set(Object.keys(locales));
-    for (const code of available) {
-      expect(resolveLocale(code, available)).toBe(code);
+    for (const code of localeTags) {
+      expect(resolveLocale(code, localeTags)).toBe(code);
     }
   });
 
   it("routes common system tags onto the shipped packs", () => {
-    const available = new Set(Object.keys(locales));
-    expect(resolveLocale("zh-CN", available)).toBe("zh");
-    expect(resolveLocale("zh-TW", available)).toBe("zh-tw");
-    expect(resolveLocale("zh-Hant-TW", available)).toBe("zh-hant");
-    expect(resolveLocale("zh-HK", available)).toBe("zh-hk");
-    expect(resolveLocale("ja-JP", available)).toBe("ja");
-    expect(resolveLocale("pt-BR", available)).toBe("pt-br");
-    expect(resolveLocale("pt-PT", available)).toBe("pt");
-    expect(resolveLocale("hi-IN", available)).toBe("hi");
+    expect(resolveLocale("zh-CN", localeTags)).toBe("zh");
+    expect(resolveLocale("zh-TW", localeTags)).toBe("zh-tw");
+    expect(resolveLocale("zh-Hant-TW", localeTags)).toBe("zh-hant");
+    expect(resolveLocale("zh-HK", localeTags)).toBe("zh-hk");
+    expect(resolveLocale("ja-JP", localeTags)).toBe("ja");
+    expect(resolveLocale("pt-BR", localeTags)).toBe("pt-br");
+    expect(resolveLocale("pt-PT", localeTags)).toBe("pt");
+    expect(resolveLocale("hi-IN", localeTags)).toBe("hi");
+  });
+
+  it("eagerly imports only the English catalog from the locale registry", () => {
+    const source = readFileSync(join(here, "../locales/index.ts"), "utf8");
+    expect(source).toMatch(/import en from "\.\/en\.json"/);
+    expect(source).not.toMatch(/import \w+ from "\.\/(?!en\.json)[^"]+\.json"/);
+    for (const { code } of localeChoices) {
+      if (code === "en") continue;
+      expect(source, code).toContain(`import("./${code}.json")`);
+    }
   });
 
   it("every registered pack carries only known keys with non-empty values", () => {

@@ -8,7 +8,7 @@ import { DesktopCapabilitiesProvider } from "@/components/DesktopCapabilities";
 import { OptionCard } from "@/components/OptionCard";
 import { QuestionCard } from "@/components/QuestionCard";
 import { WidgetMessage } from "@/components/widget/WidgetMessage";
-import { setLocale } from "@/lib/i18n";
+import { loadLocale } from "@/lib/i18n";
 import { applySkin, type SkinId } from "@/lib/skins";
 import { CHAT_BUBBLE_WIDTH_CLASS } from "@/lib/chat-bubble-width";
 import { StoreProvider, type Message } from "@/state/store";
@@ -18,7 +18,7 @@ import type { AskQuestion } from "../shared/ask-question";
 import "./styles.css";
 
 const params = new URLSearchParams(location.search);
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 applySkin((params.get("skin") ?? "midnight") as SkinId);
 
 const WEBHOOKS: AskQuestion = {

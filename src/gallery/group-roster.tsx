@@ -6,7 +6,7 @@
  * in someone else's group) */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider, useStore, type Bot } from "../state/store";
 import { DesktopCapabilitiesProvider } from "../components/DesktopCapabilities";
@@ -16,7 +16,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 const owner = params.get("owner") === "1";
 
 const bot = (id: string, name: string, color: string, ownerUserId: string, title = ""): Bot =>

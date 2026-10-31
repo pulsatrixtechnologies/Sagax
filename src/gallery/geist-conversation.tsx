@@ -5,14 +5,14 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { ChatMarkdown } from "../components/ChatMarkdown";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import "../styles.css";
 
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 
 const reply = [
   "Voici le résumé de l’été : « les dépenses ont baissé » et la sécurité des accès s’est améliorée. Œuvres, façade, déjà, où, çà et là : àâäéèêëîïôöùûüÿç ÀÉÈÊÎÔÛÇ.",

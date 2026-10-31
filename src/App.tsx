@@ -46,7 +46,7 @@ import { FloatingBotsHost } from "@/components/FloatingBotsHost";
 import { FloatingWindowsHost } from "@/components/floating/FloatingWindowsHost";
 import { CallEngineHost } from "@/components/CallView";
 import { RetroBootSlot, RetroChromeSlot } from "@/components/RetroChromeHost";
-import { activeLocale, setLocale, t } from "@/lib/i18n";
+import { activeLocale, loadLocale, t } from "@/lib/i18n";
 import { appShortcutFor, shouldOpenKeyboardShortcuts } from "@/lib/keyboard-shortcuts";
 import { focusComposer } from "@/lib/composer-focus";
 import { effectiveLanguage, useLanguageChoice } from "@/lib/language-preference";
@@ -165,8 +165,14 @@ function Shell() {
   const language = effectiveLanguage(useLanguageChoice(), state.config?.language);
   const [, setLocaleEpoch] = useState(0);
   useEffect(() => {
-    setLocale(language || globalThis.navigator?.language);
-    setLocaleEpoch((epoch) => epoch + 1);
+    let cancelled = false;
+    void loadLocale(language || globalThis.navigator?.language).then(() => {
+      if (cancelled) return;
+      setLocaleEpoch((epoch) => epoch + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [language]);
   // The conversation views are compiled by the React Compiler, which keeps a
   // catalog string it built once; a language change mounts them afresh.

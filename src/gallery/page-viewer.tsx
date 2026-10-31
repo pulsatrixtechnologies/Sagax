@@ -12,7 +12,7 @@ import { createRoot } from "react-dom/client";
 
 import { PageSurface } from "../components/PageViewer";
 import { PagePublishCard } from "../components/PublishedPages";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { BotEditorStore, type Message, type useStore } from "../state/store";
 import type { PageComment, PageKind, PublishedPageSummary } from "../../shared/published-pages";
@@ -21,7 +21,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 const pageId = params.get("page") ?? "galleryPage0001";
 const kind = (params.get("kind") ?? "html") as PageKind;
 const published = params.get("status") !== "draft";

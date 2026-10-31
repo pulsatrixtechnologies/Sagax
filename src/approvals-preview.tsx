@@ -9,13 +9,13 @@ import { createRoot } from "react-dom/client";
 import type { InboxApproval, InboxHistoryEntry, InboxPayload } from "../shared/approvals-inbox";
 import { DesktopCapabilitiesProvider } from "@/components/DesktopCapabilities";
 import { ApprovalsPage } from "@/components/approvals/ApprovalsPage";
-import { setLocale } from "@/lib/i18n";
+import { loadLocale } from "@/lib/i18n";
 import { applySkin, type SkinId } from "@/lib/skins";
 import { StoreProvider, useStore, type Bot, type Message } from "@/state/store";
 import "./styles.css";
 
 const params = new URLSearchParams(location.search);
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 applySkin((params.get("skin") ?? "pulsatrix") as SkinId);
 const COUNT = Number(params.get("n") ?? 3);
 const ORG = params.get("scope") === "org";

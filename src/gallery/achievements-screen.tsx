@@ -11,7 +11,7 @@ import { ACHIEVEMENTS } from "../../shared/achievements-catalog";
 import { levelFor, type AchievementSnapshot } from "../../shared/achievements";
 import { AchievementsScreen, type AchievementsScreenCategory } from "../components/achievements/AchievementsScreen";
 import { SettingsModal } from "../components/SettingsModal";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider, useStore } from "../state/store";
 import "../styles.css";
@@ -19,7 +19,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "en");
+await loadLocale(params.get("lang") ?? "en");
 
 const unlocked = new Set(ACHIEVEMENTS.filter((item) => !item.hidden).slice(0, 40).map((item) => item.id));
 const points = ACHIEVEMENTS.filter((item) => unlocked.has(item.id)).reduce((sum, item) => sum + item.points, 0);

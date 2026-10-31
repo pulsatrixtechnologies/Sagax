@@ -10,7 +10,7 @@ import { ACHIEVEMENTS } from "../../shared/achievements-catalog";
 import { levelFor } from "../../shared/achievements";
 import { PersonPanel } from "../components/PersonPanel";
 import { resetPublicAchievementsForTests } from "../lib/public-achievements";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider } from "../state/store";
 import "../styles.css";
@@ -18,7 +18,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 
 const DAY = 86_400_000;
 const NOW = Date.UTC(2026, 9, 24, 15);

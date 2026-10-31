@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import { ActivitySection } from "../components/bot-settings/ActivitySection";
 import { SuggestionsSection } from "../components/bot-settings/SuggestionsSection";
 import { AppearanceSettings } from "../components/settings/AppearanceSettings";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider, type Bot } from "../state/store";
 import "../styles.css";
@@ -15,7 +15,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 
 const bot = {
   id: "gallery-bot", threadId: "t1", name: "Atlas", title: "Research", description: "", notifications: true, color: "blue", unread: false,

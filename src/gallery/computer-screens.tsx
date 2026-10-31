@@ -8,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserComputerScreen } from "../components/BrowserPanel";
 import { ComputerScreen } from "../components/computer/ComputerScreen";
 import { SandboxDesktopModal } from "../components/computer/SandboxDesktopModal";
-import { setLocale, t } from "../lib/i18n";
+import { loadLocale, t } from "../lib/i18n";
 import { applySkin, readSkin } from "../lib/skins";
 import type { Bot } from "../state/store";
 import "../styles.css";
@@ -16,7 +16,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin");
 applySkin(skinParam === "daylight" || skinParam === "pulsatrix" ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 
 /** A page the stand-in browser shows. */
 function pagePicture(): string {

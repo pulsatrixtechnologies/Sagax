@@ -6,13 +6,13 @@ import { createRoot } from "react-dom/client";
 import { DesktopCapabilitiesProvider } from "@/components/DesktopCapabilities";
 import { ApprovalCard } from "@/components/ApprovalCard";
 import { PendingApprovalBox, pendingApprovals } from "@/components/PendingApproval";
-import { setLocale } from "@/lib/i18n";
+import { loadLocale } from "@/lib/i18n";
 import { applySkin, type SkinId } from "@/lib/skins";
 import { StoreProvider, type Bot, type Message } from "@/state/store";
 import "./styles.css";
 
 const params = new URLSearchParams(location.search);
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 applySkin((params.get("skin") ?? "midnight") as SkinId);
 
 const BOT = { id: "preview-bot", name: "Quasar", color: "green", soul: "" } as unknown as Bot;

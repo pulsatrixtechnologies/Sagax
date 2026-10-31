@@ -11,7 +11,7 @@ import { createRoot } from "react-dom/client";
 import { FloatingWindowsHost } from "../components/floating/FloatingWindowsHost";
 import { TerminalChatEmbed } from "../components/terminal/TerminalChatEmbed";
 import { CHAT_BUBBLE_WIDTH_CLASS } from "../lib/chat-bubble-width";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { loadTerminalFonts, TERMINAL_FONT_FAMILY } from "../components/terminal/terminal-font";
 import "../styles.css";
@@ -20,7 +20,7 @@ import type { TerminalEmbed } from "../../shared/terminal-resources";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 const before = params.get("before") === "1";
 {
   // dom=1: no WebGL, the DOM renderer the widget falls back to. Otherwise the

@@ -18,7 +18,7 @@ import { SidebarProfileMenu } from "../components/SidebarProfileMenu";
 import { SidebarFoot } from "../components/SidebarFoot";
 import type { UpdaterState } from "../lib/updater";
 import { resetAchievementsForTests } from "../lib/achievements";
-import { setLocale, t } from "../lib/i18n";
+import { loadLocale, t } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider } from "../state/store";
 import "../styles.css";
@@ -26,7 +26,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 
 const UPDATER: Record<string, UpdaterState> = {
   none: { status: "idle" },

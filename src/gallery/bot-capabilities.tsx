@@ -3,14 +3,14 @@
 import { createRoot } from "react-dom/client";
 import { CapabilitiesBody } from "../components/bot-settings/CapabilitiesTab";
 import { capabilityFixture } from "../lib/capabilities.fixture";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import "../styles.css";
 
 const params = new URLSearchParams(location.search);
 const skin = params.get("skin") as SkinId | null;
 applySkin(skin && (SKIN_IDS as readonly string[]).includes(skin) ? skin : readSkin());
-setLocale(params.get("lang") ?? "en");
+await loadLocale(params.get("lang") ?? "en");
 createRoot(document.getElementById("root")!).render(
   <main className="min-h-screen max-w-[680px] bg-panel py-4 text-ink">
     <CapabilitiesBody botName="Scout" data={capabilityFixture()} onAdd={() => {}}
