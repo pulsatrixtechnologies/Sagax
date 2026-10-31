@@ -3447,6 +3447,46 @@ describe("RoutineManager", () => {
     expect(h.started).toHaveLength(1);
     expect(h.manager.listRuns()[0]).toMatchObject({ status: "running", scheduledFor: lateAt });
   });
+
+  // #1746: after a one-time occurrence tick disables the routine; a later
+  // schedule edit to a future time must leave pause and arm nextRunAt.
+  it("re-arms a finished once routine when its schedule moves to a future time", async () => {
+    const start = new Date(2026, 7, 17, 8, 0, 0).getTime();
+    const firstAt = start + 60_000;
+    const h = harness(start);
+    const routine = h.manager.create({
+      name: "One-shot brief",
+      prompt: "Write it once",
+      botId: "maus-once",
+      schedule: { type: "once", at: firstAt },
+    });
+    h.setNow(firstAt);
+    await h.manager.tick();
+    const run = h.manager.listRuns()[0]!;
+    expect(h.manager.listRoutines()[0]).toMatchObject({ enabled: false, nextRunAt: null });
+    h.manager.handleRuntimeEvent({
+      eventId: "turn-done",
+      provider: "fake",
+      threadId: run.threadId!,
+      createdAt: new Date(firstAt).toISOString(),
+      type: "turn.completed",
+      ok: true,
+    });
+    expect(h.manager.listRoutines()[0]).toMatchObject({ enabled: false, nextRunAt: null });
+
+    const futureAt = firstAt + 24 * 60 * 60_000;
+    h.setNow(firstAt + 60_000);
+    const updated = h.manager.update(routine.id, { schedule: { type: "once", at: futureAt } });
+    expect(updated).toMatchObject({ enabled: true, nextRunAt: futureAt, schedule: { type: "once", at: futureAt } });
+
+    // An explicit pause while moving the time keeps the routine off.
+    const laterAt = futureAt + 60_000;
+    expect(h.manager.update(routine.id, { enabled: false, schedule: { type: "once", at: laterAt } })).toMatchObject({
+      enabled: false,
+      nextRunAt: null,
+      schedule: { type: "once", at: laterAt },
+    });
+  });
 });
 
 describe("routine continuity", () => {
