@@ -2074,9 +2074,22 @@ export function EventDetails({
   const deleteEvent = async () => {
     if (!window.confirm(t("routineCalendar.deleteConfirm", { title }))) return;
     if (call) {
-      await api(`/api/calendar-calls/${call.id}`, { method: "DELETE" });
-      onCallChanged(call.id);
-    } else if (routine) {
+      // #1754: a refused DELETE must surface in the dialog like joinRoom;
+      // never leave the dialog open on an unhandled rejection.
+      setWorking(true);
+      setError("");
+      try {
+        await api(`/api/calendar-calls/${call.id}`, { method: "DELETE" });
+        onCallChanged(call.id);
+        onClose();
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setWorking(false);
+      }
+      return;
+    }
+    if (routine) {
       dispatch({ type: "deleteRoutine", routineId: routine.id });
     }
     onClose();
@@ -2137,7 +2150,7 @@ export function EventDetails({
             {call && call.botIds.length > 1 && <button onClick={joinRoom} disabled={working} className="flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[12px] font-semibold text-accent-ink hover:brightness-110 disabled:opacity-50"><ExternalLink size={13} />{t("routineCalendar.joinGroup")}</button>}
             <div className="ml-auto flex items-center gap-1">
               <button onClick={onEdit} className="rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-raised hover:text-ink">{t("routines.edit")}</button>
-              <button onClick={() => void deleteEvent()} className="rounded-lg p-2 text-ink-secondary hover:bg-danger/10 hover:text-danger" title={t("common.delete")}><Trash2 size={15} /></button>
+              <button onClick={() => void deleteEvent()} disabled={working} className="rounded-lg p-2 text-ink-secondary hover:bg-danger/10 hover:text-danger disabled:opacity-40" title={t("common.delete")}><Trash2 size={15} /></button>
             </div>
           </div>
         </> : run ? (
