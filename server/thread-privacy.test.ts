@@ -126,6 +126,26 @@ describe("listing and landing", () => {
     const own = { threadId: "g0", ownerPrincipalId: GUS, createdAt: 1, updatedAt: 2 };
     expect(viewerThread({ tasks: [...tasks, agent, own], viewerId: GUS, botOwnerPrincipalId: ALICE, current: "a1" })).toBe("g0");
   });
+
+  it("picks the newest open thread without sorting the whole list (#1750)", () => {
+    const many = Array.from({ length: 5_000 }, (_, i) => ({
+      threadId: `t${i}`,
+      ownerPrincipalId: BOB,
+      createdAt: i,
+      updatedAt: i === 4_200 ? 50_000 : i,
+      ...(i % 17 === 0 ? { archivedAt: i } : {}),
+      ...(i % 23 === 0 ? { routineRunId: `r${i}` } : {}),
+    }));
+    const started = performance.now();
+    let last: string | undefined;
+    for (let n = 0; n < 200; n++) {
+      last = viewerThread({ tasks: many, viewerId: BOB, botOwnerPrincipalId: ALICE });
+    }
+    const elapsed = performance.now() - started;
+    expect(last).toBe("t4200");
+    // 200 passes over 5k threads must stay well under a blocking second.
+    expect(elapsed).toBeLessThan(500);
+  });
 });
 
 describe("narrowBotForViewer", () => {

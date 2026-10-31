@@ -115,17 +115,33 @@ export function viewerThread(input: {
   selected?: string;
   current?: string;
 }): string | undefined {
-  const owned = ownThreads(input.tasks, input.viewerId, input.botOwnerPrincipalId);
-  if (owned.some((task) => task.threadId === input.selected)) return input.selected;
-  // nor an outside agent's conversation with the bot (2026-10-29): the
-  // person reads it from the bot-to-bot line, it is never where they land
-  const mine = owned.filter((task) => task.hidden !== true && !isAgentConversation(task as { openedBy?: { botId?: unknown; kind?: unknown } }));
-  if (!mine.length) return undefined;
-  const has = (threadId: string | undefined) => threadId !== undefined && mine.some((task) => task.threadId === threadId);
-  if (has(input.current)) return input.current;
-  const at = (task: ThreadRecord) => (typeof task.updatedAt === "number" ? task.updatedAt : typeof task.createdAt === "number" ? task.createdAt : 0);
-  const open = mine.filter((task) => !task.routineRunId && task.archivedAt === undefined).sort((a, b) => at(b) - at(a));
-  return (open[0] ?? mine[0])!.threadId;
+  // One pass over the bot's threads: filter, pick selected/current, and keep
+  // the newest open conversation. A full sort on every call (GET /api/bots,
+  // SSE bot frames) blocked the event loop for ~1-2 s on large orgs (#1750).
+  let selectedOwned = false;
+  let firstMine: ThreadRecord | undefined;
+  let currentMine = false;
+  let newestOpen: ThreadRecord | undefined;
+  let newestOpenAt = -Infinity;
+  for (const task of input.tasks) {
+    if (!ownsThread(input.viewerId, task, input.botOwnerPrincipalId)) continue;
+    if (input.selected !== undefined && task.threadId === input.selected) selectedOwned = true;
+    // nor an outside agent's conversation with the bot (2026-10-29): the
+    // person reads it from the bot-to-bot line, it is never where they land
+    if (task.hidden === true || isAgentConversation(task as { openedBy?: { botId?: unknown; kind?: unknown } })) continue;
+    if (!firstMine) firstMine = task;
+    if (input.current !== undefined && task.threadId === input.current) currentMine = true;
+    if (task.routineRunId || task.archivedAt !== undefined) continue;
+    const when = typeof task.updatedAt === "number" ? task.updatedAt : typeof task.createdAt === "number" ? task.createdAt : 0;
+    if (!newestOpen || when > newestOpenAt) {
+      newestOpen = task;
+      newestOpenAt = when;
+    }
+  }
+  if (selectedOwned) return input.selected;
+  if (!firstMine) return undefined;
+  if (currentMine) return input.current;
+  return (newestOpen ?? firstMine).threadId;
 }
 
 /** The task fields a bot record mirrors from its selected thread

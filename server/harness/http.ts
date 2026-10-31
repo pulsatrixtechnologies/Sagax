@@ -33,6 +33,48 @@ export function json(res: ServerResponse, status: number, body: unknown) {
   res.end(data);
 }
 
+/** Bodies at or above this size yield before JSON.parse / zod (#1750). */
+export const BODY_YIELD_BYTES = 32_768;
+
+/** Give the event loop a turn (heartbeats, SSE, other requests). */
+export function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+/** Cheap upper bound on a parsed JSON value's UTF-8 size. */
+export function estimateJsonBytes(value: unknown): number {
+  if (value == null) return 0;
+  if (typeof value === "string") return Buffer.byteLength(value);
+  if (typeof value === "number" || typeof value === "boolean") return 24;
+  if (Array.isArray(value)) {
+    let total = 2;
+    for (const entry of value) total += estimateJsonBytes(entry) + 1;
+    return total;
+  }
+  if (typeof value === "object") {
+    let total = 2;
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      total += Buffer.byteLength(key) + estimateJsonBytes(entry) + 4;
+    }
+    return total;
+  }
+  return 0;
+}
+
+type SafeParseResult<T> = { success: true; data: T } | { success: false; error: unknown };
+
+/** Zod-compatible parse that yields first when the value is large, so a
+ * multi-hundred-KB body does not finish JSON.parse and zod on the same
+ * busy tick as the rest of the route (#1750). */
+export async function safeParseYielding<T>(
+  schema: { safeParse: (value: unknown) => SafeParseResult<T> },
+  value: unknown,
+  yieldOverBytes: number = BODY_YIELD_BYTES,
+): Promise<SafeParseResult<T>> {
+  if (estimateJsonBytes(value) >= yieldOverBytes) await yieldToEventLoop();
+  return schema.safeParse(value);
+}
+
 export function readBody(req: IncomingMessage, limit = 1_000_000): Promise<any> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -59,16 +101,28 @@ export function readBody(req: IncomingMessage, limit = 1_000_000): Promise<any> 
       if (done) return;
       // Decode once, after the last chunk: a character split across two
       // chunks turns into U+FFFD when each chunk is decoded on its own.
+      const finish = (data: string) => {
+        let body: any;
+        try {
+          body = data ? JSON.parse(data) : {};
+        } catch {
+          return fail(400, "invalid JSON body");
+        }
+        done = true;
+        parsedBodies.set(req, body);
+        resolve(body);
+      };
       const data = Buffer.concat(chunks).toString("utf8");
-      let body: any;
-      try {
-        body = data ? JSON.parse(data) : {};
-      } catch {
-        return fail(400, "invalid JSON body");
+      // Large bodies: yield before JSON.parse so heartbeats and other
+      // requests get a turn (#1750).
+      if (bytes >= BODY_YIELD_BYTES) {
+        setImmediate(() => {
+          if (done) return;
+          finish(data);
+        });
+        return;
       }
-      done = true;
-      parsedBodies.set(req, body);
-      resolve(body);
+      finish(data);
     });
     req.on("error", (e) => fail(400, e instanceof Error ? e.message : String(e)));
   });

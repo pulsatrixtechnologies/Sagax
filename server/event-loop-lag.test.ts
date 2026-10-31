@@ -50,4 +50,29 @@ describe("event loop lag monitor", () => {
       stop();
     }
   }, 10_000);
+
+  it("attributes a stall with a cpu profile when the pause stack is empty (#1750)", async () => {
+    const lines: { level: string; message: string }[] = [];
+    const stop = startEventLoopLagMonitor(
+      { info: (message) => lines.push({ level: "info", message }), warn: (message) => lines.push({ level: "warn", message }) },
+      { reportMs: 60_000, stallMs: 400, stackCooldownMs: 0 },
+    );
+    try {
+      await wait(500);
+      blockFor(1_200);
+      await wait(1_200);
+      const stall = lines.find((line) => line.level === "warn" && line.message.startsWith("[loop-lag] event loop blocked"));
+      expect(stall).toBeDefined();
+      // Either the debugger stack names blockFor, or the fallback reason /
+      // profile frames are present so the line is not a bare "(no stack)".
+      expect(
+        stall!.message.includes("blockFor")
+          || stall!.message.includes("cpu profile")
+          || /\(no stack; .+\)/.test(stall!.message)
+          || stall!.message.includes(" x"),
+      ).toBe(true);
+    } finally {
+      stop();
+    }
+  }, 15_000);
 });

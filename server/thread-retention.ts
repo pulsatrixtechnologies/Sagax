@@ -46,19 +46,47 @@ export function sweepThreadEventLogs(
     if (candidate.unread || candidate.busy || candidate.openDirectHandoff) continue;
     const since = idleSince(candidate);
     if (since === null || since >= cutoff) continue;
-    let removedAny = false;
-    for (const dir of [EVENTS_DIR, NATIVE_DIR]) {
-      const path = join(dir, `${candidate.threadId}.ndjson`);
-      try {
-        unlinkSync(path);
-        removedAny = true;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
-          console.warn(`[retention] could not remove ${path}: ${(error as Error).message}`);
-        }
+    if (removeThreadEventLogs(candidate.threadId)) swept++;
+  }
+  return swept;
+}
+
+/** How many candidates to process before yielding the event loop (#1750). */
+export const RETENTION_SWEEP_BATCH = 50;
+
+function removeThreadEventLogs(threadId: string): boolean {
+  let removedAny = false;
+  for (const dir of [EVENTS_DIR, NATIVE_DIR]) {
+    const path = join(dir, `${threadId}.ndjson`);
+    try {
+      unlinkSync(path);
+      removedAny = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+        console.warn(`[retention] could not remove ${path}: ${(error as Error).message}`);
       }
     }
-    if (removedAny) swept++;
+  }
+  return removedAny;
+}
+
+/** Same retention as sweepThreadEventLogs, but yields between batches so a
+ * large org's startup sweep cannot block the event loop for 1-2 s (#1750). */
+export async function sweepThreadEventLogsPaced(
+  candidates: Iterable<ThreadLogRetentionCandidate>,
+  retentionDays: number,
+  now: number = Date.now(),
+  batchSize: number = RETENTION_SWEEP_BATCH,
+): Promise<number> {
+  const cutoff = now - retentionDays * DAY_MS;
+  let swept = 0;
+  let seen = 0;
+  for (const candidate of candidates) {
+    if (++seen % batchSize === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    if (candidate.unread || candidate.busy || candidate.openDirectHandoff) continue;
+    const since = idleSince(candidate);
+    if (since === null || since >= cutoff) continue;
+    if (removeThreadEventLogs(candidate.threadId)) swept++;
   }
   return swept;
 }

@@ -342,7 +342,7 @@ import {
   newRoutinesPaused,
   openCodeProviderKeys,
 } from "./config.ts";
-import { sweepThreadEventLogs, type ThreadLogRetentionCandidate } from "./thread-retention.ts";
+import { sweepThreadEventLogsPaced, type ThreadLogRetentionCandidate } from "./thread-retention.ts";
 import { ComputerControl } from "./computer-control.ts";
 import { augmentedPath, findCliCandidates, resetPathCache } from "./env-path.ts";
 import { registerEnginesBinDir } from "./engine-install.ts";
@@ -1095,7 +1095,7 @@ import { isPersonalBrowserProfileId, type PersonalFeature } from "../shared/pers
 import { BOT_REACTIONS, botReactionActorId, botReactionEmoji, normalizeReactions, reactionEmoji, reactionsBy, type ReactionActor } from "../shared/reactions.ts";
 // Keep these two last: a route module may import any server module, and
 // loading the table after everything above leaves module start-up order as is.
-import { gzipTunnelReplies, json, onJsonBody, parsedBodyOf, readBody } from "./harness/http.ts";
+import { BODY_YIELD_BYTES, estimateJsonBytes, gzipTunnelReplies, json, onJsonBody, parsedBodyOf, readBody, yieldToEventLoop } from "./harness/http.ts";
 import { PASS, ROUTES, dispatchRoutes } from "./routes/table.ts";
 import { createHostedSlackRoutes } from "./routes/hosted-slack.ts";
 import { createBotInboundMailReadRoutes } from "./routes/bot-inbound-mail.ts";
@@ -43320,7 +43320,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         });
       }
     }
-    if (await dispatchRoutes(ROUTES, { req, res, url, path, method, auth, json, readBody })) return;
+    // #1750: after a large body is read, yield once more before the route's
+    // zod safeParse so JSON.parse and validation are not one continuous block.
+    if (await dispatchRoutes(ROUTES, {
+      req, res, url, path, method, auth, json,
+      readBody: async (incoming, limit) => {
+        const body = await readBody(incoming, limit);
+        if (estimateJsonBytes(body) >= BODY_YIELD_BYTES) await yieldToEventLoop();
+        return body;
+      },
+    })) return;
 
     // ── sessions: who am I, tickets, pairing and revocation ─────────────
     if (method === "GET" && path === "/api/auth/session") {
@@ -55432,32 +55441,47 @@ try {
 // workspace state stay untouched. A thread qualifies only when its newest
 // close or archive stamp is older than the window and it is not busy,
 // unread, or carrying an open direct handoff.
+// #1750: never run this on the startup tick or as one synchronous walk -
+// activeDirect per thread and unlinkSync across every bot blocked the
+// event loop for 1-2 s while turns and SSE were already live. Defer, read
+// activeDirectThreads once, and yield between batches.
 const THREAD_LOG_RETENTION_SWEEP_MS = 24 * 60 * 60 * 1000;
 
-function sweepThreadEventLogsNow(): void {
+async function sweepThreadEventLogsDeferred(): Promise<void> {
   const retentionDays = threadEventLogRetentionDays(cfg);
   if (retentionDays === null) return;
-  const candidates: ThreadLogRetentionCandidate[] = store.bots.flatMap((bot) =>
-    (bot.tasks ?? []).map((task) => ({
-      threadId: task.threadId,
-      closedAt: task.closedBy?.at ?? null,
-      archivedAt: task.archivedAt ?? null,
-      unread: task.unread === true,
-      busy: threadBusy(bot.id, task.threadId),
-      openDirectHandoff: coordinator.activeDirect(task.threadId),
-    })));
-  const swept = sweepThreadEventLogs(candidates, retentionDays);
+  const openDirect = coordinator.activeDirectThreads();
+  const candidates: ThreadLogRetentionCandidate[] = [];
+  let seen = 0;
+  for (const bot of store.bots) {
+    for (const task of bot.tasks ?? []) {
+      candidates.push({
+        threadId: task.threadId,
+        closedAt: task.closedBy?.at ?? null,
+        archivedAt: task.archivedAt ?? null,
+        unread: task.unread === true,
+        busy: threadBusy(bot.id, task.threadId),
+        openDirectHandoff: openDirect.has(task.threadId),
+      });
+      if (++seen % 50 === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+  }
+  const swept = await sweepThreadEventLogsPaced(candidates, retentionDays);
   if (swept > 0) console.log(`[retention] removed event logs for ${swept} idle thread(s) past ${retentionDays} day(s)`);
 }
 
-try {
-  sweepThreadEventLogsNow();
-} catch (error) {
-  console.warn(`thread event log retention sweep failed: ${error instanceof Error ? error.message : String(error)}`);
+function scheduleThreadEventLogRetentionSweep(): void {
+  const run = () => {
+    void sweepThreadEventLogsDeferred().catch((error) => {
+      console.warn(`thread event log retention sweep failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  };
+  // After listen and the first turns: setImmediate alone can still race a
+  // boot-time resume; a short delay keeps the sweep off the hot path.
+  setTimeout(run, 5_000).unref();
+  setInterval(run, THREAD_LOG_RETENTION_SWEEP_MS).unref();
 }
-// A days-scale window needs no tighter cadence; unref so the timer never
-// holds the process open.
-setInterval(sweepThreadEventLogsNow, THREAD_LOG_RETENTION_SWEEP_MS).unref();
+scheduleThreadEventLogRetentionSweep();
 
 // A dispatch claim is deliberately committed before transcript/provider work.
 // If we died after that point, its outcome is unknown: recover the user's words

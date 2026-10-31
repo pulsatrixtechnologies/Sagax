@@ -15,6 +15,11 @@
 //   is stuck in. The stack comes with the stall line. A stack is read at most
 //   once per STACK_COOLDOWN_MS, and never when the inspector is missing.
 //
+// #1750: when Debugger.pause returns nothing (common in containers, and during
+// stall bursts under the 5 min cooldown), the watchdog samples a short CPU
+// profile instead and posts its hottest frames. A failed capture uses a short
+// cooldown so the next stall in a burst can still be attributed.
+//
 // Never throws at the caller: without workers or the inspector, the lag
 // summary and the stall line still work.
 import { monitorEventLoopDelay } from "node:perf_hooks";
@@ -23,9 +28,12 @@ import { Worker } from "node:worker_threads";
 export const LAG_REPORT_MS = 60_000;
 export const STALL_MS = 1_000;
 export const STACK_COOLDOWN_MS = 5 * 60_000;
+/** After a capture that returned no frames, try again sooner (#1750). */
+export const STACK_RETRY_COOLDOWN_MS = 15_000;
 const HEARTBEAT_MS = 200;
 const MAX_FRAMES = 25;
-const STACK_WAIT_MS = 300;
+const STACK_WAIT_MS = 800;
+const PROFILE_MS = 250;
 
 export interface LoopLagLogger {
   info(message: string): void;
@@ -44,46 +52,103 @@ const ms = (ns: number) => Math.round(ns / 1e6);
 
 /** The watchdog worker: plain JavaScript, evaluated, so it needs no file in
  * the bundle. It receives heartbeats; when none came for stallMs, it pauses
- * the main thread through the inspector and posts the top frames back. */
+ * the main thread through the inspector and posts the top frames back. When
+ * pause yields nothing, it samples Profiler for a short window instead. */
 const WATCHDOG_SOURCE = `
 const { parentPort, workerData } = require("node:worker_threads");
 let inspector = null;
 try { inspector = require("node:inspector"); } catch {}
-const { stallMs, cooldownMs, maxFrames } = workerData;
+const { stallMs, cooldownMs, retryCooldownMs, maxFrames, profileMs } = workerData;
 let last = Date.now();
 let lastStackAt = 0;
+let lastGotStack = false;
 let busy = false;
+let inspectorMissingLogged = false;
 parentPort.on("message", (m) => { if (m === "beat") last = Date.now(); });
+
+function topProfileFrames(profile) {
+  if (!profile || !Array.isArray(profile.nodes)) return null;
+  const hits = new Map();
+  for (const node of profile.nodes) {
+    const call = node.callFrame || {};
+    const name = call.functionName || "(anonymous)";
+    const url = call.url || "?";
+    const line = (call.lineNumber || 0) + 1;
+    const col = (call.columnNumber || 0) + 1;
+    const key = name + " " + url + ":" + line + ":" + col;
+    const hit = (node.hitCount || 0) + (Array.isArray(node.children) ? 0 : 0);
+    hits.set(key, (hits.get(key) || 0) + (node.hitCount || 0));
+  }
+  const ranked = [...hits.entries()].filter(([, n]) => n > 0).sort((a, b) => b[1] - a[1]).slice(0, maxFrames);
+  if (!ranked.length) return null;
+  return ranked.map(([frame, n]) => frame + " x" + n);
+}
+
 function capture() {
-  if (!inspector || typeof inspector.Session !== "function") return;
+  if (!inspector || typeof inspector.Session !== "function") {
+    if (!inspectorMissingLogged) {
+      inspectorMissingLogged = true;
+      parentPort.postMessage({ stack: null, reason: "inspector unavailable", at: Date.now() });
+    }
+    return;
+  }
   let session;
   try {
     session = new inspector.Session();
     session.connectToMainThread();
-  } catch { return; }
+  } catch (error) {
+    parentPort.postMessage({ stack: null, reason: "inspector connect failed", at: Date.now() });
+    return;
+  }
   busy = true;
   lastStackAt = Date.now();
-  const done = (frames) => {
+  const finish = (frames, reason) => {
     busy = false;
-    try { session.post("Debugger.resume", () => session.post("Debugger.disable", () => session.disconnect())); } catch {}
-    if (frames) parentPort.postMessage({ stack: frames, at: Date.now() });
+    lastGotStack = Boolean(frames && frames.length);
+    try {
+      session.post("Profiler.disable", () => {
+        try { session.post("Debugger.disable", () => session.disconnect()); } catch { try { session.disconnect(); } catch {} }
+      });
+    } catch { try { session.disconnect(); } catch {} }
+    parentPort.postMessage({ stack: frames || null, reason: reason || null, at: Date.now() });
   };
-  const timer = setTimeout(() => done(null), 5000);
+  const profileFallback = (why) => {
+    try {
+      session.post("Profiler.enable", (err) => {
+        if (err) return finish(null, why || "capture failed");
+        session.post("Profiler.start", (startErr) => {
+          if (startErr) return finish(null, why || "capture failed");
+          setTimeout(() => {
+            session.post("Profiler.stop", (stopErr, result) => {
+              if (stopErr) return finish(null, why || "capture failed");
+              const frames = topProfileFrames(result && result.profile);
+              finish(frames, frames ? "cpu profile" : (why || "capture failed"));
+            });
+          }, profileMs);
+        });
+      });
+    } catch {
+      finish(null, why || "capture failed");
+    }
+  };
+  const timer = setTimeout(() => profileFallback("pause timed out"), 5000);
   session.once("Debugger.paused", (event) => {
     clearTimeout(timer);
     const frames = (event.params.callFrames || []).slice(0, maxFrames).map((f) =>
       (f.functionName || "(anonymous)") + " " + (f.url || "?") + ":" + (f.location.lineNumber + 1) + ":" + (f.location.columnNumber + 1));
-    done(frames);
+    try { session.post("Debugger.resume", () => finish(frames, null)); }
+    catch { finish(frames, null); }
   });
   session.post("Debugger.enable", (err) => {
-    if (err) { clearTimeout(timer); return done(null); }
-    session.post("Debugger.pause", (e) => { if (e) { clearTimeout(timer); done(null); } });
+    if (err) { clearTimeout(timer); return profileFallback("debugger unavailable"); }
+    session.post("Debugger.pause", (e) => { if (e) { clearTimeout(timer); profileFallback("pause failed"); } });
   });
 }
 const tick = setInterval(() => {
   if (busy) return;
   const now = Date.now();
-  if (now - last >= stallMs && now - lastStackAt >= cooldownMs) capture();
+  const cool = lastGotStack ? cooldownMs : retryCooldownMs;
+  if (now - last >= stallMs && now - lastStackAt >= cool) capture();
 }, Math.max(50, Math.floor(stallMs / 4)));
 parentPort.on("close", () => clearInterval(tick));
 `;
@@ -117,6 +182,7 @@ export function startEventLoopLagMonitor(log: LoopLagLogger, options: LoopLagOpt
   // thread once it is back. The stack, when the watchdog read one during the
   // block, arrives first and waits here.
   let pendingStack: string[] | null = null;
+  let pendingReason: string | null = null;
   let last = performance.now();
   const beat = setInterval(() => {
     const now = performance.now();
@@ -133,10 +199,15 @@ export function startEventLoopLagMonitor(log: LoopLagLogger, options: LoopLagOpt
       // a moment, then write one line with whatever arrived.
       const write = setTimeout(() => {
         const stack = pendingStack;
+        const reason = pendingReason;
         pendingStack = null;
-        log.warn(
-          `[loop-lag] event loop blocked ${blocked} ms${stack ? `; stack during the block:\n  ${stack.join("\n  ")}` : " (no stack)"}`,
-        );
+        pendingReason = null;
+        const detail = stack
+          ? `; stack during the block:\n  ${stack.join("\n  ")}`
+          : reason
+            ? ` (no stack; ${reason})`
+            : " (no stack)";
+        log.warn(`[loop-lag] event loop blocked ${blocked} ms${detail}`);
       }, STACK_WAIT_MS);
       write.unref?.();
     }
@@ -148,13 +219,24 @@ export function startEventLoopLagMonitor(log: LoopLagLogger, options: LoopLagOpt
     try {
       watchdog = new Worker(WATCHDOG_SOURCE, {
         eval: true,
-        workerData: { stallMs, cooldownMs, maxFrames: MAX_FRAMES },
+        workerData: {
+          stallMs,
+          cooldownMs,
+          retryCooldownMs: Math.min(STACK_RETRY_COOLDOWN_MS, cooldownMs),
+          maxFrames: MAX_FRAMES,
+          profileMs: PROFILE_MS,
+        },
         // A small thread: it only counts heartbeats.
         resourceLimits: { maxOldGenerationSizeMb: 16, maxYoungGenerationSizeMb: 4 },
       });
       watchdog.unref();
-      watchdog.on("message", (message: { stack?: string[] }) => {
-        if (Array.isArray(message?.stack)) pendingStack = message.stack.map(String);
+      watchdog.on("message", (message: { stack?: string[] | null; reason?: string | null }) => {
+        if (Array.isArray(message?.stack) && message.stack.length) {
+          pendingStack = message.stack.map(String);
+          pendingReason = typeof message.reason === "string" ? message.reason : null;
+        } else if (typeof message?.reason === "string" && message.reason) {
+          pendingReason = message.reason;
+        }
       });
       watchdog.on("error", () => {
         watchdog = null;
