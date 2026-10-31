@@ -7,6 +7,7 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { createAuthBackoff } from "./auth-backoff.mjs";
 
 const DEVICE_ID = /^[\w-]{1,80}$/;
@@ -88,10 +89,6 @@ async function readSse(response, onEvent) {
   }
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export function createMachineWorker({
   origins,
   localOrigin,
@@ -106,12 +103,15 @@ export function createMachineWorker({
 }) {
   let stopped = false;
   let chain = null;
+  let stopping = new AbortController();
+  let generation = 0;
   const retries = new Map();
+  const sleep = (ms) => delay(ms, undefined, { signal: stopping.signal }).catch(() => {});
 
   const loadEngines = async () => {
     if (engines) return engines();
     try {
-      const response = await fetchLocal(`${localOrigin()}/api/instances`, { cache: "no-store" });
+      const response = await fetchLocal(`${localOrigin()}/api/instances`, { cache: "no-store", signal: stopping.signal });
       if (!response.ok) return [];
       const body = await response.json();
       return publishEngines(body.instances);
@@ -120,11 +120,12 @@ export function createMachineWorker({
     }
   };
 
-  const postJson = (fetchImpl, url, body) => fetchImpl(url, {
+  const postJson = (fetchImpl, url, body, signal = stopping.signal) => fetchImpl(url, {
     method: "POST",
     credentials: "include",
     redirect: "error",
     cache: "no-store",
+    signal,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -133,21 +134,20 @@ export function createMachineWorker({
     const messageId = turn.messageId;
     if (!messageId) return;
     const query = turn.botId ? `?botId=${encodeURIComponent(turn.botId)}` : "";
-    const loaded = await fetchOrg(`${origin}/api/workers/${device.deviceId}/turns/${encodeURIComponent(messageId)}${query}`, {
-      credentials: "include",
-      redirect: "error",
-      cache: "no-store",
-    });
-    if (!loaded.ok) return;
-    const job = await loaded.json();
-    const beat = setInterval(() => {
-      void postJson(fetchOrg, `${origin}/api/workers`, {
-        deviceId: device.deviceId,
-        name: device.name,
-        engines: published,
-      }).catch(() => undefined);
-    }, 15_000);
+    const resultUrl = `${origin}/api/workers/${device.deviceId}/turns/${encodeURIComponent(messageId)}`;
+    let beat;
+    let terminalDelivered = false;
     try {
+      const loaded = await fetchOrg(`${resultUrl}${query}`, {
+        credentials: "include", redirect: "error", cache: "no-store", signal: stopping.signal,
+      });
+      if (!loaded.ok) throw new Error("This computer could not retrieve the turn.");
+      const job = await loaded.json();
+      beat = setInterval(() => {
+        void postJson(fetchOrg, `${origin}/api/workers`, {
+          deviceId: device.deviceId, name: device.name, engines: published,
+        }).catch(() => undefined);
+      }, 15_000);
       const local = await postJson(fetchLocal, `${localOrigin()}/api/machine-runs`, {
         instanceId: job.model?.instanceId,
         model: job.model?.model,
@@ -157,18 +157,14 @@ export function createMachineWorker({
         botId: job.botId,
         history: job.history ?? [],
       });
-      if (!local.ok) {
-        await postJson(fetchOrg, `${origin}/api/workers/${device.deviceId}/turns/${encodeURIComponent(messageId)}`, {
-          kind: "failed",
-          text: "This computer could not start the turn.",
-        });
-        return;
-      }
+      if (!local.ok) throw new Error("This computer could not start the turn.");
       let runId = "";
       await readSse(local, async (notice) => {
         if (typeof notice.runId === "string") runId = notice.runId;
         if (notice.kind === "progress" || notice.kind === "reply" || notice.kind === "failed") {
-          await postJson(fetchOrg, `${origin}/api/workers/${device.deviceId}/turns/${encodeURIComponent(messageId)}`, notice);
+          const delivered = await postJson(fetchOrg, resultUrl, notice);
+          if (!delivered.ok) throw new Error("The server could not receive the turn's result.");
+          if (notice.kind === "reply" || notice.kind === "failed") terminalDelivered = true;
           return;
         }
         if (notice.kind !== "approval") return;
@@ -186,6 +182,7 @@ export function createMachineWorker({
             credentials: "include",
             redirect: "error",
             cache: "no-store",
+            signal: stopping.signal,
           });
           if (!again.ok) continue;
           const body = await again.json();
@@ -197,7 +194,20 @@ export function createMachineWorker({
           ...(decision?.message ? { message: decision.message } : {}),
         });
       });
-      await postJson(fetchOrg, `${origin}/api/workers/${device.deviceId}/turns/${encodeURIComponent(messageId)}`, { kind: "done" });
+      if (!terminalDelivered) throw new Error("This computer stopped before replying.");
+      await postJson(fetchOrg, resultUrl, { kind: "done" });
+    } catch {
+      // Even an unavailable local server, a broken stream or a deliberate
+      // worker stop must settle the claimed turn on its organization.
+      if (!terminalDelivered) {
+        try {
+          const delivered = await postJson(fetchOrg, resultUrl, {
+            kind: "failed",
+            text: stopped ? "This computer stopped before finishing the turn." : "This computer could not finish the turn.",
+          }, AbortSignal.timeout(10_000));
+          if (!delivered.ok) throw new Error("result refused");
+        } catch { log("machine worker: could not deliver the interrupted turn's failure"); }
+      }
     } finally {
       clearInterval(beat);
     }
@@ -252,16 +262,23 @@ export function createMachineWorker({
     }
   };
 
-  return {
+  const worker = {
     cycle,
     start() {
-      if (chain) return chain;
+      if (chain && !stopped) return chain;
+      const requested = ++generation;
+      if (chain) return chain.catch(() => {}).then(() => requested === generation ? worker.start() : undefined);
       stopped = false;
+      stopping = new AbortController();
       chain = loop().finally(() => { chain = null; });
       return chain;
     },
     stop() {
+      generation++;
       stopped = true;
+      stopping.abort();
+      return chain ?? Promise.resolve();
     },
   };
+  return worker;
 }
