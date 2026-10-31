@@ -152,12 +152,14 @@ export function notificationToneSound(choice: string | undefined): string {
 }
 
 /** Which category the phone registered. A question that names its request
- * gets Reply; ordinary news has no actions. */
+ * gets Reply; an approval that names its request gets Allow and Deny;
+ * ordinary news (and a takeover, which rides `kind: "approval"` with no
+ * request) has no actions. Matches ios NotificationApproval.category. */
 export function pushCategory(message: Pick<PushMessage, "kind" | "prompt" | "needsKey" | "requestId">): string {
   if (message.kind === "approval" && message.prompt === "question") {
     return message.requestId?.trim() ? QUESTION_CATEGORY : UPDATE_CATEGORY;
   }
-  if (message.kind !== "approval") return UPDATE_CATEGORY;
+  if (message.kind !== "approval" || !message.requestId?.trim()) return UPDATE_CATEGORY;
   return message.needsKey ? APPROVAL_KEY_CATEGORY : APPROVAL_CATEGORY;
 }
 
