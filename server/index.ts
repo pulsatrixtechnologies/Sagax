@@ -17922,10 +17922,14 @@ bus.subscribe((event: RuntimeEvent) => {
             else if (asker.busy) store.setActivity(asker.id, "waiting-on-you");
             if (event.requestId) showWaitingOnPersonChip(event.threadId, event.requestId, asker, permission ? "approval" : "answer");
             const notificationBot = (routineRun && routineSourceOwner(routineRun)?.bot) || asker;
+            // #1743: name the execution thread that holds the card. A routine's
+            // results thread is for report pushes only; Allow on the phone or
+            // Watch posts to notification.threadId, and notify-withdraw /
+            // noteSettled must match that same key.
             notify(deliverableNotification(
               permission ? "approval" : "question",
               notificationBot,
-              (routineRun && routineSourceThread(routineRun)) || event.threadId,
+              event.threadId,
               plain ? plain.line : event.summary,
               {
                 ...(notificationBot.avatarUrl ? { avatarUrl: notificationBot.avatarUrl } : {}),

@@ -657,3 +657,79 @@ describe("an approval in an AI client's conversation", () => {
     }
   }, 45_000);
 });
+
+describe("an approval during a routine run (#1743)", () => {
+  // A bot routine runs in a hidden execution thread and reports into the
+  // person's visible conversation (resultsThreadId). The banner must name
+  // the execution thread: iPhone/Watch Allow posts to that threadId, and
+  // notify-withdraw must match the same key. Naming the results thread
+  // made Allow land as unavailable and left the banner up.
+  it("names the execution card thread so Allow and withdraw hit the card", async () => {
+    const bot = await createBot("Routine Asker", "asking", "fake-model");
+    expect((await api("PATCH", `/api/bots/${bot.id}`, { approvalMode: "ask" })).status).toBe(200);
+    const created = await api("POST", "/api/routines", {
+      name: "Needs a yes",
+      prompt: "Run the gated step",
+      botId: bot.id,
+      runOn: "maus",
+      schedule: { type: "once", at: Date.now() + 60_000 },
+    });
+    expect(created.status).toBe(201);
+    const routineId = created.body.routine.id as string;
+    let runId: string | undefined;
+    const stream = await openSse(`${base}/api/events`);
+    try {
+      const launched = await api("POST", `/api/routines/${routineId}/run`);
+      expect(launched.status).toBe(201);
+      runId = launched.body.run.id as string;
+      // The launch response may land before the execution task is claimed.
+      await expect.poll(async () => {
+        const receipt = (await api("GET", "/api/routines")).body.runs.find((candidate: { id: string }) => candidate.id === runId);
+        return Boolean(receipt?.threadId && receipt?.resultsThreadId && receipt.threadId !== receipt.resultsThreadId);
+      }, { timeout: 20_000 }).toBe(true);
+      const run = (await api("GET", "/api/routines")).body.runs.find((candidate: { id: string }) => candidate.id === runId) as {
+        id: string; threadId: string; resultsThreadId: string;
+      };
+
+      const frame = await stream.until(
+        (candidate) =>
+          candidate.kind === "notify" &&
+          candidate.notification?.botId === bot.id &&
+          candidate.notification?.kind === "approval" &&
+          Boolean(candidate.notification?.requestId),
+        30_000,
+      );
+      expect(frame.notification.threadId).toBe(run.threadId);
+      expect(frame.notification.threadId).not.toBe(run.resultsThreadId);
+      const requestId = frame.notification.requestId as string;
+
+      // The phone posts to notification.threadId (execution), not the report.
+      const answered = await api("POST", `/api/threads/${run.threadId}/respond`, {
+        requestId,
+        behavior: "allow",
+      });
+      expect(answered.status).toBe(200);
+      expect(answered.body.outcome).not.toBe("unavailable");
+
+      const withdrawn = await stream.until(
+        (candidate) => candidate.kind === "notify-withdraw" && candidate.requestId === requestId,
+        20_000,
+      );
+      expect(withdrawn.threadId).toBe(run.threadId);
+
+      const report = await api("GET", `/api/threads/${run.resultsThreadId}/messages?limit=40`);
+      expect(report.status).toBe(200);
+      const list = Array.isArray(report.body) ? report.body : report.body?.messages ?? [];
+      expect(
+        list.some((message: { tool?: { name?: string } }) =>
+          typeof message.tool?.name === "string" && message.tool.name.includes("Couldn't deliver"),
+        ),
+      ).toBe(false);
+    } finally {
+      stream.close();
+      if (runId) await api("POST", `/api/routine-runs/${runId}/cancel`, {}).catch(() => undefined);
+      await api("DELETE", `/api/routines/${routineId}`).catch(() => undefined);
+      await cleanup([], [bot.id]);
+    }
+  }, 60_000);
+});
