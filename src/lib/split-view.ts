@@ -52,6 +52,11 @@ export function splitLeaves(node: SplitNode): SplitLeaf[] {
   return node.type === "leaf" ? [node] : node.children.flatMap(splitLeaves);
 }
 
+/** The section that already shows `target`, if any (main has no target). */
+export function findSection(layout: SplitNode, target: SplitTarget): SplitLeaf | undefined {
+  return splitLeaves(layout).find((leaf) => sameTarget(leaf.target, target));
+}
+
 /** Whether the window is split at all. */
 export function isSplit(node: SplitNode): boolean {
   return node.type === "split";
@@ -325,15 +330,66 @@ export function updateSplitLayout(change: (layout: SplitNode) => SplitNode): voi
   setSplitLayout(change(currentSplitLayout()));
 }
 
+/** Brief focus of a section (scroll + flash): menu or drop asked for a
+ * conversation that is already open in the split (#1781). */
+let focusLeafId: string | null = null;
+let focusNonce = 0;
+let focusSnapshot: { leafId: string | null; nonce: number } = { leafId: null, nonce: 0 };
+const focusListeners = new Set<() => void>();
+
+export function currentSplitLeafFocus(): { leafId: string | null; nonce: number } {
+  return focusSnapshot;
+}
+
+export function focusSplitLeaf(leafId: string): void {
+  focusLeafId = leafId;
+  focusNonce += 1;
+  focusSnapshot = { leafId: focusLeafId, nonce: focusNonce };
+  for (const listener of focusListeners) listener();
+}
+
+function subscribeFocus(listener: () => void): () => void {
+  focusListeners.add(listener);
+  return () => {
+    focusListeners.delete(listener);
+  };
+}
+
+export function useSplitLeafFocus(): { leafId: string | null; nonce: number } {
+  return useSyncExternalStore(subscribeFocus, currentSplitLeafFocus, currentSplitLeafFocus);
+}
+
+/** Puts `target` in the window beside `anchorId` on `edge`, or focuses the
+ * section that already shows it so the same conversation is never opened
+ * twice (#1781). */
+export function ensureSection(target: SplitTarget, edge: SplitEdge, anchorId: string | null = MAIN_LEAF_ID): string {
+  const existing = findSection(currentSplitLayout(), target);
+  if (existing) {
+    focusSplitLeaf(existing.id);
+    return existing.id;
+  }
+  let leafId = "";
+  updateSplitLayout((layout) => {
+    const next = insertSection(layout, target, edge, anchorId);
+    leafId = next.leafId;
+    return next.layout;
+  });
+  focusSplitLeaf(leafId);
+  return leafId;
+}
+
 /** Split right / Split down from the main chat's "..." menu: the
  * conversation in a new section beside the main chat. */
 export function splitBesideMain(target: SplitTarget, edge: SplitEdge): void {
-  updateSplitLayout((layout) => insertSection(layout, target, edge, MAIN_LEAF_ID).layout);
+  ensureSection(target, edge, MAIN_LEAF_ID);
 }
 
 /** Forgets the stored layout (tests). */
 export function resetSplitLayout(): void {
   current = null;
+  focusLeafId = null;
+  focusNonce = 0;
+  focusSnapshot = { leafId: null, nonce: 0 };
 }
 
 function subscribe(listener: () => void): () => void {
