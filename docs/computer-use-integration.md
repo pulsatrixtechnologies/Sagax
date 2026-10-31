@@ -16,7 +16,7 @@ Electron main process
 ├── WebContentsView pool (embedded browser, persist: partitions per bot)
 │     driven via webContents.debugger (CDP) — zero-install browser use
 └── server/ harness (drivers spawn agent CLIs with --mcp-config)
-      ├── computer-proxy-local.ts  ──▶ forwards MCP tool calls to driver socket
+      ├── local-computer-proxy.ts  ──▶ forwards MCP tool calls to driver socket
       └── computer-proxy.ts (existing) ──▶ remote/cloud Boat computer
 ```
 
@@ -172,7 +172,7 @@ app doesn't embed it).
 
 ## Rollout order
 
-1. `computer-proxy-local.ts` + spawn `cua-driver mcp` directly from Electron
+1. `local-computer-proxy.ts` + spawn `cua-driver mcp` directly from Electron
    main in dev (unsigned dev builds inherit the terminal/Electron grant).
 2. Permission onboarding UI (Plugins panel → "Computer" plugin card: status,
    grant buttons, deep links).
