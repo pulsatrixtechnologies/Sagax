@@ -105,6 +105,7 @@ export function ApprovalModeSelector({
   onManageCommandAllowlist,
   variant = "icon",
   onDone,
+  mixed = false,
 }: {
   approvalMode?: ApprovalMode;
   autoApprove?: boolean;
@@ -124,6 +125,8 @@ export function ApprovalModeSelector({
   variant?: "icon" | "row";
   /** Called once a choice is made, so the + menu around the row closes too. */
   onDone?: () => void;
+  /** Bulk edit: bots differ; no level looks selected (#1701). */
+  mixed?: boolean;
 }) {
   const row = variant === "row" && !wide;
   const advanced = useAdvancedMode();
@@ -139,9 +142,11 @@ export function ApprovalModeSelector({
   // the new Auto/full-access behavior until the user explicitly selects it.
   const mode = driverKind === "antigravityAgent" && savedMode === "auto" ? "ask" : savedMode;
   const allOptions = approvalModeOptions();
-  const current = approvalModeOptionsFor(driverKind).find((option) => option.mode === mode)
-    ?? allOptions.find((option) => option.mode === mode)
-    ?? allOptions[0];
+  const current = mixed
+    ? { mode: "ask" as const, label: t("bulkEdit.mixed"), chip: t("bulkEdit.mixed"), description: t("bulkEdit.mixedOpenShort"), Icon: allOptions[0]!.Icon }
+    : (approvalModeOptionsFor(driverKind).find((option) => option.mode === mode)
+      ?? allOptions.find((option) => option.mode === mode)
+      ?? allOptions[0]);
   const visibleOptions = approvalModeOptionsFor(driverKind, trustedModesAvailable, orgFullAccess);
   // Full access granted, then brought back to Ask (an achievement on using it responsibly)
   const previousMode = useRef(savedMode);
@@ -210,7 +215,7 @@ export function ApprovalModeSelector({
   // disabled row). The five levels and the command allowlist stay in
   // Advanced.
   const canDecide = visibleOptions.some((option) => option.mode === "auto");
-  const known = mode === "ask" || (mode === "auto" && canDecide);
+  const known = !mixed && (mode === "ask" || (mode === "auto" && canDecide));
   const choices = [
     { mode: "ask" as const, label: t("approvalMode.simple.ask"), hint: t("approvalMode.simple.askHint") },
     ...(canDecide ? [{ mode: "auto" as const, label: t("approvalMode.simple.decide"), hint: t("approvalMode.simple.decideHint") }] : []),
@@ -221,7 +226,7 @@ export function ApprovalModeSelector({
       "border-hairline/40 bg-inset hover:bg-raised disabled:cursor-not-allowed disabled:opacity-45",
     );
     return (
-      <div data-approval-simple className="flex w-full min-w-0 flex-col gap-1">
+      <div data-approval-simple data-approval-mixed={mixed ? "" : undefined} className="flex w-full min-w-0 flex-col gap-1">
         <div className="flex w-full min-w-0 flex-col gap-1">
           {choices.map((choice) => (
             <button
@@ -238,7 +243,8 @@ export function ApprovalModeSelector({
             </button>
           ))}
         </div>
-        {!known && <p data-approval-custom className="text-[12px] leading-4 text-ink-secondary">{t("approvalMode.simple.custom")}</p>}
+        {mixed && <p data-approval-mixed-note className="text-[12px] leading-4 text-ink-secondary">{t("bulkEdit.mixed")}</p>}
+        {!known && !mixed && <p data-approval-custom className="text-[12px] leading-4 text-ink-secondary">{t("approvalMode.simple.custom")}</p>}
       </div>
     );
   }

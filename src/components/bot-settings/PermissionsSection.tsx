@@ -61,7 +61,7 @@ export function PermissionsSection({
   const { patch, engine, canCoordinate, approvalMode, trustedModesAvailable, sectionName, currentChief } = derived;
   const { state, dispatch } = useStore();
   const ownerOrAdmin = useOwnerOrAdmin();
-  const { draft, bulk } = useBotEditor();
+  const { draft, bulk, mixedFields } = useBotEditor();
   const [localAutoWarning, setLocalAutoWarning] = useState<string | null>(null);
   const [fullAccessTarget, setFullAccessTarget] = useState<string | null>(null);
   const [commandAllowlistTarget, setCommandAllowlistTarget] = useState<{ botId: string; botName: string } | null>(null);
@@ -104,8 +104,13 @@ export function PermissionsSection({
     });
   };
   const levelNow = approvalMode;
+  const approvalMixed = Boolean(bulk && mixedFields?.has("approvalMode"));
+  const proactiveMixed = Boolean(bulk && mixedFields?.has("proactiveMode"));
+  const peerMixed = Boolean(bulk && mixedFields?.has("approvePeerComms"));
   const setApprovalMode = (mode: ApprovalMode) => {
-    if (mode === approvalMode) return;
+    // Mixed bulk: the draft has no shared level, but botApprovalSetting may
+    // still read as Ask; allow picking that level explicitly (#1701).
+    if (mode === approvalMode && !approvalMixed) return;
     if (bot.busy && !liveApprovalChange(levelNow, mode)) {
       setApprovalNotice(t("approvalMode.busy"));
       return;
@@ -137,7 +142,7 @@ export function PermissionsSection({
   // (shared/proactive-mode.ts, server/proactive.ts).
   const proactiveMode: ProactiveMode = proactiveModeFor(bot);
   const setProactiveMode = (mode: ProactiveMode) => {
-    if (bot.busy || mode === proactiveMode) return;
+    if (bot.busy || (mode === proactiveMode && !proactiveMixed)) return;
     patch({ proactiveMode: mode });
   };
   const showPrimary = canStepPrimary(state.config, bot, { draft });
@@ -177,6 +182,7 @@ export function PermissionsSection({
       menuDirection="down"
       align="right"
       wide
+      mixed={approvalMixed}
       disabled={Boolean(bot.busy) && !liveApprovalChange(levelNow, "ask")}
       trustedModesAvailable={trustedModesAvailable}
       orgFullAccess={orgFullAccess}
@@ -226,7 +232,8 @@ export function PermissionsSection({
           rowId="proactiveMode"
         >
           <PillSelect<ProactiveMode>
-            value={proactiveMode}
+            value={proactiveMixed ? undefined : proactiveMode}
+            mixed={proactiveMixed}
             ariaLabel={t("botPanel.permissions.proactive")}
             disabled={Boolean(bot.busy)}
             onChange={setProactiveMode}
@@ -243,9 +250,10 @@ export function PermissionsSection({
         >
           <Switch
             checked={Boolean(bot.approvePeerComms)}
+            mixed={peerMixed}
             aria-label={t("botPanel.permissions.ask")}
-            disabled={!bot.approvePeerComms && !canCoordinate}
-            onClick={() => patch({ approvePeerComms: !bot.approvePeerComms })}
+            disabled={!peerMixed && !bot.approvePeerComms && !canCoordinate}
+            onClick={() => patch({ approvePeerComms: peerMixed ? true : !bot.approvePeerComms })}
           />
         </DescribedRow>
       )}

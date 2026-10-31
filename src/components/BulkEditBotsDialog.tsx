@@ -35,12 +35,16 @@ import {
   BULK_SECTIONS,
   bulkDraftBot,
   bulkSectionRequest,
+  dirtyPatch,
   forgetBulkRun,
   lastBulkRun,
   listActive,
   listStart,
+  mixedFieldsOf,
   rememberBulkRun,
   runBulkEdit,
+  sectionBaseline,
+  sectionFieldStates,
   sectionTouched,
   undoBulkEdit,
   type BulkBefore,
@@ -405,7 +409,9 @@ export function BulkEditBotsDialog({ botIds, onClose, onDone }: {
                   {isOpen && (
                     <div className="mt-3 border-t border-hairline/40 pt-3">
                       {current.mixed.length > 0 && id !== "sharing" && id !== "perspicax" && (
-                        <p data-bulk-mixed-note className="mb-3 rounded-lg bg-inset px-3 py-2 text-[12px] leading-relaxed text-ink-secondary">{t("bulkEdit.mixedOpen", { name: bots[0]?.name ?? "" })}</p>
+                        <p data-bulk-mixed-note className="mb-3 rounded-lg bg-inset px-3 py-2 text-[12px] leading-relaxed text-ink-secondary">
+                          {t("bulkEdit.mixedOpen", { fields: current.mixed.map((row) => row.field).join(", ") })}
+                        </p>
                       )}
                       <SectionEditor
                         key={`${id}:${generation[id] ?? 0}`}
@@ -413,6 +419,7 @@ export function BulkEditBotsDialog({ botIds, onClose, onDone }: {
                         bots={bots}
                         viewerId={viewerId}
                         change={change}
+                        fieldValue={fieldValue}
                         read={() => changeOf(id)}
                         write={(next) => update(id, next)}
                         grantLabel={grantLabel}
@@ -512,11 +519,12 @@ const MODE_HINT: Record<BulkListMode, LocaleKey> = {
 
 /** One opened section: the bot editor's own controls on a draft bot, in a
  * scoped store whose writes become the section's change. */
-function SectionEditor({ id, bots, viewerId, change, read, write, grantLabel, enabledServers, perspicax, parent }: {
+function SectionEditor({ id, bots, viewerId, change, fieldValue, read, write, grantLabel, enabledServers, perspicax, parent }: {
   id: BulkSectionId;
   bots: Bot[];
   viewerId: string | null;
   change: BulkSectionChange | undefined;
+  fieldValue: (bot: Bot, field: string) => unknown;
   read: () => BulkSectionChange;
   write: (next: BulkSectionChange) => void;
   grantLabel: (target: string) => string;
@@ -525,7 +533,20 @@ function SectionEditor({ id, bots, viewerId, change, read, write, grantLabel, en
   parent: ReturnType<typeof useStore>;
 }) {
   const [draftId] = useState(() => `bulk-${id}-${Math.random().toString(36).slice(2, 10)}`);
-  const draftBot = bulkDraftBot(draftId, bots, viewerId, change);
+  const states = useMemo(() => sectionFieldStates(bots, id, fieldValue), [bots, id, fieldValue]);
+  const baseline = useMemo(() => sectionBaseline(states), [states]);
+  const baselineRef = useRef(baseline);
+  baselineRef.current = baseline;
+  const mixedAll = useMemo(() => mixedFieldsOf(states), [states]);
+  // Once the person sets a mixed field, show their choice, not Mixed.
+  const mixedActive = useMemo(() => {
+    const set = new Set<string>();
+    for (const field of mixedAll) {
+      if (change?.patch?.[field] === undefined) set.add(field);
+    }
+    return set;
+  }, [mixedAll, change]);
+  const draftBot = bulkDraftBot(draftId, bots, viewerId, change, { section: id, fieldValue });
   const botRef = useRef(draftBot);
   botRef.current = draftBot;
   const readRef = useRef(read);
@@ -533,23 +554,33 @@ function SectionEditor({ id, bots, viewerId, change, read, write, grantLabel, en
   const writeRef = useRef(write);
   writeRef.current = write;
   const request = useMemo(
-    () => bulkSectionRequest(draftId, () => readRef.current(), (next) => writeRef.current(next), () => botRef.current, grantLabel),
+    () => bulkSectionRequest(
+      draftId,
+      () => readRef.current(),
+      (next) => writeRef.current(next),
+      () => botRef.current,
+      grantLabel,
+      () => baselineRef.current,
+    ),
     [draftId, grantLabel],
   );
+  const applyPatch = (fields: Record<string, unknown>) => {
+    const current = readRef.current();
+    const { mcpServers, ...rest } = fields;
+    const patch = dirtyPatch(baselineRef.current, { ...current.patch, ...rest });
+    writeRef.current(Array.isArray(mcpServers)
+      ? { ...current, patch, mcpServers: { mode: current.mcpServers?.mode ?? "add", items: mcpServers as string[] } }
+      : { ...current, patch });
+  };
   const scoped: ReturnType<typeof useStore> = {
     ...parent,
     state: { ...parent.state, bots: [draftBot, ...parent.state.bots] },
     flushBotPatches: async () => draftBot,
     dispatch: (action) => {
       if (action.type === "updateBot" && action.botId === draftId) {
-        const current = readRef.current();
-        const { mcpServers, ...rest } = action.patch as Record<string, unknown>;
-        writeRef.current(Array.isArray(mcpServers)
-          ? { ...current, patch: { ...current.patch, ...rest }, mcpServers: { mode: current.mcpServers?.mode ?? "add", items: mcpServers as string[] } }
-          : { ...current, patch: { ...current.patch, ...(action.patch as Record<string, unknown>) } });
+        applyPatch(action.patch as Record<string, unknown>);
       } else if (action.type === "setModel" && action.botId === draftId) {
-        const current = readRef.current();
-        writeRef.current({ ...current, patch: { ...current.patch, modelSelection: action.selection } });
+        applyPatch({ modelSelection: action.selection });
       } else if (action.type === "toggleSettings" || action.type === "botPatched") {
         // editor links and saved answers stay inside this dialog
       } else parent.dispatch(action);
@@ -579,7 +610,7 @@ function SectionEditor({ id, bots, viewerId, change, read, write, grantLabel, en
 
   return (
     <BotEditorStore value={scoped}>
-      <BotEditorContext.Provider value={{ request, draft: true, bulk: true }}>
+      <BotEditorContext.Provider value={{ request, draft: true, bulk: true, mixedFields: mixedActive }}>
         {id === "sharing" && listMode("grants")}
         {id === "access" && (
           <div data-bulk-list="mcpServers">

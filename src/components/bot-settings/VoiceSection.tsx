@@ -19,7 +19,7 @@ export function VoiceSection({
   derived: ReturnType<typeof useBotSettingsDerived>;
 }) {
   const { patch } = derived;
-  const { draft } = useBotEditor();
+  const { draft, bulk, mixedFields } = useBotEditor();
   const { state, dispatch } = useStore();
   // Bot-wide read-aloud and voice-note switches follow edit rights. The
   // provider, voice, ears and notifications remain this person's own.
@@ -27,6 +27,7 @@ export function VoiceSection({
   const viewerLocal = viewerLocalBotSettings(state.config, bot);
   const override = useViewerBotOverride(bot.id, viewerLocal);
   const notifications = viewerLocal && override?.notifications !== undefined ? override.notifications : bot.notifications !== false;
+  const notificationsMixed = Boolean(bulk && mixedFields?.has("notifications"));
 
   return (
     <div className="flex flex-col gap-5">
@@ -42,9 +43,10 @@ export function VoiceSection({
         >
           <Switch
           checked={notifications}
+          mixed={notificationsMixed}
           aria-label={t("botPanel.voice.notifyHelp")}
           onClick={() => {
-            const enabled = !notifications;
+            const enabled = notificationsMixed ? true : !notifications;
             if (enabled && !draft) void requestNotificationPermission();
             if (viewerLocal) {
               void saveViewerBotOverride(bot.id, { notifications: enabled }).then((ok) => {

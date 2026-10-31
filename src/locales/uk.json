@@ -2355,5 +2355,7 @@
   "routines.rename.empty": "Рутина потребує назви.",
   "routines.rename.hint": "Двічі клацніть, щоб перейменувати",
   "settings.streamReplies.title": "Показувати відповіді під час написання",
-  "settings.streamReplies.show": "Показувати відповідь бота слово за словом під час написання, а не всю одразу після завершення"
+  "settings.streamReplies.show": "Показувати відповідь бота слово за словом під час написання, а не всю одразу після завершення",
+  "bulkEdit.mixedOpen": "These fields differ across the selected bots: {fields}. Controls start empty for them; only what you set is written.",
+  "bulkEdit.mixedOpenShort": "Only what you set is written on every selected bot."
 }

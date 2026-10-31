@@ -10,25 +10,30 @@ import { AnchoredPopover, useAnchoredDismissRoot } from "./AnchoredPopover";
 
 export function Switch({
   checked,
+  mixed = false,
   className,
   ...props
-}: Omit<ComponentProps<"button">, "children" | "role" | "aria-checked"> & { checked: boolean }) {
+}: Omit<ComponentProps<"button">, "children" | "role" | "aria-checked"> & {
+  checked: boolean;
+  /** Bulk edit: bots differ; neither on nor off (#1701). */
+  mixed?: boolean;
+}) {
   return (
     <button
       {...props}
       type="button"
       role="switch"
-      aria-checked={checked}
+      aria-checked={mixed ? "mixed" : checked}
       className={cn(
         "relative h-5 w-11 shrink-0 cursor-pointer rounded-full transition-colors enabled:hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-55 disabled:saturate-50 motion-reduce:transition-none",
-        checked ? SWITCH_ON : SWITCH_OFF,
+        mixed ? "bg-control ring-1 ring-inset ring-hairline" : checked ? SWITCH_ON : SWITCH_OFF,
         className,
       )}
     >
       <span
         className={cn(
           "absolute left-0.5 top-1/2 h-4 w-[26px] -translate-y-1/2 rounded-full transition-transform motion-reduce:transition-none",
-          checked ? `translate-x-[14px] ${SWITCH_THUMB_ON}` : `translate-x-0 ${SWITCH_THUMB_OFF}`,
+          mixed ? `translate-x-[7px] ${SWITCH_THUMB_OFF}` : checked ? `translate-x-[14px] ${SWITCH_THUMB_ON}` : `translate-x-0 ${SWITCH_THUMB_OFF}`,
         )}
       />
     </button>
@@ -522,19 +527,24 @@ export function PillSelect<T extends string>({
   onChange,
   ariaLabel,
   disabled,
+  mixed = false,
+  mixedLabel,
 }: {
-  value: T;
+  value: T | undefined;
   options: ReadonlyArray<PillOption<T>>;
   onChange: (next: T) => void;
   ariaLabel: string;
   disabled?: boolean;
+  /** Bulk edit: bots differ; no choice looks selected (#1701). */
+  mixed?: boolean;
+  mixedLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const listRef = useRef<HTMLElement | null>(null);
   const listId = useId();
-  const current = options.find((option) => option.value === value);
+  const current = mixed || value === undefined ? undefined : options.find((option) => option.value === value);
   const close = (focusTrigger = false) => {
     setOpen(false);
     if (focusTrigger) triggerRef.current?.focus();
@@ -555,8 +565,10 @@ export function PillSelect<T extends string>({
   const choose = (next: T) => {
     if (options.find((option) => option.value === next)?.disabled) return;
     close(true);
-    if (next !== value) onChange(next);
+    // Mixed / unset: any pick counts, including one bot's current value.
+    if (mixed || value === undefined || next !== value) onChange(next);
   };
+  const shown = current?.label ?? (mixed ? (mixedLabel ?? t("bulkEdit.mixed")) : value);
   return (
     <div ref={rootRef} className="relative inline-flex justify-end">
       <button
@@ -567,7 +579,7 @@ export function PillSelect<T extends string>({
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         disabled={disabled}
-        title={current?.label}
+        title={typeof shown === "string" ? shown : undefined}
         onClick={() => (open ? close() : show())}
         onKeyDown={(event) => {
           if (event.key === "ArrowDown" || event.key === "ArrowUp") {
@@ -579,9 +591,10 @@ export function PillSelect<T extends string>({
           }
         }}
         data-pill-select=""
+        data-pill-mixed={mixed || value === undefined ? "" : undefined}
         className="inline-flex h-7 max-w-[240px] items-center gap-1 rounded-full px-2.5 text-[13px] leading-[18px] text-ink transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/70 disabled:cursor-not-allowed disabled:opacity-50 aria-expanded:bg-hover motion-reduce:transition-none"
       >
-        <span className="min-w-0 truncate">{current?.label ?? value}</span>
+        <span className={cn("min-w-0 truncate", (mixed || value === undefined) && "text-ink-secondary")}>{shown}</span>
         <ChevronDown size={13} aria-hidden="true" className="shrink-0 text-ink-secondary" />
       </button>
       {open && (

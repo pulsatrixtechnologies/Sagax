@@ -219,7 +219,7 @@ export function AccessSection({
   /** One card alone (the bot creation wizard's Tools step, 2026-10-26). */
   part?: "all" | "mcp" | "browser";
 }) {
-  const { draft } = useBotEditor();
+  const { draft, bulk, mixedFields } = useBotEditor();
   const { state } = useStore();
   // Organization server: bots work in their owner's server environment.
   const organization = usePerspicaxOrg() !== null;
@@ -234,6 +234,7 @@ export function AccessSection({
     browserEnabled,
   } = derived;
   const browserInstallable = state.config?.browserEngine?.installable === true;
+  const browserMixed = Boolean(bulk && mixedFields?.has("browser"));
 
   const alwaysAllow = bot.alwaysAllow ?? [];
 
@@ -304,12 +305,13 @@ export function AccessSection({
         </div>
         <Switch
           checked={browserEnabled && bot.computer !== "off"}
+          mixed={browserMixed}
           aria-label={t("botPanel.access.browserGive")}
           disabled={
             bot.computer === "off" ||
-            (!browserEnabled && ((!desktopBrowser && !browserInstallable) || !browserFeature || !canUseBrowser))
+            (!browserMixed && !browserEnabled && ((!desktopBrowser && !browserInstallable) || !browserFeature || !canUseBrowser))
           }
-          onClick={() => patch({ browser: !browserAllowed })}
+          onClick={() => patch({ browser: browserMixed ? true : !browserAllowed })}
           title={bot.computer === "off" ? t("botPanel.access.browserOffShort") : undefined}
           className="disabled:cursor-not-allowed"
         />

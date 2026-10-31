@@ -732,7 +732,10 @@ Perspicax Profiles), not copies of them.
   same way New bot does, so nothing is written until Apply. `GrantEditor`
   reads and writes through `useBotEditor().request` for this.
 - A value every bot shares shows beside the section; when they differ it
-  reads "Mixed values" with each bot's value behind its help.
+  reads "Mixed values" with each bot's value behind its help. Opened, mixed
+  fields start empty / indeterminate (`mixedFields` on the editor context),
+  not on the first bot's settings (#1701); only fields that differ from the
+  opening baseline enter the change (`dirtyPatch`).
 - Lists (Shared with, Access's MCP servers, Perspicax Profiles): Add, Remove
   or Replace with; Replace starts from what every bot has.
 - Review shows one line ("3 bots · Workspace → Cloud · ..."), Apply runs
