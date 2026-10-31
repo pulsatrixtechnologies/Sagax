@@ -387,6 +387,22 @@ describe("threads, approvals and nudges", () => {
     expect(recorded.map((r) => r.action)).toEqual(["client.approval", "client.nudge"]);
   });
 
+  it("nudges from list_agents owner.principal_id alone (#1637)", async () => {
+    people.get("bob")!.permissions.push("clients.peopleNudge");
+    const owner = { principal_id: "pr_ann", name: "Ann" };
+    agentReply = (tool) => tool === "list_agents"
+      ? { status: 200, body: { agents: [{ id: "b1", name: "Orion", description: "", status: "idle", temporary: false, owner }] } }
+      : { status: 404, body: {} };
+    const listed = await call("POST", "agents/list_agents", token("bob"), {});
+    expect(listed.status).toBe(200);
+    expect((listed.body.agents as Array<{ owner: typeof owner }>)[0]?.owner).toEqual(owner);
+    respond = (request) => request.path === "/api/nudges" ? { status: 200, body: { ok: true, id: "n2", at: 6 } } : { status: 200, body: { ok: true } };
+    const nudged = await call("POST", `people/${owner.principal_id}/nudge`, token("bob"), {});
+    expect(nudged.body).toEqual({ ok: true, id: "n2", at: 6 });
+    expect(performed.at(-1)!.request).toEqual({ method: "POST", path: "/api/nudges", body: { principalId: "pr_ann" } });
+    expect(recorded.map((r) => r.action)).toContain("client.nudge");
+  });
+
   it("passes a refusal's permission through", async () => {
     people.get("bob")!.permissions.push("clients.routinesRun");
     respond = () => ({ status: 403, body: { error: "Only the bot's owner can run it now.", code: "run_now_not_allowed", permission: "routines.runNowAny" } });

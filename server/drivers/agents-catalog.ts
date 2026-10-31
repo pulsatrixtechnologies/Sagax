@@ -1619,7 +1619,7 @@ const AGENT_CURSOR = { type: "string", description: "next_cursor of the previous
 const AGENT_API_TOOLS = [
   {
     name: "list_agents",
-    description: "List the Sagax agents (bots) you may reach: id, name, description, status (running or idle). Its ids are the only valid agent_id values.",
+    description: "List the Sagax agents (bots) you may reach: id, name, description, status (running or idle), temporary, and owner ({principal_id, name} or null). Its ids are the only valid agent_id values. Pass owner.principal_id to sagax_nudge to reach that agent's owner.",
     inputSchema: { type: "object", additionalProperties: false, properties: {} },
   },
   {
