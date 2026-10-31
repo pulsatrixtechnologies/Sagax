@@ -1,5 +1,5 @@
 import type { Routine, RoutineRun, RoutineSchedule } from "./routines";
-import { nextCronRuns } from "../../shared/routine-schedule";
+import { createCronRunPreview } from "../../shared/routine-schedule";
 
 import { activeLocale } from "@/lib/i18n";
 export const CALENDAR_SLOT_MINUTES = 5;
@@ -7,6 +7,14 @@ const ROUTINE_MARKER_MINUTES = 30;
 const MAX_RECEIPTS_PER_ROUTINE_PER_RANGE = 12;
 /** nextCronRuns answers at most this many runs per call. */
 const CRON_BATCH = 1000;
+/**
+ * Half-hour buckets for the calendar "+N" stack (`groupCalendarSlots`).
+ * Dense cron projections emit at most one marker per bucket so a per-minute
+ * expression covers the day without 288 React nodes per routine (#1677).
+ */
+export const SLOT_GROUP_MS = 30 * 60_000;
+/** Cadence at or below one calendar slot is collapsed into SLOT_GROUP_MS. */
+const DENSE_CRON_GAP_MS = CALENDAR_SLOT_MINUTES * 60_000;
 
 export type RoutineCalendarItem = {
   id: string;
@@ -240,19 +248,36 @@ export function projectedRoutineItems(
     if (routine.schedule.type === "cron") {
       // Never reconstruct skipped work before the scheduler's next occurrence.
       // Every run of each visible day shows, up to midnight (#1483: an hourly
-      // routine used to stop at 11:00). A denser expression keeps one marker
-      // per calendar slot, so a per-minute cron still covers the whole day.
+      // routine used to stop at 11:00). A cron at or below one calendar slot
+      // collapses to one marker per half hour and skips ahead, so croner and
+      // React are not asked for every minute (#1677). Sparser crons still
+      // emit every occurrence (hourly stays 24/day).
       if (routine.nextRunAt == null) continue;
+      const nextRuns = createCronRunPreview(routine.schedule);
       for (let day = startOfDay(Math.max(from, routine.nextRunAt)); day < to; day = addDays(day, 1)) {
         let after = Math.max(day, from, routine.createdAt, routine.nextRunAt) - 1;
-        const first = nextCronRuns(routine.schedule, after, 1);
-        if (!first.length || first[0]! >= to) break;
+        const probe = nextRuns(after, 2);
+        if (!probe.length || probe[0]! >= to) break;
         // Jump over empty days for sparse monthly/yearly schedules.
-        day = startOfDay(first[0]!);
+        day = startOfDay(probe[0]!);
+        after = Math.max(day, from, routine.createdAt, routine.nextRunAt) - 1;
         const end = Math.min(to, addDays(day, 1));
+        const dense = probe.length >= 2 && probe[1]! - probe[0]! <= DENSE_CRON_GAP_MS;
+        if (dense) {
+          while (after < end) {
+            const upcoming = nextRuns(after, 1);
+            if (!upcoming.length || upcoming[0]! >= end) break;
+            const at = upcoming[0]!;
+            if (!hasReceipt(routine.id, at)) items.push({
+              id: `next-${routine.id}-${at}`, at, durationMinutes: ROUTINE_MARKER_MINUTES, routine, run: null,
+            });
+            after = (Math.floor(at / SLOT_GROUP_MS) + 1) * SLOT_GROUP_MS - 1;
+          }
+          continue;
+        }
         let lastSlot = -1;
         while (after < end) {
-          const upcoming = nextCronRuns(routine.schedule, after, CRON_BATCH);
+          const upcoming = nextRuns(after, CRON_BATCH);
           for (const at of upcoming) {
             if (at >= end) break;
             const slot = Math.floor(at / (CALENDAR_SLOT_MINUTES * 60_000));
@@ -340,8 +365,6 @@ export function scheduledRoutineItems(
   }
   return items;
 }
-
-const SLOT_GROUP_MS = 30 * 60_000;
 
 /**
  * Many routines in the same half hour: draw at most two cards. Past that,
