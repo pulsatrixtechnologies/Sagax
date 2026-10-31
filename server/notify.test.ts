@@ -61,6 +61,19 @@ describe("buildNotification", () => {
     expect(buildNotification("done", bot, "other-thread", "done")?.threadId).toBe("other-thread");
   });
 
+  it("keeps an approval on the card's thread, not a routine report thread (#1743)", () => {
+    // Caller must pass the execution thread that holds the card. The results
+    // conversation is for done/report pushes only; Allow on the phone posts
+    // to notification.threadId.
+    const cardThread = "exec-thread";
+    const reportThread = "results-thread";
+    const approval = buildNotification("approval", bot, cardThread, "rm -rf ./build", { requestId: "r1" });
+    expect(approval?.threadId).toBe(cardThread);
+    expect(approval?.threadId).not.toBe(reportThread);
+    const question = buildNotification("question", bot, cardThread, "which branch?", { requestId: "q1" });
+    expect(question?.threadId).toBe(cardThread);
+  });
+
   it("carries the bot's avatar when one is given", () => {
     const avatarUrl = "/api/attachments/123e4567-e89b-12d3-a456-426614174000.webp";
     const frame = buildNotification("done", bot, "thread-1", "pushed the branch", { avatarUrl });
