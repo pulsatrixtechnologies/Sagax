@@ -40,13 +40,26 @@ export interface MailerDeps {
 }
 
 const SENDGRID_URL = "https://api.sendgrid.com/v3/mail/send";
+const MAIL_HTTP_TIMEOUT_MS = 20_000;
+
+/** The same upper bound as SMTP's socket timeout. A timeout is surfaced
+ * without retrying: the provider may already have accepted the message. */
+async function fetchMail(provider: string, fetchImpl: typeof fetch, url: string, init: RequestInit): Promise<Response> {
+  const signal = AbortSignal.timeout(MAIL_HTTP_TIMEOUT_MS);
+  try {
+    return await fetchImpl(url, { ...init, signal });
+  } catch (error) {
+    if (signal.aborted) throw new Error(`${provider} did not answer within 20 seconds`);
+    throw error;
+  }
+}
 
 function createSendGridMailer(settings: MailSettings, fetchImpl: typeof fetch): Mailer {
   const apiKey = settings.sendgrid!.apiKey!;
   const sender = senderOf(settings);
   return {
     async send(message) {
-      const response = await fetchImpl(SENDGRID_URL, {
+      const response = await fetchMail("SendGrid", fetchImpl, SENDGRID_URL, {
         method: "POST",
         headers: {
           authorization: `Bearer ${apiKey}`,
@@ -143,7 +156,7 @@ function createTwilioMailer(settings: MailSettings, fetchImpl: typeof fetch): Ma
   };
 
   async function sendOne(to: string[], message: { subject: string; text: string }): Promise<void> {
-    const response = await fetchImpl(TWILIO_EMAIL_URL, {
+    const response = await fetchMail("Twilio", fetchImpl, TWILIO_EMAIL_URL, {
       method: "POST",
       headers: {
         authorization,

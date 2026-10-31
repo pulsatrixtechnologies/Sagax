@@ -1,9 +1,50 @@
 import { describe, expect, it, vi } from "vitest";
-import { createMailer } from "./mailer.ts";
+import { createMailer, MailPartialSendError } from "./mailer.ts";
 
 describe("mailer", () => {
   it("is absent until mail is configured", () => {
     expect(createMailer({})).toBeNull();
+  });
+
+  for (const provider of ["sendgrid", "twilio"] as const) {
+    it(`${provider}: aborts a stalled send after 20 seconds without retrying`, async () => {
+      const controller = new AbortController();
+      const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+      const fetchImpl = vi.fn((_url: unknown, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+        init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true });
+      }));
+      try {
+        const mailer = createMailer({ provider, from: "sender@example.test", sendgrid: { apiKey: "fake-key" }, twilio: { apiKeySid: "fake-sid", apiKeySecret: "fake-secret" } }, { fetchImpl: fetchImpl as typeof fetch })!;
+        const sending = mailer.send({ to: "reader@example.test", subject: "Code", text: "Example" });
+        const failed = expect(sending).rejects.toThrow(`${provider === "sendgrid" ? "SendGrid" : "Twilio"} did not answer within 20 seconds`);
+        expect(timeout).toHaveBeenCalledWith(20_000);
+        controller.abort(new DOMException("Timed out", "TimeoutError"));
+        await failed;
+        expect(fetchImpl).toHaveBeenCalledTimes(1);
+      } finally {
+        timeout.mockRestore();
+      }
+    });
+  }
+
+  it("keeps the recipients already sent when a later Twilio copy times out", async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+    const fetchImpl = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response(null, { status: 202 }))
+      .mockImplementationOnce(async (_url, init) => {
+        controller.abort(new DOMException("Timed out", "TimeoutError"));
+        throw init!.signal!.reason;
+      });
+    try {
+      const mailer = createMailer({ provider: "twilio", from: "sender@example.test", twilio: { apiKeySid: "fake-sid", apiKeySecret: "fake-secret" } }, { fetchImpl })!;
+      const failure = await mailer.send({ to: "reader@example.test", cc: ["copy@example.test"], subject: "Code", text: "Example" }).catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(MailPartialSendError);
+      expect(failure).toMatchObject({ sent: ["reader@example.test"], message: "Twilio did not answer within 20 seconds" });
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+    } finally {
+      timeout.mockRestore();
+    }
   });
 
   it("sends through SendGrid's HTTP API", async () => {
