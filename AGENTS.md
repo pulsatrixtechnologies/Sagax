@@ -8413,7 +8413,10 @@ Keep these rules:
 
 Every release has `docs/releases/<version>.md`: the French part first, then a
 `## English` section (`scripts/check-release-notes.mjs` refuses a release
-without it). The files are compiled into the renderer by `import.meta.glob`
+without it). The `pulsa-vX.Y.Z` tag itself must be an ancestor of `main`:
+squash-merge the release PR first, then tag that squash commit
+(`scripts/check-release-tag.mjs`, docs/releasing.md; issue #1709). The notes
+files are compiled into the renderer by `import.meta.glob`
 in `src/lib/bundled-release-notes.ts`, so the notes work offline and an
 organization server serves the same bundle. Three ways in, all through
 `src/components/ReleaseNotesPrompt.tsx`:
