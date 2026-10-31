@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setLocale } from "@/lib/i18n";
 import { connectedPlanRows, planRows, type PlanProvider, type PlanUsageReport } from "@/lib/plan-usage";
+import type { MyEngine } from "@/lib/perspicax-org";
 
 vi.mock("@/state/store", async (importOriginal) => ({
   ...await importOriginal<typeof import("@/state/store")>(),
@@ -27,9 +28,14 @@ function row(patch: Partial<PlanProvider>): PlanProvider {
 function render(report: PlanUsageReport | null, patch: Partial<PlanUsageViewProps> = {}): string {
   return renderToStaticMarkup(createElement(PlanUsageView, {
     report, loading: false, now: Date.parse("2026-10-02T09:00:00Z"),
-    onRefresh: () => {}, issuer: "", ...patch,
+    onRefresh: () => {}, myEngines: null, issuer: "", onOpenEngines: () => {}, ...patch,
   }));
 }
+
+const engine = (patch: Partial<MyEngine> = {}): MyEngine => ({
+  instanceId: "claude", driver: "claudeAgent", displayName: "Claude", installed: true,
+  subscription: { supported: true, signedIn: false }, myKey: false, orgKey: false, myTurns: "none", ...patch,
+});
 
 beforeEach(() => {
   setLocale("en");
@@ -68,38 +74,71 @@ describe("Plan usage rows", () => {
     expect(html).not.toContain("Connect");
   });
 
-  it("connected only: a provider in error or not signed in is not shown, no message, no Connect", () => {
-    const connected = row({ state: "windows", ok: true, plan: "Max", weekly: { available: true, remainingPercent: 84, usedPercent: 16, resetsAt: null } });
+  it("not signed in, solo: Not signed in and a Connect button to Providers", () => {
+    const html = render({ providers: [row({ state: "signed-out", error: "Not signed in" })] });
+    expect(html).toContain('data-plan-row="claude"');
+    expect(html).toContain("Not signed in");
+    expect(html).toContain('data-plan-connect="claude"');
+    expect(html).toContain("Connect Claude");
+    expect(html).not.toContain("Sign in again");
+  });
+
+  it("not signed in, organization: the person's own engine card with its Connect button", () => {
+    const html = render(
+      { providers: [row({ state: "signed-out", error: "Not signed in" })] },
+      { myEngines: [engine()], issuer: "https://px.example.test" },
+    );
+    expect(html).toContain("Not signed in");
+    expect(html).toContain('data-engine-connect="claude"');
+    expect(html).toContain("Connect Claude");
+    expect(html).not.toContain("data-plan-connect");
+  });
+
+  it("error: the real reason in the person's language, with Try again", () => {
     const html = render({
       providers: [
-        row({ id: "grok", name: "Grok", driver: "grok", instanceId: "grok", state: "error", failure: { kind: "renewing" } }),
-        connected,
-        row({ id: "codex", name: "Codex", driver: "codex", instanceId: "codex", state: "signed-out", error: "Not signed in" }),
+        row({ state: "error", error: "Could not reach Claude: rate limited (429), try again in a minute", failure: { kind: "http", status: 429 } }),
+        row({ id: "codex", name: "Codex", driver: "codex", instanceId: "codex", state: "error", failure: { kind: "network", code: "ENOTFOUND" } }),
       ],
     });
     expect(html).toContain('data-plan-row="claude"');
-    expect(html).not.toContain('data-plan-row="grok"');
-    expect(html).not.toContain('data-plan-row="codex"');
-    expect(html).not.toContain("Not signed in");
-    expect(html).not.toContain("Try again");
-    expect(html).not.toContain("Connect");
-    expect(html).not.toContain("Could not reach");
-    expect(html).toContain("data-plan-refresh");
+    expect(html).toContain('data-plan-row="codex"');
+    expect(html).toContain("Could not reach Claude: rate limited (429), try again in a minute");
+    expect(html).toContain("Could not reach Codex: network error (ENOTFOUND)");
+    expect(html.match(/Try again/g)).toHaveLength(2);
+    setLocale("fr");
+    const fr = render({ providers: [row({ state: "error", failure: { kind: "timeout", seconds: 8 } })] });
+    expect(fr).toContain("Impossible de joindre Claude : aucune réponse en 8 s");
+    expect(fr).toContain("Réessayer");
+  });
+
+  // #1774: an expired access token next to a refresh token used to drop the
+  // row, so only the engine used most recently stayed listed.
+  it("expired token (renewing): the row stays with its reason and Try again, next to a working engine", () => {
+    const html = render({
+      providers: [
+        row({
+          id: "grok", name: "Grok", driver: "grok", instanceId: "grok",
+          state: "error", failure: { kind: "renewing" },
+        }),
+        row({
+          state: "windows", ok: true, plan: "Max",
+          weekly: { available: true, remainingPercent: 84, usedPercent: 16, resetsAt: null },
+        }),
+      ],
+    });
+    expect(html).toContain('data-plan-row="grok"');
+    expect(html).toContain('data-plan-row="claude"');
+    expect(html).toContain('data-plan-state="error"');
+    expect(html).toContain("Could not reach Grok: the sign-in token expired and renews on the next turn; refresh after it");
+    expect(html).toContain("Try again");
+    expect(html).toContain("16% used");
+    expect(html).not.toContain('data-plan-status=');
   });
 
   // 2026-10-16: the card vanished in these cases and the owner lost his 5-hour and
   // weekly limits; it now stays with one line saying why.
-  it("no connected provider: the card stays with one line, also while loading and after a failed read", () => {
-    const failing = render({
-      providers: [
-        row({ state: "error", failure: { kind: "http", status: 429 } }),
-        row({ id: "codex", name: "Codex", driver: "codex", instanceId: "codex", state: "signed-out" }),
-      ],
-    });
-    expect(failing).toContain('data-plan-status="unavailable"');
-    expect(failing).toContain("Plan unavailable for this account.");
-    expect(failing).toContain("429");
-    expect(failing).not.toContain('data-plan-row=');
+  it("no provider row: the card stays with one line, also while loading and after a failed read", () => {
     expect(render({ providers: [] })).toContain("Connect a subscription");
     expect(render(null, { loading: true })).toContain('data-plan-status="loading"');
     expect(render(null, { failed: true })).toContain("Plan unavailable for this account.");
@@ -160,7 +199,7 @@ describe("planRows", () => {
     ]);
   });
 
-  it("connectedPlanRows keeps only the providers that answer", () => {
+  it("connectedPlanRows keeps only the providers that answer (sidebar meters)", () => {
     const rows = connectedPlanRows({
       providers: [
         row({ id: "a", state: "windows", ok: true }),
@@ -175,5 +214,21 @@ describe("planRows", () => {
   it("an older server's real error stays an error, not a sign-in", () => {
     const [entry] = planRows({ providers: [{ id: "claude", name: "Claude", driver: "claude", ok: false, error: "Could not reach Claude" }] });
     expect(entry).toMatchObject({ state: "error", message: "Could not reach Claude" });
+  });
+
+  it("listing keeps every subscription after one token expired (#1774)", () => {
+    const rows = planRows({
+      providers: [
+        row({ id: "claude", state: "windows", ok: true, plan: "Max" }),
+        row({ id: "grok", name: "Grok", driver: "grok", instanceId: "grok", state: "error", failure: { kind: "renewing" } }),
+        row({ id: "codex", name: "Codex", driver: "codex", instanceId: "codex", state: "signed-out" }),
+      ],
+    });
+    expect(rows.map((entry) => [entry.id, entry.state])).toEqual([
+      ["claude", "windows"],
+      ["grok", "error"],
+      ["codex", "signed-out"],
+    ]);
+    expect(rows.find((entry) => entry.id === "grok")?.message).toContain("expired");
   });
 });

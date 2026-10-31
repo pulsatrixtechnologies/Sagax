@@ -151,10 +151,9 @@ export function planRows(report: PlanUsageReport | null): PlanRow[] {
   return [...rows.filter((row) => row.access !== "api-key"), ...rows.filter((row) => row.access === "api-key")];
 }
 
-/** The rows the Plan card shows (2026-10-15): only providers that are
- * connected and answer. A provider in error or not signed in is left out,
- * with no message and no Connect button; Settings > Model providers is
- * where a person signs in. */
+/** Rows with windows to meter (sidebar Usage %, chat notices). Settings >
+ * Usage draws every row via planRows, including signed-out and error
+ * (#1774: an expired token must stay listed with its reason). */
 export function connectedPlanRows(report: PlanUsageReport | null): PlanRow[] {
   return planRows(report).filter((row) => row.state === "windows" || row.state === "no-windows");
 }

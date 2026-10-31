@@ -1,8 +1,8 @@
 // Settings > Usage (2026-10-14, redrawn): the signed-in person's own usage.
 // Two simple cards on top, Cost first (this month, its trend against the
 // same days of last month, a 30-day sparkline; on top since 2026-10-15),
-// then Plan (their connected subscriptions' 5-hour and weekly windows; always
-// drawn since 2026-10-16, with one line when there is nothing to show),
+// then Plan (each subscription's windows, or signed-out / error with Connect
+// or Try again; always drawn since 2026-10-16, with one line when empty),
 // then one folded breakdown by bot and by model. Every figure
 // comes from GET /api/me/usage (or, on a 0.5.3 server, GET /api/usage?mine=1), which keeps only the requester's turns
 // (server/routes/usage.ts) and is open to every member (2026-10-15). Per-person tables, organization totals, budgets
