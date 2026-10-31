@@ -23,6 +23,7 @@ import type { LocaleKey } from "@/locales";
 import { STEP_UP_CLASSES, type SecurityKeysState, type StepUpClass } from "../../shared/step-up";
 import { cn } from "@/lib/cn";
 import { DescribedRow, FIELD, PILL, PRIMARY_PILL, SettingsGroup, SettingsIntro, SettingsNotice, SettingsTextRow, Switch } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 const CLASS_LABEL: Record<StepUpClass, LocaleKey> = {
   destructive: "security.class.destructive",
@@ -45,7 +46,7 @@ const CLASS_HINT: Record<StepUpClass, LocaleKey> = {
 };
 
 function message(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return readableError(error);
 }
 
 function code(error: unknown): string | undefined {

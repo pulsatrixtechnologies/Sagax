@@ -18,6 +18,7 @@ import { localSystemVoiceActive, remoteSystemVoice, resolveLocalSystemVoice } fr
 import { prepareVoiceModeText, refreshVoiceMode, speakVoiceMode, voiceModeCheckNow } from "@/lib/voice-mode/api";
 import { readVoiceModeSettings } from "@/lib/voice-mode/settings";
 import type { VoiceModeSettings } from "../../../shared/voice-mode";
+import { readableError } from "../plain-error";
 
 export type SpeechStatus = "idle" | "preparing" | "speaking";
 
@@ -178,7 +179,7 @@ export class Speaker {
         ? await prepareVoiceModeText(voiceMode.botId, text, controller.signal)
         : await this.prepare(text, opts.voiceId, controller.signal);
     } catch (e) {
-      if (live()) this.set({ ...IDLE, error: e instanceof Error ? e.message : String(e) });
+      if (live()) this.set({ ...IDLE, error: readableError(e) });
       if (this.request === controller) this.request = null;
       return;
     }

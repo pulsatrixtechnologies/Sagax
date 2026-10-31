@@ -36,6 +36,7 @@ import { useBotSettingsDerived } from "../bot-settings/useBotSettingsDerived";
 import { WorksOnSetting } from "../computer/WorksOnSetting";
 import { HelpTip, PILL, PillSelect, SwitchRow } from "../SettingsPrimitives";
 import { ModelPicker } from "../ModelPicker";
+import { readableError } from "@/lib/plain-error";
 
 export interface StepProps {
   bot: Bot;
@@ -87,7 +88,7 @@ export function IdentityStep({ bot, draft, patch }: StepProps) {
     setPrimaryError(null);
     void api<{ bot: Bot }>(`/api/bots/${bot.id}/primary`, { method: bot.chiefOfStaff ? "DELETE" : "POST" })
       .then((response) => dispatch({ type: "botPatched", bot: response.bot }))
-      .catch((error: unknown) => setPrimaryError(error instanceof Error ? error.message : String(error)));
+      .catch((error: unknown) => setPrimaryError(readableError(error)));
   };
   const showPrimary = canEditBotField(state.config, bot, "chiefOfStaff");
   // #1451: the model is chosen here, among the models this person can run
@@ -192,7 +193,7 @@ export function SoulStep({ bot, draft, suggestions, patch, language, compact }: 
       const written = await writeSoulForMe(bot.id, language);
       derived.patch({ soul: written.soul });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setWriting(false);
     }
@@ -321,7 +322,7 @@ export function RulesStep({ bot, draft, suggestions, patch, language }: StepProp
       remember(id, chosen);
       if (Object.keys(rules).length) await patch({ rules });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }

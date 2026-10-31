@@ -9,6 +9,7 @@ import { t } from "@/lib/i18n";
 import { acceptTerms, fetchTerms, TERMS_URL, type TermsStatus } from "@/lib/moderation";
 import { useStoreSelector } from "@/state/store-selector";
 import { DialogFrame, DialogLayer, PILL, PRIMARY_PILL } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 export function TermsGate() {
   // who is signed in: a new account asks again
@@ -33,7 +34,7 @@ export function TermsGate() {
     try {
       setTerms(await acceptTerms(terms.current));
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(readableError(failure));
     } finally {
       setPending(false);
     }

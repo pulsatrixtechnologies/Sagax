@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 import type { SearchHit } from "@/lib/search-hit";
 import { landOnSearchHit } from "@/lib/focus-message";
 import { useShowThreads } from "@/lib/thread-preferences";
+import { readableError } from "@/lib/plain-error";
 
 export const MIN_QUERY = 2;
 const DEBOUNCE_MS = 250;
@@ -35,7 +36,7 @@ export function SearchResults({ query, onLanded }: { query: string; onLanded: ()
     const t = setTimeout(() => {
       api(`/api/search?q=${encodeURIComponent(q)}&limit=40`)
         .then((r: { hits: SearchHit[] }) => alive && (setHits(r.hits), setError(null)))
-        .catch((e: unknown) => alive && setError(e instanceof Error ? e.message : String(e)));
+        .catch((e: unknown) => alive && setError(readableError(e)));
     }, DEBOUNCE_MS);
     return () => {
       alive = false;
@@ -50,7 +51,7 @@ export function SearchResults({ query, onLanded }: { query: string; onLanded: ()
       await landOnSearchHit(hit, state, dispatch, showThreads);
       onLanded();
     } catch (e) {
-      dispatch({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      dispatch({ type: "error", message: readableError(e) });
     }
   };
 

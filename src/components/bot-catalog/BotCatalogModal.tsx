@@ -72,6 +72,7 @@ import { BotCatalogDetailView, templateDetail, type CatalogDetailContent, type C
 import { TeamImportDetails, type TeamImportResult } from "./TeamImportDetails";
 import { useBotCatalogSources, type BotCatalogSources } from "./use-bot-catalog-sources";
 import { openExternal, TeamImportPreview, TemplateTools, type TemplateTool } from "./TemplateTools";
+import { readableError } from "@/lib/plain-error";
 
 /** The feedback line after a team, a backup or a package was added. */
 export function teamImportedText(result: TeamImportResult): string {
@@ -303,7 +304,7 @@ export function BotCatalogPane({ onClose, backRef, trail, tabLabel, sources, foc
         : api<{ document: PackageDocument }>(`/api/org-library/packages/${orgPackage!.packageId}`).then((result) => orgPackagePreview(result.document));
       load
         .then((next) => { if (alive) setTeamPreview({ pending: next, loading: false, error: "" }); })
-        .catch((error) => { if (alive) setTeamPreview({ pending: null, loading: false, error: error instanceof Error ? error.message : String(error) }); });
+        .catch((error) => { if (alive) setTeamPreview({ pending: null, loading: false, error: readableError(error) }); });
       return () => { alive = false; };
     }
     let alive = true;
@@ -365,7 +366,7 @@ export function BotCatalogPane({ onClose, backRef, trail, tabLabel, sources, foc
 
   const fail = (error: unknown) => {
     const body = (error as { body?: { message?: unknown } })?.body;
-    const text = typeof body?.message === "string" ? body.message : error instanceof Error ? error.message : String(error);
+    const text = typeof body?.message === "string" ? body.message : readableError(error);
     setFeedback({ error: true, text });
   };
 

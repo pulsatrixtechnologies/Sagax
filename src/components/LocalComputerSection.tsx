@@ -29,6 +29,7 @@ import { useDesktopBridgeStatus } from "@/lib/desktop-bridge";
 import { canManageComputers } from "@/lib/viewer";
 import { OrgComputerSettings } from "./settings/OrgComputerSettings";
 import { ComputerCareSettings } from "./settings/ComputerCareSettings";
+import { readableError } from "@/lib/plain-error";
 
 type Action = "pull" | "run" | "start" | "stop" | "remove" | "recreate";
 
@@ -1210,7 +1211,7 @@ export function LocalComputerSection() {
       } catch (e) {
         if (active && !(e instanceof DOMException && e.name === "AbortError")) {
           setStatus(null);
-          setError(e instanceof Error ? e.message : String(e));
+          setError(readableError(e));
         }
       } finally {
         if (active) {
@@ -1240,7 +1241,7 @@ export function LocalComputerSection() {
     void refreshInventory(controller.signal)
       .catch((e) => {
         if (!(e instanceof DOMException && e.name === "AbortError")) {
-          setInventoryError(e instanceof Error ? e.message : String(e));
+          setInventoryError(readableError(e));
         }
       })
       .finally(() => {
@@ -1259,7 +1260,7 @@ export function LocalComputerSection() {
     void refreshCloudInventory(controller.signal)
       .catch((e) => {
         if (!(e instanceof DOMException && e.name === "AbortError")) {
-          setCloudUnavailableReason(e instanceof Error ? e.message : String(e));
+          setCloudUnavailableReason(readableError(e));
         }
       })
       .finally(() => {
@@ -1277,7 +1278,7 @@ export function LocalComputerSection() {
     void refreshVpsInventory(controller.signal)
       .catch((e) => {
         if (!(e instanceof DOMException && e.name === "AbortError")) {
-          setVpsUnavailableReason(e instanceof Error ? e.message : String(e));
+          setVpsUnavailableReason(readableError(e));
         }
       })
       .finally(() => {
@@ -1343,7 +1344,7 @@ export function LocalComputerSection() {
       );
     } catch (e) {
       if (controller.signal.aborted) return;
-      setError(e instanceof Error ? e.message : String(e));
+      setError(readableError(e));
     } finally {
       actionController.current = null;
       if (!controller.signal.aborted) setPending(null);
@@ -1364,7 +1365,7 @@ export function LocalComputerSection() {
       setStatus((current) => current ? { ...current, mode, max_instances: maxInstances } : current);
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(readableError(e));
     } finally {
       setPolicyPending(false);
     }
@@ -1400,7 +1401,7 @@ export function LocalComputerSection() {
       await refreshInventory();
       setAnnouncement(t("vm.announce.deletedBot", { name: instance.name }));
     } catch (e) {
-      setInventoryError(e instanceof Error ? e.message : String(e));
+      setInventoryError(readableError(e));
     } finally {
       setDeletingBotId(null);
     }
@@ -1422,7 +1423,7 @@ export function LocalComputerSection() {
       setStatus((current) => current ? { ...current, auto: body.auto ?? current.auto } : current);
       setAnnouncement(t("vm.auto.announce"));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(readableError(e));
     } finally {
       setAutoPending(null);
     }
@@ -1446,7 +1447,7 @@ export function LocalComputerSection() {
       if (perBotNow) setInventoryRefreshKey((key) => key + 1);
       setAnnouncement(t("vm.reset.announce"));
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(readableError(e));
     } finally {
       setAutoPending(null);
     }
@@ -1521,7 +1522,7 @@ export function LocalComputerSection() {
             setAnnouncement(t("vm.announce.cloudDeleted", { subject }));
           }
         } catch (refreshError) {
-          const detail = refreshError instanceof Error ? refreshError.message : String(refreshError);
+          const detail = readableError(refreshError);
           setCloudError(`${subject}: ${t("vm.state.removing")}. ${detail}`);
         }
         return;
@@ -1530,11 +1531,11 @@ export function LocalComputerSection() {
       try {
         await refreshCloudInventory();
       } catch (refreshError) {
-        const detail = refreshError instanceof Error ? refreshError.message : String(refreshError);
+        const detail = readableError(refreshError);
         setCloudError(t(action === "delete" ? "vm.cloud.deletedRefreshError" : "vm.cloud.sleepRefreshError", { subject, detail }));
       }
     } catch (e) {
-      setCloudError(e instanceof Error ? e.message : String(e));
+      setCloudError(readableError(e));
     } finally {
       setCloudPending(null);
     }
@@ -1561,7 +1562,7 @@ export function LocalComputerSection() {
         }),
       );
     } catch (e) {
-      setVpsError(e instanceof Error ? e.message : String(e));
+      setVpsError(readableError(e));
     } finally {
       setVpsRemovingName(null);
     }

@@ -25,8 +25,9 @@ import {
 import { ApiError, useStore, type Bot } from "@/state/store";
 import { LendingReviewNotice, MemoryJournalList, MemoryUpkeepCard } from "./MemorySection";
 import { PaneSection } from "./PaneSection";
+import { readableError } from "@/lib/plain-error";
 
-const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e));
+const errorText = (e: unknown) => (readableError(e));
 
 export function MemoryFolderOptions({ bot, active, showOptions, onChanged }: {
   bot: Bot;

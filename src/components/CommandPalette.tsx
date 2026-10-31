@@ -43,6 +43,7 @@ import { useAllArtifacts } from "@/lib/artifacts";
 import { openArtifact } from "@/lib/artifact-events";
 import { viewerCanCreateBots } from "@/lib/viewer";
 import { requestBotHistory } from "@/lib/panel-visibility";
+import { readableError } from "@/lib/plain-error";
 import {
   buildPaletteSections,
   latestGoalRun,
@@ -233,7 +234,7 @@ export function CommandPalette({
         try {
           await landOnSearchHit(action.hit, state, dispatch, showThreads);
         } catch (error) {
-          dispatch({ type: "error", message: error instanceof Error ? error.message : String(error) });
+          dispatch({ type: "error", message: readableError(error) });
         }
         return;
       case "bot":

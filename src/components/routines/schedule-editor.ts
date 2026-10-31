@@ -16,6 +16,7 @@ import {
   type ScheduleModel,
 } from "../../../shared/schedule-model";
 import type { RoutineSchedule } from "@/lib/routines";
+import { readableError } from "@/lib/plain-error";
 
 export type ScheduleDraft = { model: ScheduleModel; timeZone: string };
 
@@ -93,7 +94,7 @@ export function scheduleEditorValue(draft: ScheduleDraft, after: number): Schedu
   try {
     schedule = normalizeCronSchedule({ type: "cron", expression: built.expression, timeZone: draft.timeZone }, after);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = readableError(error);
     return { schedule: null, runs: [], sentence: "", error: /timezone/i.test(message) ? t("scheduleEditor.problem.zone") : t("scheduleEditor.problem.noRuns") };
   }
   return { schedule, runs: nextCronRuns(schedule, after, 3), sentence: scheduleSentenceFor(schedule), error: "" };

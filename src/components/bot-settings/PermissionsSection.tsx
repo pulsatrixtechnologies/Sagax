@@ -45,6 +45,7 @@ import { PaneSection } from "./PaneSection";
 import { AdvancedFold } from "./AdvancedFold";
 import type { useBotSettingsDerived } from "./useBotSettingsDerived";
 import { useBotEditor } from "./BotEditorContext";
+import { readableError } from "@/lib/plain-error";
 
 export function PermissionsSection({
   bot,
@@ -80,7 +81,7 @@ export function PermissionsSection({
     const method = bot.chiefOfStaff ? "DELETE" : "POST";
     void api<{ bot: Bot }>(`/api/bots/${bot.id}/primary`, { method })
       .then((response) => dispatch({ type: "botPatched", bot: response.bot }))
-      .catch((error: unknown) => setPrimaryError(error instanceof Error ? error.message : String(error)));
+      .catch((error: unknown) => setPrimaryError(readableError(error)));
   };
   // Organization server: the owner sets Full as the bot's default (its new
   // threads and routines) over HTTP while the organization allows it.

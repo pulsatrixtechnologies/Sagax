@@ -9,6 +9,7 @@ import { approvalAction } from "@/lib/approval-describe";
 import { t } from "@/lib/i18n";
 import { approvalChime } from "@/lib/notification-preferences";
 import { api, type Message } from "@/state/store";
+import { readableError } from "./plain-error";
 
 export async function loadInbox(history: boolean): Promise<InboxPayload> {
   return api<InboxPayload>(`/api/approvals${history ? "?history=1" : ""}`);
@@ -61,7 +62,7 @@ export function useInbox(history: boolean, signal: string): {
       setData((previous) => (historyRef.current || !previous ? next : { ...next, history: previous.history }));
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     }
   }, []);
 

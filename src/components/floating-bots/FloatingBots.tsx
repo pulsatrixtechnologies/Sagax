@@ -67,6 +67,7 @@ import { cueClipFor, SNOOZE_NAP_MS } from "./mascots";
 import { COMPOSER_ATTACH_EVENT } from "@/components/Composer";
 import { COMPOSER_MODEL_EVENT, composerModelLabel } from "@/components/ModelPicker";
 import { readableOr } from "../../../shared/human-id";
+import { readableError } from "@/lib/plain-error";
 
 /** A picture bigger than this stays in the app; the window shows the owl instead. */
 const AVATAR_BYTES_MAX = 280_000;
@@ -416,7 +417,7 @@ export function FloatingBots() {
         if (callPanelRef.current.voices) return;
         fetchVoiceModeVoices(botId).then(
           (voices) => setPanel({ voices, voicesError: null }),
-          (error: unknown) => setPanel({ voicesError: error instanceof Error ? error.message : String(error) }),
+          (error: unknown) => setPanel({ voicesError: readableError(error) }),
         );
       },
       preview: (voiceId) => {

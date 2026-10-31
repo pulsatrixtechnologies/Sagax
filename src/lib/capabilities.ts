@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/state/store";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
+import { readableError } from "./plain-error";
 import {
   CAPABILITIES_PATH,
   engineReceipt,
@@ -57,7 +58,7 @@ export function useBotCapabilities(botId: string | null, options: { engine?: str
       setFailure(null);
     } catch (cause) {
       if (mine !== generation.current) return;
-      setFailure({ identity, error: cause instanceof Error ? cause.message : String(cause) });
+      setFailure({ identity, error: readableError(cause) });
     } finally {
       if (mine === generation.current) setLoading(false);
     }

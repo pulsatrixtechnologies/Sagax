@@ -7,6 +7,7 @@ import { useBotEditor } from "./BotEditorContext";
 import { PillSelect, PRIMARY_PILL, SwitchRow } from "../SettingsPrimitives";
 import { inputCls } from "./field";
 import { PaneSection } from "./PaneSection";
+import { readableError } from "@/lib/plain-error";
 
 type Draft = { custom: boolean; onlyListed: boolean; allow: string; deny: string };
 const lines = (text: string) => text.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
@@ -43,7 +44,7 @@ export function ToolSelectionCard({ bot, engineKind }: { bot: Bot; engineKind?: 
       await request(`/api/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ toolScope: parsed.scope ?? null }) });
       if (alive.current) setDraft(null);
     } catch (cause) {
-      if (alive.current) setError(cause instanceof Error ? cause.message : String(cause));
+      if (alive.current) setError(readableError(cause));
     } finally {
       pending.current = false;
       if (alive.current) setSaving(false);

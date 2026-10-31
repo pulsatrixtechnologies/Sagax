@@ -11,6 +11,7 @@ import type { LocaleKey } from "@/locales";
 import { myChromeRecord, type MyChromeRecording, type MyChromeRecordingResult } from "@/lib/my-chrome";
 import { useComposerDictation } from "./useComposerDictation";
 import type { TeachStep } from "../../shared/teach-recording";
+import { readableError } from "@/lib/plain-error";
 
 const POLL_MS = 1_000;
 const input = "min-w-0 flex-1 rounded-md bg-inset px-2 py-1.5 text-[12px] outline-none focus:ring-1 focus:ring-accent";
@@ -53,7 +54,7 @@ export function MyChromeRecordDialog({ botId, botName, dictationEngine, onDone, 
       if (!live) return;
       setUnavailable(answer.unavailable);
       if (answer.recording?.recording) { setRecording(answer.recording); setPhase("recording"); }
-    }, (cause) => { if (live) setUnavailable(cause instanceof Error ? cause.message : String(cause)); });
+    }, (cause) => { if (live) setUnavailable(readableError(cause)); });
     return () => { live = false; };
   }, []);
 
@@ -72,7 +73,7 @@ export function MyChromeRecordDialog({ botId, botName, dictationEngine, onDone, 
       onDone(result);
       dialog.current?.close();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
       setPhase("setup");
     } finally {
       stopping.current = false;
@@ -103,7 +104,7 @@ export function MyChromeRecordDialog({ botId, botName, dictationEngine, onDone, 
       setRecording(answer.recording);
       setPhase("recording");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
       setPhase("setup");
     }
   };
@@ -116,7 +117,7 @@ export function MyChromeRecordDialog({ botId, botName, dictationEngine, onDone, 
       if (answer.recording) setRecording(answer.recording);
       setNote("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     }
   };
   const cancel = () => {

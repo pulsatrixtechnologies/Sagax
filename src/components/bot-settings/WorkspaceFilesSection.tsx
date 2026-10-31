@@ -53,6 +53,7 @@ import { inputCls } from "./field";
 import { RulesCounter } from "./RulesSection";
 import { MemoryToggleCard, topicTemplate } from "./MemorySection";
 import { MemoryFolderOptions } from "./MemoryFolderOptions";
+import { readableError } from "@/lib/plain-error";
 
 // Settings' grey pill (2026-10-16).
 const buttonCls = PILL;
@@ -85,7 +86,7 @@ interface Open {
   readOnly: boolean;
 }
 
-const errorText = (reason: unknown) => (reason instanceof Error ? reason.message : String(reason));
+const errorText = (reason: unknown) => (readableError(reason));
 
 export function LoadBadge({ load, detailed }: { load: WorkspaceLoad; detailed: boolean }) {
   return (

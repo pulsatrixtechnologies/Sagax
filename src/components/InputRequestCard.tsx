@@ -8,6 +8,7 @@ import { useState } from "react";
 import { api, openThread, useStore, type Message } from "@/state/store";
 import { useShowThreads } from "@/lib/thread-preferences";
 import { t } from "@/lib/i18n";
+import { readableError } from "@/lib/plain-error";
 
 export function InputRequestCard({ message }: { message: Message }) {
   const { state, dispatch } = useStore();
@@ -31,7 +32,7 @@ export function InputRequestCard({ message }: { message: Message }) {
       });
       setSent(true);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(readableError(failure));
     } finally {
       setSending(false);
     }

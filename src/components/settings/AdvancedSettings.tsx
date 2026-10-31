@@ -23,6 +23,7 @@ import { ThreadCleanupSettings } from "../ThreadCleanupSettings";
 import { PeopleToolAccessSettings } from "../ToolAccessSettings";
 import { OrganizationBotRows } from "./OrganizationBotRules";
 import { UsageMeterRow } from "./UsageMeterRow";
+import { readableError } from "@/lib/plain-error";
 
 /** The desktop app in "No server" mode: Settings > Organization is hidden
  * there (nothing to show until it joins one). */
@@ -82,7 +83,7 @@ export function DiagnosticsRow() {
       const path = await window.ogb.exportDiagnostics();
       if (path) setResult({ kind: "success", message: t("settings.diagnostics.saved", { path }) });
     } catch (e) {
-      setResult({ kind: "error", message: e instanceof Error ? e.message : String(e) });
+      setResult({ kind: "error", message: readableError(e) });
     } finally {
       setExporting(false);
     }
@@ -119,7 +120,7 @@ export function DownloadLogsRow() {
       const path = await window.ogb.exportLogs(consoleRingLines());
       if (path) setResult({ kind: "success", message: t("settings.logs.saved", { path }) });
     } catch (e) {
-      setResult({ kind: "error", message: e instanceof Error ? e.message : String(e) });
+      setResult({ kind: "error", message: readableError(e) });
     } finally {
       setSaving(false);
     }

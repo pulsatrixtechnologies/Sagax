@@ -83,6 +83,7 @@ import { WizardConversation } from "./WizardConversation";
 import { engineReady } from "../EngineLibrary";
 import { BotZipImportDialog } from "../BotZipImport";
 import { AgentImportDialog } from "../AgentImport";
+import { readableError } from "@/lib/plain-error";
 
 /** How often the guided panel reads the draft back while the Primary Bot fills it. */
 const GUIDED_POLL_MS = 2_500;
@@ -117,7 +118,7 @@ export function BotWizard() {
   const [importing, setImporting] = useState<"zip" | "agent" | null>(null);
 
   const close = useCallback(() => dispatch({ type: "closeBotWizard" }), [dispatch]);
-  const fail = (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause));
+  const fail = (cause: unknown) => setError(readableError(cause));
 
   // A bot's own wizard (Redo, Resume): its open draft resumes in its mode;
   // otherwise the mode choice, prefilled from the bot.
@@ -539,7 +540,7 @@ function Recap(props: StepProps & { onEdit: (step: WizardStep) => void }) {
       }
       await sendWizardMessage(bot.id, threadId, tryItMessage(language));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setSending(false);
     }

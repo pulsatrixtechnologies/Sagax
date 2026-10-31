@@ -16,6 +16,7 @@ import { CapabilityTags } from "./plugins/EngineCapabilities";
 import { claudeAiConnectorCapabilities } from "../../shared/engine-connectors";
 import { reloadMyEngines, useMyEngines, type MyEngine } from "@/lib/perspicax-org";
 import { ClaudeSignIn } from "./ClaudeSignIn";
+import { readableError } from "@/lib/plain-error";
 
 type ConnectorStatus = "connected" | "needs_auth" | "failed" | "unknown";
 type Unavailable = "disabled" | "managed_policy" | "no_engine" | "not_signed_in" | "not_operator" | "key" | "unknown";
@@ -78,7 +79,7 @@ export function HarnessConnectorsSection({ placement = "panel", onAnswer }: {
       setAnswer(next);
       onAnswer?.(next);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setLoading(false);
     }

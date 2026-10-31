@@ -8,6 +8,7 @@ import { KeyRound, Loader2 } from "lucide-react";
 import { t } from "@/lib/i18n";
 import type { PluginConfigView } from "@/lib/my-connections";
 import { Switch } from "../SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 type Draft = Record<string, string | boolean>;
 
@@ -52,7 +53,7 @@ export function PluginConfigForm({ config, canChange, onSave }: {
       await onSave(configValues(config, draft));
       setState("saved");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
       setState("idle");
     }
   };

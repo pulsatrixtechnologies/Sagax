@@ -17,6 +17,7 @@ import { NetworkDebuggerDialog } from "./NetworkDebuggerDialog";
 import { TeachStepsDialog } from "./TeachStepsDialog";
 import { onBrowserTeachRequest, takeBrowserTeach } from "@/lib/teach-request";
 import type { TeachStep } from "../../shared/teach-recording";
+import { readableError } from "@/lib/plain-error";
 
 interface BrowserTab { tabId: string; title: string; url: string; active: boolean }
 type ViewerFrame = BrowserFrame & { viewerId: string; generation: number };
@@ -156,7 +157,7 @@ export function LiveBrowser({ bot, control: allowed = true, placeholder, teach =
         if (ownsConnection() && viewer.current === expected) await action(body, expected);
       }, (cause) => {
         if (!ownsConnection() || viewer.current !== expected) return;
-        haltMessage.current = cause instanceof Error ? cause.message : String(cause);
+        haltMessage.current = readableError(cause);
         setError(haltMessage.current);
       });
       inputQueue.current = queue;
@@ -266,7 +267,7 @@ export function LiveBrowser({ bot, control: allowed = true, placeholder, teach =
       setRecording(true);
       // the demonstration is the person's: keep control until they stop
       browserControl.current?.takeNow();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { setError(readableError(cause)); }
   };
   startRecordingNow.current = () => { void startRecording(); };
   const stopRecording = async () => {
@@ -279,7 +280,7 @@ export function LiveBrowser({ bot, control: allowed = true, placeholder, teach =
       if (result.expired) setTeachNote(t("teach.expired"));
       else if (!result.steps?.length) setTeachNote(t("teach.nothing"));
       else setTaught({ steps: result.steps, recordedAt: recordedAt.current });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { setError(readableError(cause)); }
   };
 
   // Release control in the window: hand the browser back now, not after the idle wait.
@@ -302,7 +303,7 @@ export function LiveBrowser({ bot, control: allowed = true, placeholder, teach =
       if (inputQueue.current?.stopped() && generation.current === current) setError(haltMessage.current);
       if (generation.current === current && body.type === "restart") reconnect();
     }
-    catch (cause) { if (generation.current === current) setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) { if (generation.current === current) setError(readableError(cause)); }
     finally {
       if (generation.current === current && pendingOperation.current === current) {
         pendingOperation.current = null; setPending(false);
@@ -611,7 +612,7 @@ export function BrowserPanel({ bot }: { bot: Bot }) {
   const install = async () => {
     setError(null); setRequested(true);
     try { await api("/api/browser-engine/install", { method: "POST" }); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) { setError(readableError(cause)); }
     finally { setRequested(false); }
   };
   const caption = t("computer.browserOf", { name: bot.name });

@@ -19,6 +19,7 @@ import { emailMailtoUrl, emailPlainBody, emailPlainText, type EmailDraft } from 
 import { api, ApiError } from "@/state/store";
 import { emailDraftKey, type EmailSendStatus } from "../../shared/email-draft-send";
 import { useCopyFeedback } from "./rich-ui";
+import { readableError } from "@/lib/plain-error";
 
 interface SendState {
   status: EmailSendStatus | "asking";
@@ -41,7 +42,7 @@ export function emailSendErrorText(failure: unknown): string {
     if (failure.body?.code === "email_draft_owner_only") return t("rich.email.ownerOnly");
     if (failure.body?.code === "email_drafts_off") return t("rich.email.draftsOff");
   }
-  return failure instanceof Error ? failure.message : String(failure);
+  return readableError(failure);
 }
 
 /** The send of this draft in this conversation: its last state on the

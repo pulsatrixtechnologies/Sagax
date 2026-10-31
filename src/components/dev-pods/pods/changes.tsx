@@ -13,6 +13,7 @@ import { DEV_MENU_ITEM, DevMenu } from "../DevMenu";
 import { registerDevPod, type DevPodContext } from "../registry";
 import { devChanges, type DevChange } from "../sources";
 import type { LocaleKey } from "@/locales";
+import { readableError } from "@/lib/plain-error";
 
 const PULL_STATE: Record<"open" | "closed" | "merged", LocaleKey> = {
   open: "devPods.changes.state.open",
@@ -155,7 +156,7 @@ function ChangesBody({ data, ctx }: { data: DevChange[]; ctx: DevPodContext }) {
         return current;
       });
     }).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = readableError(error);
       setNotices((current) => ({ ...current, [change.key]: message }));
     });
   };

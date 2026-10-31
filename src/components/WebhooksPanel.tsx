@@ -29,6 +29,7 @@ import { copyText } from "@/lib/copy-text";
 import { t, activeLocale } from "@/lib/i18n";
 import { MarkdownEditor } from "./markdown/MarkdownEditor";
 import { DIALOG, DialogCloseButton, PILL, PRIMARY_PILL } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 export function relativeTime(at?: number) {
   if (!at) return t("people.never");
@@ -151,7 +152,7 @@ export function WebhookEditor({ webhook, bots, onClose, onCredential }: { webhoo
       onClose();
       if (response.credential) onCredential(response.credential, response.webhook.id);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setSaving(false);
     }
@@ -251,7 +252,7 @@ export function useWebhookActions() {
         dispatch({ type: "webhookPatched", webhook: response.webhook });
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       workingRef.current = false;
       setWorking(null);
@@ -288,7 +289,7 @@ export function useWebhookActions() {
       setCopiedKind(copy);
       setTimeout(() => setCopiedId((current) => current === webhook.id ? null : current), 1_800);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       workingRef.current = false;
       setWorking(null);

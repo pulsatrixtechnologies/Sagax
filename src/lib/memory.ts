@@ -4,6 +4,7 @@
 import { ApiError, api } from "@/state/store";
 import { activeLocale, t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
+import { readableError } from "@/lib/plain-error";
 
 export const MEMORY_INDEX = "MEMORY.md";
 
@@ -95,7 +96,7 @@ export async function saveMemoryDoc(botId: string, path: string, text: string, e
   if (response.status === 409 && typeof body.current === "string" && typeof body.currentHash === "string") {
     return { ok: false, conflict: true, current: body.current, currentHash: body.currentHash };
   }
-  if (!response.ok) throw new ApiError(typeof body.error === "string" ? body.error : `${response.status} ${response.statusText}`, response.status);
+  if (!response.ok) throw new ApiError(readableError(typeof body.error === "string" ? body.error : `${response.status} ${response.statusText}`), response.status);
   // SAFETY: a 200 from PUT …/memory/file carries the saved document and the refreshed overview
   const saved = body as unknown as MemoryDoc & { overview: MemoryOverview };
   return { ok: true, doc: { path: saved.path, text: saved.text, hash: saved.hash, exists: saved.exists }, overview: saved.overview };

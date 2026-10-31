@@ -11,6 +11,7 @@ import { formatUsd, hasFiniteCost } from "@/lib/usage";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { CopyLink } from "./PeopleSection";
 import { Card, cardCount } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 export interface FleetWorkspaceView {
   slug: string;
@@ -101,7 +102,7 @@ function NewWorkspaceForm({ domain, onCreated, disabled }: { domain: string; onC
       setSlug(""); setAdmin(""); setMembers(""); setCap(""); setAnthropicKey("");
       onCreated(result.log ?? [], { slug: body.slug, admin: body.admins[0]! });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setSaving(false);
     }
@@ -160,7 +161,7 @@ function UsersForm({ slug, onDone }: { slug: string; onDone: (log: string[]) => 
       setEmail("");
       onDone(result.log ?? []);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }
@@ -195,7 +196,7 @@ export function WorkspacesSection({ load = fetchFleet }: { load?: () => Promise<
     setLoading(true);
     setError(null);
     try { setFleet(await load()); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) { setError(readableError(cause)); }
     finally { setLoading(false); }
   }, [load]);
   useEffect(() => { void refresh(); }, [refresh]);
@@ -210,7 +211,7 @@ export function WorkspacesSection({ load = fetchFleet }: { load?: () => Promise<
       setLog(result.log ?? []);
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }
@@ -227,7 +228,7 @@ export function WorkspacesSection({ load = fetchFleet }: { load?: () => Promise<
       setLog(result.log ?? []);
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }
@@ -241,7 +242,7 @@ export function WorkspacesSection({ load = fetchFleet }: { load?: () => Promise<
       setLog(result.log ?? [t("workspaces.upgraded")]);
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }

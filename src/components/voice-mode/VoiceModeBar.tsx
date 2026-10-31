@@ -33,6 +33,7 @@ import { formatCallTime, phaseLabel } from "@/lib/voice-mode/call-labels";
 export { formatCallTime, phaseLabel };
 import { VoiceModeSettingsPanel, type Enrollment, type VoiceModeList } from "./VoiceModeSettingsPanel";
 import { readableOr } from "../../../shared/human-id";
+import { readableError } from "@/lib/plain-error";
 
 /** The access card of a refused voice turn: shown in the speaker's own bar
  * only (the audience of every access card), never in the thread. */
@@ -218,7 +219,7 @@ export function VoiceModeBar(props: VoiceModeBarProps) {
     fetchVoiceModeVoices(bot.id, controller.signal).then(
       (list) => setVoices(list),
       (error: unknown) => {
-        if (!controller.signal.aborted) setVoicesError(error instanceof Error ? error.message : String(error));
+        if (!controller.signal.aborted) setVoicesError(readableError(error));
       },
     );
     return () => controller.abort();

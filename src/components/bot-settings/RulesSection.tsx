@@ -43,6 +43,7 @@ import type { Bot } from "@/state/store";
 import { MarkdownEditor } from "../markdown/MarkdownEditor";
 import { HelpTip, PILL, Switch } from "../SettingsPrimitives";
 import { inputCls } from "./field";
+import { readableError } from "@/lib/plain-error";
 
 /** The starter template. Mirrors server/rule-sets.ts RULES_TEMPLATE (a test
  * keeps them equal). */
@@ -139,7 +140,7 @@ export function RulesSection({ bot, active, initial }: { bot: Bot; active: boole
         apply(next);
         setError(null);
       },
-      (reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)),
+      (reason: unknown) => setError(readableError(reason)),
     );
 
   // A re-activation re-reads, so a rule the bot added mid-session shows up;
@@ -158,7 +159,7 @@ export function RulesSection({ bot, active, initial }: { bot: Bot; active: boole
       const next = await action();
       if (next) apply(next);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(readableError(reason));
     } finally {
       setBusy(false);
     }
@@ -191,7 +192,7 @@ export function RulesSection({ bot, active, initial }: { bot: Bot; active: boole
       apply(result.listing);
       setSaved(set.id);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(readableError(reason));
     } finally {
       setBusy(false);
     }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { t } from "@/lib/i18n";
+import { readableError } from "@/lib/plain-error";
 import { settingsSectionLabel } from "@/lib/settings-link";
 import { Laptop, Loader2, Unplug } from "lucide-react";
 import { Card, FIELD, PILL, PillSelect, PRIMARY_PILL } from "./SettingsPrimitives";
@@ -7,10 +8,11 @@ import { Card, FIELD, PILL, PillSelect, PRIMARY_PILL } from "./SettingsPrimitive
 const inputClass = FIELD;
 
 function errorText(error: unknown): string {
-  return String((error as { message?: string })?.message ?? error).replace(
+  const stripped = String((error as { message?: string })?.message ?? error).replace(
     /^Error invoking remote method '[^']*':\s*(?:Error:\s*)?/,
     "",
   );
+  return readableError(stripped);
 }
 
 export function isServerPairingLink(input: string): boolean {

@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from "react";
 import { activeLocale, t } from "@/lib/i18n";
 import { fetchReports, onReportsChanged, resolveReport, unblockPerson, useBlockedPeople, type ModerationReport } from "@/lib/moderation";
 import { CompactRow, PILL, SettingsGroup } from "../SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 function formatDate(at: number): string {
   return new Date(at).toLocaleString(activeLocale(), { dateStyle: "medium", timeStyle: "short" });
@@ -26,7 +27,7 @@ export function BlockedPeopleSettings() {
             type="button"
             className={PILL}
             data-unblock=""
-            onClick={() => { setError(null); void unblockPerson(person.id).catch((failure: unknown) => setError(failure instanceof Error ? failure.message : String(failure))); }}
+            onClick={() => { setError(null); void unblockPerson(person.id).catch((failure: unknown) => setError(readableError(failure))); }}
           >
             {t("moderation.unblock.short")}
           </button>
@@ -42,7 +43,7 @@ export function ReportsSettings() {
   const [reports, setReports] = useState<ModerationReport[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(() => {
-    fetchReports().then((list) => { setReports(list); setError(null); }, (failure: unknown) => setError(failure instanceof Error ? failure.message : String(failure)));
+    fetchReports().then((list) => { setReports(list); setError(null); }, (failure: unknown) => setError(readableError(failure)));
   }, []);
   useEffect(() => {
     load();
@@ -73,7 +74,7 @@ export function ReportsSettings() {
                   type="button"
                   className={PILL}
                   data-resolve-report=""
-                  onClick={() => void resolveReport(report.id).then(load, (failure: unknown) => setError(failure instanceof Error ? failure.message : String(failure)))}
+                  onClick={() => void resolveReport(report.id).then(load, (failure: unknown) => setError(readableError(failure)))}
                 >
                   {t("moderation.reports.resolve")}
                 </button>

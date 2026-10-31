@@ -6,6 +6,7 @@ import { canManageBackups } from "@/lib/viewer";
 import { t, activeLocale } from "@/lib/i18n";
 import { DANGER_PILL, DescribedRow, HelpTip, PILL, SettingsGroup } from "./SettingsPrimitives";
 import { applyWorkspaceClientState, collectWorkspaceClientState, WORKSPACE_RESTORE_MARKER } from "@/lib/workspace-backup-client";
+import { readableError } from "@/lib/plain-error";
 
 type BackupStatus = { busy: boolean; pendingRestore?: boolean; lastRestoreId?: string; lastRestoreReconnect?: WorkspaceBackupReconnect | null };
 const inputClass = "w-full rounded-lg border-[0.5px] border-border bg-inset px-2.5 py-1.5 text-[13px] text-ink outline-none focus:border-focus disabled:opacity-50";
@@ -100,7 +101,7 @@ function WorkspaceBackupForm() {
       const result: BackupStatus = await api("/api/workspace-backup/status");
       if (alive.current) { setStatus(result); setError(null); }
     } catch (cause) {
-      if (alive.current) { setStatus(null); setError(cause instanceof Error ? cause.message : String(cause)); }
+      if (alive.current) { setStatus(null); setError(readableError(cause)); }
     }
   };
   useEffect(() => {
@@ -115,7 +116,7 @@ function WorkspaceBackupForm() {
     setBusy(operation);
     setError(null);
     try { await work(); }
-    catch (cause) { if (alive.current) setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) { if (alive.current) setError(readableError(cause)); }
     finally { lock.current = false; if (alive.current) setBusy(null); }
   };
 
@@ -271,7 +272,7 @@ export function WorkspaceBackupRecovery({ children }: { children: ReactNode }) {
       applyWorkspaceClientState(result.clientState);
       localStorage.removeItem(WORKSPACE_RESTORE_MARKER);
       window.location.reload();
-    })().catch((cause) => { if (alive) setError(cause instanceof Error ? cause.message : String(cause)); });
+    })().catch((cause) => { if (alive) setError(readableError(cause)); });
     return () => { alive = false; };
   }, [restoreId, attempt]);
   if (ready) return children;
@@ -280,7 +281,7 @@ export function WorkspaceBackupRecovery({ children }: { children: ReactNode }) {
       localStorage.removeItem(WORKSPACE_RESTORE_MARKER);
       // Re-enter normal bootstrap so expired sessions can reach sign-in.
       window.location.reload();
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    } catch (cause) { setError(readableError(cause)); }
   };
   return <main className="flex h-dvh flex-col items-center justify-center gap-4 bg-app p-6 text-ink">
     {restartRequired ? <WorkspaceBackupRestartNotice onRetry={() => { setRestartRequired(false); setAttempt((value) => value + 1); }} /> : <p className="max-w-lg text-[14px]">{t("backup.recovering")}</p>}

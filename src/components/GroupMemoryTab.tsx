@@ -11,6 +11,7 @@ import { ApiError } from "@/state/store";
 import { Switch } from "./SettingsPrimitives";
 import { MemoryGauge } from "./bot-settings/MemorySection";
 import { MarkdownEditor } from "./markdown/MarkdownEditor";
+import { readableError } from "@/lib/plain-error";
 
 const buttonCls = "rounded-full border border-hairline/40 bg-panel px-3 py-1 text-[12.5px] text-ink-secondary hover:bg-raised hover:text-ink disabled:opacity-50";
 
@@ -26,7 +27,7 @@ export function GroupMemoryTab({ groupId }: { groupId: string }) {
       setView(next);
       if (!keepDraft) setDraft(next.text);
       setError(null);
-    }, (e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+    }, (e: unknown) => setError(readableError(e)));
 
   useEffect(() => {
     setView(null);
@@ -52,7 +53,7 @@ export function GroupMemoryTab({ groupId }: { groupId: string }) {
           setConflict(true);
           return;
         }
-        setError(e instanceof Error ? e.message : String(e));
+        setError(readableError(e));
       })
       .finally(() => setSaving(false));
   };

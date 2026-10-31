@@ -13,6 +13,7 @@ import { api, useStore, type Bot } from "@/state/store";
 import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { BotVisibility } from "../../../shared/wire";
+import { readableError } from "@/lib/plain-error";
 
 export type VisibilityMode = "everyone" | "admins" | "people";
 
@@ -87,7 +88,7 @@ export function VisibilitySection({ bot }: { bot: Bot }) {
     try {
       await api(`/api/groups/${groupId}`, { method: "PATCH", body: JSON.stringify({ resetAudience: true }) });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(false);
     }
@@ -106,7 +107,7 @@ export function VisibilitySection({ bot }: { bot: Bot }) {
       await api(`/api/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ visibility: value.visibility }) });
       setStatus("saved");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(false);
     }

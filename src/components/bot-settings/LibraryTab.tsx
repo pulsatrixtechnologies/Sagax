@@ -28,6 +28,7 @@ import type { PublishedPageSummary } from "../../../shared/published-pages";
 import { ArtifactDialogs, artifactStatus, useArtifactActions, type ArtifactActions } from "../artifacts/ArtifactsSection";
 import { canOpenArtifactInOwnWindow } from "../artifacts/artifact-windows";
 import { copyablePath, downloadThreadFile, FileHover, MediaPreviewDialog, MenuItem, PopoverMenu, useThreadFiles } from "./FilesSection";
+import { readableError } from "@/lib/plain-error";
 
 /** Opens Connect apps in this bot's install scope. */
 export function openBotPlugins(dispatch: ReturnType<typeof useStore>["dispatch"], botId: string): void {
@@ -126,7 +127,7 @@ export function LibraryBody({ threadId, files, filesError = false, onRetryFiles 
   const patchPage = (page: PublishedPageSummary, body: Record<string, unknown>) => {
     void api<{ page: PublishedPageSummary }>(`/api/pages/${encodeURIComponent(page.id)}`, { method: "PATCH", body: JSON.stringify(body) })
       .then((answer) => onPageChange(answer.page))
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
+      .catch((reason: unknown) => setError(readableError(reason)));
   };
   const groups = groupLibraryItems(items, now ?? Date.now());
   const shownNote = note ?? status;
@@ -228,7 +229,7 @@ export function LibraryBody({ threadId, files, filesError = false, onRetryFiles 
           setPageBusy(true);
           void api(`/api/pages/${encodeURIComponent(page.id)}`, { method: "DELETE" })
             .then(() => { onPageRemoved(page.id); setDeletingPage(null); })
-            .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)))
+            .catch((reason: unknown) => setError(readableError(reason)))
             .finally(() => setPageBusy(false));
         }}
       />

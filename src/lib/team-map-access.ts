@@ -19,10 +19,10 @@ export function canManageTeamMap(session: SessionState | null, remoteClient = fa
  * the same plain sentence the page shows when create is hidden; anything else
  * goes through readableError so a raw English server line never appears. */
 export function teamMapMutationError(cause: unknown): string {
-  const message = cause instanceof Error ? cause.message : String(cause);
+  const raw = cause instanceof Error ? cause.message : String(cause);
   if (
-    (cause instanceof ApiError && cause.status === 403 && /lacks the admin scope/i.test(message))
-    || /forbidden:\s*this session lacks the admin scope/i.test(message)
+    (cause instanceof ApiError && cause.status === 403 && /lacks the admin scope/i.test(raw))
+    || /forbidden:\s*this session lacks the admin scope/i.test(raw)
   ) {
     return t("team.adminOnly");
   }

@@ -5,6 +5,7 @@ import { t } from "@/lib/i18n";
 import { api, useStore } from "@/state/store";
 import type { TeamComputer } from "../../shared/team-computer";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { readableError } from "@/lib/plain-error";
 
 const control = "rounded-lg px-3 py-2 text-[12px] text-ink-secondary hover:bg-control hover:text-ink disabled:opacity-40";
 const field = "w-full rounded-lg border border-hairline/60 bg-inset px-3 py-2 text-[12px] text-ink outline-none focus:border-accent";
@@ -124,7 +125,7 @@ export function CanvasComputers({ open, createRequest, drop, sections, onClose, 
       setReadError("");
       onChangeRef.current(value.computers);
     } catch (cause) {
-      if (!controller.signal.aborted && mounted.current) setReadError(cause instanceof Error ? cause.message : String(cause));
+      if (!controller.signal.aborted && mounted.current) setReadError(readableError(cause));
     } finally {
       if (!controller.signal.aborted && mounted.current) setLoading(false);
     }
@@ -166,7 +167,7 @@ export function CanvasComputers({ open, createRequest, drop, sections, onClose, 
       if (mounted.current) success?.(value);
     } catch (cause) {
       if (mounted.current) {
-        setError(cause instanceof Error ? cause.message : String(cause));
+        setError(readableError(cause));
         failure?.();
       }
     } finally {

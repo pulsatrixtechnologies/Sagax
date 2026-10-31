@@ -31,6 +31,7 @@ import { PaneEmpty, PaneSection } from "./PaneSection";
 import { BotWebhooks } from "./BotWebhooks";
 import { BackgroundBriefCard } from "./BackgroundBriefCard";
 import type { useBotSettingsDerived } from "./useBotSettingsDerived";
+import { readableError } from "@/lib/plain-error";
 
 /** Where a bot's shell tools run. Set per bot; each task pins its own copy
  * on its first turn (the server does the pinning: Claude keeps sessions
@@ -57,7 +58,7 @@ function WorkingFolder({ bot }: { bot: Bot }) {
       await api(`/api/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ cwd }) });
       setDraft(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(readableError(e));
     } finally {
       setSaving(false);
     }

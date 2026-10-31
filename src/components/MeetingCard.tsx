@@ -10,6 +10,7 @@ import type { LocaleKey } from "@/locales";
 import { MEETING_PROVIDER_LABELS } from "../../shared/meeting-links";
 import { MEETING_APPROVE_LABELS, MEETING_DECLINE_LABELS, MEETING_LIVE_STATUSES, type MeetingRequestCardData, type MeetingStatus } from "../../shared/meeting-request";
 import { ASK_CHIP, ASK_CHIP_IDLE, ASK_PRIMARY_BUTTON, AskCard } from "./AskCard";
+import { readableError } from "@/lib/plain-error";
 
 const STATUS_KEYS: Record<MeetingStatus, LocaleKey> = {
   pending: "meeting.status.pending",
@@ -61,7 +62,7 @@ export function MeetingCard({ botId, botName, threadId, message }: {
     try {
       await api("/api/meetings/leave", { method: "POST", body: JSON.stringify({ threadId, requestId: data.requestId }) });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
       setLeaving(false);
     }
   };

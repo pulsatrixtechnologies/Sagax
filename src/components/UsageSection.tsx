@@ -36,6 +36,7 @@ import { PlanUsage } from "./PlanUsage";
 import { UsageTraces } from "./usage/UsageTraces";
 import { perspicaxConsoleUrl } from "./PerspicaxOrgSettings";
 import { CompactRow, ConfirmPill, DescribedRow, FIELD, FoldRow, PILL, PillSelect, PRIMARY_PILL, SettingsGroup } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 export interface PersonalUsage {
   month: PersonalUsageSummary;
@@ -386,7 +387,7 @@ export function SpendCapCard({ read = readSpendCap, write = writeSpendCap, initi
       setData(await write(value));
       setText("");
     } catch (error) {
-      setFailed(error instanceof Error ? error.message : String(error));
+      setFailed(readableError(error));
     } finally {
       setBusy(false);
     }

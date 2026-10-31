@@ -44,6 +44,7 @@ import { Switch } from "../SettingsPrimitives";
 import { botServersAfter } from "../plugins/BotsForView";
 import { openBotPlugins } from "./LibraryTab";
 import { SkillReviewDialog, useManagedSkills } from "./SkillsSection";
+import { readableError } from "@/lib/plain-error";
 
 export function CapabilitiesTab({ bot }: { bot: Bot }) {
   const { dispatch, flushBotPatches } = useStore();
@@ -61,7 +62,7 @@ export function CapabilitiesTab({ bot }: { bot: Bot }) {
       await work();
       await list.reload();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }

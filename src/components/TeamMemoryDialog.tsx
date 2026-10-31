@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 import { t, activeLocale } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { CompactRow, ConfirmPill, FIELD, FieldRow, FoldRow, HelpTip, PillSelect, PILL, PRIMARY_PILL, SettingsGroup, DIALOG } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 type Kind = "person" | "place" | "decision" | "term";
 
@@ -51,7 +52,7 @@ export function TeamMemoryDialog({ section, label, onClose }: { section: string;
       setError(null);
     } catch (cause) {
       if (generation.current !== requestGeneration) return;
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     }
   }, [query]);
 
@@ -98,7 +99,7 @@ export function TeamMemoryDialog({ section, label, onClose }: { section: string;
       setEntries(result.entries);
       return true;
     } catch (cause) {
-      if (generation.current === requestGeneration) setError(cause instanceof Error ? cause.message : String(cause));
+      if (generation.current === requestGeneration) setError(readableError(cause));
       return false;
     } finally {
       busy.current = false;

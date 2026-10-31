@@ -5,6 +5,7 @@ import { macCuaPermissionMessage, missingMacCuaPermissions } from "@/lib/mac-cua
 import { MacCuaRecoveryActions } from "./MacCuaRecoveryActions";
 import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
+import { readableError } from "@/lib/plain-error";
 
 export function MacLocalControl() {
   const { capabilities } = useDesktopCapabilities();
@@ -21,7 +22,7 @@ export function MacLocalControl() {
     try {
       await window.ogb?.localControl?.retry();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(readableError(reason));
     } finally {
       setPending(false);
     }
@@ -35,7 +36,7 @@ export function MacLocalControl() {
       await window.ogb?.permOpenSettings?.("screen");
     } catch (reason) {
       setAwaitingGrant(false);
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError(readableError(reason));
     }
   };
 

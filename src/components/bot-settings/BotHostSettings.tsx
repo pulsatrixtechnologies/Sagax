@@ -5,6 +5,7 @@ import { canSetBotHost } from "@/lib/bot-capabilities";
 import { t } from "@/lib/i18n";
 import { usePerspicaxOrg } from "@/lib/perspicax-org";
 import { api, useStore, type Bot } from "@/state/store";
+import { readableError } from "@/lib/plain-error";
 
 export interface PublishedComputer {
   deviceId: string;
@@ -116,7 +117,7 @@ export function BotHostSettings({ bot }: { bot: Bot }) {
     try {
       await api(`/api/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ host }) });
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
+      setError(readableError(caught));
     }
   };
   const machine = bot.host?.kind === "machine" ? bot.host.deviceId : null;

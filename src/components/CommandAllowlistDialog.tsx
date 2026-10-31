@@ -8,6 +8,7 @@ import { engineLabel } from "@/lib/human-label";
 import { humanPath } from "@/lib/short-path";
 import { cn } from "@/lib/cn";
 import { ConfirmPill, FIELD, FieldRow, HelpTip, PILL, PRIMARY_PILL, SettingsGroup, DIALOG } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 // Electron collects -webkit-app-region from layout boxes and ignores z-index,
 // so the chat header's drag strip swallows clicks that land on top of it.
@@ -74,7 +75,7 @@ export function CommandAllowlistDialog({ botId, botName, threadId, onClose }: {
         setCwd(result.context.cwd ?? "");
       })
       .catch((cause: unknown) => {
-        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause));
+        if (!controller.signal.aborted) setError(readableError(cause));
       })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
@@ -99,7 +100,7 @@ export function CommandAllowlistDialog({ botId, botName, threadId, onClose }: {
       setData(result);
       if (!rule) setCommand("");
     } catch (cause) {
-      if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause));
+      if (mounted.current) setError(readableError(cause));
     } finally {
       if (mounted.current) {
         setSaving(null);

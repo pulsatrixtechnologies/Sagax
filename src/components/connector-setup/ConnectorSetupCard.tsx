@@ -12,6 +12,7 @@ import { openExternalLink } from "@/lib/app-links";
 import { t } from "@/lib/i18n";
 import { api } from "@/state/store";
 import { ASK_PRIMARY_BUTTON, ASK_QUIET_BUTTON, AskCard, AskSettledLine } from "../AskCard";
+import { readableError } from "@/lib/plain-error";
 
 /** Opens the card's page, only on an allowed host. */
 export async function openConnectorSetup(view: Pick<ConnectorSetupView, "url">): Promise<boolean> {
@@ -92,7 +93,7 @@ export function ConnectorSetupCard({ threadId, view }: { threadId: string; view:
       // the server patches the message; the live thread brings the new status
       await api(`/api/connector-setup/${encodeURIComponent(view.id)}/check`, { method: "POST", body: JSON.stringify({ threadId }) });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setChecking(false);
     }
@@ -119,7 +120,7 @@ export function ConnectorSetupCard({ threadId, view }: { threadId: string; view:
       }
       setOpened(true);
       awaitingReturn.current = true;
-    }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
+    }).catch((cause: unknown) => setError(readableError(cause)));
   };
 
   return <ConnectorSetupBody view={view} checking={checking} opened={opened} error={error} onConnect={connect} onDone={() => void check()} />;

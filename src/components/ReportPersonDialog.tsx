@@ -11,6 +11,7 @@ import { t } from "@/lib/i18n";
 import { useModalDialog } from "@/hooks/use-modal-dialog";
 import { REPORT_REASONS, blockPerson, reportMessage, type ReportReason } from "@/lib/moderation";
 import { DIALOG, FIELD, GROUP_CARD, PILL, PRIMARY_PILL } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 export function ReportPersonDialog({ threadId, messageId, author, blocked, onClose }: {
   threadId: string;
@@ -36,7 +37,7 @@ export function ReportPersonDialog({ threadId, messageId, author, blocked, onClo
       await reportMessage({ threadId, messageId, reason, note });
       setState("sent");
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(readableError(failure));
       setState("edit");
     }
   };
@@ -45,7 +46,7 @@ export function ReportPersonDialog({ threadId, messageId, author, blocked, onClo
       await blockPerson(author);
       setState("blocked");
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(readableError(failure));
     }
   };
 

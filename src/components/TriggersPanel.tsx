@@ -22,6 +22,7 @@ import { TRIGGER_SOURCE_TYPES, isRelaySource, isTriggerSourceType, type TriggerS
 import { DANGER_PILL, DIALOG, DialogCloseButton, GROUP_CARD, PILL, PillSelect, PRIMARY_PILL, Switch } from "./SettingsPrimitives";
 import { MarkdownEditor } from "./markdown/MarkdownEditor";
 import { EMPTY_TYPED_DRAFT, TypedSourceFields, TypedTriggerRow, typedSourceLabel, typedTriggerInput, type TypedDraft } from "./TypedTriggers";
+import { readableError } from "@/lib/plain-error";
 import {
   WebhookEditor,
   outcomeLabel,
@@ -154,7 +155,7 @@ export function TriggersPanel() {
       setCustomName("");
       setTypedDraft(EMPTY_TYPED_DRAFT);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setCreating(false);
     }

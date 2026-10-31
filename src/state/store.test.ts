@@ -67,9 +67,13 @@ describe("api refusals", () => {
     await expect(api("/api/bots/fixture/data/run")).rejects.toMatchObject({ message: refusal.error.message, status: 400, body: refusal });
   });
 
-  it.each([null, {}, { error: { code: "unavailable" } }, { error: 123 }])("falls back to the HTTP status for a malformed error body: %j", async body => {
+  it.each([null, {}, { error: { code: "unavailable" } }, { error: 123 }])("falls back to a readable line for a malformed error body: %j", async body => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status: 503, statusText: "Service Unavailable" })));
-    await expect(api("/api/bots/fixture/data")).rejects.toThrow("503 Service Unavailable");
+    const error = await api("/api/bots/fixture/data").catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({ status: 503, body });
+    expect((error as ApiError).message).toBe("The service is busy right now. Try again in a moment.");
+    expect((error as ApiError).message).not.toMatch(/503|Service Unavailable/);
   });
 });
 

@@ -151,6 +151,7 @@ import { Switch } from "./SettingsPrimitives";
 import { groupMemberBots } from "@/lib/group-members";
 import { botPublicProfile } from "../../shared/bot-public-profile";
 import { personAvatarSrc } from "@/lib/profile-management";
+import { readableError } from "@/lib/plain-error";
 
 type RoomItem =
   | ActivityTranscriptItem
@@ -1073,7 +1074,7 @@ export function RoomWorkingFolder({ group, disabled = false, adminOnlyNote = fal
       await api(`/api/groups/${group.id}`, { method: "PATCH", body: JSON.stringify({ cwd }) });
       setDraft(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(readableError(e));
     } finally {
       setSaving(false);
     }

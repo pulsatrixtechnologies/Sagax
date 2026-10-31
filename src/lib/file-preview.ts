@@ -3,6 +3,7 @@
 // name and size. The text is read only when a card opens, at most
 // TEXT_PREVIEW_BYTES of it, once per file (cached for the session).
 import { classifyFile, fileExtension, type ThreadFile } from "@/lib/chat-files";
+import { readableError } from "@/lib/plain-error";
 
 export type FilePreviewKind = "image" | "text" | "meta";
 
@@ -44,7 +45,7 @@ export async function loadTextPreview(url: string, signal: AbortSignal, fetcher:
   const known = cache.get(url);
   if (known !== undefined) return known;
   const response = await fetcher(url, { signal });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.ok) throw new Error(readableError(`HTTP ${response.status}`));
   let bytes = new Uint8Array(0);
   let truncated = false;
   const reader = response.body?.getReader();

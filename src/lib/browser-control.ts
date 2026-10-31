@@ -1,4 +1,5 @@
 import type { createBrowserInputQueue } from "./browser-input-queue";
+import { readableError } from "./plain-error";
 
 type Body = Record<string, unknown>;
 /** Page input goes through the input queue; toolbar actions run as commands.
@@ -150,7 +151,7 @@ export function createBrowserControl(options: {
     chain = chain.then(async () => {
       if (closed) return;
       const grant = await options.take().then((reply) => ({ reply }), (cause: unknown) => {
-        if (!closed) options.onError(cause instanceof Error ? cause.message : String(cause));
+        if (!closed) options.onError(readableError(cause));
         return null;
       });
       clearTimeout(notice);

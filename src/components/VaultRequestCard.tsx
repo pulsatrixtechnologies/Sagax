@@ -20,6 +20,7 @@ import { t } from "@/lib/i18n";
 import { useStore, type Message } from "@/state/store";
 import { siteAddable, type VaultGrantMode } from "../../shared/credential-vault";
 import { ASK_CHIP, ASK_CHIP_IDLE, ASK_CHIP_PICKED, ASK_FIELD, ASK_PRIMARY_BUTTON, AskCard, AskSettledLine, returnFocusToComposer } from "./AskCard";
+import { readableError } from "@/lib/plain-error";
 
 const NEW = "__new__";
 
@@ -56,7 +57,7 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
         setItems(matches);
         setChoice(matches[0]?.id ?? NEW);
       })
-      .catch((failure) => { if (live) { setItems([]); setChoice(NEW); setError(failure instanceof Error ? failure.message : String(failure)); } });
+      .catch((failure) => { if (live) { setItems([]); setChoice(NEW); setError(readableError(failure)); } });
     // 1Password's own items for this site, when 1Password is on this
     // computer. Silent when it is not: the card works without it.
     loadCardOnePassword(botId, message.id, threadId)
@@ -129,7 +130,7 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
       setDraft((current) => ({ ...current, password: "", totpSeed: "" }));
       returnFocusToComposer();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(readableError(failure));
     } finally {
       setBusy(false);
     }
@@ -153,7 +154,7 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
       setArmed(true);
       setSelfSignIn(true);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(readableError(failure));
     } finally {
       setBusy(false);
     }
@@ -166,7 +167,7 @@ export function VaultRequestCard({ botId, threadId, message }: { botId: string; 
       await signedInFromCard(botId, message.id, threadId);
       returnFocusToComposer();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(readableError(failure));
     } finally {
       setBusy(false);
     }

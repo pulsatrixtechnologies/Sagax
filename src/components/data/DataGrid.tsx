@@ -7,6 +7,7 @@ import { t } from "@/lib/i18n";
 import { copyText } from "@/lib/copy-text";
 import { cellText, defaultColumnWidth, formatCount, isNumericType, tsv, type Cell } from "./data-format";
 import { DataFilter, type DataFilterValue } from "./DataFilter";
+import { readableError } from "@/lib/plain-error";
 
 export interface DataGridHandle {
   visibleRows(): { columns: string[]; rows: Cell[][] };
@@ -89,7 +90,7 @@ export function createDataGridDatasource({ botId, dataThread, target, columns, r
         params.successCallback(page.rows.map((cells, index): DataGridRow => ({ index: page.offset + index, cells })), page.rowCount);
       }).catch((cause) => {
         if (settled) return;
-        if (current()) onError(cause instanceof Error ? cause.message : String(cause));
+        if (current()) onError(readableError(cause));
         fail();
       });
     },

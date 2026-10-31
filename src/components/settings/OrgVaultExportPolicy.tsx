@@ -10,6 +10,7 @@ import { t } from "@/lib/i18n";
 import { loadPerspicaxOrg } from "@/lib/perspicax-org";
 import { api } from "@/state/store";
 import { DescribedRow, Switch } from "../SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 /** Save the policy; the server answers with the organization's settings. */
 export function saveOrgVaultExport(allowed: boolean): Promise<{ settings: { allowVaultExport?: boolean } }> {
@@ -31,7 +32,7 @@ export function OrgVaultExportPolicy({ initial, onChanged }: { initial: boolean;
       await loadPerspicaxOrg(true);
       await onChanged?.();
     } catch (failure) {
-      setError(t("organization.fullAccess.failed", { error: failure instanceof Error ? failure.message : String(failure) }));
+      setError(t("organization.fullAccess.failed", { error: readableError(failure) }));
     } finally {
       setBusy(false);
     }

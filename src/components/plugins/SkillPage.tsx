@@ -15,6 +15,7 @@ import { MarkdownEditor } from "../markdown/MarkdownEditor";
 import type { Crumb } from "../Breadcrumb";
 import { PluginCard, PluginPageHeader } from "./PluginParts";
 import { enginesLine } from "@/lib/capabilities";
+import { readableError } from "@/lib/plain-error";
 
 export interface SkillPageProps {
   basePath?: "/api/skills-library" | "/api/me/skills-library";
@@ -60,7 +61,7 @@ export function SkillPage({ skill, readOnlyReason, onBack, trail, onSaved, onDel
         }
         setLoaded(true);
       })
-      .catch((cause) => !cancelled && setError(cause instanceof Error ? cause.message : String(cause)));
+      .catch((cause) => !cancelled && setError(readableError(cause)));
     return () => {
       cancelled = true;
     };
@@ -87,7 +88,7 @@ export function SkillPage({ skill, readOnlyReason, onBack, trail, onSaved, onDel
       setSaved(true);
       await onSaved(name.trim());
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }
@@ -101,7 +102,7 @@ export function SkillPage({ skill, readOnlyReason, onBack, trail, onSaved, onDel
       await api(`${basePath}/${encodeURIComponent(skill.name)}`, { method: "DELETE" });
       await onDeleted();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
       setBusy(null);
     }
   };
@@ -116,7 +117,7 @@ export function SkillPage({ skill, readOnlyReason, onBack, trail, onSaved, onDel
       setEnabled(!enabled);
       await onSaved(skill.name);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }

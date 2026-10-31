@@ -5,6 +5,7 @@ import { t } from "@/lib/i18n";
 import { cn } from "@/lib/cn";
 import { CommandLine } from "./SettingsPrimitives";
 import { ConfirmDialog } from "./ConfirmDialog";
+import { readableError } from "@/lib/plain-error";
 
 export function ClaudeAccountForm({ instance, onSaved, onCancel }: {
   instance?: InstanceInfo;
@@ -34,7 +35,7 @@ export function ClaudeAccountForm({ instance, onSaved, onCancel }: {
       await refreshInstances().catch(() => {});
       onSaved();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setSaving(false);
     }
@@ -124,7 +125,7 @@ export function ClaudeAccountSettings({ instance }: { instance: InstanceInfo }) 
     setBusy(true);
     setError(null);
     try { await refreshInstances(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
+    catch (cause) { setError(readableError(cause)); }
     finally { setBusy(false); }
   };
 
@@ -137,7 +138,7 @@ export function ClaudeAccountSettings({ instance }: { instance: InstanceInfo }) 
       await api(`/api/instances/${encodeURIComponent(instance.instanceId)}`, { method: "DELETE" });
       await refreshInstances().catch(() => {});
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(false);
     }
@@ -154,7 +155,7 @@ export function ClaudeAccountSettings({ instance }: { instance: InstanceInfo }) 
       // request could fail and leave a signed-out account showing connected.
       dispatch({ type: "instances", instances });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setSigningOut(false);
     }

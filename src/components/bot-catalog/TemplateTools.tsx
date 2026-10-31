@@ -25,6 +25,7 @@ import { Github } from "../brand-icons";
 import { ShareTeamDialog } from "../ShareTeamDialog";
 import { BotZipImportPanel } from "../BotZipImport";
 import { shareableTeamList, TEAM_GLYPHS, TeamGlyph, TeamImportDetails, type TeamImportResult } from "./TeamImportDetails";
+import { readableError } from "@/lib/plain-error";
 
 export type TemplateTool = "import" | "zip" | "scout" | "share";
 export const TEMPLATE_TOOLS: readonly TemplateTool[] = ["import", "zip", "scout", "share"];
@@ -137,7 +138,7 @@ export function TeamImportPreview({ pending, source, onImported }: {
         ...(response.presets?.length ? { presets: response.presets.length } : {}),
       });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setImporting(false);
     }
@@ -257,7 +258,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
       setPending(teamImportPreview(manifest));
       setSource("github");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setGithubLoading(false);
     }
@@ -298,7 +299,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
         });
     } catch (cause) {
       if (request !== scoutRequest.current) return;
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       if (request === scoutRequest.current) setScouting(false);
     }
@@ -347,7 +348,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
       track("team_imported", { members: response.bots.length, source: "scout", mode: "project" });
       onImported({ name: room, members: response.bots.length });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setCreating(false);
     }
@@ -400,7 +401,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
                 const file = event.currentTarget.files?.[0];
                 event.currentTarget.value = "";
                 if (!file) return;
-                void readFile(file).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+                void readFile(file).catch((cause) => setError(readableError(cause)));
               }}
             />
             <div className="mb-3 text-[12px] font-medium text-ink-secondary">{t("templateTools.byoTeam")}</div>
@@ -415,7 +416,7 @@ export function TemplateTools({ tool, onTool, installUrl, onImported, backRef }:
                   event.preventDefault();
                   setDragging(false);
                   const file = event.dataTransfer.files[0];
-                  if (file) void readFile(file).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)));
+                  if (file) void readFile(file).catch((cause) => setError(readableError(cause)));
                 }}
                 className={cn(
                   "flex min-h-56 flex-col items-center justify-center rounded-2xl border border-dashed px-6 text-center transition-colors",

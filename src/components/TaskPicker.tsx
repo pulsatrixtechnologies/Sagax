@@ -31,6 +31,7 @@ import { formatUpdatedAt, orderedThreadList, threadByline, threadRecency, thread
 import { ThreadMenu, type ThreadMenuActions } from "./ThreadMenu";
 import { ConfidentialBadge } from "./ConfidentialBanner";
 import { newThreadChoices } from "@/lib/confidential-thread";
+import { readableError } from "@/lib/plain-error";
 
 /** Click-to-switch used to close this menu immediately, which unmounted the
  * row before a double-click (or right-click) could start a rename. Linger
@@ -620,7 +621,7 @@ export function TaskPicker({ bot, initialOpen = false }: { bot: Bot; initialOpen
       setFolderSaving(true); setFolderError(null);
       markFolderRead(bot, projectId, api, (updated) => dispatch({ type: "botPatched", bot: updated }))
         .then(() => onSaved())
-        .catch((error: unknown) => setFolderError(error instanceof Error ? error.message : String(error)))
+        .catch((error: unknown) => setFolderError(readableError(error)))
         .finally(() => setFolderSaving(false));
     },
   };
@@ -745,7 +746,7 @@ export function PersonThreadPicker({ group, initialOpen = false }: { group: Grou
       setFolderSaving(true); setFolderError(null);
       markGroupFolderRead(group, projectId, api, (updated) => dispatch({ type: "groupPatched", group: updated }))
         .then(() => onSaved())
-        .catch((error: unknown) => setFolderError(error instanceof Error ? error.message : String(error)))
+        .catch((error: unknown) => setFolderError(readableError(error)))
         .finally(() => setFolderSaving(false));
     },
   };

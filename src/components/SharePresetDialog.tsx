@@ -11,6 +11,7 @@ import { ShareContentsGroups } from "./ShareTeamDialog";
 import type { NewBotDefaults } from "../../shared/new-bot-defaults";
 import type { PackageDocument, PackageSummary } from "../../shared/package-format";
 import { TemplateLinkSection } from "./TemplateLinkSection";
+import { readableError } from "@/lib/plain-error";
 
 /** POST /api/teams/export with kind "library": a preset file. */
 export interface PresetShareResponse {
@@ -117,7 +118,7 @@ export function SharePresetDialog({ onClose }: { onClose: () => void }) {
         .catch((cause) => {
           if (id !== request.current) return;
           setPreview(null);
-          setError(cause instanceof Error ? cause.message : String(cause));
+          setError(readableError(cause));
         });
     }, 250);
     return () => window.clearTimeout(timer);
@@ -134,7 +135,7 @@ export function SharePresetDialog({ onClose }: { onClose: () => void }) {
       saveShareFile(result.filename, result.document);
       setSaved(result);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setSaving(false);
     }

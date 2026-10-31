@@ -9,6 +9,7 @@ import { CirclePause, Play } from "lucide-react";
 import { t, activeLocale } from "@/lib/i18n";
 import type { Routine } from "@/lib/routines";
 import { api, type Action } from "@/state/store";
+import { readableError } from "@/lib/plain-error";
 
 type AwayRoutine = Pick<Routine, "id" | "name" | "awaySkips">;
 
@@ -41,7 +42,7 @@ export function RoutineAwayBanner({ routines, dispatch, request = api }: {
     try {
       await work();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setBusy(null);
     }

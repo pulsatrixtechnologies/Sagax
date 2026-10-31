@@ -9,6 +9,7 @@ import { readMembership } from "../lib/membership";
 import { loadPerspicaxOrg } from "../lib/perspicax-org";
 import { revealPhonePairing } from "../lib/phone-pairing";
 import { Card, cardCount } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 /** What the server hands out for a new device (POST /api/auth/pairing). */
 export interface PairingOffer {
@@ -116,7 +117,7 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
       setDevices(Array.isArray(body?.sessions) ? body.sessions : []);
       setCurrent(typeof body?.current === "string" ? body.current : null);
     } catch (e) {
-      setError(t("remote.serverPairing.error", { error: e instanceof Error ? e.message : String(e) }));
+      setError(t("remote.serverPairing.error", { error: readableError(e) }));
     }
   }
 
@@ -173,7 +174,7 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
       setOffer(body);
       setNow(Date.now());
     } catch (e) {
-      setError(t("remote.serverPairing.error", { error: e instanceof Error ? e.message : String(e) }));
+      setError(t("remote.serverPairing.error", { error: readableError(e) }));
     } finally {
       setBusy(false);
     }
@@ -185,7 +186,7 @@ export function ServerPairingCard({ initialSession = null, initialPairingCodes =
       await api(`/api/auth/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
       await loadDevices();
     } catch (e) {
-      setError(t("remote.serverPairing.error", { error: e instanceof Error ? e.message : String(e) }));
+      setError(t("remote.serverPairing.error", { error: readableError(e) }));
     }
   }
 

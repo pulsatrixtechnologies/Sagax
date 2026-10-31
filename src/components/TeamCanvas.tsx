@@ -10,6 +10,7 @@ import { loadPerspicaxOrg } from "@/lib/perspicax-org";
 import { BotAvatar } from "./Avatar";
 import { InstanceProviderMark, ProviderMark } from "./ProviderIcons";
 import { fetchEnvironmentDescriptor } from "@/lib/environment-descriptor";
+import { readableError } from "@/lib/plain-error";
 
 type Gesture = {
   id: number;
@@ -349,7 +350,7 @@ export function TeamCanvas({ sections, canManage, onMove, onInstructions, onMemo
       void onMove(active.bot, destination).then((moved) => {
         setAnnouncement(moved === false ? t("canvas.moveCancelled") : t("canvas.moved", { name: active.bot.name, team: destination || t("settings.section.general") }));
       }).catch((error: unknown) => {
-        setAnnouncement(error instanceof Error ? error.message : String(error));
+        setAnnouncement(readableError(error));
       }).finally(() => setMoving(null));
     }
   };

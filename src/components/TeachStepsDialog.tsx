@@ -11,6 +11,7 @@ import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { api } from "@/state/store";
 import { TEACH_TEXT_MAX, type TeachReplay, type TeachStep } from "../../shared/teach-recording";
+import { readableError } from "@/lib/plain-error";
 
 const input = "min-w-0 flex-1 rounded-md bg-inset px-2 py-1 text-[12px] outline-none focus:ring-1 focus:ring-accent";
 const iconButton = "rounded-md p-1 text-ink-secondary hover:bg-inset hover:text-ink disabled:opacity-30";
@@ -125,7 +126,7 @@ export function TeachStepsDialog({ botId, botName, steps: recorded, recordedAt, 
       setPhase("saved");
     } catch (cause) {
       setPhase("idle");
-      setError(t("teach.saveFailed", { detail: cause instanceof Error ? cause.message : String(cause) }));
+      setError(t("teach.saveFailed", { detail: readableError(cause) }));
     }
   };
   const refuse = () => {

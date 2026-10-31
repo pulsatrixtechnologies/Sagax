@@ -12,6 +12,7 @@ import { cn } from "@/lib/cn";
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
 import { CompactRow, DescribedRow, HelpTip, PILL, SettingsGroup, Switch } from "./SettingsPrimitives";
+import { readableError } from "@/lib/plain-error";
 
 const KEY_URL = "https://typesafe.ai";
 
@@ -76,7 +77,7 @@ export function DecisionModelSettings() {
     try {
       applied(await api<ConfigStatus>("/api/config", { method: "PUT", body: JSON.stringify({ decider: decision }) }));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setSwitching(false);
     }
@@ -94,7 +95,7 @@ export function DecisionModelSettings() {
       applied(status);
       setValue("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(readableError(cause));
     } finally {
       setSaving(false);
     }
@@ -114,7 +115,7 @@ export function DecisionModelSettings() {
         ? { ok: true, text: t("decider.test.ok", { ms: String(result.latencyMs) }) }
         : { ok: false, text: deciderFailureText(result, testingIncluded) });
     } catch (cause) {
-      setVerdict({ ok: false, text: cause instanceof Error ? cause.message : String(cause) });
+      setVerdict({ ok: false, text: readableError(cause) });
     } finally {
       setTesting(false);
     }
