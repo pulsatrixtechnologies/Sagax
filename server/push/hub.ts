@@ -11,7 +11,7 @@
 import { ApnsSender, createHttp2Transport, type ApnsLog, type ApnsTransport } from "./apns.ts";
 import type { ApnsConfigResult } from "./config.ts";
 import { maskSecret } from "./config.ts";
-import { PUSH_SEEN_GRACE_MS, PushRateLimiter, shouldPush, waitsForGrace } from "./decide.ts";
+import { bypassesPushRateLimit, PUSH_SEEN_GRACE_MS, PushRateLimiter, shouldPush, waitsForGrace } from "./decide.ts";
 import type { PushDeviceStore } from "./devices.ts";
 import type { AndroidPushDeviceStore } from "./fcm-devices.ts";
 import { buildFcmMessage, type FcmSender } from "./fcm.ts";
@@ -261,7 +261,11 @@ export class PushHub {
     const ios = this.sender ? this.devicesToSend(message.personId).length : 0;
     const android = this.fcm ? this.androidDevices(message.personId).length : 0;
     if (!ios && !android) return;
-    if (!this.limiter.tryTake(message.personId, this.now())) return;
+    if (!bypassesPushRateLimit(message.kind) && !this.limiter.tryTake(message.personId, this.now())) {
+      // Refused pushes leave a line; approvals bypass this ceiling (#1715).
+      this.log.warn(`push: rate limited (${message.kind}${message.threadId ? ` thread ${message.threadId}` : ""})`);
+      return;
+    }
     if (message.threadId && message.kind !== "nudge") {
       if (this.pushed.size >= 5_000) this.pushed.clear();
       this.pushed.add(key(message.personId, message.threadId));

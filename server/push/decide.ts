@@ -30,6 +30,13 @@ export function waitsForGrace(input: { kind: PushKind; connected: boolean }): bo
   return input.connected;
 }
 
+/** Approvals and questions (`kind: "approval"`) skip the per-person ceiling:
+ * a bot waiting on the person must still reach the phone when a burst of
+ * messages or routines already filled the window (#1715). */
+export function bypassesPushRateLimit(kind: PushKind): boolean {
+  return kind === "approval";
+}
+
 /** At most `max` pushes per person in any `windowMs`. In memory only. */
 export class PushRateLimiter {
   private readonly sent = new Map<string, number[]>();

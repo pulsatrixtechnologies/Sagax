@@ -47,7 +47,8 @@ Each push follows:
   chime, nudge sound), sent with each registration;
 - the person's synced "Notification sounds";
 - a bot's notifications muted for that person (Settings of the bot);
-- a rate limit of 20 pushes per person in 5 minutes;
+- a rate limit of 20 pushes per person in 5 minutes (approvals and questions
+  are exempt; a refused push is logged);
 - one notification per conversation (`apns-collapse-id` is
   `sagax.t.<threadId>`, the same identifier as the app's local
   notification, so a push replaces the banner the live stream already showed).
