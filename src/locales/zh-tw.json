@@ -3104,7 +3104,7 @@
   "computer.simple.showAdvanced": "顯示進階控制項",
   "computer.close": "關閉電腦面板",
   "computer.simple.useFullScreen": "使用「全螢幕」來操作。",
-  "computer.simple.useFullScreenVm": "使用「全螢幕」來操作 — 這裡的預覽僅供觀看。",
+  "computer.simple.useFullScreenVm": "使用「全螢幕」來操作：這裡的預覽僅供觀看。",
   "mcp.auth.signedIn": "已登入",
   "mcp.auth.needsSignIn": "需要登入",
   "mcp.auth.signIn": "登入",

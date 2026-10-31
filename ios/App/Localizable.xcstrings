@@ -6942,7 +6942,7 @@
       "shouldTranslate": false,
       "localizations": {}
     },
-    "5–1,440": {
+    "5-1,440": {
       "localizations": {
         "fr": {
           "stringUnit": {
@@ -6953,7 +6953,7 @@
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "5–1.440"
+            "value": "5-1.440"
           }
         }
       }
@@ -14890,18 +14890,18 @@
         }
       }
     },
-    "Your computer could not open its credential store, so it cannot say which accounts are connected. Nothing has been disconnected — restarting Sagax on your computer usually clears this.": {
+    "Your computer could not open its credential store, so it cannot say which accounts are connected. Nothing has been disconnected. Restarting Sagax on your computer usually clears this.": {
       "localizations": {
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ton ordinateur n'a pas pu ouvrir son magasin d'identifiants, donc il ne peut pas dire quels comptes sont connectés. Rien n'a été déconnecté — redémarrer Sagax sur ton ordinateur règle généralement le problème."
+            "value": "Ton ordinateur n'a pas pu ouvrir son magasin d'identifiants, donc il ne peut pas dire quels comptes sont connectés. Rien n'a été déconnecté. Redémarrer Sagax sur ton ordinateur règle généralement le problème."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "O seu computador não conseguiu abrir o cofre de credenciais, então não sabe dizer quais contas estão conectadas. Nada foi desconectado — reiniciar o Sagax no seu computador costuma resolver."
+            "value": "O seu computador não conseguiu abrir o cofre de credenciais, então não sabe dizer quais contas estão conectadas. Nada foi desconectado. Reiniciar o Sagax no seu computador costuma resolver."
           }
         }
       }
@@ -45372,12 +45372,12 @@
         }
       }
     },
-    "Give the topic a name — letters, numbers, spaces, dots or dashes.": {
+    "Give the topic a name: letters, numbers, spaces, dots or dashes.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Give the topic a name — letters, numbers, spaces, dots or dashes."
+            "value": "Give the topic a name: letters, numbers, spaces, dots or dashes."
           }
         },
         "fr": {
@@ -45482,12 +45482,12 @@
         }
       }
     },
-    "Notes this bot keeps between tasks. They are plain markdown files in a folder on your computer — open them in any editor, or in Obsidian.": {
+    "Notes this bot keeps between tasks. They are plain markdown files in a folder on your computer. Open them in any editor, or in Obsidian.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Notes this bot keeps between tasks. They are plain markdown files in a folder on your computer — open them in any editor, or in Obsidian."
+            "value": "Notes this bot keeps between tasks. They are plain markdown files in a folder on your computer. Open them in any editor, or in Obsidian."
           }
         },
         "fr": {
@@ -45900,12 +45900,12 @@
         }
       }
     },
-    "Keeps these notes in shape without the bot having to remember to: notices facts you mention in chats and files them — core facts here, detail in topic files it creates — and tidies up every night: expired notes are archived, duplicates merged, contradicted notes crossed out. Facts about you are added to About me (Settings → General), where every bot reads them and you can remove any. Every change shows below and can be undone.": {
+    "Keeps these notes in shape without the bot having to remember to: notices facts you mention in chats and files them (core facts here, detail in topic files it creates) and tidies up every night: expired notes are archived, duplicates merged, contradicted notes crossed out. Facts about you are added to About me (Settings → General), where every bot reads them and you can remove any. Every change shows below and can be undone.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Keeps these notes in shape without the bot having to remember to: notices facts you mention in chats and files them — core facts here, detail in topic files it creates — and tidies up every night: expired notes are archived, duplicates merged, contradicted notes crossed out. Facts about you are added to About me (Settings → General), where every bot reads them and you can remove any. Every change shows below and can be undone."
+            "value": "Keeps these notes in shape without the bot having to remember to: notices facts you mention in chats and files them (core facts here, detail in topic files it creates) and tidies up every night: expired notes are archived, duplicates merged, contradicted notes crossed out. Facts about you are added to About me (Settings → General), where every bot reads them and you can remove any. Every change shows below and can be undone."
           }
         },
         "fr": {
@@ -46168,12 +46168,12 @@
         }
       }
     },
-    "%lld of %lld lines · %@ of %@ — only the first %lld lines load each turn.": {
+    "%lld of %lld lines · %@ of %@. Only the first %lld lines load each turn.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld of %lld lines · %@ of %@ — only the first %lld lines load each turn."
+            "value": "%lld of %lld lines · %@ of %@. Only the first %lld lines load each turn."
           }
         },
         "fr": {
@@ -46190,12 +46190,12 @@
         }
       }
     },
-    "%lld lines saved, %lld load into every conversation — %lld lines are not being loaded. Trim this file or move notes into a topic file.": {
+    "%lld lines saved, %lld load into every conversation: %lld lines are not being loaded. Trim this file or move notes into a topic file.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%lld lines saved, %lld load into every conversation — %lld lines are not being loaded. Trim this file or move notes into a topic file."
+            "value": "%lld lines saved, %lld load into every conversation: %lld lines are not being loaded. Trim this file or move notes into a topic file."
           }
         },
         "fr": {
@@ -46212,12 +46212,12 @@
         }
       }
     },
-    "%@ saved, %@ load into every conversation — the rest is not being loaded. Trim this file or move notes into a topic file.": {
+    "%@ saved, %@ load into every conversation: the rest is not being loaded. Trim this file or move notes into a topic file.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "%@ saved, %@ load into every conversation — the rest is not being loaded. Trim this file or move notes into a topic file."
+            "value": "%@ saved, %@ load into every conversation: the rest is not being loaded. Trim this file or move notes into a topic file."
           }
         },
         "fr": {
@@ -46278,12 +46278,12 @@
         }
       }
     },
-    "Nothing remembered yet. The bot writes durable notes here — or add your own.": {
+    "Nothing remembered yet. The bot writes durable notes here, or add your own.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Nothing remembered yet. The bot writes durable notes here — or add your own."
+            "value": "Nothing remembered yet. The bot writes durable notes here, or add your own."
           }
         },
         "fr": {
@@ -47334,12 +47334,12 @@
         }
       }
     },
-    "Imported 1 skill — review and enable below.": {
+    "Imported 1 skill. Review and enable below.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Imported 1 skill — review and enable below."
+            "value": "Imported 1 skill. Review and enable below."
           }
         },
         "fr": {
@@ -47356,12 +47356,12 @@
         }
       }
     },
-    "Imported %lld skills — review and enable below.": {
+    "Imported %lld skills. Review and enable below.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Imported %lld skills — review and enable below."
+            "value": "Imported %lld skills. Review and enable below."
           }
         },
         "fr": {
@@ -50060,12 +50060,12 @@
         }
       }
     },
-    "Jump to bot 1–9 in the roster": {
+    "Jump to bot 1 to 9 in the roster": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Jump to bot 1–9 in the roster"
+            "value": "Jump to bot 1 to 9 in the roster"
           }
         },
         "fr": {
@@ -50077,7 +50077,7 @@
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ir para o bot 1–9 da lista"
+            "value": "Ir para o bot 1 a 9 da lista"
           }
         }
       }
@@ -50874,24 +50874,24 @@
         }
       }
     },
-    "Notes this bot keeps between tasks. They are plain markdown files in a folder on this computer — open them in any editor, or in Obsidian.": {
+    "Notes this bot keeps between tasks. They are plain markdown files in a folder on this computer. Open them in any editor, or in Obsidian.": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Notes this bot keeps between tasks. They are plain markdown files in a folder on this computer — open them in any editor, or in Obsidian."
+            "value": "Notes this bot keeps between tasks. They are plain markdown files in a folder on this computer. Open them in any editor, or in Obsidian."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les notes que ce bot garde d'une tâche à l'autre. Ce sont de simples fichiers markdown dans un dossier de cet ordinateur — ouvrez-les dans n'importe quel éditeur, ou dans Obsidian."
+            "value": "Les notes que ce bot garde d'une tâche à l'autre. Ce sont de simples fichiers markdown dans un dossier de cet ordinateur. Ouvrez-les dans n'importe quel éditeur, ou dans Obsidian."
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Notas que este bot guarda entre tarefas. São arquivos markdown simples em uma pasta deste computador — abra-os em qualquer editor ou no Obsidian."
+            "value": "Notas que este bot guarda entre tarefas. São arquivos markdown simples em uma pasta deste computador. Abra-os em qualquer editor ou no Obsidian."
           }
         }
       }
@@ -51072,24 +51072,24 @@
         }
       }
     },
-    "Private bot folder — or an absolute path": {
+    "Private bot folder, or an absolute path": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Private bot folder — or an absolute path"
+            "value": "Private bot folder, or an absolute path"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Dossier privé du bot — ou un chemin absolu"
+            "value": "Dossier privé du bot, ou un chemin absolu"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Pasta privada do bot — ou um caminho absoluto"
+            "value": "Pasta privada do bot, ou um caminho absoluto"
           }
         }
       }
@@ -52128,24 +52128,24 @@
         }
       }
     },
-    "This bot works in the built-in browser — no desktop here": {
+    "This bot works in the built-in browser: no desktop here": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This bot works in the built-in browser — no desktop here"
+            "value": "This bot works in the built-in browser: no desktop here"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ce bot travaille dans le navigateur intégré — pas de bureau ici"
+            "value": "Ce bot travaille dans le navigateur intégré : pas de bureau ici"
           }
         },
         "pt-BR": {
           "stringUnit": {
             "state": "translated",
-            "value": "Este bot trabalha no navegador integrado — sem área de trabalho aqui"
+            "value": "Este bot trabalha no navegador integrado: sem área de trabalho aqui"
           }
         }
       }

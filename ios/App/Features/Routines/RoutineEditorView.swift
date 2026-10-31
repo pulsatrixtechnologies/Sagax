@@ -1044,7 +1044,7 @@ struct RoutineScheduleFields: View {
         if !presets.contains(form.intervalCount ?? -1) {
             HStack {
                 Text("Set the interval to")
-                TextField(form.intervalUnit == .hours ? "1–24" : "5–1,440", value: Binding(
+                TextField(form.intervalUnit == .hours ? "1-24" : "5-1,440", value: Binding(
                     get: { form.intervalCount }, set: { form.setIntervalCount($0) }
                 ), format: .number)
                     .keyboardType(.numberPad)

@@ -49,7 +49,7 @@ struct QueuedSendList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if showsCapacityNote {
-                Text("Queued — starts when this bot has a free thread slot.")
+                Text("Queued. Starts when this bot has a free thread slot.")
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.textSecondary)
             }

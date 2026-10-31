@@ -541,7 +541,7 @@ struct FilePreviewItem: Identifiable {
         let visible = data.prefix(limit)
         var decoded = String(decoding: visible, as: UTF8.self)
         if data.count > limit {
-            decoded += "\n\n— Preview truncated. Share or open the file to read the rest. —"
+            decoded += "\n\n(Preview truncated. Share or open the file to read the rest.)"
         }
         return decoded
     }

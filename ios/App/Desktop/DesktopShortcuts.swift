@@ -27,7 +27,7 @@ struct DesktopShortcutGroup: Identifiable {
             DesktopShortcutGroup(category: AppStrings.localized("Navigation"), items: [
                 DesktopShortcut(id: "palette", description: AppStrings.localized("Open command palette (switcher & transcript search)"), keys: ["⌘", "K"]),
                 DesktopShortcut(id: "new", description: AppStrings.localized("Search or create a bot"), keys: ["⌘", "N"]),
-                DesktopShortcut(id: "jump", description: AppStrings.localized("Jump to bot 1–9 in the roster"), keys: ["⌘", "1–9"]),
+                DesktopShortcut(id: "jump", description: AppStrings.localized("Jump to bot 1 to 9 in the roster"), keys: ["⌘", "1-9"]),
                 DesktopShortcut(id: "step", description: AppStrings.localized("Switch to previous / next bot"), keys: ["⌘", "⇧", "[ / ]"]),
                 DesktopShortcut(id: "find", description: AppStrings.localized("Find in conversation"), keys: ["⌘", "F"]),
             ]),

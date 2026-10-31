@@ -69,7 +69,7 @@ struct ClaudeUpdateCard: View {
                 }
                 .accessibilityElement(children: .combine)
             case let .updated(version):
-                Label("Claude updated — \(version). Send your message again.", systemImage: "checkmark.circle")
+                Label("Claude updated: \(version). Send your message again.", systemImage: "checkmark.circle")
                     .font(.system(size: 14))
                     .foregroundStyle(Theme.success)
                     .fixedSize(horizontal: false, vertical: true)

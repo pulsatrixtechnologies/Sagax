@@ -132,7 +132,7 @@ final class BotMemoryModel: ObservableObject {
     /// Returns the path opened, or nil when the name is refused.
     func createTopic(_ name: String) async -> String? {
         guard let file = MemoryRules.topicFileName(name) else {
-            error = String(localized: "Give the topic a name — letters, numbers, spaces, dots or dashes.")
+            error = String(localized: "Give the topic a name: letters, numbers, spaces, dots or dashes.")
             return nil
         }
         let path = "memory/\(file)"
@@ -238,7 +238,7 @@ struct BotMemorySection: View {
         } footer: {
             Text(String(localized: "Off stops memory prompts, recall, native memory tools, upkeep, and automatic turn logs. Existing files remain available for review.")
                  + (current.busy == true ? " " + String(localized: "Stop this bot's turn before changing this setting.") : "")
-                 + "\n" + String(localized: "Notes this bot keeps between tasks. They are plain markdown files in a folder on your computer — open them in any editor, or in Obsidian."))
+                 + "\n" + String(localized: "Notes this bot keeps between tasks. They are plain markdown files in a folder on your computer. Open them in any editor, or in Obsidian."))
         }
 
         if let review = model.overview?.lendingReview {
@@ -369,7 +369,7 @@ struct BotMemorySection: View {
                     .font(.footnote).foregroundStyle(Theme.textSecondary)
             }
         } footer: {
-            Text(String(localized: "Keeps these notes in shape without the bot having to remember to: notices facts you mention in chats and files them — core facts here, detail in topic files it creates — and tidies up every night: expired notes are archived, duplicates merged, contradicted notes crossed out. Facts about you are added to About me (Settings → General), where every bot reads them and you can remove any. Every change shows below and can be undone."))
+            Text(String(localized: "Keeps these notes in shape without the bot having to remember to: notices facts you mention in chats and files them (core facts here, detail in topic files it creates) and tidies up every night: expired notes are archived, duplicates merged, contradicted notes crossed out. Facts about you are added to About me (Settings → General), where every bot reads them and you can remove any. Every change shows below and can be undone."))
         }
     }
 
@@ -505,9 +505,9 @@ struct BotMemoryGauge: View {
         guard capacity.truncated else { return nil }
         let missing = capacity.missingLines
         if missing > 0 {
-            return String(localized: "\(capacity.lines) lines saved, \(capacity.loadedLines) load into every conversation — \(missing) lines are not being loaded. Trim this file or move notes into a topic file.")
+            return String(localized: "\(capacity.lines) lines saved, \(capacity.loadedLines) load into every conversation: \(missing) lines are not being loaded. Trim this file or move notes into a topic file.")
         }
-        return String(localized: "\(MemoryCapacity.formatBytes(capacity.bytes)) saved, \(MemoryCapacity.formatBytes(capacity.loadedBytes)) load into every conversation — the rest is not being loaded. Trim this file or move notes into a topic file.")
+        return String(localized: "\(MemoryCapacity.formatBytes(capacity.bytes)) saved, \(MemoryCapacity.formatBytes(capacity.loadedBytes)) load into every conversation: the rest is not being loaded. Trim this file or move notes into a topic file.")
     }
 
     private func bar(_ label: String, share: Double, fill: Color) -> some View {
@@ -562,7 +562,7 @@ struct BotMemoryEditor: View {
                         MarkdownEditor(
                             text: Binding(get: { model.editing?.text ?? "" }, set: { model.edit($0) }),
                             placeholder: editing.path == MemoryRules.index
-                                ? String(localized: "Nothing remembered yet. The bot writes durable notes here — or add your own.")
+                                ? String(localized: "Nothing remembered yet. The bot writes durable notes here, or add your own.")
                                 : String(localized: "Write the note here."),
                             minHeight: 260, monospaced: true,
                             accessibilityLabel: editing.path == MemoryRules.index

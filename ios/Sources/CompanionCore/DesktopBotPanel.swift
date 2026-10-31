@@ -536,7 +536,7 @@ public enum DesktopComputerPhase: Equatable, Sendable {
     case picture
     /// "This bot's computer is off".
     case off
-    /// "This bot works in the built-in browser — no desktop here".
+    /// "This bot works in the built-in browser: no desktop here".
     case browser
     /// Waiting for the pinned computer's first picture.
     case waiting

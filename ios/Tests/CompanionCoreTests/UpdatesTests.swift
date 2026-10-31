@@ -80,7 +80,7 @@ final class UpdatesTests: XCTestCase {
         state.pendingQueued["t-idle"] = [QueuedSend(queueId: "q-cap", text: "run the tests", reason: "capacity")]
         let capacity = try XCTUnwrap(state.updates.first { $0.chat.threadId == "t-idle" })
         XCTAssertEqual(capacity.kind, .working)
-        XCTAssertEqual(capacity.line, "Queued — waiting for an available slot")
+        XCTAssertEqual(capacity.line, "Queued. Waiting for an available slot")
 
         // A hold behind the running turn is simply queued.
         state.pendingQueued["t-idle"] = [QueuedSend(queueId: "q-turn", text: "run the tests", reason: "behind-turn")]

@@ -31,7 +31,7 @@ struct BotWidget: Widget {
                 .widgetContainerBackground()
         }
         .configurationDisplayName("Bot")
-        .description("One chat's status at a glance — pick which one on the widget's settings.")
+        .description("One chat's status at a glance. Pick which one on the widget's settings.")
         .supportedFamilies([.systemSmall])
     }
 }

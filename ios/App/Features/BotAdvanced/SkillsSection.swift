@@ -121,8 +121,8 @@ final class BotSkillsModel: ObservableObject {
         do {
             let count = try await client.importSkill(botId: botId, source: trimmed)
             importMessage = count == 1
-                ? String(localized: "Imported 1 skill — review and enable below.")
-                : String(localized: "Imported \(count) skills — review and enable below.")
+                ? String(localized: "Imported 1 skill. Review and enable below.")
+                : String(localized: "Imported \(count) skills. Review and enable below.")
             await refresh()
             return true
         } catch {
