@@ -836,6 +836,7 @@ pref("appearance.botHotkeyChord", "appearance", "sagax.botHotkeyModifier.v1", "e
 pref("appearance.sendKey", "appearance", "omb-send-key", "enum:enter|mod-enter", "Send key", "Settings > Appearance");
 pref("appearance.runCard", "appearance", "omb-show-run-card", "boolean", "This run card", "Settings > Appearance");
 pref("appearance.sidebarLogo", "appearance", "sagax-show-sidebar-logo", "boolean", "Sidebar logo", "Settings > Appearance");
+pref("appearance.sidebarPeopleApart", "appearance", "sagax.sidebarPeopleApart.v1", "enum:on|off", "Keep people apart from bots in Unassigned (on, the default; off mixes them again)", "Settings > Appearance > Sidebar");
 pref("appearance.routinesBadge", "appearance", "sagax-show-routines-badge", "boolean", "Routines badge", "Settings > Appearance");
 pref("appearance.sidebarDensity", "appearance", "openmausbot.sidebarDensity", "string", "Sidebar density", "Settings > Appearance");
 pref("appearance.freshTopicAfter", "appearance", "sagax.freshTopicAfter.v1", "string", "Fresh topic after", "Settings > Appearance");
