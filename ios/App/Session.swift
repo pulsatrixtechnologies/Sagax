@@ -3143,9 +3143,10 @@ final class Session: ObservableObject {
     func forgetVoiceModeStatus() { voiceStatusCache = [:] }
 
     /// Who hears the composer's dictation for this bot (SpeechDictation):
-    /// xAI on the server whenever a key serves the person, else Apple on
-    /// this iPhone with the reason (nil when Apple is the plain choice: a
-    /// demo, a room, no computer paired).
+    /// xAI on the server whenever a key serves the person (listen socket
+    /// while speaking, whole-clip upload only if the socket cannot open),
+    /// else Apple on this iPhone with the reason (nil when Apple is the
+    /// plain choice: a demo, a room, no computer paired).
     func dictationEars(for chat: Chat) async -> SpeechDictation.Ears {
         guard let client, !isDemo, case let .bot(bot) = chat else { return .apple(reason: nil) }
         guard let status = await voiceModeStatus(botId: bot.id) else {
@@ -3155,8 +3156,19 @@ final class Session: ObservableObject {
             return .apple(reason: VoiceWords.refusalLines(cause: status.refusal?.cause ?? "no_credentials", admin: status.refusal?.admin == true).joined(separator: " "))
         }
         let threadId = chat.threadId
-        return .xai(SpeechDictation.ServerEars(key: status.key) { samples in
-            try await client.voiceModeTranscription(botId: bot.id, wav: CallWav.encode(samples), language: VoiceModeSettings.decode(UserDefaults.standard.string(forKey: VoiceModeSettings.storageKey)).language, threadId: threadId)
+        let language = VoiceModeSettings.decode(UserDefaults.standard.string(forKey: VoiceModeSettings.storageKey)).language
+        let botId = bot.id
+        return .xai(SpeechDictation.ServerEars(key: status.key) {
+            LiveDictation(
+                openListen: {
+                    guard let request = try? client.voiceModeListenRequest(botId: botId, language: language, threadId: threadId) else { return nil }
+                    let socket = URLSessionDictationSocket(request: request)
+                    return (socket, socket.events)
+                },
+                upload: { samples in
+                    try await client.voiceModeTranscription(botId: botId, wav: CallWav.encode(samples), language: language, threadId: threadId)
+                }
+            )
         })
     }
 

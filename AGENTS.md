@@ -223,6 +223,17 @@ were removed in lot 5; their old card ids redirect to Providers. Sign-in and key
 Providers") open Providers (`CARD_HOME`, `MERGED` in
 `src/lib/settings-sections.ts`).
 
+## iOS composer dictation streams over /voice/listen (2026-10-31, #1695)
+
+The iOS grey mic used to record the whole clip and upload it after the stop
+(`SpeechDictation` `.xai`, `POST /voice/transcribe`), so the field stayed
+empty while speaking and the wait grew with the recording. It now matches
+desktop/web (#1673): audio goes over `GET /voice/listen` (`LiveDictation`),
+partials join the field as they come, and the stop only waits for finalize
+(at most `DICTATION_FINAL_TIMEOUT_MS`). The whole-clip upload remains the
+fallback when the socket cannot open. Apple on-device stays the announced
+fallback when no xAI key serves. Tests: `ios/Tests/CompanionCoreTests/LiveDictationTests.swift`.
+
 ## Voice recognition: short answers and committed transcript identity (2026-10-30)
 
 Calls accept names, weekdays, commands, single letters and non-Latin words

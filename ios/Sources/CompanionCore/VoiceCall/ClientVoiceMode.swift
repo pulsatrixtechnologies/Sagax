@@ -544,6 +544,35 @@ extension CompanionClient {
         return VoiceStreamAudio(sampleRate: rate, chunks: chunks, key: key)
     }
 
+    /// Native WebSocket to `GET /api/bots/<id>/voice/listen` (no Origin; a
+    /// missing Origin passes the server's same-origin check for native
+    /// clients). Query matches the desktop's `voiceModeListenUrl`.
+    public func voiceModeListenRequest(
+        botId: String,
+        language: String,
+        threadId: String?,
+        locale: String? = Locale.current.identifier.replacingOccurrences(of: "_", with: "-"),
+        stt: String = "auto"
+    ) throws -> URLRequest {
+        let lang = VoiceModeSettings.isLanguage(language) ? language : "auto"
+        var query = [
+            URLQueryItem(name: "language", value: lang),
+            URLQueryItem(name: "stt", value: stt),
+        ]
+        if lang == "auto", let locale, !locale.isEmpty {
+            query.append(URLQueryItem(name: "locale", value: locale))
+        }
+        if let threadId, Self.validRouteID(threadId) {
+            query.append(URLQueryItem(name: "threadId", value: threadId))
+        }
+        var request = try makeRequest("GET", "\(Self.voiceBase(botId))/listen", query: query)
+        guard var components = URLComponents(url: request.url!, resolvingAgainstBaseURL: false) else { throw APIError.badURL }
+        if components.scheme == "https" { components.scheme = "wss" }
+        else { components.scheme = "ws" }
+        request.url = components.url
+        return request
+    }
+
     /// One whole turn uploaded (16 kHz mono WAV): xAI's speech to text on
     /// the server, the words and the key that heard them.
     public func voiceModeTranscription(botId: String, wav: Data, language: String, threadId: String?) async throws -> VoiceTranscription {
@@ -651,15 +680,21 @@ public enum CallKeyterms {
     }
 }
 
-/// 16 kHz mono 16-bit WAV of float frames (a turn uploaded whole).
+/// 16 kHz mono 16-bit PCM of float frames (listen socket) and WAV (upload).
 public enum CallWav {
-    public static func encode(_ samples: [Float], sampleRate: Int = 16_000) -> Data {
+    /// Raw little-endian PCM16 (no WAV header): what `/voice/listen` takes.
+    public static func pcm16(_ samples: [Float]) -> Data {
         var pcm = Data(capacity: samples.count * 2)
         for sample in samples {
             let clamped = max(-1, min(1, sample))
             var value = Int16(clamped < 0 ? clamped * 32768 : clamped * 32767).littleEndian
             withUnsafeBytes(of: &value) { pcm.append(contentsOf: $0) }
         }
+        return pcm
+    }
+
+    public static func encode(_ samples: [Float], sampleRate: Int = 16_000) -> Data {
+        let pcm = pcm16(samples)
         var header = Data()
         func append<T: FixedWidthInteger>(_ value: T) {
             var little = value.littleEndian

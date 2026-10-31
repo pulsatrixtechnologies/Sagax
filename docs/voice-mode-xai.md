@@ -865,21 +865,22 @@ xAI's refusal is never hidden behind "didn't come through" (2026-10-28):
   and said with the key and what to do (`VoiceWords.line`); an uploaded
   turn the server refused for good is not retried and its reason is shown;
   the composer's dictation hears through xAI whenever a key serves
-  (`SpeechDictation` `.xai`, the clip sent when it stops, "Transcribing
-  with xAI…"), Apple on the phone being the announced fallback; a reply
-  read aloud goes through voice mode's xAI voice (`MessageSpeaker`,
-  `/voice/prepare` and `/voice/speak`), then the computer's engine, then
-  the phone's voice with the reason under the composer.
+  (`SpeechDictation` `.xai`, listen socket while speaking, "Transcribing
+  with xAI…" only while waiting for finalize or the upload fallback),
+  Apple on the phone being the announced fallback; a reply read aloud goes
+  through voice mode's xAI voice (`MessageSpeaker`, `/voice/prepare` and
+  `/voice/speak`), then the computer's engine, then the phone's voice with
+  the reason under the composer.
 - Composer dictation (the grey mic, `src/lib/composer-dictation.ts`) hears
   through xAI whenever a key serves the person, on every platform alike.
-  On the desktop and the web (2026-10-29) the audio streams over the
-  call's listen socket (GET /voice/listen, `LiveTranscriber`) while the
-  person speaks: the words appear in the field as they are recognized and
-  the stop only waits for xAI's answer to the finalize (a few hundred ms,
-  at most `DICTATION_FINAL_TIMEOUT_MS`), where the whole clip used to be
-  uploaded after the stop (POST /voice/transcribe), now only the fallback
-  when the socket cannot open. iOS still uploads the clip. The Mac's own
-  recognizer is the fallback only when
+  On the desktop and the web (2026-10-29) and on iOS (2026-10-31, #1695)
+  the audio streams over the call's listen socket (GET /voice/listen,
+  `LiveTranscriber` / iOS `LiveDictation`) while the person speaks: the
+  words appear in the field as they are recognized and the stop only waits
+  for xAI's answer to the finalize (a few hundred ms, at most
+  `DICTATION_FINAL_TIMEOUT_MS`), where the whole clip used to be uploaded
+  after the stop (POST /voice/transcribe), now only the fallback when the
+  socket cannot open. The Mac's own recognizer is the fallback only when
   none does, and the mic's label says so ("Start dictation (this Mac's own,
   no xAI key)", `composer.dictation.startApple`). A failed transcription
   names the key and what to do (`voiceErrorNote`).
