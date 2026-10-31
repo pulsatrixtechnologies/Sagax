@@ -40752,7 +40752,7 @@ ROUTES.push(createBotCatalogRoutes({
       memories,
       skills: listBotSkills(bot).filter((skill) => skill.enabled).map((skill) => ({ name: skill.name, description: skill.description ?? "" })),
       routines: (routines?.listRoutines() ?? []).filter((routine) => routine.botId === bot.id)
-        .map((routine) => ({ name: routine.name, schedule: routineScheduleLabel(routine.schedule), enabled: routine.enabled })),
+        .map((routine) => ({ name: routine.name, schedule: routine.schedule, enabled: routine.enabled })),
       integrations: [
         ...(bot.mcpServers ?? []).map((name) => ({ name, kind: "mcp" as const })),
         ...(bot.browser ? [{ name: "browser", kind: "browser" as const }] : []),

@@ -83,7 +83,10 @@ const full: CatalogDetailContent = {
   soul: SOUL,
   memories: ["Le client Alpha préfère les courriels le matin.", "Les billets critiques passent par le 2e niveau."],
   skills: [{ name: "resume-billets", description: "Résume les billets ouverts" }, { name: "relance", description: "" }],
-  routines: [{ name: "Ronde du matin", schedule: "Tous les jours à 8 h", enabled: true }, { name: "Rapport hebdo", schedule: "Le vendredi à 16 h", enabled: false }],
+  routines: [
+    { name: "Ronde du matin", schedule: { type: "daily", time: "08:00", weekdays: [0, 1, 2, 3, 4, 5, 6] }, enabled: true },
+    { name: "Rapport hebdo", schedule: { type: "daily", time: "16:00", weekdays: [5] }, enabled: false },
+  ],
   integrations: [{ name: "acme-desk", kind: "mcp" }, { name: "Outlook", kind: "app" }, { name: "browser", kind: "browser" }],
 };
 const empty: CatalogDetailContent = { soul: "", memories: [], skills: [], routines: [], integrations: [] };

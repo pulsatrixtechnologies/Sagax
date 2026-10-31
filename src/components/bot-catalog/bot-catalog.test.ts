@@ -23,6 +23,7 @@ import {
   type CatalogActionContext,
   type CatalogItem,
 } from "@/lib/bot-catalog";
+import { setLocale } from "@/lib/i18n";
 import { BOT_ROLES } from "@/lib/bot-roles";
 import { orgSectionMenuItems } from "../OrgSectionMenu";
 import { BotCatalogView, SECTION_PREVIEW, type BotCatalogViewProps } from "./BotCatalogView";
@@ -330,6 +331,36 @@ describe("the detail pane", () => {
     expect(integrations).toContain("figma-mcp");
     expect(integrations).toContain("MCP server");
     expect(integrations).toContain("Built-in browser");
+  });
+
+  it("formats routine schedules in the person's language, never raw cron or UTC", () => {
+    const content = {
+      soul: "",
+      memories: null,
+      skills: [],
+      routines: [
+        { name: "Morning digest", schedule: { type: "cron" as const, expression: "30 8 * * 1-5", timeZone: "America/Toronto" }, enabled: true },
+        { name: "On mail", schedule: { type: "event" as const, source: "email" as const }, enabled: false },
+      ],
+      integrations: [],
+    };
+    try {
+      setLocale("fr-CA");
+      const fr = renderToStaticMarkup(createElement(BotCatalogDetailView, { item: pixel, content, tab: "routines", onTab: () => {}, onBack: () => {}, actions: null }));
+      expect(fr).toContain("Morning digest");
+      expect(fr).toContain("Du lundi au vendredi à 8 h 30");
+      expect(fr).toContain("America/Toronto");
+      expect(fr).not.toMatch(/30 8 \* \* 1-5/);
+      expect(fr).not.toMatch(/\bUTC\b/);
+      expect(fr).toContain("On mail");
+      expect(fr).toContain("Courriel entrant");
+      setLocale("en");
+      const en = renderToStaticMarkup(createElement(BotCatalogDetailView, { item: pixel, content, tab: "routines", onTab: () => {}, onBack: () => {}, actions: null }));
+      expect(en).toContain("Every weekday at 08:30");
+      expect(en).toContain("Incoming email");
+    } finally {
+      setLocale("en");
+    }
   });
 
   it("shows a template's own instructions", () => {
