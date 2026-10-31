@@ -7,6 +7,11 @@
 # A few minutes. The full suite is deliberately NOT here: it runs once, at
 # the version cut.
 #
+# Under nice, through a one-at-a-time queue (mkdir lock in the common git
+# dir), and with every GIT_* the hook inherited stripped so a test cannot
+# commit into the branch being pushed via a leaked GIT_DIR (issue #1705).
+# Skips when a verify:merge OK stamp already exists for this HEAD sha.
+#
 # Installed by `pnpm install` through scripts/install-git-hooks.mjs (sets
 # core.hooksPath). Skip once with `git push --no-verify`, or for a session
 # with SAGAX_SKIP_HOOKS=1.
@@ -16,6 +21,74 @@ if [ -n "$SAGAX_SKIP_HOOKS$OMB_SKIP_HOOKS" ]; then
   echo "pre-push: skipped (SAGAX_SKIP_HOOKS is set)"
   exit 0
 fi
-cd "$(git rev-parse --show-toplevel)"
-echo "pre-push: pnpm verify:merge (git push --no-verify to skip)"
-pnpm verify:merge
+
+# Resolve paths while the hook's git env (GIT_DIR, …) is still intact.
+ROOT="$(git rev-parse --show-toplevel)"
+SHA="$(git rev-parse HEAD)"
+SHA_SHORT="$(git rev-parse --short HEAD)"
+COMMON="$(git rev-parse --git-common-dir)"
+case "$COMMON" in
+  /*) ;;
+  *) COMMON="$ROOT/$COMMON" ;;
+esac
+STAMP_DIR="$COMMON/sagax-verify-merge"
+STAMP="$STAMP_DIR/ok-$SHA"
+LOCK_DIR="$STAMP_DIR/queue.lock"
+
+if [ -f "$STAMP" ]; then
+  echo "pre-push: verify:merge already OK for $SHA_SHORT (stamp)"
+  exit 0
+fi
+
+# Drop every GIT_* the hook inherited so child tests that run git see the
+# working tree from cwd, not the worktree's GIT_DIR (githooks export it).
+# Names only (awk), then unset: values may contain spaces.
+git_vars="$(env | awk -F= '/^GIT_/ { print $1 }')"
+for name in $git_vars; do
+  unset "$name" || true
+done
+
+cd "$ROOT"
+mkdir -p "$STAMP_DIR"
+
+release_lock() {
+  rm -rf "$LOCK_DIR"
+}
+# One verify:merge at a time across worktrees of this repo (agents saturate
+# the machine otherwise). mkdir is atomic; a dead holder is cleared.
+waited=0
+while ! mkdir "$LOCK_DIR" 2>/dev/null; do
+  if [ -f "$LOCK_DIR/pid" ]; then
+    old="$(cat "$LOCK_DIR/pid" 2>/dev/null || true)"
+    if [ -n "$old" ] && ! kill -0 "$old" 2>/dev/null; then
+      echo "pre-push: removing stale verify:merge lock (pid $old)"
+      rm -rf "$LOCK_DIR"
+      continue
+    fi
+  fi
+  if [ "$waited" -eq 0 ]; then
+    echo "pre-push: waiting for another verify:merge (queue)"
+  fi
+  waited=$((waited + 1))
+  if [ "$waited" -gt 1800 ]; then
+    echo "pre-push: timed out waiting for verify:merge queue" >&2
+    exit 1
+  fi
+  sleep 1
+done
+echo "$$" >"$LOCK_DIR/pid"
+trap release_lock EXIT INT TERM HUP
+
+# Another agent may have stamped this sha while we waited.
+if [ -f "$STAMP" ]; then
+  echo "pre-push: verify:merge already OK for $SHA_SHORT (stamp after queue)"
+  exit 0
+fi
+
+echo "pre-push: nice -n 19 pnpm verify:merge (git push --no-verify to skip)"
+if command -v nice >/dev/null 2>&1; then
+  nice -n 19 pnpm verify:merge
+else
+  pnpm verify:merge
+fi
+# Stamp is written by verify-merge.mjs on OK (shared across worktrees).
