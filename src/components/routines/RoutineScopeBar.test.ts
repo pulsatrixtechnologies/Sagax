@@ -1,7 +1,7 @@
 // The Automations page scope (2026-10-09): the scope control renders Mine,
 // My teams and Everyone, disables what the profile lacks with a tooltip
-// naming the key, shows the filters in advanced mode only, and the choice is
-// remembered per person.
+// naming the key, shows Team/Status in advanced mode, Owner under Mine in
+// every mode (#1676), and the choice is remembered per person.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -29,6 +29,7 @@ const render = (props: Partial<Props> = {}) => renderToStaticMarkup(createElemen
   teams: [{ id: "T", name: "Team T" }],
   owners: [{ id: "pr_bob", name: "Bob" }],
   advanced: true,
+  viewerPrincipalId: "pr_me",
   onChange: () => {},
   ...props,
 }));
@@ -64,7 +65,7 @@ describe("the scope control", () => {
     expect(button(lost, "mine")).toContain('aria-checked="true"');
   });
 
-  it("shows Team and Owner in a wider scope, Status always, and nothing but the scope in Simple mode", () => {
+  it("shows Team and Owner in a wider scope, Status in advanced, Owner under Mine too", () => {
     const wide = render({ prefs: { scope: "team" }, allowed: { mine: true, team: true, all: false } });
     expect(wide).toContain('data-routine-filter="team"');
     expect(wide).toContain('data-routine-filter="owner"');
@@ -72,15 +73,24 @@ describe("the scope control", () => {
     expect(wide).toContain(">Team T</option>");
     const mine = render();
     expect(mine).not.toContain('data-routine-filter="team"');
+    expect(mine).toContain('data-routine-filter="owner"');
     expect(mine).toContain('data-routine-filter="status"');
-    const simple = render({ prefs: { scope: "team", status: "failing" }, allowed: { mine: true, team: true, all: false }, advanced: false });
-    expect(simple).toContain('role="radiogroup"');
-    expect(simple).not.toContain("data-routine-filter");
+    expect(mine).toContain(">Me</option>");
+    expect(mine).toContain('value="pr_me"');
+    expect(mine).toContain(">Bob</option>");
+    const simpleMine = render({ advanced: false });
+    expect(simpleMine).toContain('data-routine-filter="owner"');
+    expect(simpleMine).toContain(">Me</option>");
+    expect(simpleMine).not.toContain('data-routine-filter="status"');
+    const simpleWide = render({ prefs: { scope: "team", status: "failing" }, allowed: { mine: true, team: true, all: false }, advanced: false });
+    expect(simpleWide).toContain('role="radiogroup"');
+    expect(simpleWide).not.toContain("data-routine-filter");
   });
 
   it("offers Clear filters once a filter is set", () => {
     expect(render()).not.toContain("data-routine-filter-reset");
     expect(render({ prefs: { scope: "mine", status: "paused" } })).toContain("data-routine-filter-reset");
+    expect(render({ prefs: { scope: "mine", ownerId: "pr_me" }, advanced: false })).toContain("data-routine-filter-reset");
   });
 
   it("the owner badge shows the avatar, or the initials, and the name", () => {

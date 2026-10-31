@@ -2521,7 +2521,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
   const scopeFilters = scopeShown
     ? (scoped.scope !== "mine" ? 1 : 0)
       + (scoped.scope !== "mine" && scoped.prefs.teamId ? 1 : 0)
-      + (scoped.scope !== "mine" && scoped.prefs.ownerId ? 1 : 0)
+      + (scoped.prefs.ownerId ? 1 : 0)
       + (advanced && !hideStatus && scoped.prefs.status ? 1 : 0)
     : 0;
   const activeFilters = scopeFilters + (botFilter !== "all" ? 1 : 0);
@@ -2538,7 +2538,7 @@ export function RoutinesPage({ onBack: _onBack, onOpenRoom, embedded = false, fi
     <PageFilters name="automations" menuRef={filtersMenuRef} activeCount={activeFilters}>
         {scopeShown && <div>
           <span className={FIELD_LABEL}>{t("routines.scope.label")}</span>
-          <RoutineScopeBar stacked prefs={scoped.prefs} allowed={scoped.allowed} teams={scoped.facets.teams} owners={scoped.facets.owners} advanced={advanced} hideStatus={hideStatus} onChange={(next) => { scoped.setPrefs(next); setRoutineFilter(undefined); }} />
+          <RoutineScopeBar stacked prefs={scoped.prefs} allowed={scoped.allowed} teams={scoped.facets.teams} owners={scoped.facets.owners} advanced={advanced} hideStatus={hideStatus} viewerPrincipalId={state.config?.viewer?.principalId ?? null} onChange={(next) => { scoped.setPrefs(next); setRoutineFilter(undefined); }} />
         </div>}
         <label className="block">
           <span className={FIELD_LABEL}>{t("routineCalendar.filterBot")}</span>

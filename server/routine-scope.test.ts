@@ -144,6 +144,23 @@ describe("what each scope answers", () => {
     expect(list("all", admin, "&botId=bot-erin").facets.botChoices.map((bot) => bot.id)).toHaveLength(5);
   });
 
+  it("mine keeps an owner filter so shared bots' routines can be left out (#1676)", () => {
+    const sharedMine: RoutineScopeDeps<Routine> = {
+      ...deps,
+      mine: (value) => value.botId === "bot-mia" || value.botId === "bot-erin",
+    };
+    const query = parseRoutineScopeQuery(new URLSearchParams("scope=mine&ownerId=pr_mia"));
+    if ("error" in query) throw new Error(query.error);
+    const mineOnly = scopedRoutineListing(query, member, ROUTINES, RUNS, sharedMine);
+    expect(ids(mineOnly.routines)).toEqual(["r-mia"]);
+    const allMine = scopedRoutineListing(
+      parseRoutineScopeQuery(new URLSearchParams("scope=mine")) as Exclude<ReturnType<typeof parseRoutineScopeQuery>, { error: string }>,
+      member, ROUTINES, RUNS, sharedMine,
+    );
+    expect(ids(allMine.routines)).toEqual(["r-erin", "r-mia"]);
+    expect(allMine.facets.owners.map((owner) => owner.id).sort()).toEqual(["pr_erin", "pr_mia"]);
+  });
+
   it("each routine carries owner, teams, bot and flags; others' are read-only and withheld", () => {
     const rows = list("team", teamViewer).routines;
     const own = rows.find((row) => row.id === "r-mia")!;

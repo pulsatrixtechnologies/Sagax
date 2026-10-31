@@ -1858,6 +1858,7 @@
   "routines.scope.ownedBy": "De {name}",
   "routines.scope.owner": "Responsável",
   "routines.scope.ownerFilter": "Filtrar por responsável",
+  "routines.scope.ownerMe": "Eu",
   "routines.scope.readOnly": "Somente leitura: você pode ver esta rotina, mas não alterá-la.",
   "routines.scope.redacted": "Somente leitura. As instruções e os resultados ficam com o responsável.",
   "routines.scope.reset": "Limpar filtros",

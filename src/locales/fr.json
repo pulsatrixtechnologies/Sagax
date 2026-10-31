@@ -4156,6 +4156,7 @@
   "routines.scope.ownedBy": "Appartient à {name}",
   "routines.scope.owner": "Propriétaire",
   "routines.scope.ownerFilter": "Filtrer par propriétaire",
+  "routines.scope.ownerMe": "Moi",
   "routines.scope.readOnly": "Lecture seule : vous voyez cette routine, mais vous ne pouvez pas la modifier.",
   "routines.scope.redacted": "Lecture seule. Ses instructions et ses résultats restent à son propriétaire.",
   "routines.scope.reset": "Effacer les filtres",
