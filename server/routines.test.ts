@@ -2256,6 +2256,53 @@ describe("RoutineManager", () => {
     ]);
   });
 
+  // #1745: a run waiting on the person must not be failed by the run limit,
+  // or five such waits would auto-pause the routine.
+  it("leaves a waiting run alone when the run limit elapses", async () => {
+    const h = harness();
+    const routine = h.manager.create({
+      name: "Hourly ask",
+      prompt: "Ask before continuing",
+      botId: "maus-waiting-limit",
+      schedule: { type: "daily", time: "23:59", weekdays: [1] },
+      timeoutMinutes: 30,
+      autoPauseAfter: 5,
+    });
+    const run = h.manager.runNow(routine.id)!;
+    await h.manager.tick();
+    const startedAt = h.manager.listRuns().find((candidate) => candidate.id === run.id)?.startedAt;
+    expect(startedAt).toBeDefined();
+
+    h.setNow(startedAt! + 2 * 60_000);
+    h.manager.handleRuntimeEvent({
+      eventId: "ask-1",
+      provider: "fake",
+      threadId: "thread-1",
+      createdAt: new Date(startedAt! + 2 * 60_000).toISOString(),
+      type: "request.opened",
+      requestType: "question",
+      tool: "ask",
+      summary: "Which account should I use?",
+    });
+    expect(h.manager.listRuns().find((candidate) => candidate.id === run.id)).toMatchObject({
+      status: "waiting",
+      waitingSince: startedAt! + 2 * 60_000,
+    });
+
+    h.setNow(startedAt! + 30 * 60_000);
+    await h.manager.tick();
+
+    expect(h.manager.listRuns().find((candidate) => candidate.id === run.id)).toMatchObject({
+      status: "waiting",
+      waitingSince: startedAt! + 2 * 60_000,
+    });
+    expect(h.interruptedTurns).toEqual([]);
+    expect(h.failed).toEqual([]);
+    expect(h.manager.listRoutines()[0]).toMatchObject({ enabled: true });
+    expect(h.manager.listRoutines()[0].autoPaused).toBeUndefined();
+    expect(h.manager.listRoutines()[0].failureStreak).toBeUndefined();
+  });
+
   it("keeps legacy duration metadata without imposing a timeout", async () => {
     const h = harness();
     const routine = h.manager.create({
