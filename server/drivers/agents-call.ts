@@ -1799,10 +1799,17 @@ export async function callTool(name: string, args: Json, context: ToolCallContex
         // Disabled imports have not been reviewed yet. Never return their
         // description to the authoring model: a hostile description is still
         // prompt content. Names and lifecycle status are sufficient for
-        // duplicate detection.
+        // duplicate detection. Enabled skills include description and path
+        // so a skill shortened or left out of the prompt index stays loadable (#1748).
         const editable = row.editable === true;
         const status = row.enabled ? "enabled" : "disabled";
-        return `- ${row.name} (${status}, ${editable ? "learned/editable" : "imported"})`;
+        const kind = editable ? "learned/editable" : "imported";
+        if (!row.enabled) return `- ${row.name} (${status}, ${kind})`;
+        const description = typeof row.description === "string" ? row.description.trim() : "";
+        const path = typeof row.path === "string" ? row.path.trim() : "";
+        const descPart = description ? `: ${description}` : "";
+        const pathPart = path ? ` Read ${JSON.stringify(path)}.` : "";
+        return `- ${row.name} (${status}, ${kind})${descPart}${pathPart}`;
       }).join("\n")
       : "(none)";
     const pending = staged.length

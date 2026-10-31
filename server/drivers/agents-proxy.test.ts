@@ -126,6 +126,7 @@ let skillsResponse: unknown = {
       enabled: true,
       source: "learn:conversation",
       editable: true,
+      path: "/tmp/bot/skills/learned-expense/SKILL.md",
     },
   ],
   staged: [{ name: "pending-skill", action: "create", gist: "UNREVIEWED GIST", source: "UNREVIEWED SOURCE" }],
@@ -2266,10 +2267,11 @@ describe("agents-proxy MCP surface", () => {
     const listed = await callTool("skills_list", {});
     expect(listed.result.content[0].text).toContain("file-expense");
     expect(listed.result.content[0].text).toContain("file-expense (disabled, imported)");
-    expect(listed.result.content[0].text).toContain("learned-expense (enabled, learned/editable)");
+    expect(listed.result.content[0].text).toContain("learned-expense (enabled, learned/editable): PRIVATE LEARNED INSTRUCTIONS");
+    expect(listed.result.content[0].text).toContain(`Read ${JSON.stringify("/tmp/bot/skills/learned-expense/SKILL.md")}.`);
     expect(listed.result.content[0].text).toContain("pending-skill");
+    // Disabled imports stay description-free until a person reviews them.
     expect(listed.result.content[0].text).not.toContain("UNREVIEWED");
-    expect(listed.result.content[0].text).not.toContain("PRIVATE LEARNED");
     expect(lastSkillQuery).toContain("fromBotId=bot-asker");
 
     const staged = await callTool("skill_manage", {

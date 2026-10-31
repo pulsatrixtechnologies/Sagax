@@ -680,6 +680,7 @@ import {
   skillPackageStamps,
   skillsSystemPrompt,
   skillsPromptIndex,
+  enabledSkillFile,
   expandSkillCommandTurnText,
   skillCommandInline,
   stageSkillWrite,
@@ -45350,8 +45351,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         if (!connectorThread(from.id, fromThreadId)) {
           return json(res, 403, { error: "source conversation does not belong to sender" });
         }
+        const assigned = skillsLibraryEnabled(cfg) ? from.assignedSkills : undefined;
         return json(res, 200, {
-          skills: listBotSkills(from),
+          // Enabled skills carry path so skills_list can point the model at
+          // SKILL.md when the prompt index shortened or omitted a row (#1748).
+          skills: listBotSkills(from).map((skill) => {
+            if (!skill.enabled) return skill;
+            const path = enabledSkillFile(from.id, skill.name, assigned);
+            return path ? { ...skill, path } : skill;
+          }),
           staged: listStagedSkillWrites(from.id).map(stagedSkillListing),
         });
       }

@@ -23,6 +23,7 @@ import {
   applySkillWriteWithReceipt,
   installSkill,
   INDEX_MAX_BYTES,
+  INDEX_MAX_SKILLS,
   listSkills,
   listStagedSkillWrites,
   parseSkillMd,
@@ -31,9 +32,11 @@ import {
   removeSkill,
   scanSkillText,
   setSkillEnabled,
+  skillIndexLine,
   skillsSystemPrompt,
   stageSkillWrite,
   syncSkillLinks,
+  truncateSkillIndexDescription,
   undoSkillWrite,
 } from "./skills.ts";
 import { parseSkillSource } from "./skill-fetch.ts";
@@ -115,69 +118,82 @@ describe("skills prompt index budget", () => {
       expect(assembled.text).toContain(`- alpha: Résumé 🐈 Read ${JSON.stringify(join(workspaceDir(bot), "skills", ".revisions", revision, "SKILL.md"))}.`);
       expect(assembled.sections.find((section) => section.id === "skills")?.bytes).toBe(Buffer.byteLength(skillsSystemPrompt(bot), "utf8"));
       expect(assembled.text).not.toContain("omitted");
+      expect(assembled.text).not.toContain("shortened");
       expect(warn).not.toHaveBeenCalled();
     } finally { warn.mockRestore(); }
   });
 
-  it("reports byte omissions in the prompt and logs omitted names once per skill set", () => {
+  it("shortens long descriptions before omitting and keeps every enabled skill id reachable", () => {
     manifestSkills({ alpha: "a".repeat(2500), bravo: "b".repeat(2500), charlie: "c".repeat(2500) });
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const prompt = skillsSystemPrompt(bot);
       expect(Buffer.byteLength(prompt, "utf8")).toBeLessThanOrEqual(INDEX_MAX_BYTES);
-      expect(prompt).toContain("2 enabled skills omitted");
+      expect(prompt).toMatch(/^- alpha:/m);
+      expect(prompt).toMatch(/^- bravo:/m);
+      expect(prompt).toMatch(/^- charlie:/m);
+      expect(prompt).toContain("shortened to fit this prompt index");
       expect(prompt).toContain("skills_list");
-      expect(prompt).toContain("Bot Settings > Skills");
-      expect(prompt).not.toContain("- bravo:");
+      expect(prompt).not.toContain("omitted");
       expect(listSkills(bot).filter((skill) => skill.enabled).map((skill) => skill.name)).toEqual(["alpha", "bravo", "charlie"]);
-      expect(warn).toHaveBeenCalledWith(expect.stringContaining("bravo, charlie"));
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("shortened"));
       skillsSystemPrompt(bot);
       expect(warn).toHaveBeenCalledTimes(1);
-      manifestSkills({ aardvark: "a".repeat(2500), bravo: "b".repeat(2500), charlie: "c".repeat(2500) });
-      skillsSystemPrompt(bot);
-      expect(warn).toHaveBeenCalledTimes(1);
-      manifestSkills({ alpha: "a".repeat(2500), bravo: "b".repeat(2500), charlie: "c".repeat(2500), delta: "d" });
-      expect(skillsSystemPrompt(bot)).toContain("3 enabled skills omitted");
+      manifestSkills({ alpha: "a".repeat(2500), bravo: "b".repeat(2500), charlie: "c".repeat(2500), delta: "d".repeat(2500) });
+      expect(skillsSystemPrompt(bot)).toMatch(/^- delta:/m);
       expect(warn).toHaveBeenCalledTimes(2);
     } finally { warn.mockRestore(); }
   });
 
-  it("reports the applicable entry or byte limit and excludes disabled skills", () => {
+  it("omits only past the skill-count cap and excludes disabled skills", () => {
     const descriptions = Object.fromEntries(Array.from({ length: 32 }, (_, i) => [`skill-${String(i).padStart(2, "0")}`, "x"]));
     manifestSkills(descriptions, ["skill-31"]);
     const prompt = skillsSystemPrompt(bot);
     const indexed = prompt.match(/^- skill-\d{2}:/gm) ?? [];
-    const omitted = 31 - indexed.length;
-    expect(Buffer.byteLength(prompt, "utf8")).toBeLessThanOrEqual(INDEX_MAX_BYTES);
-    expect(prompt).toContain(`${omitted} enabled skill${omitted === 1 ? "" : "s"} omitted`);
-    expect(prompt).toContain(indexed.length === 30 ? "30-skill cap" : "4000-byte cap");
-    expect(prompt).not.toContain("skill-31");
-  });
-
-  it("explains when even the first entry cannot fit", () => {
-    manifestSkills({ alpha: "🐈".repeat(1200) });
-    const prompt = skillsSystemPrompt(bot);
-    expect(Buffer.byteLength(prompt, "utf8")).toBeLessThanOrEqual(INDEX_MAX_BYTES);
+    expect(indexed).toHaveLength(INDEX_MAX_SKILLS);
+    // Long workspace paths can soft-overflow the byte cap once descriptions
+    // are empty; every id up to INDEX_MAX_SKILLS must still stay reachable.
     expect(prompt).toContain("1 enabled skill omitted");
-    expect(prompt).toContain("skills_list");
-    expect(prompt).not.toContain("- alpha:");
+    expect(prompt).toContain("30-skill cap");
+    expect(prompt).not.toContain("skill-31");
+    expect(prompt).not.toContain("- skill-30:");
+    for (let i = 0; i < INDEX_MAX_SKILLS; i++) {
+      expect(prompt).toContain(`- skill-${String(i).padStart(2, "0")}:`);
+    }
   });
 
-  it("fits the exact UTF-8 boundary and reserves notice bytes when it grows", () => {
+  it("keeps a single oversized description by shortening it instead of dropping the skill", () => {
+    manifestSkills({ alpha: "🐈".repeat(1200) });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const prompt = skillsSystemPrompt(bot);
+      expect(Buffer.byteLength(prompt, "utf8")).toBeLessThanOrEqual(INDEX_MAX_BYTES);
+      expect(prompt).toMatch(/^- alpha:/m);
+      expect(prompt).toContain(JSON.stringify(join(workspaceDir(bot), "skills", "alpha", "SKILL.md")));
+      expect(prompt).toContain("shortened to fit this prompt index");
+      expect(prompt).not.toContain("omitted");
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("shortened"));
+    } finally { warn.mockRestore(); }
+  });
+
+  it("fits the exact UTF-8 boundary and shortens when a second skill arrives", () => {
     manifestSkills({ alpha: "x" });
     const baseBytes = Buffer.byteLength(skillsSystemPrompt(bot), "utf8");
     const exact = "x".repeat(INDEX_MAX_BYTES - baseBytes + 1);
     manifestSkills({ alpha: exact });
     expect(Buffer.byteLength(skillsSystemPrompt(bot), "utf8")).toBe(INDEX_MAX_BYTES);
     manifestSkills({ alpha: exact, bravo: "tiny" });
-    const withNotice = skillsSystemPrompt(bot);
-    expect(Buffer.byteLength(withNotice, "utf8")).toBeLessThanOrEqual(INDEX_MAX_BYTES);
-    expect(withNotice).toContain("2 enabled skills omitted");
-    expect(withNotice).not.toContain("- alpha:");
+    const withBoth = skillsSystemPrompt(bot);
+    expect(Buffer.byteLength(withBoth, "utf8")).toBeLessThanOrEqual(INDEX_MAX_BYTES);
+    expect(withBoth).toMatch(/^- alpha:/m);
+    expect(withBoth).toMatch(/^- bravo:/m);
+    expect(withBoth).toContain("shortened to fit this prompt index");
+    expect(withBoth).not.toContain("omitted");
     manifestSkills({ alpha: `${exact}é` });
     const over = skillsSystemPrompt(bot);
     expect(Buffer.byteLength(over, "utf8")).toBeLessThanOrEqual(INDEX_MAX_BYTES);
-    expect(over).toContain("1 enabled skill omitted");
+    expect(over).toMatch(/^- alpha:/m);
+    expect(over).toContain("shortened to fit this prompt index");
   });
 
   it("does not advertise an integrity-rejected entry", () => {
@@ -189,8 +205,16 @@ describe("skills prompt index budget", () => {
       expect(prompt).toContain("- alpha:");
       expect(prompt).not.toContain("bravo");
       expect(prompt).not.toContain("omitted");
+      expect(prompt).not.toContain("shortened");
       expect(warn).not.toHaveBeenCalled();
     } finally { warn.mockRestore(); }
+  });
+
+  it("builds name-only index lines and truncates on a word boundary when there is room", () => {
+    expect(skillIndexLine("pack", "", "/tmp/SKILL.md")).toBe(`- pack: Read ${JSON.stringify("/tmp/SKILL.md")}.`);
+    expect(truncateSkillIndexDescription("hello world there", 12)).toBe("hello world…");
+    expect(truncateSkillIndexDescription("abcdefghij", 4)).toBe("abc…");
+    expect(truncateSkillIndexDescription("short", 40)).toBe("short");
   });
 });
 
