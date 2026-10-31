@@ -354,7 +354,8 @@ struct RoutineRunDetailView: View {
             if run.target == "room-goal", let target = NotificationTarget(botId: run.botId, threadId: threadId) {
                 Button(String(localized: "Open group thread"), systemImage: "arrow.up.right.square") {
                     dismiss()
-                    Task { await session.openNotification(target) }
+                    // the group thread itself, not the run detail again (#1700)
+                    Task { await session.openNotification(target, runDetail: false) }
                 }
                 .accessibilityIdentifier("routine-run-open-thread")
             } else if RoutineResults.conversationTarget(for: run, bots: session.state.bots) != nil {

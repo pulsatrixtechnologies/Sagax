@@ -47,6 +47,8 @@ struct ChatListView: View {
     @State private var showingNewSection = false
     /// WP10: the Automations page (AU1), from a long press on "+".
     @State private var showingAutomations = false
+    /// A routine-run push: the run's detail over the roster (#1700).
+    @State private var openedNotificationRun: OpenedRoutineRun?
     /// WP15: the Team map (TM1), from a long press on "+".
     @State private var showingTeamMap = false
     /// Connect apps and Templates as sheets (the iPhone list shows no places: they live in the avatar menu).
@@ -114,6 +116,12 @@ struct ChatListView: View {
                 path.append(chat)
                 session.consumeNotificationChat()
             }
+            .onValueChange(of: session.notificationRoutineRun) { opened in
+                guard let opened else { return }
+                showingAutomations = false
+                openedNotificationRun = opened
+                session.consumeNotificationRoutineRun()
+            }
             .onValueChange(of: session.pendingChat) { chat in
                 guard let chat else { return }
                 path.append(chat)
@@ -124,10 +132,18 @@ struct ChatListView: View {
                 showingUpdates = true
                 session.consumePendingInbox()
             }
+            .routineRunDetail(item: $openedNotificationRun) { opened in
+                RoutineRunDetailView(run: opened.run, routine: opened.routine)
+                    .environmentObject(session)
+            }
             .task {
                 if let chat = session.notificationChat {
                     path.append(chat)
                     session.consumeNotificationChat()
+                }
+                if let opened = session.notificationRoutineRun {
+                    openedNotificationRun = opened
+                    session.consumeNotificationRoutineRun()
                 }
                 if let chat = session.pendingChat {
                     path.append(chat)

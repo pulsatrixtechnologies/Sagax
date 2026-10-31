@@ -2382,26 +2382,37 @@ public extension Routine {
 
 public struct NotificationTarget: Equatable, Sendable {
     public let botId: String
+    /// The conversation to open. Empty when the banner names only a run
+    /// (an owner's access card: desktop `openNotificationTarget`).
     public let threadId: String
+    /// A routine run's notification: open its detail, not the report thread
+    /// (#1700, desktop `openNotificationTarget`).
+    public let routineRunId: String?
 
-    public init?(botId: String?, threadId: String?) {
-        guard let botId, let threadId,
-              !botId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !threadId.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else { return nil }
-        self.botId = botId
-        self.threadId = threadId
+    public init?(botId: String?, threadId: String?, routineRunId: String? = nil) {
+        let bot = botId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let thread = threadId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let run = routineRunId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !bot.isEmpty, !thread.isEmpty || !run.isEmpty else { return nil }
+        self.botId = bot
+        self.threadId = thread
+        self.routineRunId = run.isEmpty ? nil : run
     }
 
     /// A message from a person, or a tag in a room, has no bot: the
-    /// conversation's id names the owner then (#262, #274).
+    /// conversation's id names the owner then (#262, #274). A routine run
+    /// push also carries `routineRunId` so a tap opens the run's detail.
     public init?(payload: [String: String]) {
         let botId = payload["botId"].flatMap { $0.isEmpty ? nil : $0 }
-        self.init(botId: botId ?? payload["groupId"], threadId: payload["threadId"])
+        self.init(
+            botId: botId ?? payload["groupId"],
+            threadId: payload["threadId"],
+            routineRunId: payload["routineRunId"]
+        )
     }
 
     public func requiresTaskSwitch(activeThreadId: String) -> Bool {
-        threadId != activeThreadId
+        !threadId.isEmpty && threadId != activeThreadId
     }
 }
 

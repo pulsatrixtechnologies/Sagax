@@ -289,8 +289,10 @@ public struct PushPayload: Equatable, Sendable {
     }
 
     /// Where a tap goes (the same target a local notification carries).
+    /// A routine run's push names `routineRunId` so the tap opens the run's
+    /// detail, not only its report thread (#1700).
     public var target: NotificationTarget? {
-        NotificationTarget(botId: botId ?? groupId, threadId: threadId)
+        NotificationTarget(botId: botId ?? groupId, threadId: threadId, routineRunId: routineRunId)
     }
 
     /// The id this push's banner has on the phone (its `apns-collapse-id`).

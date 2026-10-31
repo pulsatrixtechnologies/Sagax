@@ -511,6 +511,7 @@ private struct DesktopShellRouting: ViewModifier {
     @ObservedObject var model: DesktopShellModel
     @EnvironmentObject private var session: Session
     @ObservedObject private var sidebarPrefs = SidebarPrefsModel.shared
+    @State private var openedNotificationRun: OpenedRoutineRun?
 
     func body(content: Content) -> some View {
         content
@@ -519,10 +520,19 @@ private struct DesktopShellRouting: ViewModifier {
                 model.open(chat)
                 session.consumeNotificationChat()
             }
+            .onValueChange(of: session.notificationRoutineRun) { opened in
+                guard let opened else { return }
+                openedNotificationRun = opened
+                session.consumeNotificationRoutineRun()
+            }
             .onValueChange(of: session.pendingChat) { chat in
                 guard let chat else { return }
                 model.open(chat)
                 session.consumePendingChat()
+            }
+            .routineRunDetail(item: $openedNotificationRun) { opened in
+                RoutineRunDetailView(run: opened.run, routine: opened.routine)
+                    .environmentObject(session)
             }
             // The open conversation disappears (deleted on the server) or the
             // person closes or hides it: the column shows its empty state,
@@ -538,6 +548,10 @@ private struct DesktopShellRouting: ViewModifier {
                 if let chat = session.notificationChat {
                     model.open(chat)
                     session.consumeNotificationChat()
+                }
+                if let opened = session.notificationRoutineRun {
+                    openedNotificationRun = opened
+                    session.consumeNotificationRoutineRun()
                 }
                 if let chat = session.pendingChat {
                     model.open(chat)

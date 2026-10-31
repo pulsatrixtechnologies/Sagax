@@ -58,7 +58,7 @@ final class RoutineContinueTests: XCTestCase {
         XCTAssertEqual(RoutineResults.conversationTarget(for: try run(results: nil), bots: [try bot()])?.threadId, "chat")
     }
 
-    func testContinueQuotesTheLoadedReportInTheComposer() throws {
+func testContinueQuotesTheLoadedReportInTheComposer() throws {
         let plan = RoutineResults.continuePlan(
             for: try run(results: "chat"), bots: [try bot()],
             messages: [reportMessage()], threadsShown: false
@@ -101,5 +101,41 @@ final class RoutineContinueTests: XCTestCase {
         )
         XCTAssertNil(plan?.citation)
         XCTAssertEqual(plan?.composerThreadId, "chat")
+    }
+
+    /// #1700: a run's notification (or a link to its execution thread) opens
+    /// the run detail when this phone knows the run, never the report thread.
+    func testARunNotificationResolvesToItsRunId() throws {
+        let bots = [try bot()]
+        let known: Set<String> = ["run-1"]
+        let fromPayload = try XCTUnwrap(NotificationTarget(
+            botId: "b", threadId: "chat", routineRunId: "run-1"
+        ))
+        XCTAssertEqual(
+            RoutineResults.runId(for: fromPayload, bots: bots, knownRunIds: known),
+            "run-1"
+        )
+        let fromExecution = try XCTUnwrap(NotificationTarget(botId: "b", threadId: "exec"))
+        XCTAssertEqual(RoutineResults.runId(ofThread: "exec", bots: bots), "run-1")
+        XCTAssertEqual(
+            RoutineResults.runId(for: fromExecution, bots: bots, knownRunIds: known),
+            "run-1"
+        )
+        // a run this client does not know keeps opening its conversation
+        XCTAssertNil(
+            RoutineResults.runId(
+                for: try XCTUnwrap(NotificationTarget(botId: "b", threadId: "chat", routineRunId: "run-gone")),
+                bots: bots,
+                knownRunIds: known
+            )
+        )
+        // a plain chat notification has no run
+        XCTAssertNil(
+            RoutineResults.runId(
+                for: try XCTUnwrap(NotificationTarget(botId: "b", threadId: "chat")),
+                bots: bots,
+                knownRunIds: known
+            )
+        )
     }
 }
