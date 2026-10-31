@@ -4,6 +4,7 @@ import {
   BOT_CHATS_SECTION_ID,
   BOTS_SECTION_ID,
   CHANNELS_SECTION_ID,
+  PEOPLE_SECTION_ID,
   PINNED_SECTION_ID,
   mergeSectionOrder,
   moveSection,
@@ -22,14 +23,15 @@ import {
 
 describe("sidebar virtual sections", () => {
   it("keeps reserved labels separate from identically named user sections", () => {
-    for (const name of ["Pinned", "pinned", "channels", "bots", "bot-chats", "Bot Chats"]) {
+    for (const name of ["Pinned", "pinned", "channels", "bots", "bot-chats", "Bot Chats", "people"]) {
       const id = userSectionId(name);
-      expect([PINNED_SECTION_ID, CHANNELS_SECTION_ID, BOT_CHATS_SECTION_ID, BOTS_SECTION_ID]).not.toContain(id);
+      expect([PINNED_SECTION_ID, CHANNELS_SECTION_ID, BOT_CHATS_SECTION_ID, BOTS_SECTION_ID, PEOPLE_SECTION_ID]).not.toContain(id);
       expect(userSectionName(id)).toBe(name);
       expect(sidebarSectionLabel(id)).toBe(name);
     }
     expect(sidebarSectionLabel(CHANNELS_SECTION_ID)).toBe("Group chats");
     expect(sidebarSectionLabel(BOT_CHATS_SECTION_ID)).toBe("Bot threads");
+    expect(sidebarSectionLabel(PEOPLE_SECTION_ID)).toBe("People");
   });
 
   it("round-trips every valid section name without URI encoding", () => {
@@ -69,10 +71,29 @@ describe("sidebar virtual sections", () => {
       { id: "general" },
     ]);
     expect(parts.botChats).toEqual([dm]);
+    expect(parts.peopleDms).toEqual([]);
     expect(parts.sectionedRooms.map((room) => room.id)).toEqual(["project", "named"]);
     expect(parts.unsectionedRooms.map((room) => room.id)).toEqual(["general"]);
     expect(dm.section).toBe("Work");
     expect(namedBotChats.section).toBe("Bot Chats");
+  });
+
+  it("pulls unassigned people into People when peopleApart is on", () => {
+    const ada = { id: "dm-ada", peopleDm: true };
+    const filed = { id: "dm-bob", peopleDm: true, section: "Client X" };
+    const room = { id: "crew" };
+    const parts = partitionSidebarGroups([ada, filed, room, { id: "bot-dm", dm: true }], { peopleApart: true });
+    expect(parts.peopleDms).toEqual([ada]);
+    expect(parts.sectionedRooms.map((group) => group.id)).toEqual(["dm-bob"]);
+    expect(parts.unsectionedRooms.map((group) => group.id)).toEqual(["crew"]);
+    expect(parts.botChats.map((group) => group.id)).toEqual(["bot-dm"]);
+  });
+
+  it("keeps people mixed in Unassigned when peopleApart is off", () => {
+    const ada = { id: "dm-ada", peopleDm: true };
+    const parts = partitionSidebarGroups([ada, { id: "crew" }], { peopleApart: false });
+    expect(parts.peopleDms).toEqual([]);
+    expect(parts.unsectionedRooms.map((group) => group.id)).toEqual(["dm-ada", "crew"]);
   });
 
   it("keeps section Chiefs in their actual section", () => {

@@ -24,6 +24,7 @@ import { setShowRunCard, useShowRunCard } from "@/lib/run-card-preferences";
 import { setStreamReplies, useStreamReplies } from "@/lib/stream-replies-preference";
 import { parseSendKey, SEND_KEYS, sendKeyLabel, setSendKey, useSendKey } from "@/lib/send-key";
 import { setShowSidebarLogo, useShowSidebarLogo } from "@/lib/sidebar-logo-preferences";
+import { setSidebarPeopleApart, useSidebarPeopleApart } from "@/lib/sidebar-people-apart-preference";
 import { setShowRoutinesBadge, useShowRoutinesBadge } from "@/lib/routines-badge-preferences";
 import { setShowInspectorButton, useShowInspectorButton } from "@/lib/inspector-preferences";
 import { setShowTurnTiming, useShowTurnTiming } from "@/lib/turn-timing-preferences";
@@ -413,6 +414,7 @@ export function AppearanceSettings() {
   const turnTiming = useShowTurnTiming();
   const unready = useShowUnreadyProviders();
   const logo = useShowSidebarLogo();
+  const peopleApart = useSidebarPeopleApart();
   const routinesBadge = useShowRoutinesBadge();
   const suggestions = useShowSuggestions();
   const allHistory = useShowAllHistory();
@@ -449,6 +451,7 @@ export function AppearanceSettings() {
       </SettingsGroup>
       <SettingsGroup title={t("settings.group.sidebar")} groupId="sidebar">
         <SidebarDensityRow />
+        <SwitchLine label={t("settings.sidebarPeopleApart.title")} ariaLabel={t("settings.sidebarPeopleApart.show")} checked={peopleApart} onChange={setSidebarPeopleApart} rowId="sidebarPeopleApart" />
         {advanced && <SwitchLine label={t("settings.sidebarLogo.title")} ariaLabel={t("settings.sidebarLogo.show")} checked={logo} onChange={setShowSidebarLogo} rowId="sidebarLogo" />}
         {advanced && <SwitchLine label={t("settings.routinesBadge.title")} ariaLabel={t("settings.routinesBadge.show")} checked={routinesBadge} onChange={setShowRoutinesBadge} rowId="routinesBadge" />}
         <SwitchLine label={t("settings.showSuggestions.title")} ariaLabel={t("settings.showSuggestions.show")} checked={suggestions} onChange={setShowSuggestions} rowId="showSuggestions" />

@@ -4,6 +4,10 @@ export const PINNED_SECTION_ID = "builtin:pinned";
 export const CHANNELS_SECTION_ID = "builtin:channels";
 export const BOT_CHATS_SECTION_ID = "builtin:bot-chats";
 export const BOTS_SECTION_ID = "builtin:bots";
+/** Unassigned conversations with people, when Settings > Appearance keeps
+ * people apart from bots (#1661). A virtual view: personal sections still
+ * hold a person the person filed there. */
+export const PEOPLE_SECTION_ID = "builtin:people";
 export const ATTENTION_SECTION_ID = "builtin:attention";
 export const PINNED_THREADS_SECTION_ID = "builtin:pinned-threads";
 export const TOOLS_SECTION_ID = "builtin:tools";
@@ -56,6 +60,7 @@ export type SidebarGroup = {
   id: string;
   section?: string;
   dm?: boolean;
+  peopleDm?: boolean;
 };
 
 function unique(values: string[]): string[] {
@@ -76,6 +81,7 @@ export function sidebarSectionLabel(id: SidebarSectionId): string {
   if (id === CHANNELS_SECTION_ID) return "Group chats";
   if (id === BOT_CHATS_SECTION_ID) return "Bot threads";
   if (id === BOTS_SECTION_ID) return "Bots";
+  if (id === PEOPLE_SECTION_ID) return "People";
   return userSectionName(id) ?? id;
 }
 
@@ -134,13 +140,23 @@ export function partitionSidebarBots<T extends SidebarBot>(
 }
 
 /** Bot-to-bot DMs are also a virtual view. We do not rewrite their persisted
- * context, because that context still participates in comms visibility. */
-export function partitionSidebarGroups<T extends SidebarGroup>(groups: T[]) {
+ * context, because that context still participates in comms visibility.
+ * When `peopleApart` is on, unassigned people-DMs leave Unassigned for the
+ * People automatic section; a person filed in a personal section stays there. */
+export function partitionSidebarGroups<T extends SidebarGroup>(
+  groups: T[],
+  options?: { peopleApart?: boolean },
+) {
   const botChats = groups.filter((group) => Boolean(group.dm));
   const rooms = groups.filter((group) => !group.dm);
-  const sectionedRooms = rooms.filter((group) => Boolean(group.section));
-  const unsectionedRooms = rooms.filter((group) => !group.section);
-  return { botChats, sectionedRooms, unsectionedRooms };
+  const peopleDms = options?.peopleApart
+    ? rooms.filter((group) => Boolean(group.peopleDm) && !group.section)
+    : [];
+  const peopleIds = new Set(peopleDms.map((group) => group.id));
+  const remaining = rooms.filter((group) => !peopleIds.has(group.id));
+  const sectionedRooms = remaining.filter((group) => Boolean(group.section));
+  const unsectionedRooms = remaining.filter((group) => !group.section);
+  return { botChats, peopleDms, sectionedRooms, unsectionedRooms };
 }
 
 /** Restore saved positions while inserting newly visible buckets at their

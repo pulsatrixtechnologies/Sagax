@@ -334,6 +334,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Send key | Settings > Appearance | `sagax_settings` get, set `appearance.sendKey` | simple |
 | This run card | Settings > Appearance | `sagax_settings` get, set `appearance.runCard` | simple |
 | Sidebar logo | Settings > Appearance | `sagax_settings` get, set `appearance.sidebarLogo` | simple |
+| Keep people apart from bots in Unassigned (on, the default; off mixes them again) | Settings > Appearance > Sidebar | `sagax_settings` get, set `appearance.sidebarPeopleApart` | simple |
 | Routines badge | Settings > Appearance | `sagax_settings` get, set `appearance.routinesBadge` | simple |
 | Sidebar density | Settings > Appearance | `sagax_settings` get, set `appearance.sidebarDensity` | simple |
 | Fresh topic after | Settings > Appearance | `sagax_settings` get, set `appearance.freshTopicAfter` | simple |

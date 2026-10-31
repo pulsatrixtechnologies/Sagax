@@ -7601,6 +7601,11 @@ shares nothing (2026-10-02). Keep these rules, covered by
 - Unassigned (what is in none of my sections: my bots, bots shared with me,
   groups, conversations with people) is always shown, on top. Deleting a
   section puts its items back in Unassigned and never deletes anything.
+- When Settings > Appearance > Sidebar "Keep people apart" is on (the
+  default, `sagax.sidebarPeopleApart.v1`), unassigned conversations with
+  people sit in the automatic People section (`builtin:people`), next to
+  Unassigned's bots and groups. Personal sections stay free to mix a bot,
+  a group and a person. Off mixes people back into Unassigned (#1661).
 - Server: bots take no access from a section. At boot each legacy shared
   section became bot grants once (`sectionShareGrants`, marker
   `botSharesMigratedAt` in `section-channels.json`); the records stay and

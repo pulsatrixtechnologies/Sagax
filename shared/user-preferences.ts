@@ -57,6 +57,10 @@ export const USER_PREFERENCE_KEYS = [
   "sagax.sidebarHidden.v1",
   // the person's own sidebar sections (src/lib/personal-sections.ts)
   "sagax.sidebarSections.v1",
+  // Settings > Appearance > Sidebar: keep unassigned people in their own
+  // automatic section (src/lib/sidebar-people-apart-preference.ts). "on" | "off";
+  // absent is on (#1661).
+  "sagax.sidebarPeopleApart.v1",
   // the Team map's layout: team positions and the personal card order
   // (src/lib/team-canvas.ts; solo servers keep it per workspace instead)
   "sagax.teamCanvasPositions.v1",

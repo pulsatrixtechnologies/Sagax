@@ -146,6 +146,7 @@ import {
   BOTS_SECTION_ID,
   BUILT_IN_SECTION_ID,
   CHANNELS_SECTION_ID,
+  PEOPLE_SECTION_ID,
   PINNED_SECTION_ID,
   isBuiltInBot,
   isMyTeamSectionName,
@@ -167,6 +168,7 @@ import {
 import { buildTeamMapSections } from "@/lib/team-map";
 import { sidebarSectionAttention } from "@/lib/sidebar-attention";
 import { botListItemPointerIntent } from "@/lib/sidebar-selection";
+import { useSidebarPeopleApart } from "@/lib/sidebar-people-apart-preference";
 import { phoneSettingsAction, SidebarPhoneButton } from "./SidebarPhoneButton";
 import { PulsatrixMark } from "./PulsatrixMark";
 import type { SidebarMenuItem } from "./SidebarPopoverMenu";
@@ -266,7 +268,13 @@ const SECTION_LABEL_KEYS: Record<string, LocaleKey> = {
   [CHANNELS_SECTION_ID]: "sidebar.section.channels",
   [BOT_CHATS_SECTION_ID]: "sidebar.section.botChats",
   [BOTS_SECTION_ID]: "sidebar.section.bots",
+  [PEOPLE_SECTION_ID]: "sidebar.section.people",
 };
+
+/** Bot-to-bot threads and People are automatic views, not folders to file into. */
+function isAutomaticSidebarSection(id: string): boolean {
+  return id === BOT_CHATS_SECTION_ID || id === PEOPLE_SECTION_ID;
+}
 
 /** The four built-in section names come from the catalog; a section someone
  * named themselves is their text and stays exactly as typed. */
@@ -2670,6 +2678,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const orgMode = perspicaxOrg !== null;
   const sidebarHidden = useSidebarHidden();
   const sidebarPeople = useOrgPeople();
+  const peopleApart = useSidebarPeopleApart();
   // A new message brings a hidden entry back, per the person's setting
   // (people on, bots off by default; Settings > Appearance).
   useEffect(() => {
@@ -2964,7 +2973,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     sectionChiefs,
     sectionedBots,
   } = partitionSidebarBots(teamBots);
-  const { botChats, sectionedRooms, unsectionedRooms } = partitionSidebarGroups(visibleGroups);
+  const { botChats, peopleDms, sectionedRooms, unsectionedRooms } = partitionSidebarGroups(visibleGroups, { peopleApart });
 
   // User sections keep first-appearance order. The saved layout keeps an
   // empty section's former slot so it returns there when content comes back.
@@ -2994,6 +3003,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     });
   const naturalSectionIds = [
     ...teamMap.map((team) => (team.key ? userSectionId(team.key) : GENERAL_SECTION_ID)),
+    ...(peopleDms.length > 0 ? [PEOPLE_SECTION_ID] : []),
     ...(botChats.length > 0 ? [BOT_CHATS_SECTION_ID] : []),
   ];
   const orderedSectionIds = orderedSidebarSections(naturalSectionIds, sectionOrder);
@@ -3001,7 +3011,8 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   const generalOnTop = orgMode && orderedSectionIds.includes(GENERAL_SECTION_ID);
   const sectionIds = generalOnTop ? [GENERAL_SECTION_ID, ...orderedSectionIds.filter((id) => id !== GENERAL_SECTION_ID)] : orderedSectionIds;
   // With no team of the person's own, Unassigned is the whole list: its
-  // rows show without a header (2026-10-15).
+  // rows show without a header (2026-10-15). Bot-to-bot threads alone do
+  // not count; People does, so Unassigned keeps its header next to it.
   const loneGeneral = !sectionIds.some((sid) => sid !== GENERAL_SECTION_ID && sid !== BOT_CHATS_SECTION_ID);
   const layoutInteractive = sidebarLayoutInteractive(density, q);
   const sectionCollapsed = (id: string) =>
@@ -3081,7 +3092,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
   });
   const acceptItemDrag = (event: React.DragEvent<HTMLDivElement>, id: string): boolean => {
     if (!event.dataTransfer.types.includes(ITEM_DRAG_TYPE)) return false;
-    if (id === BOT_CHATS_SECTION_ID) return true;
+    if (isAutomaticSidebarSection(id)) return true;
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
     if (itemDropId !== id) setItemDropId(id);
@@ -3091,7 +3102,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
     if (!event.dataTransfer.types.includes(ITEM_DRAG_TYPE)) return false;
     event.preventDefault();
     setItemDropId(null);
-    if (id === BOT_CHATS_SECTION_ID) return true;
+    if (isAutomaticSidebarSection(id)) return true;
     const item = parseItemDrag(event.dataTransfer.getData(ITEM_DRAG_TYPE));
     if (item) assignSection(item.kind, item.id, section);
     return true;
@@ -3313,9 +3324,11 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
             const sectionGroupItems =
               id === BOT_CHATS_SECTION_ID
                 ? botChats
-                : team
-                  ? (team.key ? sectionedRooms.filter((group) => group.section === team.key) : unsectionedRooms)
-                  : [];
+                : id === PEOPLE_SECTION_ID
+                  ? peopleDms
+                  : team
+                    ? (team.key ? sectionedRooms.filter((group) => group.section === team.key) : unsectionedRooms)
+                    : [];
             const sectionBotItems = (team?.members ?? []).filter((bot) => !inTopGrid(bot));
             const collapsed = sectionCollapsed(id);
             const queued = collapsed ? [...sectionChiefItems, ...sectionBotItems].flatMap((bot) =>
@@ -3348,7 +3361,7 @@ export function Sidebar({ open, onClose, onCompose, composeOpen = false }: {
                 ) : density !== "icons" && !(id === GENERAL_SECTION_ID && loneGeneral) && (
                   <SidebarSectionHeader
                     name={sectionDisplayName}
-                    onContextMenu={orgMode && layoutInteractive && id !== BOT_CHATS_SECTION_ID ? (event) => openOrgMenu(event, team?.key || null, id) : !remoteClient && layoutInteractive && sectionName ? (event) => {
+                    onContextMenu={orgMode && layoutInteractive && !isAutomaticSidebarSection(id) ? (event) => openOrgMenu(event, team?.key || null, id) : !remoteClient && layoutInteractive && sectionName ? (event) => {
                       event.preventDefault();
                       teamMenuReturn.current = event.currentTarget.querySelector<HTMLElement>("button") ?? event.currentTarget;
                       setTeamMenu({ name: sectionName, x: Math.max(8, Math.min(event.clientX, window.innerWidth - 230)), y: Math.max(8, Math.min(event.clientY, window.innerHeight - 150)) });
