@@ -483,6 +483,7 @@ struct ChatView: View {
         .onValueChange(of: gateSignalsKey) { _ in
             if case let .bot(bot) = current, !threadPrefs.showThreads { takeGateSignals(bot.id) }
         }
+        .onValueChange(of: pendingCitationsKey) { _ in takePendingCitations() }
         .onValueChange(of: threadSwitch) { request in
             // Go to message on a link of another conversation of this bot:
             // this screen switches there, as a thread chip does
@@ -508,6 +509,10 @@ struct ChatView: View {
                 for topic in earlierTopics where topic.unread == true {
                     if let projected = session.state.bot(bot.id)?.projected(forThread: topic.threadId) { await session.markRead(.bot(projected)) }
                 }
+            } else {
+                // Continue in the conversation may open the home chat with
+                // threads shown, or a room: still take a queued report quote.
+                takePendingCitations()
             }
             // #219: selecting a closed conversation with a person reopens it
             if case let .room(room) = openedChat { SidebarPrefsModel.shared.reopenIfClosed(session, room: room) }
@@ -1281,6 +1286,12 @@ extension ChatView {
         return "\(session.pendingBeside[bot.id]?.threadId ?? "")|\(session.revealSegments[bot.id] ?? "")"
     }
 
+    /// Citations Continue in the conversation queued for this composer's thread.
+    var pendingCitationsKey: String {
+        let pending = session.pendingComposerCitations[threadId] ?? []
+        return pending.map(\.id).joined(separator: ",")
+    }
+
     /// The live topic read back to its start: the topic before it is drawn
     /// at once (the desktop's StreamEarlierTopics), the next on request.
     func drawFirstEarlierTopic() {
@@ -1308,6 +1319,16 @@ extension ChatView {
                 }
             }
         }
+        takePendingCitations()
+    }
+
+    /// #1699: Continue in the conversation's report quote lands in this
+    /// composer's citation chips (desktop `appendDraftAttachments`).
+    func takePendingCitations() {
+        let id = threadId
+        guard let pending = session.pendingComposerCitations[id], !pending.isEmpty else { return }
+        session.pendingComposerCitations[id] = nil
+        for citation in pending { citations.add(citation, to: id) }
     }
 }
 

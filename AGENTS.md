@@ -651,13 +651,14 @@ message from the run's task (the run's record keeps 2 000 characters),
 `routineRunCard` posts up to `ROUTINE_REPORT_POST_MAX`. "Post results in
 the conversation" (`postResults`) only turns the report on or off.
 Continue in the conversation (`continueRoutineRunInConversation`, iOS
-`RoutineResults.conversationTarget`) opens that conversation in the main
-pane, scrolled to the report and quoted in the composer, never the run's
-task beside it; "Open results thread" is gone. With threads hidden,
-`openBotThread` opens a run's task as the run's detail and an older results
-thread as the conversation: no column for a report. Old results threads
-stay readable from the run's detail and Run logs; they are not merged into
-the stream (`routineResults` is never a segment). Tests:
+`RoutineResults.continuePlan` / `Session.continueRoutineRunInConversation`)
+opens that conversation in the main pane, scrolled to the report and
+quoted in the composer (#1699), never the run's task beside it; "Open
+results thread" is gone. With threads hidden, `openBotThread` opens a
+run's task as the run's detail and an older results thread as the
+conversation: no column for a report. Old results threads stay readable
+from the run's detail and Run logs; they are not merged into the stream
+(`routineResults` is never a segment). Tests:
 `server/routine-results.e2e.test.ts`, `server/routines.test.ts`
 ("clears saved destinations"), `src/state/routine-run-open.test.ts`,
 `src/components/RoutineResultsNavigation.test.ts`,

@@ -129,6 +129,10 @@ final class Session: ObservableObject {
     /// notification, a link or a search hit named, to bring on screen in
     /// the conversation's timeline. Consumed by ChatView.
     @Published var revealSegments: [String: String] = [:]
+    /// Citations Continue in the conversation left for the composer (desktop
+    /// `appendDraftAttachments` of kind "citation"). Keyed by the composer
+    /// thread. Consumed by ChatView.
+    @Published var pendingComposerCitations: [String: [CitationAttachment]] = [:]
     @Published private(set) var notificationAuthorization: UNAuthorizationStatus = .notDetermined
     /// Distinguishes a real `.notDetermined` result from the in-memory value
     /// used while notification settings are still loading at launch.
@@ -3487,6 +3491,25 @@ final class Session: ObservableObject {
             return true
         } catch {
             return false
+        }
+    }
+
+    /// 2026-10-29 / #1699: Continue in the conversation opens the bot's one
+    /// conversation and quotes the run's report in the composer (desktop
+    /// `continueRoutineRunInConversation`).
+    func continueRoutineRunInConversation(_ run: RoutineRun) async {
+        let threadsShown = SidebarPrefsModel.shared.showThreads
+        let target = RoutineResults.conversationTarget(for: run, bots: state.bots)
+        let loaded = target.map { state.messages[$0.threadId] ?? [] } ?? []
+        guard let plan = RoutineResults.continuePlan(
+            for: run, bots: state.bots, messages: loaded, threadsShown: threadsShown
+        ) else { return }
+        if let citation = plan.citation {
+            pendingComposerCitations[plan.composerThreadId, default: []].append(citation)
+        }
+        await openNotification(plan.target)
+        if let messageId = plan.focusMessageId {
+            await jump(to: messageId, inThread: plan.target.threadId)
         }
     }
 

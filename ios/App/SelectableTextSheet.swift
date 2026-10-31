@@ -58,7 +58,14 @@ final class CitationDrafts: ObservableObject {
     func citations(_ threadId: String) -> [CitationAttachment] { byThread[threadId] ?? [] }
 
     func add(_ citation: CitationAttachment) {
-        byThread[citation.source.threadId, default: []].append(citation)
+        add(citation, to: citation.source.threadId)
+    }
+
+    /// Puts a citation on a specific composer's draft list (Continue in the
+    /// conversation may quote a report whose source thread is an earlier
+    /// topic while the composer is the home conversation).
+    func add(_ citation: CitationAttachment, to threadId: String) {
+        byThread[threadId, default: []].append(citation)
     }
 
     func replace(_ citation: CitationAttachment, threadId: String) {
