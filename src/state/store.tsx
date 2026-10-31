@@ -4234,6 +4234,13 @@ export function createStreamDeltaBuffer(onFlush: (entries: Array<[string, Pendin
     characters = 0;
     onFlush(entries);
   };
+  /** Drop every pending thread. A non-resumable hydrate must call this so a
+   * truncated answer cannot flush after the live map was emptied. */
+  const reset = () => {
+    cancel();
+    buffer.clear();
+    characters = 0;
+  };
   return {
     push(threadId: string, kind: string, delta: string) {
       if (kind !== "assistant_text" && kind !== "reasoning_text") return;
@@ -4254,12 +4261,9 @@ export function createStreamDeltaBuffer(onFlush: (entries: Array<[string, Pendin
       buffer.delete(threadId);
       if (!buffer.size) cancel();
     },
+    reset,
     flush,
-    dispose() {
-      cancel();
-      buffer.clear();
-      characters = 0;
-    },
+    dispose: reset,
   };
 }
 
@@ -4337,6 +4341,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const { [threadId]: _r, ...reasoning } = prev.reasoning;
       return { streaming, reasoning };
     });
+  };
+  // A non-resumable hello hydrates from REST and never replays the missed
+  // turn.completed / final message frames, so any half-written live text must
+  // go: otherwise LiveReply keeps the truncated bubble under the settled
+  // transcript and the next turn's deltas prepend onto it (#1749).
+  const resetStreams = () => {
+    deltaBuffer.reset();
+    setStream(EMPTY_STREAM);
   };
   const clearChatError = useCallback(() => {
     rawDispatch({ type: "error", message: null });
@@ -5696,6 +5708,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         return hydrationPromise;
       }
       hydrated = false;
+      // Clear before the REST round-trip: the snapshot replaces transcripts
+      // but never the out-of-reducer live map, and pending rAF deltas must
+      // not resurrect the truncated answer after we emptied it (#1749).
+      resetStreams();
       hydrationPromise = (async () => {
         let loaded = false;
         do {
@@ -5903,6 +5919,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           if (action) rawDispatch(action);
           if (event.type === "content.delta") {
             deltaBuffer.push(event.threadId, event.streamKind, event.delta);
+          } else if (event.type === "turn.started") {
+            // A new turn always starts empty. After a gap that missed
+            // turn.completed, stale live text would otherwise prepend onto
+            // this answer (#1749).
+            clearStream(event.threadId);
           } else if (event.type === "turn.completed") {
             // flush any buffered tail before clearing so no tokens are lost
             flushDeltas();

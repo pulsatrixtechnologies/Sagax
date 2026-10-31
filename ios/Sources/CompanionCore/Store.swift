@@ -56,9 +56,9 @@ public struct CompanionState: Sendable {
     /// small recent window until the app has a real notification surface.
     public var notifications: [NotificationFrame] = []
     /// The reply being typed, per thread — cleared when it settles into a
-    /// `Message`. Not persisted and not hydrated: it is what is happening
-    /// right now, and a reconnect that missed it gets the settled message
-    /// instead, which is strictly better.
+    /// `Message`, on `turn.started`, and on every hydrate. Not persisted: a
+    /// reconnect that missed the end of a turn must not keep the truncated
+    /// answer under the settled transcript (#1749).
     public var streaming: [String: String] = [:]
     /// The bot's reasoning, per thread, when the provider emits it. Kept
     /// apart from `streaming` because it is not the answer — running them
@@ -310,6 +310,11 @@ public struct CompanionState: Sendable {
         messages.removeAll()
         hasMore.removeAll()
         activeLeafIds.removeAll()
+        // A non-resumable reconnect never replays turn.completed / the final
+        // message frame. Drop half-written live text so it cannot sit under
+        // the settled transcript or prepend onto the next turn (#1749).
+        streaming.removeAll()
+        reasoning.removeAll()
         for bot in fleet.bots {
             messages[bot.threadId] = bot.messages ?? []
             if bot.messages != nil { hasMore[bot.threadId] = bot.hasMore ?? false }
@@ -622,6 +627,11 @@ public struct CompanionState: Sendable {
                 // is better than showing thinking as if it were the answer
                 break
             }
+        case "turn.started":
+            // A new turn always starts empty. After a gap that missed
+            // turn.completed, stale live text would otherwise prepend onto
+            // this answer (#1749).
+            clearStream(event.threadId)
         case "turn.completed", "turn.failed", "turn.aborted":
             clearStream(event.threadId)
         default:
