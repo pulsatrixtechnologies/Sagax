@@ -359,8 +359,8 @@ import { browserOwner, noteBrowserOwner, signBrowserVisit, signatureStillCovers,
 import { createOpenApiRoutes } from "./routes/openapi-connector.ts";
 import { createOpenApiInternalRoutes } from "./routes/openapi-internal.ts";
 import { OpenApiStore, openApiScope } from "./openapi-connector.ts";
-import { createWorkflowRoutes } from "./routes/workflows.ts";
-import { advanceWorkflow, WorkflowStore, workflowScope } from "./workflows.ts";
+import { createWorkflowRoutes, resumeDueWorkflows } from "./routes/workflows.ts";
+import { WorkflowStore, workflowScope } from "./workflows.ts";
 import { createHealthReportRoutes } from "./routes/health-report.ts";
 import { createUsageMeterRoutes } from "./routes/usage-meter.ts";
 import { UsageMeter, usageMeterScope } from "./usage-meter.ts";
@@ -39020,16 +39020,17 @@ ROUTES.push(createWorkflowRoutes({
 }));
 if (!process.env.VITEST) {
   const workflowClock = setInterval(() => {
-    try {
-      for (const run of workflowStore.due(Date.now())) {
-        workflowStore.writeRun(advanceWorkflow(run, {
-          now: () => Date.now(),
-          deliver: (bot, thread, text) => workflowDeliver(run.scopeKey, bot, thread, text),
-        }));
-      }
-    } catch {
-      // One bad file does not stop the clock. An approval is never resumed here.
-    }
+    // Per-run try/catch inside resumeDueWorkflows: one write failure stops or
+    // backs off that run and is logged; the rest of the due list continues.
+    resumeDueWorkflows(
+      workflowStore,
+      () => Date.now(),
+      (run) => ({
+        now: () => Date.now(),
+        deliver: (bot, thread, text) => workflowDeliver(run.scopeKey, bot, thread, text),
+      }),
+      () => true,
+    );
   }, 2_000);
   workflowClock.unref?.();
 }
