@@ -76,4 +76,70 @@ final class ChatNoticesTests: XCTestCase {
         XCTAssertTrue(isHiddenStatusNotice(activity("n", "notice: Workspace: In the cloud", at: 1)))
         XCTAssertFalse(isHiddenStatusNotice(activity("t", "run", at: 1)))
     }
+
+    /// A usage-limit switch is transparent (#1668 / #1698): desktop
+    /// `isHiddenStatusActivity` leaves switched and back out of the chat,
+    /// including older `recovery:` rows; a wait stays as its own status row.
+    func testUsageLimitSwitchLeavesNoRow() {
+        func limitRow(_ id: String, _ name: String, _ limit: LimitFailoverLine) -> Message {
+            var message = activity(id, name, at: 1)
+            message.tool?.limitFailover = limit
+            return message
+        }
+        let switched = LimitFailoverLine(kind: "switched", from: "Claude", to: "Codex", resetsAt: 0)
+        let back = LimitFailoverLine(kind: "back", engine: "Claude")
+        let waiting = LimitFailoverLine(kind: "waiting", from: "Claude", resetsAt: 0)
+        let switchedNotice = limitRow(
+            "n1",
+            "notice: Limit reached on Claude: continuing on Codex until it resets (around 2:05 PM).",
+            switched
+        )
+        let switchedRecovery = limitRow(
+            "r1",
+            "recovery: Limit reached on Claude: continuing on Codex until it resets (around 2:05 PM).",
+            switched
+        )
+        let backRecovery = limitRow(
+            "r2",
+            "recovery: Claude's limit has reset: back on Claude.",
+            back
+        )
+        let waitingRecovery = limitRow(
+            "w1",
+            "recovery: Limit reached on Claude and no other engine is available: your message will be sent again when it resets (around 2:05 PM).",
+            waiting
+        )
+
+        XCTAssertTrue(isHiddenStatusNotice(switchedNotice))
+        XCTAssertTrue(isHiddenStatusNotice(switchedRecovery))
+        XCTAssertTrue(isHiddenStatusNotice(backRecovery))
+        XCTAssertFalse(isHiddenStatusNotice(waitingRecovery))
+        XCTAssertTrue(isStatusNotice(waitingRecovery))
+        XCTAssertFalse(isToolActivityRow(waitingRecovery))
+
+        for detail in ActivityDetail.allCases {
+            let rows = transcriptRows([
+                text("before", at: 1),
+                switchedNotice,
+                switchedRecovery,
+                backRecovery,
+                waitingRecovery,
+                text("after", at: 100),
+            ], detail: detail)
+            XCTAssertEqual(rows.map(\.id), ["before", "w1", "after"], "\(detail)")
+        }
+    }
+
+    func testLimitFailoverDecodesOnToolActivity() throws {
+        let message = try JSONDecoder().decode(Message.self, from: Data(#"""
+        {"id":"l","role":"bot","kind":"activity","at":1,
+         "tool":{"name":"recovery: Limit reached on Claude: continuing on Codex until it resets (around 2:05 PM).",
+                 "ok":true,
+                 "limitFailover":{"kind":"switched","from":"Claude","to":"Codex","resetsAt":0}}}
+        """#.utf8))
+        XCTAssertEqual(message.tool?.limitFailover?.kind, "switched")
+        XCTAssertEqual(message.tool?.limitFailover?.from, "Claude")
+        XCTAssertEqual(message.tool?.limitFailover?.to, "Codex")
+        XCTAssertTrue(isHiddenStatusNotice(message))
+    }
 }
