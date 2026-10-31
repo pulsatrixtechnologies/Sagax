@@ -5,7 +5,8 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { driverKeyBacked, type AppConfig } from "./config.ts";
-import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, memberOwnHostToolCall, resolveTurnSpeaker, sensitiveHiddenSegment, routineAccessNotifications, routineLineage, serverCommandApproval, speakerPrincipal, type MemberHostToolPlace, signInExpiredCard, engineNameForViewer, keyEngineProvider, orgKeyEngineName } from "./engine-access.ts";
+import { accessCardAudience, accessCardForViewer, accessCardVisibleTo, adminApprovalDecision, claudeAiOwnerScopedServer, engineAccessNotice, fileViewToolPaths, keyRefusedCard, memberBotAdminApproval, memberOwnedBot, memberOwnHostToolCall, resolveTurnSpeaker, sensitiveHiddenSegment, routineAccessNotifications, routineLineage, serverCommandApproval, speakerPrincipal, type MemberHostToolPlace, signInExpiredCard, subscriptionSignInRefused, engineNameForViewer, keyEngineProvider, orgKeyEngineName } from "./engine-access.ts";
+import { CODEX_SIGN_IN_EXPIRED, codexNotSignedIn, codexSignInExpired } from "./drivers/codex-errors.ts";
 
 const ALICE = "pr_aaaaaaaa-0000-4000-8000-000000000001";
 const BOB = "pr_bbbbbbbb-0000-4000-8000-000000000002";
@@ -53,7 +54,9 @@ describe("the helpers around it", () => {
 
   it("finds a key-backed driver from the configured keys only", () => {
     const cfg = { anthropic: { key: "sk-ant-test" }, mistral: {}, xai: { key: "xai-test" } } as unknown as AppConfig;
-    expect(driverKeyBacked(cfg, "claudeAgent")).toBe(true);
+    // Claude's pasted key backs the API instance only, never a bare driver id.
+    expect(driverKeyBacked(cfg, "claudeAgent")).toBe(false);
+    expect(driverKeyBacked(cfg, "claudeAgent", "claudeApi")).toBe(true);
     expect(driverKeyBacked(cfg, "grok")).toBe(true);
     expect(driverKeyBacked(cfg, "mistral")).toBe(false);
     expect(driverKeyBacked(cfg, "codex")).toBe(false);
@@ -455,7 +458,7 @@ describe("host-level agents tools in the member's own environment", () => {
   });
 });
 
-describe("#1533: an expired subscription sign-in", () => {
+describe("#1533 / #1759: an expired subscription sign-in", () => {
   const base = { identity: "perspicax" as const, via: "subscription", subscriptionDriver: true, payerPrincipalId: "pr_member", botId: "b1", botName: "Helper", ownerPrincipalId: "pr_member", engine: "Claude" };
 
   it("gives the payer the access card with Reconnect, not the engine's raw words", () => {
@@ -463,6 +466,39 @@ describe("#1533: an expired subscription sign-in", () => {
     expect(card).toEqual({ reason: "no_access", cause: "sign_in_expired", engine: "Claude", botId: "b1", botName: "Helper", ownerPrincipalId: "pr_member", payerPrincipalId: "pr_member", subscriptionSignIn: true });
     expect(signInExpiredCard({ ...base, message: "API Error: authentication_failed" })).not.toBeNull();
     expect(engineAccessNotice("no_access", "Claude", { cause: "sign_in_expired" })).toContain("Reconnect Claude");
+  });
+
+  it("#1759: Codex and Grok refusals also get the Reconnect card (not Connected)", () => {
+    const codex = { ...base, engine: "Codex" };
+    const grok = { ...base, engine: "Grok" };
+    // Same sentences describeGrokAccountError emits (keep literals so this
+    // file does not import the ACP Grok driver).
+    const grokInvalid = "Grok refused this turn: the Grok sign-in or xAI key it runs on was rejected. Reconnect Grok in Settings → Model providers and accounts, or replace the xAI key.";
+    const grokInactive = "Grok refused this turn: the Grok account it runs on has no active subscription. Reconnect Grok in Settings → Model providers and accounts, renew it at grok.com, or choose another model for this bot.";
+    const grokCredits = "Grok refused this turn: the usage balance of the Grok account it runs on is used up (xAI answered 402 Payment Required). Add credit to that Grok account at grok.com, or choose another model for this bot.";
+    for (const message of [
+      codexSignInExpired("workspace routing discovery unauthorized"),
+      codexSignInExpired("ChatGPT login is required"),
+      `${CODEX_SIGN_IN_EXPIRED} Codex said: workspace routing discovery unauthorized`,
+      codexNotSignedIn(),
+      "invalid_credentials",
+      "inactive_subscription",
+      grokInvalid,
+      grokInactive,
+    ]) {
+      expect(subscriptionSignInRefused(message)).toBe(true);
+    }
+    expect(signInExpiredCard({ ...codex, message: codexSignInExpired("workspace routing discovery unauthorized") })).toMatchObject({
+      cause: "sign_in_expired", engine: "Codex", subscriptionSignIn: true,
+    });
+    expect(signInExpiredCard({ ...grok, message: grokInvalid })).toMatchObject({
+      cause: "sign_in_expired", engine: "Grok", subscriptionSignIn: true,
+    });
+    expect(engineAccessNotice("no_access", "Codex", { cause: "sign_in_expired" })).toContain("Reconnect Codex");
+    expect(engineAccessNotice("no_access", "Grok", { cause: "sign_in_expired" })).toContain("Reconnect Grok");
+    // credits and overload stay on the generic error row
+    expect(subscriptionSignInRefused(grokCredits)).toBe(false);
+    expect(signInExpiredCard({ ...grok, message: grokCredits })).toBeNull();
   });
 
   it("leaves every other failure and route alone", () => {

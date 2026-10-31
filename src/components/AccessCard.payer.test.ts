@@ -32,7 +32,7 @@ describe("the access card: who pays (#1137)", () => {
     expect(accessCardLines(notGiven, { principalId: BOB, admin: false })).toMatchObject({ chooseModel: true, text: expect.stringContaining("Replies from Scout are paid by the person who writes") });
   });
 
-  it("#1533: an expired sign-in of the person's own subscription offers Reconnect, in their language", () => {
+  it("#1533 / #1759: an expired sign-in of the person's own subscription offers Reconnect, in their language", () => {
     const expired = { ...card, engine: "Claude", payer: "speaker" as const, payerPrincipalId: BOB, cause: "sign_in_expired" as const, subscriptionSignIn: true as const };
     expect(accessCardLines(expired, { principalId: BOB, admin: false })).toEqual({
       text: "Your Claude sign-in has expired, so Scout could not answer. Reconnect Claude to continue.",
@@ -45,6 +45,17 @@ describe("the access card: who pays (#1137)", () => {
     expect(html).not.toContain("OAuth");
     setLocale("fr");
     expect(accessCardLines(expired, { principalId: BOB, admin: false })).toMatchObject({ signInLabel: "Reconnecter Claude", text: expect.stringContaining("Votre connexion Claude a expiré") });
+    // #1759: Codex and Grok use the same card and i18n keys
+    for (const engine of ["Codex", "Grok"] as const) {
+      setLocale("en");
+      expect(accessCardLines({ ...expired, engine }, { principalId: BOB, admin: false })).toMatchObject({
+        signIn: true, signInLabel: `Reconnect ${engine}`, text: expect.stringContaining(`Reconnect ${engine}`),
+      });
+      setLocale("fr");
+      expect(accessCardLines({ ...expired, engine }, { principalId: BOB, admin: false })).toMatchObject({
+        signInLabel: `Reconnecter ${engine}`, text: expect.stringContaining(`Votre connexion ${engine} a expiré`),
+      });
+    }
     // someone else reading the bot does not get the button
     setLocale("en");
     expect(accessCardLines(expired, { principalId: OWNER, admin: false })).not.toHaveProperty("signIn");

@@ -29,7 +29,7 @@ describe("failed turn text", () => {
   });
 
   it("says Grok Build is signed out through the same rule, now that its card is the in-app code", () => {
-    const grokRow = { name: "error: Grok is not signed in to your grok.com account — choose Sign in to Grok in engine setup", ok: false, setup: true };
+    const grokRow = { name: "error: Grok is not signed in to your grok.com account. Sign in to Grok in Settings → Model providers and accounts", ok: false, setup: true };
     const grok = engine({
       instanceId: "grok", driverKind: "grokAgent", displayName: "Grok", authentication: { method: "device-code" },
       install: { command: { darwin: "curl -fsSL https://x.ai/cli/install.sh | bash", linux: "curl -fsSL https://x.ai/cli/install.sh | bash" }, signInCommand: "grok login" },

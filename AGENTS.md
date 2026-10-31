@@ -260,12 +260,18 @@ server `orgOfferedEngines`, `orgEngineAllowRefusal`, `orgEngineTurnRefusal`,
 Settings > Models say "Allowed through your own account". Auto never picks
 outside the list (`autoEnginesFor`). The admin is held to their own person
 sheet for the organization's key (`serverEngineAllowedFor`: only the
-server's own operator is exempt). An expired sign-in (#1533 marker) no
+server's own operator is exempt). An expired sign-in (#1533 / #1759 marker) no
 longer pays: `resolveEngineAccess` skips it (`subscriptionExpired`) to the
 person's key, then the organization's, else `no_access` `sign_in_expired`;
 `GET /api/me/engines` answers `myTurns: "expired"`, never Ready
 (`myTurnsReady`, shared/org-engine-readiness.ts), counted under Needs
-setup. The picker says "This choice applies to every thread of this bot."
+setup. `#1759`: `signInExpiredCard` / `subscriptionSignInRefused`
+(`server/engine-access.ts`) also match Codex (`codexSignInRefused`,
+`CODEX_SIGN_IN_EXPIRED`) and Grok ACP (`invalid_credentials`,
+`inactive_subscription`) so the chat shows Reconnect and
+`PrincipalEngineLogins.markExpired` sets Reconnexion requise, not a healthy
+Connected. Tests: `server/engine-access.test.ts`.
+ The picker says "This choice applies to every thread of this bot."
 (`data-model-scope`), lists an OpenAI-compatible server's own `/models`
 rows on an organization server, and the person's computer models are
 grafted only on engines that can run them (`desktopLocalModels.overlay`).

@@ -909,9 +909,9 @@ export function describeGrokAccountError(code: AccountErrorCode, model?: string)
     case "insufficient_funds":
       return `Grok refused this turn${which}: the usage balance of the Grok account it runs on is used up (xAI answered 402 Payment Required). Add credit to that Grok account at grok.com, or choose another model for this bot.`;
     case "invalid_credentials":
-      return `Grok refused this turn${which}: the Grok sign-in or xAI key it runs on was rejected. Sign in to Grok again in engine setup, or replace the xAI key.`;
+      return `Grok refused this turn${which}: the Grok sign-in or xAI key it runs on was rejected. Reconnect Grok in Settings → Model providers and accounts, or replace the xAI key.`;
     case "inactive_subscription":
-      return `Grok refused this turn${which}: the Grok account it runs on has no active subscription. Renew it at grok.com, or choose another model for this bot.`;
+      return `Grok refused this turn${which}: the Grok account it runs on has no active subscription. Reconnect Grok in Settings → Model providers and accounts, renew it at grok.com, or choose another model for this bot.`;
     case "quota_or_region_restriction":
       return `Grok refused this turn${which}: the Grok account it runs on reached its usage limit. Wait for it to reset, or choose another model for this bot.`;
     case "model_access_disabled":
@@ -949,7 +949,7 @@ const support: AcpSupport = {
   nativeSource: "grok.acp",
   classifyError: classifyGrokError,
   describeAccountError: describeGrokAccountError,
-  loginNote: "Grok is not signed in to your grok.com account — choose Sign in to Grok in engine setup",
+  loginNote: "Grok is not signed in to your grok.com account. Sign in to Grok in Settings → Model providers and accounts",
 
   // No Windows one-liner: the installer is a POSIX shell script, and offering
   // `curl … | bash` there would be advice that cannot run. Windows falls back

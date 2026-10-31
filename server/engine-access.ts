@@ -530,16 +530,29 @@ export function keyEngineProvider(driver: string, savedName: string): string {
   return savedName.replace(/\s*\((?:api key|clé api)\)\s*$/i, "").trim() || savedName;
 }
 
-/** #1533: words a subscription engine uses when its own sign-in was refused
- * and could not be refreshed (Claude Code: "Failed to authenticate: OAuth
- * session expired and could not be refreshed", `authentication_failed`). */
-const SIGN_IN_REFUSED = /oauth session expired|could not be refreshed|failed to authenticate|authentication_failed|oauth token (?:has )?expired|invalid (?:oauth|bearer) token|not logged in|please run \/login/i;
+/** #1533: Claude Code words when its OAuth sign-in was refused and could not
+ * be refreshed ("Failed to authenticate: OAuth session expired and could not
+ * be refreshed", `authentication_failed`). */
+const CLAUDE_SIGN_IN_REFUSED = /oauth session expired|could not be refreshed|failed to authenticate|authentication_failed|oauth token (?:has )?expired|invalid (?:oauth|bearer) token|not logged in|please run \/login/i;
 
-/** #1533: the access card for a turn that ran on the speaker's own
+/** #1759: Codex ChatGPT refusals (same shapes as `codexSignInRefused` /
+ * `CODEX_SIGN_IN_EXPIRED`) and Grok ACP account refusals
+ * (`invalid_credentials`, `inactive_subscription`, and the sentences
+ * `describeGrokAccountError` emits). Kept as plain regex so this module
+ * stays free of driver imports. */
+const CODEX_GROK_SIGN_IN_REFUSED = /ChatGPT sign-in has expired|Codex isn't signed in|workspace routing discovery unauthorized|ChatGPT login is required|auth data is not available|please (?:log out and )?sign in again|access token could not be refreshed|authentication session could not be refreshed|\binvalid_credentials\b|\binactive_subscription\b|Sign in to Grok again|Reconnect Grok|Grok sign-in or xAI key it runs on was rejected|Grok account it runs on has no active subscription|Grok is not signed in to your grok\.com account/i;
+
+/** #1533 / #1759: a subscription engine's own sign-in was refused. Pure. */
+export function subscriptionSignInRefused(message: string): boolean {
+  if (!message) return false;
+  return CLAUDE_SIGN_IN_REFUSED.test(message) || CODEX_GROK_SIGN_IN_REFUSED.test(message);
+}
+
+/** #1533 / #1759: the access card for a turn that ran on the speaker's own
  * subscription (organization server) and that the provider refused because
- * the sign-in expired: "Reconnect Claude" for that person, instead of the
- * engine's raw words. Null for anything else (a key, the organization's
- * key, a solo server, another error). Pure. */
+ * the sign-in expired: "Reconnect Claude / Codex / Grok" for that person,
+ * instead of the engine's raw words. Null for anything else (a key, the
+ * organization's key, a solo server, another error). Pure. */
 export function signInExpiredCard(input: {
   identity: "solo" | "perspicax";
   via: string | undefined;
@@ -553,7 +566,7 @@ export function signInExpiredCard(input: {
   routine?: boolean;
 }): { reason: "no_access"; cause: "sign_in_expired"; engine: string; botId: string; ownerPrincipalId: string; payerPrincipalId: string; subscriptionSignIn: true; botName?: string; routine?: true } | null {
   if (input.identity !== "perspicax" || input.via !== "subscription" || !input.subscriptionDriver || !input.payerPrincipalId) return null;
-  if (!SIGN_IN_REFUSED.test(input.message)) return null;
+  if (!subscriptionSignInRefused(input.message)) return null;
   return {
     reason: "no_access", cause: "sign_in_expired", engine: input.engine, botId: input.botId, ownerPrincipalId: input.ownerPrincipalId,
     payerPrincipalId: input.payerPrincipalId, subscriptionSignIn: true,
