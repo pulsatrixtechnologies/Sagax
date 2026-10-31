@@ -272,11 +272,14 @@ func previewText(of message: Message) -> String {
 /// because a reader who turned activity off does not want the summary of
 /// exactly those calls either.
 /// A status row the server writes while a turn runs ("notice: Qwen hit a
-/// rate limit and is retrying"). It tells the reader what the bot is doing,
-/// so, like desktop's statusActivity, it is never hidden or folded with the
-/// tool chips.
+/// rate limit and is retrying", a `recovery:` engine change, a usage-limit
+/// switch). It tells the reader what the bot is doing, so, like desktop's
+/// statusActivity, it is never folded with the tool chips. Hidden status
+/// rows still leave via `isHiddenStatusNotice` (#1668 / #1698).
 public func isStatusNotice(_ message: Message) -> Bool {
-    message.kind == .activity && (message.tool?.name.hasPrefix("notice:") ?? false)
+    guard message.kind == .activity, let tool = message.tool else { return false }
+    if tool.limitFailover != nil { return true }
+    return tool.name.hasPrefix("notice:") || tool.name.hasPrefix("recovery:")
 }
 
 /// The Workspace line Auto leaves when a turn starts on, or comes back to,
@@ -288,10 +291,15 @@ public func isStatusNotice(_ message: Message) -> Bool {
 public let quietWorkspaceLine = "notice: Workspace: On your computer"
 
 /// Also every technical notice (`ChatNotices`, the desktop's
-/// shared/chat-notices.ts): stored, never drawn.
+/// shared/chat-notices.ts): stored, never drawn. A usage-limit switch and
+/// the return after it are transparent too (desktop `isHiddenStatusActivity`,
+/// #1668 / #1698): rows stored before as `recovery:` lines are left out;
+/// a wait stays.
 public func isHiddenStatusNotice(_ message: Message) -> Bool {
-    guard message.kind == .activity, let name = message.tool?.name else { return false }
-    return name == quietWorkspaceLine || ChatNotices.isTechnical(name)
+    guard message.kind == .activity, let tool = message.tool else { return false }
+    if tool.name == quietWorkspaceLine || ChatNotices.isTechnical(tool.name) { return true }
+    let limit = tool.limitFailover?.kind
+    return limit == "switched" || limit == "back"
 }
 
 /// Bookkeeping the desktop chat never draws (ChatView.tsx): a stop the

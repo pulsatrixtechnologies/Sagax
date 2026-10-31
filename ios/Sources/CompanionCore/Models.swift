@@ -279,6 +279,9 @@ public struct ToolActivity: Codable, Hashable, Sendable {
     /// your email", "Running scrape.py"), the same whatever the engine
     /// (shared/working-step.ts). Absent from older servers.
     public var step: WorkingStep? = nil
+    /// Usage-limit switch / return / wait (shared/limit-failover.ts). A
+    /// switched or back row stays out of the chat (#1668 / #1698).
+    public var limitFailover: LimitFailoverLine? = nil
 
     public init(name: String, ok: Bool? = nil, spoken: String? = nil, setup: Bool? = nil, claudeUpdate: Bool? = nil, output: String? = nil, summary: String? = nil, widget: CwWidget? = nil) {
         self.name = name
@@ -292,7 +295,7 @@ public struct ToolActivity: Codable, Hashable, Sendable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case name, ok, spoken, setup, claudeUpdate, output, summary, widget, input, durationMs, product, productId, autoApproval, finishUntil, step
+        case name, ok, spoken, setup, claudeUpdate, output, summary, widget, input, durationMs, product, productId, autoApproval, finishUntil, step, limitFailover
     }
 
     public init(from decoder: Decoder) throws {
@@ -311,6 +314,7 @@ public struct ToolActivity: Codable, Hashable, Sendable {
         finishUntil = try? box.decodeIfPresent(FinishUntilLine.self, forKey: .finishUntil)
         autoApproval = try? box.decodeIfPresent(ToolAutoApproval.self, forKey: .autoApproval)
         step = try? box.decodeIfPresent(WorkingStep.self, forKey: .step)
+        limitFailover = try? box.decodeIfPresent(LimitFailoverLine.self, forKey: .limitFailover)
         do {
             widget = try box.decodeIfPresent(CwWidget.self, forKey: .widget)
         } catch {
@@ -334,6 +338,7 @@ public struct ToolActivity: Codable, Hashable, Sendable {
         try box.encodeIfPresent(productId, forKey: .productId)
         try box.encodeIfPresent(autoApproval, forKey: .autoApproval)
         try box.encodeIfPresent(step, forKey: .step)
+        try box.encodeIfPresent(limitFailover, forKey: .limitFailover)
     }
 
     /// The output worth expanding the chip for; nil when there is none.
