@@ -1733,7 +1733,12 @@ writes a minute per person); erased on revoke. Who writes a key
 type="application/sagax-state+json">` block the server reads from the
 published version (`stateRulesOf`), never from the browser: `anyone`,
 `signed_in` (the default for a key named nowhere), `editors` (who may change
-the page, today its person) or `owner`; `prefix*` and `*` patterns. Always
+the page: its person and the people on `editors`, #1704) or `owner`;
+`prefix*` and `*` patterns. The level declared in the published HTML stays
+as written (`editors` never becomes `owner`). The person sets the list with
+`PATCH /api/pages/:id { editors: [principal ids] }` (at most 50); a listed
+editor may save a new version (`POST .../versions`) and write editors-level
+state keys (role `editor`), not owner-only keys, locks or clears. Always
 within the sharing: `anyone` reaches a reader not signed in only while the
 page is shared with anyone with the link (else the same 404). Anonymous
 writes: 1 KB a value, 20 writes a minute per browser, 120 per network

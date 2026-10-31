@@ -1530,7 +1530,7 @@ describe("who writes a page's state: the page's declaration within its sharing (
       reachable: () => true,
       now: () => now,
       reader: (auth) => auth.kind === "session" && auth.session.principalId ? { principalId: auth.session.principalId, computerOwner: false } : null,
-      names: (ids) => Object.fromEntries(ids.map((id) => [id, id === "pr_reader" ? "Reader" : "Someone"])),
+      names: (ids) => Object.fromEntries(ids.map((id) => [id, id === "pr_reader" ? "Reader" : id === "pr_editor" ? "Editor" : "Someone"])),
     });
   }
   /** A write on the public link, as the wrapper of a reader not signed in sends it. */
@@ -1609,17 +1609,29 @@ describe("who writes a page's state: the page's declaration within its sharing (
     expect(pages.state(id).anything!.value).toBe(1);
   });
 
-  it("editors and owner: only the page's person, never another reader", async () => {
+  it("editors and owner: a listed editor writes editors keys, never owner keys (#1704)", async () => {
     const { pages } = store();
     const { id } = page(pages, "org");
     const handler = stateRoutes(pages);
+    // without a listed editor, a signed-in reader matches neither level
     for (const key of ["decision", "budget"]) {
       expect(await put(handler, "pr_reader", id, key, "go")).toMatchObject({ status: 403, body: { code: "not_allowed" } });
-      expect((await put(handler, OWNER_ID, id, key, "go")).status).toBe(200);
     }
-    const answer = await put(handler, OWNER_ID, id, "decision", "done");
+    expect(pages.setEditors(id, ["pr_editor"])).toMatchObject({ id });
+    // the declared level stays "editors", never rewritten to "owner"
+    expect(pages.stateRules(id).decision).toBe("editors");
+    expect(pages.stateRules(id).budget).toBe("owner");
+    const asEditor = await put(handler, "pr_editor", id, "decision", "go");
+    expect(asEditor.status).toBe(200);
+    expect(asEditor.body!.access.role).toBe("editor");
+    expect(asEditor.body!.access.rules.decision).toBe("editors");
+    expect(await put(handler, "pr_editor", id, "budget", "go")).toMatchObject({ status: 403, body: { code: "not_allowed" } });
+    // a plain reader still cannot write editors keys
+    expect(await put(handler, "pr_reader", id, "decision", "no")).toMatchObject({ status: 403, body: { code: "not_allowed" } });
+    const answer = await put(handler, OWNER_ID, id, "budget", "done");
+    expect(answer.status).toBe(200);
     expect(answer.body!.access.role).toBe("owner");
-    expect(answer.body!.entries.decision).toMatchObject({ value: "done", name: "Someone" });
+    expect(answer.body!.entries.budget).toMatchObject({ value: "done", name: "Someone" });
   });
 
   it("a declaration in the browser is not one: the server reads only the published version", async () => {
@@ -1669,5 +1681,26 @@ describe("who writes a page's state: the page's declaration within its sharing (
     expect(cleared.status).toBe(200);
     expect(cleared.body!.entries).toEqual({});
     expect(pages.state(id)).toEqual({});
+  });
+
+  it("PATCH editors: the person lists who may edit; an editor saves a version (#1704)", async () => {
+    const { pages } = store();
+    const { id } = page(pages, "org");
+    const handler = stateRoutes(pages);
+    const patched = await call(handler, session(OWNER_ID), "PATCH", `/api/pages/${id}`, { editors: ["pr_editor", OWNER_ID, "pr_editor"] });
+    expect(patched.status).toBe(200);
+    expect(patched.body!.page.editors).toEqual(["pr_editor"]);
+    expect((await call(handler, session("pr_reader"), "PATCH", `/api/pages/${id}`, { editors: ["pr_x"] })).status).toBe(404);
+    const source = await call(handler, session("pr_editor"), "GET", `/api/pages/${id}/versions/1/source`);
+    expect(source.status).toBe(200);
+    expect(source.body!.content).toContain("sagax-state+json");
+    const edited = await call(handler, session("pr_editor"), "POST", `/api/pages/${id}/versions`, {
+      kind: "html",
+      content: `${DECLARED}<p>from editor</p>`,
+    });
+    expect(edited.status).toBe(201);
+    expect(edited.body!.version).toBe(2);
+    // share stays with the page's person
+    expect((await call(handler, session("pr_editor"), "POST", `/api/pages/${id}/share`, { audience: "org" })).status).toBe(404);
   });
 });

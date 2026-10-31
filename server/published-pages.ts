@@ -79,7 +79,7 @@ export interface PageVersionRecord {
 
 export interface PageHistoryEntry {
   at: number;
-  action: "propose" | "publish" | "decline" | "access" | "expiry" | "revoke" | "rename" | "edit" | "reader-comments" | "reader-comment" | "reader-comment-approve" | "reader-comment-remove" | "audience" | "pin" | "live" | "keep" | "invite";
+  action: "propose" | "publish" | "decline" | "access" | "expiry" | "revoke" | "rename" | "edit" | "reader-comments" | "reader-comment" | "reader-comment-approve" | "reader-comment-remove" | "audience" | "pin" | "live" | "keep" | "invite" | "editors";
   version?: number;
   by?: string;
 }
@@ -118,6 +118,8 @@ export interface PageRecord {
   keepUpdated?: boolean;
   /** The people and teams the person invited to read it (Share). */
   invites?: PageInvites;
+  /** People who may edit this page besides its person (#1704). */
+  editors?: string[];
   /** Annotations of the people who read it (2026-10-28): threads anchored
    * on the page, with replies; seen by everyone who may read it. */
   threads?: PageThread[];
@@ -841,6 +843,19 @@ export class PublishedPages {
     });
   }
 
+  /** The person's list of who else may edit this page (#1704). Replaces it. */
+  setEditors(id: string, editors: string[], by?: string): PageRecord | PageError {
+    return this.mutate(id, (page, now) => {
+      const before = JSON.stringify(page.editors ?? []);
+      if (before !== JSON.stringify(editors)) {
+        if (editors.length) page.editors = [...editors];
+        else delete page.editors;
+        page.history.push({ at: now, action: "editors", ...(by ? { by } : {}) });
+      }
+      return page;
+    });
+  }
+
   /** The person's switch: the bot may replace the published version. */
   setKeepUpdated(id: string, on: boolean, by?: string): PageRecord | PageError {
     return this.mutate(id, (page, now) => {
@@ -964,6 +979,7 @@ export class PublishedPages {
       pinned: page.pinned === true,
       keepUpdated: page.keepUpdated === true,
       invites: { people: [...(page.invites?.people ?? [])], teams: [...(page.invites?.teams ?? [])] },
+      editors: [...(page.editors ?? [])],
       versions,
       ...(page.comments?.length ? { comments: page.comments.length } : {}),
       ...(page.readerComments ? { readerComments: true } : {}),
