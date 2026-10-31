@@ -2,6 +2,7 @@
 // other endpoints that speak the OpenAI chat-completions contract.
 import type { ModelCatalog, ProviderDriver } from "../contracts.ts";
 import { publishedContextWindow } from "../published-context-window.ts";
+import { refusedModelsStore } from "../refused-models.ts";
 import { createOpenAIChatRuntime } from "./openai-chat.ts";
 import { anthropicTransport } from "./anthropic-compat.ts";
 import { currentEnvName, readEnvName } from "../../electron/legacy-names.mjs";
@@ -195,8 +196,9 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
     const underlying = (id: string) => deployedModel.get(id) ?? id;
     let issue: ModelListIssue | undefined = azureWrongUrl ? "azure-bad-url" : undefined;
     /** Models OpenAI refused for a conversation (openai-chat.ts): they leave
-     * the catalog, so neither the picker nor Auto offers them again. */
-    const refused = new Set<string>();
+     * the catalog, so neither the picker nor Auto offers them again. Loaded
+     * from the durable store (#1696) so a restart does not retry them. */
+    const refused = new Set(refusedModelsStore().refused(input.instanceId));
     const withEffort = (option: ModelCatalog["options"][number]) => openai || azure
       ? { ...option, effortLevels: isOpenAIReasoningModel(underlying(option.id)) ? [...OPENAI_EFFORT_LEVELS] : [] }
       : option;
@@ -309,9 +311,13 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
     if (apiKey || config.allowNoKey) void fetchModels();
     const listed = (): ModelCatalog => {
       if (!refused.size) return catalog;
+      // Empty is fine: Auto and the host move to another engine (#1696).
       const options = catalog.options.filter((option) => !refused.has(option.id));
-      if (!options.length) return catalog;
-      return { ...catalog, default: refused.has(catalog.default) ? options[0]!.id : catalog.default, options };
+      return {
+        ...catalog,
+        default: options.some((option) => option.id === catalog.default) ? catalog.default : options[0]?.id ?? catalog.default,
+        options,
+      };
     };
     const models = (): ModelCatalog => {
       const current = listed();
@@ -338,7 +344,10 @@ export const OpenAICompatDriver: ProviderDriver<OpenAICompatConfig> = {
         reasoningModel: isOpenAIReasoningModel,
         effortLevels: OPENAI_EFFORT_LEVELS,
         modelFallback: true,
-        onModelUnsupported: (model: string) => { refused.add(model); },
+        onModelUnsupported: (model: string) => {
+          refused.add(model);
+          refusedModelsStore().remember(input.instanceId, model);
+        },
       } : {}),
       // Azure serves /responses for the OpenAI models it deploys (#1688);
       // any other deployment, or one /responses refuses, uses chat

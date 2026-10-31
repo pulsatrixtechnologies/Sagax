@@ -9699,6 +9699,8 @@
   "code.subscription.expired": "Your {engine} sign-in in Sagax expired and could not be renewed. Sign in again in Settings, My subscriptions and keys.",
   "code.subscription.refused": "Perspicax refused your {engine} subscription for this run.",
   "limitFailover.switched": "Limit reached on {from}: continuing on {to} until it resets (around {time}).",
+  "limitFailover.modelSwitched": "{from} had no model left for this conversation: continuing on {to}.",
+  "limitFailover.modelSwitchedAuto": "{from} had no model left for this conversation: Auto continued the same turn on another engine.",
   "limitFailover.back": "{engine}'s limit has reset: back on {engine}.",
   "limitFailover.waiting": "Limit reached on {from} and no other engine is available: your message will be sent again when it resets (around {time}).",
   "limitFailover.waitingRoutine": "Limit reached on {from} and no other engine is available: this routine runs again when it resets (around {time}).",

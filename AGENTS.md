@@ -692,10 +692,15 @@ and never carries `reasoning_effort`. The picker lists only conversation
 models (`isOpenAIChatModel`, an allow list by family): audio, realtime,
 speech, image, embedding, moderation and completion models never appear and
 Auto never picks them. A model the provider refuses (`refusesModel`) leaves
-the catalog and the same turn goes on at once on another model, with no row
-in the chat (`session.model-fallback`, a `runtime.notice`); only when none is
-left does the turn end in plain words (`noModelLeftMessage`). Test:
-`server/drivers/openai-responses.test.ts`.
+the catalog (`DATA_DIR/refused-models.json`, durable across restarts, #1696)
+and the same turn goes on at once on another model of that engine, with no
+row in the chat (`session.model-fallback`, a `runtime.notice`). When no model
+of that engine remains, the host moves the same turn to another engine the
+person has (`limit-failover-host.ts`, `isEngineExhaustedRefusal`), as a usage
+limit does (#1668); only when nothing else can answer does the turn end in
+plain words (`noModelLeftMessage`). Tests:
+`server/drivers/openai-responses.test.ts`, `server/refused-models.test.ts`,
+`server/limit-failover-host.test.ts`.
 
 ## A reply is never an error (2026-10-29)
 

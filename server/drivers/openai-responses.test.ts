@@ -8,13 +8,16 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ProviderInstance, RuntimeEvent } from "../contracts.ts";
+import { RefusedModelsStore, setRefusedModelsStore } from "../refused-models.ts";
 import { isOpenAIChatModel, isOpenAIReasoningModel, OpenAICompatDriver } from "./openai-compat.ts";
+import { isEngineExhaustedRefusal, noModelLeftMessage } from "./openai-chat.ts";
 import { providerReplyCutMessage } from "../../shared/provider-reply-cut.ts";
 import { refusesModel, ResponsesReader, responsesInput } from "./openai-responses.ts";
 
 const dirs: string[] = [];
 afterEach(() => {
   vi.unstubAllGlobals();
+  setRefusedModelsStore(null);
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -195,7 +198,43 @@ describe("OpenAI turns on /v1/responses", () => {
       expect(errors).toHaveLength(1);
       expect(errors[0]!.message).toMatch(/^This model is not supported for conversations \(gpt-6\.1-terra\), and no other model of this engine could take over\. Choose another model\.$/);
       expect(errors[0]!.message).not.toMatch(/v1\/|chat\/completions|HTTP/);
+      expect(isEngineExhaustedRefusal(errors[0]!.message)).toBe(true);
+      expect(isEngineExhaustedRefusal(noModelLeftMessage("gpt-5"))).toBe(true);
+      expect(isEngineExhaustedRefusal("401 Unauthorized")).toBe(false);
     } finally { await instance.dispose(); }
+  });
+
+  it("keeps a refused model out of the catalog after a restart (#1696)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "sagax-refused-"));
+    dirs.push(dir);
+    const file = join(dir, "refused-models.json");
+    setRefusedModelsStore(new RefusedModelsStore({ file }));
+    try {
+      const { instance } = await openai(["gpt-6.1-terra", "gpt-5"], (call) =>
+        call.body.model === "gpt-6.1-terra" ? refusal("This is not a chat model and thus not supported in the v1/chat/completions endpoint.") : textReply("Answered."));
+      await turn(instance, { model: "gpt-6.1-terra" });
+      expect(instance.models.options.map((option) => option.id)).toEqual(["gpt-5"]);
+      await instance.dispose();
+
+      // A new process store from the same file: the refused model stays out.
+      setRefusedModelsStore(new RefusedModelsStore({ file }));
+      vi.stubGlobal("fetch", vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.endsWith("/models")) return new Response(JSON.stringify({ data: [{ id: "gpt-6.1-terra" }, { id: "gpt-5" }] }));
+        return textReply("Still.");
+      }));
+      const again = await OpenAICompatDriver.create({
+        instanceId: "openai", displayName: "OpenAI", enabled: true,
+        config: OpenAICompatDriver.decodeConfig({ url: OPENAI_URL, apiKeyEnv: "SAGAX_OPENAI_API_KEY", catalog: "openai" }),
+        environment: { SAGAX_OPENAI_API_KEY: "sk-fixture" },
+      });
+      try {
+        await vi.waitFor(() => expect(again.models.options.map((option) => option.id)).toEqual(["gpt-5"]));
+        expect(again.models.default).toBe("gpt-5");
+      } finally { await again.dispose(); }
+    } finally {
+      setRefusedModelsStore(null);
+    }
   });
 
   it("goes back to /chat/completions for a model /responses does not serve", async () => {
