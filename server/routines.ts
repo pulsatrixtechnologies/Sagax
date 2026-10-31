@@ -3004,8 +3004,8 @@ export class RoutineManager {
     } finally {
       this.ticking = false;
       // Interval ended with no further run, or a finished once with the option on.
-      for (const routine of [...this.routines]) {
-        if (routine.deleteWhenFinished) this.maybeDeleteWhenFinished(routine.id);
+      for (const id of this.routines.filter((routine) => routine.deleteWhenFinished).map((routine) => routine.id)) {
+        this.maybeDeleteWhenFinished(id);
       }
       this.armDueWake();
       if (this.passAgain) {
