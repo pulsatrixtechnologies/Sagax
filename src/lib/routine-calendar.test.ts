@@ -430,21 +430,37 @@ describe("calendar shows plans, not runs", () => {
     schedule: { type: "once", at: new Date(2026, 9, 19, hh, 0).getTime() }, durationMinutes: 30,
     nextRunAt: new Date(2026, 9, 19, hh, 0).getTime(), createdAt: 1,
   } as Routine);
-  it("turns run receipts into plain planned occurrences without a status", () => {
+  it("draws the planned occurrence even when run receipts exist for that slot", () => {
     const r = routine("a", 10);
     const at = r.schedule.type === "once" ? r.schedule.at : 0;
     const runs = [1, 2].map((n) => ({ id: `run${n}`, routineId: "a", routineName: "a", target: "bot", botId: "b1", runOn: "maus", scheduledFor: at, status: "failed", manual: false, createdAt: at }) as RoutineRun);
     const items = scheduledRoutineItems([r], runs, at - 1000, at + 1000);
     expect(items).toHaveLength(1);
     expect(items[0]?.run).toBeNull();
+    expect(items[0]?.routine?.id).toBe("a");
   });
-  it("keeps the past runs of a deleted routine under their own name (#1506)", () => {
+  it("does not paint completed run receipts that are not on the schedule", () => {
+    const from = new Date(2026, 7, 31, 9).getTime();
+    const pulse: Routine = {
+      id: "pulse", name: "Pulse", prompt: "p", target: "bot", botId: "b1", runOn: "maus", enabled: true,
+      schedule: { type: "interval", everyMinutes: 5, anchorAt: from }, durationMinutes: 30,
+      nextRunAt: from + 15 * 60_000, createdAt: from, updatedAt: from,
+    };
+    const runs: RoutineRun[] = Array.from({ length: 20 }, (_, index) => ({
+      id: `run-${index}`, routineId: pulse.id, routineName: pulse.name, target: "bot", botId: "b1",
+      runOn: "maus", scheduledFor: from + index * 5 * 60_000, status: "completed", manual: false,
+      createdAt: from + index * 5 * 60_000,
+    }));
+    const items = scheduledRoutineItems([pulse], runs, from, from + 24 * 60 * 60_000);
+    expect(items.map((item) => item.at)).toEqual([from + 15 * 60_000]);
+    expect(items.every((item) => item.run === null)).toBe(true);
+  });
+  it("does not keep past runs of a deleted routine on the calendar (history stays in Logs)", () => {
     const at = new Date(2026, 9, 19, 10, 0).getTime();
     const run = (id: string, manual: boolean) => ({ id, routineId: "gone", routineName: "Weekly digest", target: "bot", botId: "b1",
       runOn: "maus", scheduledFor: at, status: "completed", manual, createdAt: at }) as RoutineRun;
     const items = scheduledRoutineItems([], [run("past", false), run("by-hand", true)], at - 1000, at + 1000);
-    expect(items).toHaveLength(1);
-    expect(items[0]).toMatchObject({ id: "deleted-past", routine: null, run: { id: "past", routineName: "Weekly digest" } });
+    expect(items).toEqual([]);
   });
   it("collapses a crowded half hour into one +N marker", () => {
     const at = new Date(2026, 9, 19, 10, 0).getTime();

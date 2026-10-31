@@ -53,18 +53,23 @@ final class RoutineCalendarTests: XCTestCase {
         XCTAssertEqual(RoutineCalendar.day(day, routines: routines, runs: [], botId: "other", calendar: toronto), [])
     }
 
-    func testAReceiptReplacesItsOccurrenceAndFinishedReceiptsAreCapped() {
+    func testCalendarIgnoresRunReceiptsIncludingDeletedRoutines() {
         let day = local(2026, 10, 5)
         let daily = routine("daily", .daily(time: "09:30", weekdays: [1]))
+        let pulse = routine("pulse", .interval(everyMinutes: 5, anchorAt: local(2026, 10, 5, 9)), nextRunAt: local(2026, 10, 5, 11))
         var runs = [run("r0", routine: "daily", at: local(2026, 10, 5, 9, 30), status: "failed")]
         for minute in 0..<14 { runs.append(run("old\(minute)", routine: "gone", at: local(2026, 10, 5, 1, minute))) }
+        for index in 0..<20 {
+            runs.append(run("pulse\(index)", routine: "pulse", at: local(2026, 10, 5, 9, index), status: "completed"))
+        }
         runs.append(run("live", routine: "gone", at: local(2026, 10, 5, 0, 30), status: "running"))
-        let items = RoutineCalendar.day(day, routines: [daily], runs: runs, calendar: toronto)
-        // The calendar shows plans only: the receipt is a plain occurrence,
-        // no run, no status; runs of a deleted routine do not show.
-        XCTAssertEqual(items.map(\.routine?.id), ["daily"])
-        XCTAssertNil(items[0].run)
-        // the receipt logic itself stays for the list
+        let items = RoutineCalendar.day(day, routines: [daily, pulse], runs: runs, calendar: toronto)
+        // Schedule only: daily at 09:30 and the interval's nextRunAt. Receipts
+        // (failed, completed, deleted, in-flight) stay out of the calendar.
+        XCTAssertEqual(items.map(\.routine?.id), ["daily", "pulse"])
+        XCTAssertEqual(items.map(\.date), [local(2026, 10, 5, 9, 30), local(2026, 10, 5, 11)])
+        XCTAssertTrue(items.allSatisfy { $0.run == nil })
+        // the receipt projection itself stays for the list / logs
         let all = RoutineCalendar.items(routines: [daily], runs: runs, from: day, to: RoutineCalendar.addDays(day, 1, calendar: toronto), calendar: toronto)
         XCTAssertEqual(all.filter { $0.run?.routineId == "gone" }.count, 13)
     }
