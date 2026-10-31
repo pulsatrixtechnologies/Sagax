@@ -34,6 +34,25 @@ function render(authenticated: boolean, options: { email?: string; signOut?: boo
   return renderToStaticMarkup(createElement(EngineRows));
 }
 
+describe("Settings → Engines → Claude update", () => {
+  it("hides Update Claude when the server image pins the engine", () => {
+    vi.stubGlobal("window", {});
+    vi.stubGlobal("navigator", { userAgent: "Linux" });
+    const base = {
+      instanceId: "claude",
+      driverKind: "claudeAgent",
+      displayName: "Claude",
+      cliDefault: "claude",
+      snapshot: { state: "available" as const, authenticated: true, version: "2.1.288 (Claude Code)" },
+      models: { default: "claude-sonnet-5", options: [] },
+    };
+    fixture.instances = [base as InstanceInfo];
+    expect(renderToStaticMarkup(createElement(EngineRows))).toContain("Update Claude");
+    fixture.instances = [{ ...base, pinned: true } as InstanceInfo];
+    expect(renderToStaticMarkup(createElement(EngineRows))).not.toContain("Update Claude");
+  });
+});
+
 describe("Settings → Engines → Codex", () => {
   it("makes browser sign-in discoverable in Settings, not only the model picker", () => {
     const html = render(false);

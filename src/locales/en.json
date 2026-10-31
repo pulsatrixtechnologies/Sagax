@@ -1841,6 +1841,7 @@
   "chat.claudeUpdate.offer": "This model needs a newer Claude Code. I can update Claude for you.",
   "chat.claudeUpdate.tryAgain": "Try updating again",
   "chat.claudeUpdate.updating": "Updating Claude Code… this can take a minute.",
+  "chat.claudeUpdate.unavailable": "This model is not available on this server. Choose another model, or ask an admin to update the server image.",
   "chat.cloudGuest.newConversation": "New conversation",
   "chat.cloudGuest.notYours": "You can only write in conversations you started on this Cloud.",
   "chat.compactionHint": "Your full conversation is still here. The agent uses this summary and recent messages when continuing.",

@@ -360,7 +360,7 @@ export function EngineRow({ instance, mine, member = false, issuer = "", bare = 
             </span>
           )}
           <span className="flex-1" />
-          {instance.driverKind === "claudeAgent" && (
+          {instance.driverKind === "claudeAgent" && !instance.pinned && (
             <button
               onClick={updateClaude}
               disabled={switching || updating}

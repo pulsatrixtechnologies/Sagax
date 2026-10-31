@@ -139,7 +139,7 @@ import { createRoomTurnLevels } from "./room-turn-level.ts";
 import { HELD_NOTE, approvalHeldNote, approvalHeldReason, approvalModeForOrigin, autoVerdict, deliverFullAccessApproval, delegatedApprovalMode } from "./auto-approve.ts";
 import { CommandAllowlistStore, commandAllowlistCandidate, sandboxCommandCandidate } from "./command-allowlist.ts";
 import type { CommandAllowlistCandidate, CommandAllowlistResponse } from "../shared/command-allowlist.ts";
-import { updateClaudeCli } from "./claude-update.ts";
+import { pinnedClaudeUpdateRefusal, updateClaudeCli } from "./claude-update.ts";
 import { configuredAccountDirectory, assertSeparateClaudeAccount, claudeAccountInfo, createClaudeAccountSchema, instanceSettingsSchema, newClaudeAccount } from "./claude-accounts.ts";
 import { providerIconPatchSchema, withInstanceIcon } from "./provider-icon.ts";
 import { providerIconError } from "../shared/provider-icon.ts";
@@ -18074,10 +18074,13 @@ bus.subscribe((event: RuntimeEvent) => {
       const accessDisabled = event.message === MODEL_ACCESS_DISABLED_MESSAGE;
       // A model at its usage limit is skipped the same way: Auto's next pick
       // goes to one that can answer instead of hitting the same wall.
-      if (autoRan && (accessDisabled || isModelRefusal(event.message) || USAGE_LIMIT.test(event.message))) rememberAutoRefusal(autoRan.payer, autoRan.entry);
+      // #1760: Claude Code too old for the model is the same wall until the
+      // image (or install) moves; leave it out of Auto and the picker.
+      if (autoRan && (accessDisabled || event.claudeUpdate || isModelRefusal(event.message) || USAGE_LIMIT.test(event.message))) rememberAutoRefusal(autoRan.payer, autoRan.entry);
       // #1450: a model the paying account turned off leaves that payer's
       // model lists for a while: retrying it cannot help.
-      if (accessDisabled && bot) {
+      // #1760: a model this Claude Code does not support leaves the picker too.
+      if ((accessDisabled || event.claudeUpdate) && bot) {
         const ran = autoRan?.entry ?? turnSelection(bot.id, event.threadId);
         const instanceId = event.providerInstanceId ?? ran?.instanceId ?? "";
         if (ran && ran.instanceId === instanceId) modelAccessRefusals.remember(refusalPayerOf(turnAccessByThread.get(event.threadId)), instanceId, ran.model);
@@ -31369,10 +31372,13 @@ async function describeInstances() {
   await refreshUnsetModelSelections(engines);
   return engines.map((instance) => {
     const entry = configs[instance.instanceId];
+    // Image pin (engines.lock.json): the client must not offer an in-place update.
+    const imagePinned = selfCheckedEngine(instance.instanceId) !== null;
     const described = {
       ...instance,
       ...(entry?.icon ? { icon: entry.icon } : {}),
       ...(entry?.access ? { access: entry.access } : {}),
+      ...(imagePinned ? { pinned: true as const } : {}),
     };
     if (hostedModels) return { ...described, readOnly: true,
       install: undefined, authentication: undefined, cli: undefined, cliCandidates: [],
@@ -54063,6 +54069,9 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
       if (target.driverKind !== "claudeAgent") {
         return json(res, 400, { error: "only Claude Code instances can be updated here" });
       }
+      // Image pin (engines.lock.json): an in-place update would drift until redeploy.
+      const pinnedRefusal = pinnedClaudeUpdateRefusal(selfCheckedEngine(claudeUpdate[1]) !== null);
+      if (pinnedRefusal) return json(res, pinnedRefusal.status, { error: pinnedRefusal.error, code: pinnedRefusal.code });
       if (!target.cli) return json(res, 409, { error: "this Claude instance has no configured executable" });
       if (claudeUpdatesInFlight.has(target.cli)) {
         return json(res, 409, { error: "this Claude installation is already updating" });

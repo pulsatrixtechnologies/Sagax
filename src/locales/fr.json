@@ -6713,6 +6713,7 @@
   "chat.claudeUpdate.offer": "Ce modèle exige une version plus récente de Claude Code. Je peux mettre Claude à jour pour vous.",
   "chat.claudeUpdate.tryAgain": "Réessayer la mise à jour",
   "chat.claudeUpdate.updating": "Mise à jour de Claude Code… cela peut prendre une minute.",
+  "chat.claudeUpdate.unavailable": "Ce modèle n'est pas disponible sur ce serveur. Choisissez un autre modèle, ou demandez à un admin de mettre l'image à jour.",
   "chat.cloudGuest.newConversation": "Nouvelle conversation",
   "chat.cloudGuest.notYours": "Vous ne pouvez écrire que dans les conversations que vous avez commencées sur ce Cloud.",
   "chat.compactionHint": "Toute votre conversation est toujours là. L'agent utilise ce résumé et les messages récents pour continuer.",

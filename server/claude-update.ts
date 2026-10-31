@@ -14,6 +14,19 @@ type ExecCli = (
 
 const FALLBACK = "Run `claude update` in Terminal, then refresh Engines.";
 
+/** Refusal when this server's image pins Claude Code (engines.lock.json).
+ * Updating the CLI in place would drift from the lock until the next deploy. */
+export const PINNED_CLAUDE_UPDATE_ERROR =
+  "This server's image pins Claude Code. To move it to a new release, change its version in engines.lock.json and redeploy the image.";
+
+export const PINNED_CLAUDE_UPDATE_CODE = "engine_pinned";
+
+/** When the image self-check owns this Claude, refuse an in-place update. */
+export function pinnedClaudeUpdateRefusal(pinned: boolean): { status: 409; error: string; code: string } | null {
+  if (!pinned) return null;
+  return { status: 409, error: PINNED_CLAUDE_UPDATE_ERROR, code: PINNED_CLAUDE_UPDATE_CODE };
+}
+
 /** Claude Code's npm package: the one ClaudeDriver's install descriptor names. */
 export const CLAUDE_CODE_PACKAGE = "@anthropic-ai/claude-code";
 
