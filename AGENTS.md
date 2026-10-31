@@ -5721,7 +5721,7 @@ fake xAI: `scripts/verify-voice-mode.ts`. Details: `docs/voice-mode-xai.md`.
   French linking word on a finished contour waits half of `incompleteMs`.
   Keep the nets: every frame of the short window under Silero 0.15 (never
   mid-word), and a person who speaks again within 600 ms of a turn ended on
-  its contour continues it (`CONTOUR_CONTINUATION_MS`), even over the bot's
+  its contour continues it (`EARLY_CUT_CONTINUATION_MS`), even over the bot's
   first words. Tests: `prosody.test.ts`, `call.test.ts` ("faster end of
   turn").
 - Call turns carry `voiceCall` (Message.voiceCall), on every call view: the
@@ -7813,7 +7813,7 @@ Boat Computer are experimental flags (`features.vpsComputer`,
 and, on a solo server only, the Cloud place; they never hide the
 organization's Cloud nor the local places (`placeOffered(place, config,
 organization)`). Tests: `OrgComputerTab.test.ts`,
-`experimental-computers.test.ts`, `PlaceChip.test.ts`,
+`experimental-computers.test.ts`, `place.test.ts`,
 `AccessSection.test.ts`, `server/desktop-bridge.test.ts`.
 
 The Local VM in server mode lives on the person's computer
@@ -7829,7 +7829,7 @@ The Local VM in server mode lives on the person's computer
   the desktop checks (`validLocalVmSpec`) before running it. Nothing is
   installed without the person's click and an OS dialog.
 - Tests never create a container under the real name: vitest sets
-  `OMB_LOCAL_VM_TEST_NAMESPACE` (`server/testing/global-setup.ts`), names
+  `SAGAX_LOCAL_VM_TEST_NAMESPACE` (`server/testing/global-setup.ts`), names
   become `openmausbot-test-<ns>-computer`, labeled and removed at the end;
   a real-named VM is refused in the temp folder (`localVmFolderRefusal`).
   Tests: `electron/local-vm.node-test.mjs`, `server/local-vm-hygiene.test.ts`,
