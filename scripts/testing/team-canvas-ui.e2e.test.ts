@@ -308,19 +308,24 @@ type BotRecord = {
     expect((await view()).scale).toBeGreaterThan(beforeZoom.scale);
     await click("Zoom out");
     expect((await view()).scale).toBeCloseTo(beforeZoom.scale, 4);
-    const wheel = (deltaY: number, ctrlKey = true) => evaluate(`(() => {
+    const wheel = (deltaY: number, options: { ctrlKey?: boolean; shiftKey?: boolean; deltaX?: number } = {}) => evaluate(`(() => {
       const canvas = document.querySelector('[data-team-canvas]');
       const rect = canvas.getBoundingClientRect();
-      return canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: ${ctrlKey},
-        deltaY: ${deltaY}, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 }));
+      return canvas.dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true,
+        ctrlKey: ${options.ctrlKey === true}, shiftKey: ${options.shiftKey === true},
+        deltaX: ${options.deltaX ?? 0}, deltaY: ${deltaY},
+        clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 }));
     })()`);
-    await wheel(-10_000);
+    await wheel(-10_000, { ctrlKey: true });
     await expect.poll(async () => (await view()).scale).toBe(1.5);
-    await wheel(10_000);
+    await wheel(10_000, { ctrlKey: true });
     await expect.poll(async () => (await view()).scale).toBe(0.3);
+    const beforeWheelZoom = await view();
+    await wheel(-120);
+    await expect.poll(async () => (await view()).scale).toBeGreaterThan(beforeWheelZoom.scale);
     const beforeWheelPan = await view();
-    await wheel(45, false);
-    await expect.poll(async () => (await view()).y).toBeCloseTo(beforeWheelPan.y - 45, 4);
+    await wheel(45, { shiftKey: true });
+    await expect.poll(async () => (await view()).x).toBeCloseTo(beforeWheelPan.x - 45, 4);
     await click("Fit teams to view");
     expect(await evaluate(`(() => {
       const viewport = document.querySelector('[data-team-canvas]').getBoundingClientRect();
