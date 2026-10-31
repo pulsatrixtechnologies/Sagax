@@ -123,6 +123,15 @@ describe("admin list and revoke of a person's connections", () => {
     expect(JSON.stringify(listing)).not.toContain(USER_CODE);
   });
 
+  it("a refused GitHub token is listed as error, never connected", () => {
+    const listing = orgConnectionListing({
+      principalId: PERSON,
+      github: { state: "error", deviceFlow: true, error: "GitHub refused this token. Connect again.", login: "bob-gh" },
+      servers: {}, lastUsed: () => undefined, plugins: [],
+    });
+    expect(listing).toEqual({ principalId: PERSON, connections: [{ kind: "github", state: "error", login: "bob-gh" }] });
+  });
+
   it("a member is refused", async () => {
     const h = harness();
     const listed = await h.call(path, member);

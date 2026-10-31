@@ -70,6 +70,10 @@ describe("Mes connexions", () => {
     expect(fine).toContain("data-github-fine-grained");
     expect(connected).toContain("Connected as @octo");
     expect(connected).toContain("Disconnect");
+    const refused = renderToStaticMarkup(createElement(MyConnectionsSettings, { initial: { ...base, github: { state: "error", deviceFlow: true, error: "GitHub refused this token. Connect again.", login: "octo" } } }));
+    expect(refused).toContain("data-github-auth-error");
+    expect(refused).toContain("Reconnect");
+    expect(refused).not.toContain("Connected as @octo");
   });
 
   it("lists a person's servers with where they run and what they need", () => {

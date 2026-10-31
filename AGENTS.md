@@ -6398,7 +6398,11 @@ had no gh. Keep these rules, each covered by `server/org-connections.e2e.test.ts
   personal servers with auth `github`, and into Sagax's own fetches for them
   (private skills, private marketplaces), and since 2026-10-28 into the
   GitHub plugin's MCP server (its `${GITHUB_PERSONAL_ACCESS_TOKEN}`, see "Providers
-  > GitHub" below). One connection per person.
+  > GitHub" below). One connection per person. `#1775`: `GET /api/me/connections`
+  and `connect_github` call `probeStatus` (GitHub `/user`); a 401 Bad credentials
+  sticks as `state: "error"` with `login` (Reconnect, never a healthy Connected)
+  until a new connection or disconnect. Network blips keep Connected. Tests:
+  `server/github-connect.test.ts`.
 - Organization access tokens: since 2026-10-28 the organization's labeled
   credentials of the one list (`server/github-credentials.ts`, owner `org`),
   changed by an organization admin through `POST /api/me/github/credentials`

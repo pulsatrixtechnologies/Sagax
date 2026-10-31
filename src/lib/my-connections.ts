@@ -10,7 +10,8 @@ export type GithubStatus =
   | { state: "none"; deviceFlow: boolean }
   | { state: "pending"; deviceFlow: true; userCode: string; verificationUri: string; expiresAt: number }
   | { state: "connected"; deviceFlow: boolean; login: string; name?: string; scopes?: string[]; via: "device" | "token"; connectedAt: number; fineGrained?: boolean; orgAccessUrl?: string }
-  | { state: "error"; deviceFlow: boolean; error: string };
+  /** Stored token refused by GitHub (401): Reconnect, never a healthy Connected. */
+  | { state: "error"; deviceFlow: boolean; error: string; login?: string };
 
 export type PersonalAuthState = "connected" | "ready" | "needs_sign_in" | "needs_github" | "needs_token" | "expired" | "error" | "no_environment";
 

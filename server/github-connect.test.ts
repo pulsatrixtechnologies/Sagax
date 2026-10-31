@@ -75,6 +75,30 @@ describe("GithubConnect", () => {
     connect.disconnect("pr_a");
     expect(saved.get("pr_a")).toBeUndefined();
   });
+
+  it("does not report Connected when GitHub refuses the stored token (401)", async () => {
+    const github = fakeGithub();
+    const connect = new GithubConnect({ clientId: () => undefined, fetch: github.fetcher, save: () => undefined });
+    const dead = { token: "bad", login: "octo", via: "token" as const, connectedAt: 1 };
+    expect(connect.status("pr_a", dead)).toMatchObject({ state: "connected", login: "octo" });
+    await expect(connect.probeStatus("pr_a", dead)).resolves.toMatchObject({
+      state: "error", login: "octo", error: expect.stringContaining("refused"),
+    });
+    // Sticky without another probe: UI must keep showing Reconnect.
+    expect(connect.status("pr_a", dead)).toMatchObject({ state: "error", login: "octo" });
+    // A network blip does not clear a refused token back to Connected.
+    const flaky = new GithubConnect({
+      clientId: () => undefined,
+      save: () => undefined,
+      fetch: (async () => { throw new TypeError("fetch failed"); }) as typeof fetch,
+    });
+    flaky.markAuthError("pr_a", "bad");
+    await expect(flaky.probeStatus("pr_a", dead)).resolves.toMatchObject({ state: "error", login: "octo" });
+    // A fresh working token clears the refusal.
+    const live = await connect.connectWithToken("pr_a", "github_pat_ok");
+    expect(connect.status("pr_a", live)).toMatchObject({ state: "connected", login: "octo-pat" });
+    await expect(connect.probeStatus("pr_a", live)).resolves.toMatchObject({ state: "connected", login: "octo-pat" });
+  });
 });
 
 describe("where the token goes", () => {

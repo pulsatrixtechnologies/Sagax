@@ -8,7 +8,7 @@ import { api } from "@/state/store";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 export type OrgConnection =
-  | { kind: "github"; state: "connected" | "pending"; login?: string; name?: string; via?: "device" | "token"; scopes?: string[]; createdAt?: number }
+  | { kind: "github"; state: "connected" | "pending" | "error"; login?: string; name?: string; via?: "device" | "token"; scopes?: string[]; createdAt?: number }
   | { kind: "mcp"; name: string; mcpKind: "remote" | "stdio"; detail: string; createdAt: number; enabled: boolean; auth?: string; lastUsedAt?: number }
   | { kind: "plugin"; botId: string; botName: string; key: string; name: string; marketplace: string; createdAt: number; enabled: boolean };
 
@@ -127,6 +127,7 @@ export function PersonConnectionsSection({ principalId, initial }: { principalId
                     {connection.kind === "mcp" && connection.detail ? ` · ${connection.detail}` : ""}
                     {connection.kind === "plugin" ? ` · ${connection.marketplace}` : ""}
                     {connection.kind === "github" && connection.state === "pending" ? ` · ${t("personPanel.connections.pending")}` : ""}
+                    {connection.kind === "github" && connection.state === "error" ? ` · ${t("myConnections.github.reconnect")}` : ""}
                   </div>
                   {created !== undefined && <div className="truncate text-[12px] text-ink-secondary">{t("personPanel.connections.created", { date: formatWhen(created) })}</div>}
                   {connection.kind === "mcp" && connection.lastUsedAt !== undefined && (

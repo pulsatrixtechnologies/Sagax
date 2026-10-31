@@ -75,13 +75,16 @@ export function MyGithubConnection({ initial }: { initial?: MyConnections }) {
 }
 
 /** The GitHub connection row's account line in Connect apps > Sources:
- * connected as, or not connected. Nothing while it reads. */
+ * connected as, reconnect when the token was refused, or not connected.
+ * Nothing while it reads. */
 export function MyGithubSummary({ initial }: { initial?: MyConnections }) {
   const { data } = useMyConnections(initial, () => false);
   if (!data) return null;
-  return data.github.state === "connected"
-    ? <>{t("myConnections.github.connectedAs", { login: data.github.login })}</>
-    : <>{t("myConnections.github.notConnected")}</>;
+  if (data.github.state === "connected") return <>{t("myConnections.github.connectedAs", { login: data.github.login })}</>;
+  if (data.github.state === "error" && data.github.login) {
+    return <>{t("myConnections.github.reconnectAs", { login: data.github.login })}</>;
+  }
+  return <>{t("myConnections.github.notConnected")}</>;
 }
 
 /** Connect apps > Providers: the person's own MCP servers. */
@@ -141,14 +144,22 @@ function GithubCard({ data, onChanged }: { data: MyConnections; onChanged: () =>
         )}
         {(github.state === "none" || github.state === "error") && (
           <>
-            {github.state === "error" && <p role="alert" className="text-[12px] text-danger">{github.error}</p>}
+            {github.state === "error" && <p role="alert" className="text-[12px] text-danger" data-github-auth-error>{github.error}</p>}
+            {github.state === "error" && github.login && (
+              <p className="text-[12px] text-ink-secondary" data-github-reconnect-hint>{t("myConnections.github.reconnectHint", { login: github.login })}</p>
+            )}
             <div className="flex flex-wrap gap-2">
               {/* One Connect GitHub, for everyone: the device flow when the
                   server has a GitHub OAuth App, else a token. */}
               <button type="button" className="ui-button ui-button-primary" disabled={busy} data-github-connect={github.deviceFlow ? "device" : "token"}
-                onClick={() => (github.deviceFlow ? void run(startGithubDevice) : setTokenOpen((open) => !open))}>{t("myConnections.github.connect")}</button>
+                onClick={() => (github.deviceFlow ? void run(startGithubDevice) : setTokenOpen((open) => !open))}>
+                {github.state === "error" && github.login ? t("myConnections.github.reconnect") : t("myConnections.github.connect")}
+              </button>
               {github.deviceFlow && (
                 <button type="button" className="ui-button" disabled={busy} onClick={() => setTokenOpen((open) => !open)}>{t("myConnections.github.useToken")}</button>
+              )}
+              {github.state === "error" && github.login && (
+                <button type="button" className="ui-button" disabled={busy} data-github-disconnect-dead onClick={() => void run(disconnectGithub)}>{t("myConnections.github.disconnect")}</button>
               )}
             </div>
           </>

@@ -13,11 +13,21 @@
 // environment (gh and git read it from /workspace, see githubSandboxArgv),
 // their personal GitHub MCP server (Authorization: Bearer), and the fetches
 // Sagax itself makes for them (private skills, plugin marketplaces).
+import { createHash } from "node:crypto";
+
 import type { GithubConnection } from "./person-connections.ts";
 
 export const GITHUB_SCOPES = "repo read:org gist workflow";
+/** How long a successful /user probe keeps the connection "Connected" without asking GitHub again. */
+export const GITHUB_PROBE_OK_TTL_MS = 5 * 60_000;
 const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const USER_CODE = /^[A-Z0-9]{4}-[A-Z0-9]{4}$/;
+const TOKEN_REFUSED_MESSAGE = "GitHub refused this token. Connect again.";
+
+/** Digest of a token for status memos. Never log or return the digest of a live secret beyond process memory. */
+export function githubTokenDigest(token: string): string {
+  return createHash("sha256").update(token, "utf8").digest("hex");
+}
 
 export class GithubConnectError extends Error {
   readonly code: string;
@@ -55,7 +65,8 @@ export type GithubStatus =
   | { state: "none"; deviceFlow: boolean }
   | { state: "pending"; deviceFlow: true; userCode: string; verificationUri: string; expiresAt: number }
   | { state: "connected"; deviceFlow: boolean; login: string; name?: string; scopes?: string[]; via: "device" | "token"; connectedAt: number; fineGrained?: boolean; orgAccessUrl?: string }
-  | { state: "error"; deviceFlow: boolean; error: string };
+  /** Stored connection refused by GitHub (401): UI shows Reconnect, never a healthy Connected. */
+  | { state: "error"; deviceFlow: boolean; error: string; login?: string };
 
 interface PendingDevice {
   deviceCode: string;
@@ -97,6 +108,10 @@ export class GithubConnect {
   private readonly now: () => number;
   private readonly pending = new Map<string, PendingDevice>();
   private readonly errors = new Map<string, string>();
+  /** Last 401 for a stored token (digest only). Sticky until a new connection or disconnect. */
+  private readonly authErrors = new Map<string, { digest: string; message: string }>();
+  /** Last successful /user probe for a stored token. */
+  private readonly okProbes = new Map<string, { digest: string; at: number }>();
 
   constructor(options: GithubConnectOptions) {
     this.options = options;
@@ -112,6 +127,17 @@ export class GithubConnect {
     return Boolean(this.options.clientId()?.trim());
   }
 
+  /** Note that GitHub refused this person's stored token (401 Bad credentials). */
+  markAuthError(principalId: string, token: string, message = TOKEN_REFUSED_MESSAGE): void {
+    this.authErrors.set(principalId, { digest: githubTokenDigest(token), message });
+    this.okProbes.delete(principalId);
+  }
+
+  private clearAuthProbe(principalId: string): void {
+    this.authErrors.delete(principalId);
+    this.okProbes.delete(principalId);
+  }
+
   status(principalId: string, connection: GithubConnection | undefined): GithubStatus {
     const deviceFlow = this.deviceFlowAvailable();
     const flow = this.pending.get(principalId);
@@ -119,6 +145,10 @@ export class GithubConnect {
       return { state: "pending", deviceFlow: true, userCode: flow.userCode, verificationUri: flow.verificationUri, expiresAt: flow.expiresAt };
     }
     if (connection) {
+      const refused = this.authErrors.get(principalId);
+      if (refused && refused.digest === githubTokenDigest(connection.token)) {
+        return { state: "error", deviceFlow, error: refused.message, login: connection.login };
+      }
       return {
         state: "connected", deviceFlow, login: connection.login, via: connection.via, connectedAt: connection.connectedAt,
         ...(connection.name ? { name: connection.name } : {}), ...(connection.scopes ? { scopes: connection.scopes } : {}),
@@ -132,6 +162,28 @@ export class GithubConnect {
     }
     const error = this.errors.get(principalId);
     return error ? { state: "error", deviceFlow, error } : { state: "none", deviceFlow };
+  }
+
+  /** Probe GitHub /user when a connection is stored so a dead token is never shown as Connected.
+   * A 401 sticks as error until reconnect. Network blips keep the previous Connected view. */
+  async probeStatus(principalId: string, connection: GithubConnection | undefined): Promise<GithubStatus> {
+    const current = this.status(principalId, connection);
+    if (current.state !== "connected" || !connection) return current;
+    const digest = githubTokenDigest(connection.token);
+    const ok = this.okProbes.get(principalId);
+    if (ok && ok.digest === digest && this.now() - ok.at < GITHUB_PROBE_OK_TTL_MS) return current;
+    try {
+      await this.identify(connection.token);
+      this.authErrors.delete(principalId);
+      this.okProbes.set(principalId, { digest, at: this.now() });
+      return this.status(principalId, connection);
+    } catch (cause) {
+      if (cause instanceof GithubConnectError && cause.code === "token_refused") {
+        this.markAuthError(principalId, connection.token, TOKEN_REFUSED_MESSAGE);
+        return this.status(principalId, connection);
+      }
+      return current;
+    }
   }
 
   /** Who a token belongs to (and its scopes), or a refusal. */
@@ -166,6 +218,8 @@ export class GithubConnect {
     const connection: GithubConnection = { token: trimmed, ...who, via: "token", connectedAt: this.now() };
     this.options.save(principalId, connection);
     this.errors.delete(principalId);
+    this.clearAuthProbe(principalId);
+    this.okProbes.set(principalId, { digest: githubTokenDigest(trimmed), at: this.now() });
     this.options.onConnected?.(principalId, connection);
     return connection;
   }
@@ -242,6 +296,8 @@ export class GithubConnect {
         const scopes = typeof body?.scope === "string" ? body.scope.split(/[ ,]+/).filter(Boolean) : who.scopes;
         const connection: GithubConnection = { token, login: who.login, ...(who.name ? { name: who.name } : {}), ...(scopes?.length ? { scopes } : {}), via: "device", connectedAt: this.now() };
         this.options.save(principalId, connection);
+        this.clearAuthProbe(principalId);
+        this.okProbes.set(principalId, { digest: githubTokenDigest(token), at: this.now() });
         this.finish(principalId, flow, null);
         this.options.onConnected?.(principalId, connection);
       } catch (cause) {
@@ -272,6 +328,7 @@ export class GithubConnect {
   disconnect(principalId: string): void {
     this.cancel(principalId);
     this.errors.delete(principalId);
+    this.clearAuthProbe(principalId);
     this.options.save(principalId, undefined);
   }
 }
