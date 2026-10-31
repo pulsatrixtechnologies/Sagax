@@ -621,8 +621,11 @@ describe("ClaudeDriver turns (fake CLI)", () => {
           router: { driver: "claudeAgent", environment: { ANTHROPIC_BASE_URL: base, ANTHROPIC_AUTH_TOKEN: "router-token" } },
         },
       });
-      // the workspace key still reaches the ordinary Claude instance
-      expect(map.claude!.environment).toMatchObject({ ANTHROPIC_API_KEY: "sk-ant-workspace-secret" });
+      // The workspace key reaches only the API instance (claudeApi), never a
+      // subscription Claude or a router that has its own host and token.
+      expect(map.claudeApi?.environment).toMatchObject({ ANTHROPIC_API_KEY: "sk-ant-workspace-secret" });
+      expect(map.claude?.environment?.ANTHROPIC_API_KEY).toBeUndefined();
+      expect(map.router?.environment?.ANTHROPIC_API_KEY).toBeUndefined();
       process.env.FAKE_CLAUDE_ROUTER_PING = "1";
       await create(undefined, map.router!.environment as Record<string, string>);
       await instance.adapter.sendTurn({ threadId: "t-router", text: "hi", model: "claude-sonnet-5" });
@@ -981,6 +984,34 @@ describe("ClaudeDriver turns (fake CLI)", () => {
     await expect(instance.adapter.sendTurn({ ...turn, text: "again" })).rejects.toBeInstanceOf(TurnAuthenticationRefusedError);
     expect(dumpedPid(dump)).toBe(pid);
     expect(() => process.kill(pid, 0)).toThrow();
+  });
+
+  it("#1768: a subscription sign-out still settles auth_required after one shared-refresh retry", async () => {
+    // The person's login home is shared across Claude bots. A concurrent
+    // OAuth refresh can leave this process with a revoked grant; Sagax
+    // renews once under the single flight, then fails visibly when the
+    // CLI still has no sign-in (the real provider revoked it).
+    const login = join(scratch, "principals", "pr_race", "claude");
+    mkdirSync(login, { recursive: true });
+    writeFileSync(join(login, ".credentials.json"), JSON.stringify({
+      claudeAiOauth: { accessToken: `sk-ant-oat01-${"r".repeat(30)}`, refreshToken: `sk-ant-ort01-${"r".repeat(30)}`, expiresAt: Date.now() - 60_000 },
+    }));
+    const dump = join(scratch, "subscription-auth-race.json");
+    process.env.FAKE_CLAUDE_DUMP = dump;
+    await create("not-logged-in");
+    await instance.adapter.sendTurn({
+      threadId: "t-auth-race",
+      text: "hi",
+      access: { via: "subscription", identity: "subscription:pr_race", claudeConfigDir: login },
+    });
+    await recorder.until((event) => event.type === "turn.completed");
+    expect(recorder.events.find((event) => event.type === "runtime.error")).toMatchObject({
+      message: "Not logged in · Please run /login", setup: true,
+    });
+    expect(recorder.events.at(-1)).toMatchObject({ type: "turn.completed", ok: false, stopReason: "auth_required" });
+    await expect.poll(() => {
+      try { process.kill(dumpedPid(dump), 0); return false; } catch { return true; }
+    }, { timeout: 7_000 }).toBe(true);
   });
 
   it("settles an outdated CLI as update_required without emitting an assistant reply", async () => {

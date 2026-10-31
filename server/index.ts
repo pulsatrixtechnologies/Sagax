@@ -1229,6 +1229,11 @@ import { INBOX_HISTORY_MAX, inboxKey, type InboxApproval, type InboxBulkRefusal,
 import { PerspicaxAgentsClient } from "./cloud-agents/perspicax-client.ts";
 import { SubscriptionDepositor } from "./cloud-agents/subscription-depositor.ts";
 import { ENGINE_DRIVER, readSubscriptionAccess, renewWithCli, type RunEngine } from "./cloud-agents/subscription-access.ts";
+import {
+  claudeSubscriptionHomeKey,
+  ensureClaudeSubscriptionFresh,
+  onClaudeSubscriptionRenewed,
+} from "./claude-subscription-refresh.ts";
 import { cloudAgentInternalAction, handleCloudAgentInternal } from "./routes/cloud-agents-internal.ts";
 import { cloudAgentWakePrompt } from "./cloud-agents/wake.ts";
 import { cloudAgentWireItem } from "./cloud-agents/activity.ts";
@@ -33859,7 +33864,21 @@ const subscriptionDepositor = IDENTITY.kind === "perspicax" && engineLogins && !
     read: (principalId, engine) => readSubscriptionAccess(engine, engineLogins!.loginDir(principalId, ENGINE_DRIVER[engine])),
     renew: async (principalId, engine) => {
       const cli = subscriptionCli(engine);
-      if (cli) await renewWithCli({ engine, cli: cli.cli, environment: cli.environment, loginDir: engineLogins!.loginDir(principalId, ENGINE_DRIVER[engine]) });
+      if (!cli) return;
+      const loginDir = engineLogins!.loginDir(principalId, ENGINE_DRIVER[engine]);
+      // #1768: Claude shares one rotating refresh token across every process
+      // of this person. Renew through the same single flight bot turns use.
+      if (engine === "claude-code") {
+        await ensureClaudeSubscriptionFresh({
+          loginDir,
+          cli: cli.cli,
+          environment: cli.environment,
+          force: true,
+          onRenewed: () => engineLogins?.clearExpired(principalId, "claudeAgent"),
+        });
+        return;
+      }
+      await renewWithCli({ engine, cli: cli.cli, environment: cli.environment, loginDir });
     },
     deposit: async (subjectToken, runId, body) => perspicaxDirectory
       ? perspicaxDirectory.depositSubscriptionToken(subjectToken, runId, body)
@@ -33868,6 +33887,21 @@ const subscriptionDepositor = IDENTITY.kind === "perspicax" && engineLogins && !
   })
   : null;
 subscriptionDepositor?.start();
+// #1768: a successful Claude OAuth renew clears the expired marker so the
+// next turn uses the subscription again without asking to reconnect.
+if (engineLogins) {
+  onClaudeSubscriptionRenewed((loginHome) => {
+    for (const person of principals.list()) {
+      try {
+        if (claudeSubscriptionHomeKey(engineLogins.loginDir(person.id, "claudeAgent")) === loginHome) {
+          engineLogins.clearExpired(person.id, "claudeAgent");
+        }
+      } catch {
+        /* not a login directory for this person */
+      }
+    }
+  });
+}
 const cloudAgentProviders = createProviderRegistry({ perspicaxBaseUrl: perspicaxBase, personalSubscriptions: () => subscriptionDepositor, perspicaxLink: perspicaxLinkBearer });
 cloudAgentManager = new CloudAgentManager({
   store: cloudAgentStore,
