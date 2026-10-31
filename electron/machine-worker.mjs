@@ -7,6 +7,7 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createAuthBackoff } from "./auth-backoff.mjs";
 
 const DEVICE_ID = /^[\w-]{1,80}$/;
 
@@ -100,9 +101,12 @@ export function createMachineWorker({
   log = () => {},
   waitMs = 20_000,
   engines,
+  now = Date.now,
+  random = Math.random,
 }) {
   let stopped = false;
   let chain = null;
+  const retries = new Map();
 
   const loadEngines = async () => {
     if (engines) return engines();
@@ -201,26 +205,39 @@ export function createMachineWorker({
 
   const cycle = async () => {
     const list = origins().filter((origin) => typeof origin === "string" && origin);
+    for (const origin of retries.keys()) if (!list.includes(origin)) retries.delete(origin);
     if (!list.length) return;
     const published = await loadEngines();
     const device = identity();
     for (const origin of list) {
       if (stopped) return;
+      let retry = retries.get(origin);
+      if (!retry) {
+        retry = { backoff: createAuthBackoff({ random }), at: 0 };
+        retries.set(origin, retry);
+      }
+      if (retry.at > now()) continue;
       try {
         const registered = await postJson(fetchOrg, `${origin}/api/workers`, {
           deviceId: device.deviceId,
           name: device.name,
           engines: published,
         });
-        if (!registered.ok) continue;
+        if (!registered.ok) throw Object.assign(new Error(`Registration refused (${registered.status})`), { status: registered.status });
         const pull = await postJson(fetchOrg, `${origin}/api/workers/${device.deviceId}/pull`, { waitMs });
-        if (!pull.ok) continue;
+        if (!pull.ok) throw Object.assign(new Error(`Turn polling refused (${pull.status})`), { status: pull.status });
         const body = await pull.json();
         const turns = Array.isArray(body.turns) && body.turns.length
           ? body.turns
           : (body.ids ?? []).map((messageId) => ({ messageId }));
         for (const turn of turns) await runTurn(origin, device, turn, published);
+        retry.backoff.reset();
+        retry.at = 0;
       } catch (error) {
+        // An older server with no worker route needs the same long pause
+        // as a refused session, rather than a request every 250 ms.
+        const pause = retry.backoff.next(error?.status === 404 ? { status: 401 } : error);
+        retry.at = now() + ([401, 403, 404].includes(error?.status) ? Math.max(60_000, pause) : pause);
         log(`machine worker: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
