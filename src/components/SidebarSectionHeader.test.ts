@@ -22,12 +22,13 @@ describe("SidebarSectionHeader", () => {
     expect(html).toContain('aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"');
     expect(html).not.toContain('role="button"');
     expect(html).not.toContain("Delete Work section");
-    // sentence case (as upstream), a 12px regular label, no chevron
+    // sentence case (as upstream), a 12px regular label, chevron for fold state
     expect(html).toContain(">Work</span>");
     expect(html).toContain("text-[12px] font-normal");
     expect(html).toContain("h-[30px]");
     expect(html).toContain("leading-4");
-    expect(html).not.toContain("lucide-chevron");
+    expect(html).toContain("lucide-chevron-down");
+    expect(html).toContain('data-section-chevron=""');
     expect(html).not.toContain("uppercase");
   });
 
@@ -48,6 +49,7 @@ describe("SidebarSectionHeader", () => {
     expect(html).not.toContain("Delete Work section");
     expect(html).not.toContain("lucide-trash");
     expect(html).toContain(`aria-expanded="${!collapsed}"`);
+    expect(html).toContain(collapsed ? "lucide-chevron-right" : "lucide-chevron-down");
     expect(html.match(/<button\b/g)).toHaveLength(1);
   });
 
@@ -64,16 +66,23 @@ describe("SidebarSectionHeader", () => {
     );
 
     expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("lucide-chevron-right");
     expect(html).toContain("1 waiting for you");
     expect(html).toContain("2 unread");
     expect(html).toContain("1 working");
   });
 
-  it("shows only the group's name, never a count, folded or open (the reference design's My Team)", () => {
+  it("shows a fold chevron and the group's name, never a count (My Team keeps no count)", () => {
     const header = (collapsed: boolean) => renderToStaticMarkup(
       createElement(SidebarSectionHeader, { name: "Mon équipe", collapsed, onToggle: () => {}, reorderable: false, dragging: false }),
     );
-    for (const html of [header(true), header(false)]) {
+    const folded = header(true);
+    const open = header(false);
+    expect(folded).toContain("lucide-chevron-right");
+    expect(open).toContain("lucide-chevron-down");
+    for (const html of [folded, open]) {
+      expect(html).toContain('data-section-chevron=""');
+      expect(html).toContain('aria-expanded=');
       expect(html).not.toContain("data-section-count");
       expect(html).not.toContain("tabular-nums");
       expect(html.replace(/<[^>]+>/g, "")).toBe("Mon équipe");

@@ -1,3 +1,4 @@
+import { ChevronDown, ChevronRight } from "lucide-react";
 import type { DragEvent, FocusEvent, KeyboardEvent, MouseEvent } from "react";
 
 import { cn } from "@/lib/cn";
@@ -33,6 +34,7 @@ export function SidebarSectionHeader({
   onMove?: (direction: -1 | 1) => void;
   onContextMenu?: (event: MouseEvent<HTMLDivElement>) => void;
 }) {
+  const Chevron = collapsed ? ChevronRight : ChevronDown;
   const attentionLabel = attention ? sidebarAttentionLabel(attention) : "";
   // a click must not draw the focus frame on the header; Tab or an arrow
   // key does (2026-10-15, src/lib/input-modality.ts)
@@ -114,13 +116,13 @@ export function SidebarSectionHeader({
                 ? t("sidebar.section.expand", { name })
                 : t("sidebar.section.collapse", { name })
           }
-          // The reference window's header: the name in sentence case (as
-          // upstream), 12px regular in the secondary ink, then the section's
-          // attention marks; no chevron (a click folds it, aria-expanded
-          // says which way). Only the name, no count, as the reference design's "My
-          // Team" (2026-10-15)
-          className="group/section flex h-[30px] w-full min-w-0 items-center gap-2 rounded-md px-2 pb-1.5 pt-2 text-left text-sidebar-ink-secondary transition-colors hover:bg-sidebar-hover hover:text-sidebar-ink"
+          // Sentence-case 12px name in secondary ink, a small chevron for fold
+          // state (› folded, ⌄ open; same pair as pinned/attention panels),
+          // then attention marks. No item count (#1664; count stays off after
+          // the My Team reference pass).
+          className="group/section flex h-[30px] w-full min-w-0 items-center gap-1.5 rounded-md px-2 pb-1.5 pt-2 text-left text-sidebar-ink-secondary transition-colors hover:bg-sidebar-hover hover:text-sidebar-ink"
         >
+          <Chevron size={12} aria-hidden="true" data-section-chevron="" className="shrink-0 opacity-80" />
           <span className="sidebar-section-label truncate text-[12px] font-normal leading-4">{name}</span>
           {marks}
         </button>
