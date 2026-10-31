@@ -175,13 +175,33 @@ export class FcmSender {
       });
       if (response.status === 200) return { ok: true };
       let reason = "";
+      let fromFcmError = false;
+      let tokenFieldHit = false;
       try {
-        const parsed = JSON.parse(await response.text()) as { error?: { status?: string; details?: Array<{ errorCode?: string }> } };
-        reason = parsed.error?.details?.find((detail) => detail.errorCode)?.errorCode ?? parsed.error?.status ?? "";
+        const parsed = JSON.parse(await response.text()) as {
+          error?: {
+            status?: string;
+            message?: string;
+            details?: Array<{ errorCode?: string; fieldViolations?: Array<{ field?: string }> }>;
+          };
+        };
+        const details = parsed.error?.details ?? [];
+        const fcm = details.find((detail) => detail.errorCode);
+        fromFcmError = Boolean(fcm?.errorCode);
+        reason = fcm?.errorCode ?? parsed.error?.status ?? "";
+        // BadRequest fieldViolations (or the message) may name the registration token
+        tokenFieldHit =
+          /registration token/i.test(parsed.error?.message ?? "") ||
+          details.some((detail) => (detail.fieldViolations ?? []).some((v) => /\btoken\b/i.test(v.field ?? "")));
       } catch { /* no body */ }
       if (response.status === 401) this.access = null;
-      // a token the app no longer holds (uninstalled, signed out), or one FCM never knew
-      const prune = response.status === 404 || reason === "UNREGISTERED";
+      // Dead token: unregistered, wrong Firebase project, or INVALID_ARGUMENT aimed at the token
+      // (FcmError INVALID_ARGUMENT). A BadRequest on another field (payload) must not prune.
+      const prune =
+        response.status === 404 ||
+        reason === "UNREGISTERED" ||
+        reason === "SENDER_ID_MISMATCH" ||
+        (response.status === 400 && reason === "INVALID_ARGUMENT" && (fromFcmError || tokenFieldHit));
       if (!prune) this.log.warn(`push: FCM refused a push to ${maskSecret(token)} (${response.status} ${reason || "error"})`);
       return { ok: false, status: response.status, reason: reason || "error", prune };
     } catch {

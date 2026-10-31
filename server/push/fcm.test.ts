@@ -86,6 +86,50 @@ describe("FCM sender", () => {
     expect(await sender.send(TOKEN, {})).toMatchObject({ ok: false, prune: false });
     expect(logs.join("\n")).not.toContain(TOKEN);
   });
+  it("prunes on SENDER_ID_MISMATCH and on INVALID_ARGUMENT aimed at the token", async () => {
+    let reply: { status: number; body: unknown } = {
+      status: 403,
+      body: { error: { status: "PERMISSION_DENIED", details: [{ errorCode: "SENDER_ID_MISMATCH" }] } },
+    };
+    const { fetch } = fakeFetch((url) => (url.includes("oauth2") ? { status: 200, body: { access_token: "ya29.test" } } : reply));
+    const sender = new FcmSender({ config: CONFIG, fetch, log: { info() {}, warn() {} } });
+    expect(await sender.send(TOKEN, {})).toMatchObject({ ok: false, prune: true, reason: "SENDER_ID_MISMATCH" });
+    // FcmError INVALID_ARGUMENT: invalid registration token (docs example 2)
+    reply = {
+      status: 400,
+      body: {
+        error: {
+          status: "INVALID_ARGUMENT",
+          message: "The registration token is not a valid FCM registration token",
+          details: [{ errorCode: "INVALID_ARGUMENT" }],
+        },
+      },
+    };
+    expect(await sender.send(TOKEN, {})).toMatchObject({ ok: false, prune: true, reason: "INVALID_ARGUMENT" });
+    // BadRequest on another field: payload problem, keep the token
+    reply = {
+      status: 400,
+      body: {
+        error: {
+          status: "INVALID_ARGUMENT",
+          message: "Invalid value at 'message.data[0].value' (TYPE_STRING), 12",
+          details: [{ fieldViolations: [{ field: "message.data[0].value", description: "Invalid value" }] }],
+        },
+      },
+    };
+    expect(await sender.send(TOKEN, {})).toMatchObject({ ok: false, prune: false, reason: "INVALID_ARGUMENT" });
+    // BadRequest naming the token field: prune
+    reply = {
+      status: 400,
+      body: {
+        error: {
+          status: "INVALID_ARGUMENT",
+          details: [{ fieldViolations: [{ field: "message.token", description: "Invalid registration token" }] }],
+        },
+      },
+    };
+    expect(await sender.send(TOKEN, {})).toMatchObject({ ok: false, prune: true, reason: "INVALID_ARGUMENT" });
+  });
 });
 
 describe("push hub with Android phones", () => {
