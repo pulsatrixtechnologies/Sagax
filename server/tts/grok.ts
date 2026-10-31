@@ -265,6 +265,9 @@ export async function synthesizeStream(
 /** One event of xAI's streaming speech to text (wss://api.x.ai/v1/stt). */
 export interface TranscriptEvent {
   text: string;
+  /** Client finalize that owns this result, when the provider exposes
+   * committed item ids (OpenAI). xAI keeps its ordered chunk protocol. */
+  requestId?: string;
   /** a chunk xAI will not revise */
   final: boolean;
   /** the speaker stopped (endpointing or Smart Turn) */
@@ -294,7 +297,7 @@ export interface TranscriptionStream {
   /** 16-bit little-endian PCM at 16 kHz, mono */
   send(pcm: Uint8Array): void;
   /** end the current utterance now (`{"type":"finalize"}`) */
-  finalize(): void;
+  finalize(requestId?: string): void;
   close(): void;
 }
 
@@ -429,7 +432,7 @@ export function openTranscriptionStream(
   return {
     ready,
     send(pcm) {
-      if (!closed && socket.readyState === 1) socket.send(pcm);
+      if (!closed && socket.readyState === 1) socket.send(new Uint8Array(pcm));
     },
     finalize() {
       if (!closed && socket.readyState === 1) socket.send(JSON.stringify({ type: "finalize" }));

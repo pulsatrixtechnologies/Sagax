@@ -411,18 +411,18 @@ final class LiveCallEngineTests: XCTestCase {
         XCTAssertEqual(sent.map(\.0), ["I want to"])
     }
 
-    func testASoundTheRecognizerSpelledIsNeverATurn() async {
+    func testAHesitationIsIgnoredButAShortNameReachesTheBot() async {
         silence(20)
-        transcriber.words = "dwad"
+        transcriber.words = "euh"
         say(15)
         silence(30)
         await settle()
         XCTAssertTrue(sent.isEmpty)
-        transcriber.words = "oui"
+        transcriber.words = "Julie"
         say(15)
         silence(30)
         await settle()
-        XCTAssertEqual(sent.map(\.0), ["oui"], "a real one-word answer passes")
+        XCTAssertEqual(sent.map(\.0), ["Julie"], "a name is a real one-word answer")
     }
 
     func testTalkingOverTheBotCutsItAndTheNextTurnSaysSo() async {
@@ -547,8 +547,13 @@ final class PlaybackCutTests: XCTestCase {
     }
 
     func testNoiseFragments() {
-        XCTAssertTrue(CallNoise.isFragment("dwad"))
-        XCTAssertTrue(CallNoise.isFragment("a"))
+        for text in ["", "...", "Hm.", "mm-hmm", "euh"] {
+            XCTAssertTrue(CallNoise.isFragment(text), text)
+        }
+        for text in ["Steve", "Julie", "Grok", "lundi", "mardi", "aide", "A", "你好", "نعم"] {
+            XCTAssertFalse(CallNoise.isFragment(text), text)
+        }
+        XCTAssertTrue(CallNoise.isFragment("call Max", confidence: 0.2))
         XCTAssertFalse(CallNoise.isFragment("Merci"))
         XCTAssertFalse(CallNoise.isFragment("42"))
         XCTAssertFalse(CallNoise.isFragment("What about tomorrow"))

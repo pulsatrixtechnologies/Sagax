@@ -98,24 +98,20 @@ public struct CallTurn: Equatable, Sendable {
     public var continues: Bool
 }
 
-/// Words that are a sound, not speech (call.ts isNoiseFragment): a single
-/// short token no one says alone on a call ("dwad", "hm"), or anything under
-/// two letters. Real one-word answers ("yes", "oui", "merci") pass.
+/// Explicit hesitation sounds or a transcript the recognizer doubts.
+/// Names, weekdays, commands and single letters are valid short answers.
 public enum CallNoise {
-    private static let shortWords: Set<String> = [
-        "yes", "yeah", "yep", "no", "nope", "ok", "okay", "stop", "wait", "hi", "hey", "bye", "thanks", "sure", "go", "next",
-        "why", "how", "what", "who", "when", "where", "right", "cool", "nice", "great",
-        "oui", "non", "ouais", "nan", "merci", "salut", "allo", "bonjour", "attends", "arrete", "vas", "quoi", "comment",
-        "pourquoi", "parfait", "super", "bien", "daccord",
+    private static let backchannels: Set<String> = [
+        "mm", "mmm", "hmm", "hm", "mhm", "mmhmm", "uh", "huh", "uhuh", "um", "uhm", "euh", "heu", "hum", "ah", "oh",
     ]
 
     public static func isFragment(_ text: String, confidence: Double? = nil) -> Bool {
-        let words = ClauseCheck.words(text.replacingOccurrences(of: "'", with: "").replacingOccurrences(of: "\u{2019}", with: ""))
-        if words.joined().count < 2 { return true }
+        let folded = text.lowercased().folding(options: .diacriticInsensitive, locale: nil)
+            .replacingOccurrences(of: "'", with: "").replacingOccurrences(of: "\u{2019}", with: "")
+        let words = folded.split { !$0.isLetter && !$0.isNumber }.map(String.init)
+        if words.isEmpty || (words.count <= 3 && words.allSatisfy({ backchannels.contains($0) })) { return true }
         if words.count <= 2, let confidence, confidence < 0.45 { return true }
-        guard words.count == 1, let word = words.first else { return false }
-        if word.allSatisfy(\.isNumber) || shortWords.contains(word) { return false }
-        return word.count <= 5
+        return false
     }
 }
 

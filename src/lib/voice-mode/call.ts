@@ -67,22 +67,13 @@ const PREROLL_MAX_FRAMES = 40; // 1280 ms
 export const CONTINUATION_MS = 1_500;
 /** xAI confidence under which a turn of a word or two is noise. */
 const NOISE_CONFIDENCE = 0.45;
-/** Short words a person really says alone on a call (not noise). */
-const SHORT_WORDS = new Set([
-  "yes", "yeah", "yep", "no", "nope", "ok", "okay", "stop", "wait", "hi", "hey", "bye", "thanks", "sure", "go", "next", "why", "how", "what", "who", "when", "where", "right", "cool", "nice", "great",
-  "oui", "non", "ouais", "nan", "merci", "salut", "allo", "bonjour", "attends", "arrete", "vas", "go", "quoi", "comment", "pourquoi", "parfait", "super", "bien", "daccord",
-]);
-
-/** Words that are a sound, not speech: a single short token no one says
- * alone on a call ("dwad", "hm"), anything under two letters, or a word or
- * two xAI itself doubts. */
 /** Sounds that say "I am listening" over the bot, never "stop talking":
  * "mm-hmm", "uh-huh", "hum", "euh". */
 const BACKCHANNEL = new Set(["mm", "mmm", "hmm", "hm", "mhm", "mmhmm", "uh", "huh", "uhuh", "um", "uhm", "euh", "heu", "hum", "ah", "oh"]);
 
 /** The words are only a backchannel or a hesitation sound (at most three). */
 export function isBackchannel(text: string): boolean {
-  const words = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f']/g, "").match(/[a-z0-9]+/g) ?? [];
+  const words = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f'’]/g, "").match(/[\p{L}\p{N}]+/gu) ?? [];
   return words.length > 0 && words.length <= 3 && words.every((word) => BACKCHANNEL.has(word));
 }
 
@@ -94,14 +85,12 @@ export function bargeInWords(text: string): boolean {
 }
 
 export function isNoiseFragment(text: string, confidence?: number): boolean {
-  const words = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f']/g, "").match(/[a-z0-9]+/g) ?? [];
-  const letters = words.join("").length;
-  if (letters < 2) return true;
+  // A name, weekday, command or single letter is a valid answer. Length
+  // and an allowlist of familiar words cannot tell speech from noise.
+  const words = text.match(/[\p{L}\p{N}]+/gu) ?? [];
+  if (!words.length || isBackchannel(text)) return true;
   if (words.length <= 2 && confidence !== undefined && confidence < NOISE_CONFIDENCE) return true;
-  if (words.length !== 1) return false;
-  const word = words[0]!;
-  if (/^\d+$/.test(word) || SHORT_WORDS.has(word)) return false;
-  return word.length <= 5;
+  return false;
 }
 
 export type { TurnMetrics } from "./latency";

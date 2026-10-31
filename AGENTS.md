@@ -223,6 +223,28 @@ were removed in lot 5; their old card ids redirect to Providers. Sign-in and key
 Providers") open Providers (`CARD_HOME`, `MERGED` in
 `src/lib/settings-sections.ts`).
 
+## Voice recognition: short answers and committed transcript identity (2026-10-30)
+
+Calls accept names, weekdays, commands, single letters and non-Latin words
+regardless of length. `isNoiseFragment` (desktop) and `CallNoise.isFragment`
+(iOS) reject empty text, explicit hesitation sounds and low-confidence short
+transcripts, never words absent from an allowlist. Acoustic noise detection
+still belongs to the VAD/echo/speaker checks.
+
+The page tags every listen `finalize` with a bounded `requestId`. OpenAI's
+`input_audio_buffer.committed` maps each provider `item_id` to that request;
+transcript frames keep the id through `voice-listen-session.ts`. The page
+reconciles by request, replacing each segment's partial and assembling probe
+segments in audio order, exposing only a contiguous prefix. A timeout with
+an incomplete segment uploads the whole audio, never just a prefix/suffix.
+OpenAI deltas received before commit are held by item id until the ack
+identifies their owner. Late results of retired turns are ignored. xAI and
+older clients retain their ordered untagged chunk protocol. A failed OpenAI
+transcription closes its socket so the existing reconnect/upload path runs.
+Tests: `src/lib/voice-mode/stt-stream.e2e.test.ts`, `server/tts/openai-stt.test.ts`,
+`server/voice-listen-session.test.ts`, `src/lib/voice-mode/stt-stream.test.ts`,
+`src/lib/voice-mode/call.test.ts`, iOS `VoiceCallTests.swift`.
+
 ## Providers the admin turns off are off for everyone (2026-10-30)
 
 Lot 0 of "Providers, models and voice" (the maintainer's decisions). What an

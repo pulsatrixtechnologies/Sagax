@@ -53,6 +53,7 @@ describe("OpenAI speech to text (server/tts/openai-stt.ts)", () => {
       frames.push(frame);
       if (frame.type === "session.update") send({ type: "session.updated" });
       if (frame.type === "input_audio_buffer.commit") {
+        send({ type: "input_audio_buffer.committed", item_id: "i1", previous_item_id: null });
         send({ type: "conversation.item.input_audio_transcription.delta", item_id: "i1", delta: "Bon" });
         send({ type: "conversation.item.input_audio_transcription.delta", item_id: "i1", delta: "jour" });
         send({ type: "conversation.item.input_audio_transcription.completed", item_id: "i1", transcript: "Bonjour" });
@@ -68,7 +69,7 @@ describe("OpenAI speech to text (server/tts/openai-stt.ts)", () => {
     });
     await stream.ready;
     stream.send(pcm16(1, 2, 3, 4));
-    stream.finalize();
+    stream.finalize("page-1");
     await finished;
     stream.close();
     expect(seen[0]).toEqual({ url: "/v1/realtime?intent=transcription", authorization: `Bearer ${KEY}` });
@@ -76,9 +77,124 @@ describe("OpenAI speech to text (server/tts/openai-stt.ts)", () => {
     expect(frames[1].type).toBe("input_audio_buffer.append");
     expect(Buffer.from(frames[1].audio, "base64").byteLength).toBeGreaterThan(8);
     expect(events).toEqual([
-      { text: "Bon", final: false, speechFinal: false },
-      { text: "Bonjour", final: false, speechFinal: false },
-      { text: "Bonjour", final: true, speechFinal: true },
+      { text: "Bon", final: false, speechFinal: false, requestId: "page-1" },
+      { text: "Bonjour", final: false, speechFinal: false, requestId: "page-1" },
+      { text: "Bonjour", final: true, speechFinal: true, requestId: "page-1" },
+    ]);
+  });
+
+  it("correlates completions by acknowledged item id, even when the second item finishes first", async () => {
+    let count = 0;
+    const api = await fakeRealtime((frame, send) => {
+      if (frame.type === "session.update") send({ type: "session.updated" });
+      if (frame.type !== "input_audio_buffer.commit") return;
+      count += 1;
+      send({ type: "input_audio_buffer.committed", item_id: `i${count}`, previous_item_id: count === 1 ? null : "i1" });
+      if (count === 2) {
+        send({ type: "conversation.item.input_audio_transcription.completed", item_id: "i2", transcript: "Annule" });
+        send({ type: "conversation.item.input_audio_transcription.completed", item_id: "i1", transcript: "Cherche" });
+      }
+    });
+    const events: TranscriptEvent[] = [];
+    let done!: () => void;
+    const finished = new Promise<void>((resolve) => { done = resolve; });
+    const stream = createOpenAiStt({ api }).openTranscription(KEY, {}, {
+      onTranscript: (event) => { events.push(event); if (events.length === 2) done(); },
+      onError: () => {}, onClose: () => {},
+    });
+    await stream.ready;
+    stream.send(pcm16(1, 2));
+    stream.finalize("page-1");
+    stream.send(pcm16(3, 4));
+    stream.finalize("page-2");
+    await finished;
+    stream.close();
+    expect(events).toEqual([
+      { text: "Annule", final: true, speechFinal: true, requestId: "page-2" },
+      { text: "Cherche", final: true, speechFinal: true, requestId: "page-1" },
+    ]);
+  });
+
+  it("keeps precommit deltas by item id and publishes their cumulative text only after the owner is acknowledged", async () => {
+    const api = await fakeRealtime((frame, send) => {
+      if (frame.type === "session.update") send({ type: "session.updated" });
+      if (frame.type === "input_audio_buffer.append") send({ type: "conversation.item.input_audio_transcription.delta", item_id: "i1", delta: "Ne fais pas" });
+      if (frame.type === "input_audio_buffer.commit") {
+        send({ type: "input_audio_buffer.committed", item_id: "i1" });
+        send({ type: "conversation.item.input_audio_transcription.delta", item_id: "i1", delta: " ceci" });
+        send({ type: "conversation.item.input_audio_transcription.completed", item_id: "i1", transcript: "Ne fais pas ceci." });
+      }
+    });
+    const events: TranscriptEvent[] = [];
+    let done!: () => void;
+    const finished = new Promise<void>((resolve) => { done = resolve; });
+    const stream = createOpenAiStt({ api }).openTranscription(KEY, {}, {
+      onTranscript: (event) => { events.push(event); if (event.speechFinal) done(); },
+      onError: () => {}, onClose: () => {},
+    });
+    await stream.ready;
+    stream.send(pcm16(1, 2));
+    stream.finalize("page-1");
+    await finished;
+    stream.close();
+    expect(events).toEqual([
+      { text: "Ne fais pas", final: false, speechFinal: false, requestId: "page-1" },
+      { text: "Ne fais pas ceci", final: false, speechFinal: false, requestId: "page-1" },
+      { text: "Ne fais pas ceci.", final: true, speechFinal: true, requestId: "page-1" },
+    ]);
+  });
+
+  it("closes a failed transcription so the call can reconnect or upload, without echoing the provider's text", async () => {
+    const api = await fakeRealtime((frame, send) => {
+      if (frame.type === "session.update") send({ type: "session.updated" });
+      if (frame.type === "input_audio_buffer.commit") send({ type: "conversation.item.input_audio_transcription.failed", item_id: "i1", error: { message: KEY } });
+    });
+    let message = "";
+    let done!: () => void;
+    const closed = new Promise<void>((resolve) => { done = resolve; });
+    const stream = createOpenAiStt({ api }).openTranscription(KEY, {}, {
+      onTranscript: () => {}, onError: (text) => { message = text; }, onClose: () => done(),
+    });
+    await stream.ready;
+    stream.send(pcm16(1, 2));
+    stream.finalize("page-1");
+    await closed;
+    expect(message).toBe("OpenAI could not transcribe the audio. Try again.");
+    expect(message).not.toContain(KEY);
+  });
+
+  it("drops duplicate and unknown item results instead of emitting untagged words for the next turn", async () => {
+    let commits = 0;
+    const api = await fakeRealtime((frame, send) => {
+      if (frame.type === "session.update") send({ type: "session.updated" });
+      if (frame.type !== "input_audio_buffer.commit") return;
+      commits += 1;
+      send({ type: "input_audio_buffer.committed", item_id: `i${commits}` });
+      if (commits === 2) {
+        send({ type: "conversation.item.input_audio_transcription.completed", item_id: "i1", transcript: "Cherche" });
+        send({ type: "conversation.item.input_audio_transcription.completed", item_id: "i1", transcript: "stale duplicate" });
+        send({ type: "conversation.item.input_audio_transcription.delta", item_id: "i1", delta: "stale partial" });
+        send({ type: "conversation.item.input_audio_transcription.delta", item_id: "unknown", delta: "wrong turn" });
+        send({ type: "conversation.item.input_audio_transcription.completed", item_id: "i2", transcript: "Annule" });
+      }
+    });
+    const events: TranscriptEvent[] = [];
+    let done!: () => void;
+    const finished = new Promise<void>((resolve) => { done = resolve; });
+    const stream = createOpenAiStt({ api }).openTranscription(KEY, {}, {
+      onTranscript: (event) => { events.push(event); if (event.requestId === "page-2") done(); },
+      onError: () => {}, onClose: () => {},
+    });
+    await stream.ready;
+    stream.send(pcm16(1, 2));
+    stream.finalize("page-1");
+    stream.send(pcm16(3, 4));
+    stream.finalize("page-2");
+    await finished;
+    stream.close();
+    expect(events).toEqual([
+      { text: "Cherche", final: true, speechFinal: true, requestId: "page-1" },
+      { text: "Annule", final: true, speechFinal: true, requestId: "page-2" },
     ]);
   });
 
