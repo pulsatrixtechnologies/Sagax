@@ -63,7 +63,23 @@ refreshes it.
 
 ## Sagax local release (no GitHub Actions)
 
-Sagax releases are built on a Mac, not by the workflows above:
+Sagax releases are built on a Mac, not by the workflows above.
+
+### Tag on main's squash commit
+
+PRs are squash-merged into `main`. The `pulsa-vX.Y.Z` tag must point at that
+squash commit on `main`, not at the tip of the release branch before the
+merge. A tag on the branch tip is not an ancestor of `main` (see
+`pulsa-v0.8.17`). Tools that walk commits or pull requests since the previous
+tag then attribute every PR merged into `main` in the meantime to the next
+version (issue #1709).
+
+Order: open the release PR, build and gate from that tree, squash-merge into
+`main`, check out the squash commit, then create the tag on it. Packaging may
+still run on the release branch; only the tag placement is constrained.
+`node scripts/check-release-tag.mjs` refuses to continue when `HEAD` (or the
+sha you pass) is not an ancestor of `origin/main`. Run it after
+`git fetch origin main`, immediately before `gh release create`.
 
 1. Set `forkVersion` in `package.json` (`version` stays the Sagax base)
    and write `docs/releases/X.Y.Z.md`. French comes first. A line that is
@@ -108,17 +124,24 @@ Sagax releases are built on a Mac, not by the workflows above:
    `pnpm smoke:launch --app release/mac-arm64/Sagax.app`, and again with
    `--user-data-copy` pointing at an existing userData folder (it is copied,
    never modified). Both must load the main window within 60 s.
-5. Dispatch CI on this commit (Actions → CI → Run workflow) and wait until
-   the Windows and macOS vitest jobs on this SHA have succeeded. A green
-   push only ran Ubuntu. Then `node scripts/check-release-notes.mjs`,
+5. Dispatch CI on the release candidate SHA (Actions → CI → Run workflow) and
+   wait until the Windows and macOS vitest jobs on that SHA have succeeded. A
+   green push only ran Ubuntu. Squash-merge the release PR into `main`, then
+   `git fetch origin main` and check out the squash commit (the merge commit
+   sha on `main`, not the release branch tip). Then
+   `node scripts/check-release-notes.mjs`,
+   `node scripts/check-release-tag.mjs` (refuses when this commit is not an
+   ancestor of `origin/main`),
    `node scripts/embed-feed-release-notes.mjs --check release/latest-mac.yml release/latest.yml`
    (both feeds must carry exactly `docs/releases/X.Y.Z.md`),
    `node scripts/verify-win-signatures.mjs release` (every Windows `.exe`
    signed and timestamped, `latest.yml` sha512 and sizes match the signed
    files), and
-   `gh release create pulsa-vX.Y.Z --notes-file docs/releases/X.Y.Z.md`
+   `gh release create pulsa-vX.Y.Z --target "$(git rev-parse HEAD)" --notes-file docs/releases/X.Y.Z.md`
    with every installer, zip, blockmap and both feeds, as a full release.
-   The release body is that file. Do not write a different body: the
+   `--target` pins the tag to this squash commit on `main`. Do not tag the
+   release branch tip and do not omit `--target` while still on that branch.
+   The release body is the notes file. Do not write a different body: the
    desktop updater shows it as the notes for the version.
    This repository has immutable releases: once a release is published, no
    asset can be added, replaced or removed (`gh release upload` answers

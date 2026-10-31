@@ -267,7 +267,9 @@ commits and screenshots.
 ## Releases and upstream sync
 
 Maintainers cut releases (`pulsa-vX.Y.Z` tags on this repository) following
-[`docs/releasing.md`](docs/releasing.md). Merging upstream OpenMausBot changes into Sagax is a
+[`docs/releasing.md`](docs/releasing.md). The tag must land on the squash commit
+on `main` (an ancestor of `main`), never on the release branch tip before that
+squash. Merging upstream OpenMausBot changes into Sagax is a
 maintainer task with its own procedure (the "Upstream sync" section of `AGENTS.md`: fetch-only
 `upstream` remote, a real merge, `scripts/rebrand-upstream.mjs`, nothing ever pushed upstream).
 Contributors do not need to do it.
