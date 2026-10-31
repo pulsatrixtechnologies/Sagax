@@ -1928,6 +1928,18 @@ export class RoutineManager {
     if (clean.folder) clean.folder = this.admitFolder(clean.botId, clean.folder);
     const previousBotId = routine.botId;
     const scheduleChanged = JSON.stringify(clean.schedule) !== JSON.stringify(routine.schedule);
+    // A finished (or paused) one-time routine given a future time runs again,
+    // like create. The editor omits `enabled` on update; tick sets it false
+    // after the occurrence (#1746). An explicit `enabled: false` keeps pause.
+    if (
+      !Object.hasOwn(patch, "enabled")
+      && scheduleChanged
+      && clean.schedule.type === "once"
+      && clean.schedule.at > now
+      && !clean.enabled
+    ) {
+      clean.enabled = true;
+    }
     const enabledChanged = clean.enabled !== routine.enabled;
     const previousSchedule = cloneSchedule(routine.schedule);
     // A definition edit (anything but a bare on/off flip): its named line goes
