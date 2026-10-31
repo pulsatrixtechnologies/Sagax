@@ -120,7 +120,7 @@ import {
 } from "@/lib/routines";
 import { api, continueRoutineRunInConversation, openBotThread, useStore, type Bot, type Group } from "@/state/store";
 import { viewerCanCreateBots } from "@/lib/viewer";
-import { answerWasLost, isRawStatusText, routineCreatedBy } from "@/lib/routine-save-recovery";
+import { createAnswerErrorMessage, recoverCreatedRoutineAfterLostAnswer } from "@/lib/routine-save-recovery";
 import { RoutineScheduleNote } from "./RoutineScheduleNote";
 import { readTiming, RoutineTimingFields, withRoutineTiming } from "./routines/RoutineTimingFields";
 import { BOT_CALENDAR_DRAG_TYPE } from "@/lib/bot-drag";
@@ -690,21 +690,22 @@ function EventEditor({
       }
       onClose();
     } catch (cause) {
-      const lost = answerWasLost(cause);
-      // The routine may exist although its answer never came back: read the
-      // routines again before saying it failed, so a retry never duplicates it.
-      if (lost && creating) {
-        const wanted = creating;
-        const listed = await editorRequest("/api/routines").catch(() => null) as { routines?: Routine[] } | null;
-        const created = listed?.routines ? routineCreatedBy(knownRoutineIds, listed.routines, wanted) : null;
+      // #1522 / #1753: the routine may exist although its answer never came
+      // back. Read again before saying it failed, so a retry never duplicates it.
+      if (creating) {
+        const created = await recoverCreatedRoutineAfterLostAnswer(
+          cause,
+          knownRoutineIds,
+          creating,
+          () => editorRequest("/api/routines") as Promise<{ routines?: Routine[] }>,
+        );
         if (created) {
           dispatch({ type: "routinePatched", routine: created });
           onClose();
           return;
         }
       }
-      const message = cause instanceof Error ? cause.message : String(cause);
-      setError(lost || isRawStatusText(message) ? t("routineCalendar.saveAnswerLost") : message);
+      setError(createAnswerErrorMessage(cause, t("routineCalendar.saveAnswerLost")));
     } finally {
       setSaving(false);
     }
@@ -1543,8 +1544,13 @@ export function QuickComposer({
   const save = async () => {
     setWorking(true);
     setError("");
+    // #1753: same lost-answer guard as the full editor (#1522).
+    const knownRoutineIds = new Set(state.routines.map((routine) => routine.id));
+    const creating = (kind === "routine" || routinesOnly)
+      ? { name, botId: botIds[0] ?? "", target: "bot" as const }
+      : null;
     try {
-      if (kind === "routine" || routinesOnly) {
+      if (creating) {
         const response = await api("/api/routines", {
           method: "POST",
           body: JSON.stringify({
@@ -1574,7 +1580,20 @@ export function QuickComposer({
       }
       onClose();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (creating) {
+        const created = await recoverCreatedRoutineAfterLostAnswer(
+          cause,
+          knownRoutineIds,
+          creating,
+          () => api("/api/routines") as Promise<{ routines?: Routine[] }>,
+        );
+        if (created) {
+          onSavedRoutine(created);
+          onClose();
+          return;
+        }
+      }
+      setError(createAnswerErrorMessage(cause, t("routineCalendar.saveAnswerLost")));
     } finally {
       setWorking(false);
     }

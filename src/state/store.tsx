@@ -65,6 +65,7 @@ import {
 import { terminalRequestBehavior } from "../../shared/terminal-request";
 import { meetingRequestBehavior } from "../../shared/meeting-request";
 import type { Routine, RoutineInput, RoutineRun, RoutineRunStatusFilter } from "@/lib/routines";
+import { createAnswerErrorMessage, recoverCreatedRoutineAfterLostAnswer } from "@/lib/routine-save-recovery";
 import type { WebhookAttempt, WebhookIngressStatus, WebhookTrigger } from "@/lib/webhooks";
 import type { GraphConnectorOption } from "../../shared/trigger-sources";
 import { botShowsUnread } from "@/lib/bot-unread";
@@ -4662,9 +4663,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         case "notice":
           if (action.notice) setTimeout(() => rawDispatch({ type: "notice", notice: null }), 6000);
           break;
-        case "createRoutine":
-          api("/api/routines", { method: "POST", body: JSON.stringify(action.input) }).catch(showError);
+        case "createRoutine": {
+          // #1753: /loop and other createRoutine callers share the #1522
+          // lost-answer guard so a proxy cut never shows a raw status or
+          // invites a duplicate create.
+          const knownRoutineIds = new Set(stateRef.current.routines.map((routine) => routine.id));
+          const wanted = { name: action.input.name, botId: action.input.botId, target: action.input.target };
+          void api("/api/routines", { method: "POST", body: JSON.stringify(action.input) })
+            .catch(async (error) => {
+              const created = await recoverCreatedRoutineAfterLostAnswer(
+                error,
+                knownRoutineIds,
+                wanted,
+                () => api("/api/routines") as Promise<{ routines?: Routine[] }>,
+              );
+              if (created) {
+                rawDispatch({ type: "routinePatched", routine: created });
+                return;
+              }
+              showError(createAnswerErrorMessage(error, t("routineCalendar.saveAnswerLost")));
+            });
           break;
+        }
         case "updateRoutine": {
           // Switched on or off while its bot's conversation is open: that
           // conversation gets the "Disabled · 1 routine" line (the server
