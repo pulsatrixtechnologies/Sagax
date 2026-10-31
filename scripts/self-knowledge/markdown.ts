@@ -65,7 +65,9 @@ export function splitHeadings(markdown: string, maxLevel: number): { title: stri
   const parts: Heading[] = [];
   let fenced = false;
   for (const line of lines) {
-    if (/^\s*```/.test(line)) fenced = !fenced;
+    // Real fence only: 0-3 spaces, 3+ backticks, info string with no backticks
+    // (CommonMark). A folded list line like `  ```widget, ```cw, ...` is not a fence.
+    if (/^[ \t]{0,3}`{3,}[^`]*$/.test(line)) fenced = !fenced;
     const heading = fenced ? null : /^(#{1,6})\s+(.+?)\s*#*$/.exec(line);
     if (heading && heading[1].length === 1 && !title) { title = heading[2]; continue; }
     if (heading && heading[1].length >= 2 && heading[1].length <= maxLevel) {

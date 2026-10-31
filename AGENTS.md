@@ -8911,8 +8911,8 @@ the person asked for are not views.
 - Video and screen rows the server lets through carry `requested: true`;
   web (ChatView, GroupView) and iOS (`MessageRow`) draw only those, so older
   rows stay hidden.
-- Prompt (`RICH_OUTPUT_PROMPT`, `WIDGET_PROMPT`): ```chart, ```csv,
-  ```widget, ```cw, show_widget and an inline YouTube player only when asked
+- Prompt (`RICH_OUTPUT_PROMPT`, `WIDGET_PROMPT`): chart, csv, widget and cw
+  fences, show_widget and an inline YouTube player only when asked
   or when the request cannot be answered without one; show_widget forms only
   to book, schedule or pick, never to display data.
 - Sagax renders no MCP Apps `ui://` resource itself: nothing to gate there.
