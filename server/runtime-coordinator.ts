@@ -206,7 +206,7 @@ export class RuntimeCoordinator implements Coordinator {
    * "auto" is a consultation when the target is an ancestor, else work. */
   enqueue(source: RoomAddress, generation: string, parentId: string | undefined, target: RoomAddress, _key: string, text: string,
     approvalGranted = false, rework = false, sourceText = "", requestBatchKey?: string, origin?: WorkOrigin,
-    mode: "work" | "consult" | "auto" = "work", person?: string, relay = false): { node: HandoffView; duplicate: boolean; joined?: boolean } {
+    mode: "work" | "consult" | "auto" = "work", person?: string, relay = false, doneWhen?: string): { node: HandoffView; duplicate: boolean; joined?: boolean } {
     this.ready();
     let parent = parentId ? this.store.get(parentId) : this.store.get(generation);
     if (parent && parent.status !== "running") throw new Error(NOT_RUNNING);
@@ -241,6 +241,7 @@ export class RuntimeCoordinator implements Coordinator {
       c.assignee.botId === target.botId && c.status === "completed")) throw new Error(ALREADY_COMPLETED);
     if (asked === "work" && kind === "work" && target.groupId && lineage.some(n => n.assignee.destination.groupId === target.groupId)) throw new Error(ROOM_ANCESTOR);
     const level = this.host.levelOf(target);
+    const criterion = typeof doneWhen === "string" ? doneWhen.trim().slice(0, 500) : "";
     const result = this.runtime.enqueue({
       parentId: parent.id,
       origin: parent.origin,
@@ -254,6 +255,7 @@ export class RuntimeCoordinator implements Coordinator {
       ...(target.groupId && requestBatchKey ? { batchKey: requestBatchKey } : {}),
       // Only a direct thread relays: a room already shows every reply.
       ...(relay && !target.groupId ? { relay: true } : {}),
+      ...(criterion ? { doneWhen: criterion } : {}),
     });
     if (!result.ok) {
       if (result.outcome === "budget") throw new Error(BUDGET);
@@ -466,8 +468,10 @@ export class RuntimeCoordinator implements Coordinator {
     if (signal.aborted) return { kind: "failed", outcome: "stopped", text: result.text };
     if (!result.ok) return { kind: "failed", outcome: result.stalled ? "stalled" : "provider_error", text: result.text };
     const question = needsInputQuestion(result.text);
-    if (question !== undefined) return { kind: "needs_input", question };
-    return { kind: "completed", text: result.text };
+    if (question !== undefined) {
+      return { kind: "needs_input", question, ...(result.evidence ? { evidence: result.evidence } : {}) };
+    }
+    return { kind: "completed", text: result.text, ...(result.evidence ? { evidence: result.evidence } : {}) };
   }
 
   // ── small helpers ────────────────────────────────────────────────────

@@ -75,7 +75,13 @@ export interface CoordinatorHost {
    * engine settles. `stalled`: the host's stall watchdog stopped the turn
    * (a room turn too, during its setup), so it fails as `stalled`, not as a
    * provider error. */
-  run(node: HandoffView, resumed: boolean, signal: AbortSignal, composed: ComposedTurn): Promise<{ ok: boolean; text: string; stalled?: boolean }>;
+  run(node: HandoffView, resumed: boolean, signal: AbortSignal, composed: ComposedTurn): Promise<{
+    ok: boolean;
+    text: string;
+    stalled?: boolean;
+    /** Harness-observed tools/commands for done_when checks (#1818). */
+    evidence?: { toolCalls?: number; tools?: string[]; commands?: number; summary?: string };
+  }>;
   /** A resume whose settled children all only relay (HandoffView.relay):
    * show their replies to the person as the answer, in the requester's
    * conversation, and return true; the requester then runs no turn. False
@@ -115,7 +121,7 @@ export interface Coordinator {
   /** Throws an Error whose message is the typed refusal the caller shows the model. */
   enqueue(source: RoomAddress, generation: string, parentId: string | undefined, target: RoomAddress, key: string, text: string,
     approvalGranted?: boolean, rework?: boolean, sourceText?: string, requestBatchKey?: string, origin?: WorkOrigin,
-    mode?: "work" | "consult" | "auto", person?: string, relay?: boolean): { node: HandoffView; duplicate: boolean; joined?: boolean };
+    mode?: "work" | "consult" | "auto", person?: string, relay?: boolean, doneWhen?: string): { node: HandoffView; duplicate: boolean; joined?: boolean };
   sharedRequest(node: HandoffView): { id: string; botIds: string[] };
   /** The host's own turn ended; `stalled` when its stall watchdog stopped it. */
   sourceSettled(generation: string, ok: boolean, stalled?: boolean): void;

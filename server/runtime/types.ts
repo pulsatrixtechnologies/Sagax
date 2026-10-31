@@ -85,7 +85,9 @@ export type Outcome =
   | "expired"          // a wait on the person ran out: not run, not refused
   | "stopped"          // the person stopped it
   | "refused"          // validation refused it at dispatch
-  | "duplicate";
+  | "duplicate"
+  /** Peer turn ended without meeting doneWhen / without a work deliverable (#1818). */
+  | "incomplete";
 
 export type Level = ApprovalMode;
 export type LevelSource = "own" | "chief" | "engine_cap";
@@ -165,6 +167,8 @@ export interface TurnEvidence {
   commands?: number;
   filesChanged?: string[];
   toolCalls?: number;
+  /** Tool identities the harness observed this turn (for done_when tool:…). */
+  tools?: string[];
   summary?: string;
 }
 
@@ -348,6 +352,10 @@ export interface Limits {
   /** A parked question is shown again (runner.remind) after this long, then
    * every day, until it is answered or expires. */
   inputRemindMs: number;
+  /** A queued assignment whose doneWhen requires a person decision card
+   * (ask_choice / native equivalents) expires after this, so a busy hub
+   * cannot silently hold a GO forever (#1818). Default 15 minutes. */
+  decisionCardQueueMs: number;
 }
 
 export const DEFAULT_LIMITS: Limits = {
@@ -361,6 +369,7 @@ export const DEFAULT_LIMITS: Limits = {
   inputWaitMs: 7 * 24 * 60 * 60_000,
   delegationInputWaitMs: 4 * 60 * 60_000,
   inputRemindMs: 30 * 60_000,
+  decisionCardQueueMs: 15 * 60_000,
 };
 
 /** After the first reminder, one a day. */

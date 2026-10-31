@@ -75,6 +75,7 @@ import { publishPersonalCopy, readPersonalCopy } from "./personal-copy.ts";
 import { createUserComputerRouter } from "./user-computers.ts";
 import { SharedComputerControl } from "./shared-computer-control.ts";
 import { createCoordinator, type ComposedTurn, type Coordinator, type HandoffView } from "./coordinator.ts";
+import { requiresDecisionCard } from "./runtime/done-when.ts";
 import { queuedBehindPersonText, UnansweredApprovals } from "./waiting-on-person.ts";
 import { assertRequestTarget, guardedRequestPath, requestConflict, requestNeedsInput, requestSourceForCard } from "./guarded-requests.ts";
 import { botAvatarUrlFromStoredPath } from "../shared/bot-avatar.ts";
@@ -4792,7 +4793,25 @@ const directRequestOwners = new Map<string, {
 // exact provider-turn owner until that completion or explicit failure cleanup.
 /** `stalled`: the stall watchdog stopped the turn, so its work fails as
  * stalled, not as a provider error (port de OpenMausBot #3325). */
-type DirectTurnOutcome = { ok: boolean; text: string; stalled?: boolean };
+type DirectTurnOutcome = {
+  ok: boolean;
+  text: string;
+  stalled?: boolean;
+  evidence?: { toolCalls?: number; tools?: string[]; commands?: number; summary?: string };
+};
+
+/** Tools the harness saw on this thread since `sinceAt` (coordinated turn evidence for done_when). */
+function turnToolEvidence(threadId: string, sinceAt: number): { toolCalls: number; tools: string[] } {
+  const names: string[] = [];
+  for (const message of store.messagesFor(threadId)) {
+    if (message.at < sinceAt) continue;
+    if (message.kind !== "activity" || !message.tool?.name) continue;
+    const name = String(message.tool.name).trim();
+    if (!name || names.includes(name)) continue;
+    names.push(name);
+  }
+  return { toolCalls: names.length, tools: names };
+}
 const directFollowupTurns = new ProviderTurnGenerationRegistry<DirectTurnOutcome>();
 const directFollowupSettlers = new Map<string, { threadId: string; settle?: () => void }>();
 const directCoordinationSettlers = new Map<string, (outcome: DirectTurnOutcome) => void>();
@@ -11275,6 +11294,7 @@ const coordinator: Coordinator = createCoordinator({
       if (relayStream) relayStreams.set(node.threadId, relayStream);
       if (!group) return new Promise<DirectTurnOutcome>(resolve => {
         let done = false;
+        const evidenceSince = Date.now();
         const finish = (outcome: DirectTurnOutcome) => {
           if (done) return;
           done = true; signal.removeEventListener("abort", abort);
@@ -11288,7 +11308,9 @@ const coordinator: Coordinator = createCoordinator({
               relayShown.delete(relayStream.to);
             }
           }
-          resolve(outcome);
+          // #1818: attach observed tools so done_when tool:… can settle honestly.
+          const observed = outcome.evidence ?? turnToolEvidence(node.threadId, evidenceSince);
+          resolve({ ...outcome, evidence: observed });
         };
         const abort = () => {
           void interruptDirectThread(bot.id, node.threadId).catch(() => {});
@@ -11334,8 +11356,10 @@ const coordinator: Coordinator = createCoordinator({
       });
       groupQueues.set(node.threadId, tracked.catch(() => {}));
       await tracked;
+      const observed = turnToolEvidence(node.threadId, node.startedAt ?? node.createdAt);
       return { ok: result.outcome === "settled", ...(result.outcome === "stalled" ? { stalled: true } : {}),
-        text: result.stopReason || result.replyText || result.outcome || "The addressed agent could not run" };
+        text: result.stopReason || result.replyText || result.outcome || "The addressed agent could not run",
+        evidence: observed };
     },
     // ── runtime-only hooks (docs/runtime-contract.md §4, §8) ──
     // Display names for the envelope. The person is named only when the
@@ -45971,6 +45995,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
             rework: z.boolean().default(false),
             mode: z.enum(["work", "consult"]).optional(),
             relay: z.boolean().default(false),
+            doneWhen: z.string().trim().min(1).max(500).optional(),
           }).safeParse(await readInternalBody());
           if (!parsed.success) return json(res, 400, { error: "Provide 1-4 distinct botIds and a message of 1-4000 characters." });
           const groupId = parsed.data.groupId ?? source?.id;
@@ -46056,7 +46081,8 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
                 target, target.botId, parsed.data.message, approvalGranted, parsed.data.rework, [...store.messagesFor(address.threadId)].reverse().find(m => m.role === "user" && m.kind === "text")?.text ?? "",
                 requestBatchKey, origin, parsed.data.mode ?? "auto", joinPerson(address.threadId),
                 // One teammate, outside a room: several replies need combining.
-                parsed.data.relay && !destination && targets.length === 1);
+                parsed.data.relay && !destination && targets.length === 1,
+                parsed.data.doneWhen);
               // A repeat lands on the request already made, possibly in a
               // thread the person archived meanwhile; a thread opened for it
               // is never used.
@@ -46073,17 +46099,24 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
               };
               const notSent = duplicate && finished[node.status] ? `not sent again: ${finished[node.status]}` : undefined;
               if (notSent) refused.push(notSent);
+              const recipientBot = store.bot(node.botId);
+              const busyNow = recipientBot?.busy === true;
+              const queuedDetail = busyNow
+                ? (requiresDecisionCard(parsed.data.doneWhen)
+                  ? "queued behind a live turn; decision-card work expires in 15 minutes if it never starts (failed expired), then rework or pose the card yourself"
+                  : "queued behind a live turn; priority now does not interrupt it")
+                : (title
+                  ? `sent to "${title}"; it runs after anything still running there`
+                  : "handed to the coordinator; the teammate's turn has not started yet");
               receipts.push(peerDeliveryReceipt({
                 botId: node.botId,
-                botName: store.bot(node.botId)?.name,
+                botName: recipientBot?.name,
                 outcome: notSent ? "failed" : !duplicate || node.status === "queued" ? "queued" : "injected",
                 detail: notSent ?? (joined
                   ? "the same request from another conversation is already with this teammate: joined it, its result will resume you"
                   : duplicate
                   ? `already sent: it is ${node.status === "queued" ? "queued" : "under way"} and its result will resume you`
-                  : title
-                    ? `sent to "${title}"; it runs after anything still running there`
-                    : "handed to the coordinator; the teammate's turn has not started yet"),
+                  : queuedDetail),
                 requestId: node.id,
                 ...(destination ? {} : { threadId: node.threadId }),
               }));

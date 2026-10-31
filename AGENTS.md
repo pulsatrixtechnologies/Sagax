@@ -13,6 +13,18 @@ Before claiming a server or conversation change works, follow
 [`docs/verification/README.md`](docs/verification/README.md). Always launch an
 isolated fixture; never verify mutations against the user's live app or data.
 
+## Peer completion: done_when and no ack-as-done (2026-10-30, #1818)
+
+`coordinate_bots` accepts optional `done_when`. Structured clauses the harness
+checks: `tool:ask_choice` (or native question tools), `first_line:PASS|FAIL`
+(combine with `; `). Unmet, or a mode:work progress-only acknowledgement with
+no tools, settles `failed(incomplete)`, not `completed`, so the caller can
+`rework`. Decision-card work queued behind a busy hub expires in 15 minutes
+(`decisionCardQueueMs`) with a clear detail; receipts say when the teammate is
+busy. Roots (the requester's own turn) are not subject to the ack heuristic.
+Contract: `docs/runtime-contract.md`; tests: `server/runtime/done-when.test.ts`,
+`server/runtime/runtime.test.ts` (#1818 cases).
+
 ## Routine authorization and untrusted event data (2026-10-30)
 
 An owner's configured webhook routine uses the bot's chosen approval level.

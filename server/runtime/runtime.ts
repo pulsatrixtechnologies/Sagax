@@ -10,6 +10,7 @@
 // read as "not now"; a request that cannot be honoured gets a typed refusal.
 import { randomUUID } from "node:crypto";
 
+import { requiresDecisionCard, unmetCompletion } from "./done-when.ts";
 import { composeEnvelope } from "./envelope.ts";
 import { assignmentLevel } from "./level.ts";
 import type { RuntimeStore } from "./store.ts";
@@ -332,8 +333,16 @@ export class Runtime {
       if (!n || isTerminal(n)) continue;
       if (n.status === "queued" && this.waitsOnLeader(n)) {
         // A joined request waits on its leader, whose own windows apply.
-      } else if (n.status === "queued" && now - this.since(n.lastActivityAt) > this.limits.queueMs) {
-        this.cancelTree(n, n.executions > 0 ? "not resumed" : "never started", "failed", "expired");
+      } else if (n.status === "queued") {
+        // Decision-card work (#1818): a busy hub must fail or escalate within
+        // decisionCardQueueMs, not sit for the full day-long queueMs.
+        const queueBound = requiresDecisionCard(n.doneWhen) ? this.limits.decisionCardQueueMs : this.limits.queueMs;
+        if (now - this.since(n.lastActivityAt) > queueBound) {
+          const why = requiresDecisionCard(n.doneWhen)
+            ? (n.executions > 0 ? "decision card not resumed while hub was busy" : "decision card never started while hub was busy")
+            : (n.executions > 0 ? "not resumed" : "never started");
+          this.cancelTree(n, why, "failed", "expired");
+        }
       } else if (n.status === "needs_input" && now - this.since(n.lastActivityAt) > this.limits.inputWaitMs) {
         this.reminded.delete(n.id);
         this.cancelTree(n, "the person did not answer", "failed", "expired");
@@ -588,8 +597,16 @@ export class Runtime {
       return;
     }
     const ownTurn = !n.parentId;
-    if (result.kind === "completed") this.settle(n, "completed", "done", undefined, ownTurn);
-    else this.settle(n, "failed", result.outcome, undefined, ownTurn);
+    if (result.kind === "completed") {
+      // #1818: a peer ack or a missed done_when must not settle as completed.
+      // Roots (the requester's own turn) are excluded: they often end with an
+      // empty host text after handing work out.
+      const unmet = n.parentId
+        ? unmetCompletion({ mode: n.mode, doneWhen: n.doneWhen, text: result.text, evidence: result.evidence ?? n.evidence })
+        : undefined;
+      if (unmet) this.settle(n, "failed", "incomplete", unmet, ownTurn);
+      else this.settle(n, "completed", "done", undefined, ownTurn);
+    } else this.settle(n, "failed", result.outcome, undefined, ownTurn);
   }
 
   /** The host saw activity on this running turn: its stall window restarts.
