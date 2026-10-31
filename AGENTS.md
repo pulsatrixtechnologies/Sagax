@@ -449,7 +449,10 @@ sheet). Keep these rules, covered by `server/capabilities.test.ts`,
 - `promptIndex` (#1748): the skills index's bytes and count, its caps
   (`INDEX_MAX_BYTES`, `INDEX_MAX_SKILLS`) and what it left out, from
   `skillsPromptIndex` (server/skills.ts), the same computation as the
-  prompt without touching links or the log.
+  prompt without touching links or the log. The prompt shortens
+  descriptions under the byte cap before omitting any enabled skill;
+  only `INDEX_MAX_SKILLS` drops an id. `skills_list` returns description
+  and SKILL.md path for enabled skills so a shortened row stays loadable.
 - Grok's account connectors are a static catalog: `unverifiable`, never
   "connected".
 

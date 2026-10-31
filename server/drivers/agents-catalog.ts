@@ -1501,7 +1501,7 @@ const toolDefinitions = (externalRuntime: boolean) => [
   {
     name: "skills_list",
     description:
-      "List this bot's imported skills (enabled and disabled) and any staged skill writes still waiting for the user's decision. Use this before skill_manage to avoid duplicate names. Listing does not enable anything.",
+      "List this bot's imported skills (enabled and disabled) and any staged skill writes still waiting for the user's decision. Enabled rows include description and SKILL.md path so you can load a skill shortened or left out of the prompt index. Use this before skill_manage to avoid duplicate names. Listing does not enable anything.",
     inputSchema: { type: "object", additionalProperties: false, properties: {} },
   },
   {
