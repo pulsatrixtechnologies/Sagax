@@ -2,8 +2,9 @@
 // conversation): no other thread is ever a destination nor a sidebar line.
 // A parallel task's detail, a bot's job or a run opens in the side column
 // beside the conversation, which stays on screen where it was; Close or
-// Escape is the way back. Every unread thread marks the bot's one dot,
-// and the conversation on screen reads the topics it holds.
+// Escape is the way back. The conversation on screen reads the topics it
+// holds, and a bot-opened job with no sidebar row (#1770) so the bot's
+// unread dot cannot stick after the person has read.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Action, Bot } from "./store";
 
@@ -72,13 +73,23 @@ describe("unread with threads hidden", () => {
     expect(botShowsUnread(bot)).toBe(true);
   });
 
-  it("reads the topics and sub-tasks the conversation on screen holds, never a thread kept apart", () => {
+  it("reads the topics, sub-tasks and bot-opened jobs the conversation on screen holds (#1770)", () => {
     const bot = helper();
-    expect(streamUnreadReadWith(bot.tasks, "now")).toEqual(["earlier", "sub-a"]);
-    expect(threadsReadOnScreen(bot, "now")).toEqual(["now", "earlier", "sub-a"]);
-    // a thread outside the stream on screen reads itself only
+    expect(streamUnreadReadWith(bot.tasks, "now")).toEqual(["earlier", "sub-a", "job"]);
+    expect(threadsReadOnScreen(bot, "now")).toEqual(["now", "earlier", "sub-a", "job"]);
+    // a bot-opened thread shown alone reads itself only (not the stream)
     expect(streamUnreadReadWith(bot.tasks, "job")).toEqual([]);
     prefs.singleStream = false;
     expect(threadsReadOnScreen(bot, "now")).toEqual(["now"]);
+  });
+
+  it("clears the bot's unread once those threads are read with the conversation", () => {
+    const bot = helper();
+    const read = new Set(threadsReadOnScreen(bot, "now"));
+    const after = {
+      ...bot,
+      tasks: bot.tasks!.map((task) => read.has(task.threadId) ? { ...task, unread: false } : task),
+    };
+    expect(botShowsUnread(after)).toBe(false);
   });
 });

@@ -29,7 +29,7 @@ import { CIRCLE_BUTTON } from "@/lib/circle-button";
 import {
   dragTarget,
   edgeAt,
-  insertSection,
+  ensureSection,
   MAIN_LEAF_ID,
   parseSplitDrag,
   removeSection,
@@ -39,6 +39,7 @@ import {
   splitLeaves,
   updateSplitLayout,
   useSplitLayout,
+  useSplitLeafFocus,
   type SplitBranch,
   type SplitEdge,
   type SplitLeaf,
@@ -158,7 +159,8 @@ export function SplitWorkspace({ main, panelSlot = null }: { main: ReactNode; pa
       openInMain(dispatch, target, state.bots, showThreads);
       return;
     }
-    updateSplitLayout((current) => insertSection(current, target, at.edge!, at.anchorId).layout);
+    // Already in the split: focus that section instead of opening a copy (#1781).
+    ensureSection(target, at.edge, at.anchorId);
   };
 
   return (
@@ -228,14 +230,39 @@ function openInMain(dispatch: ReturnType<typeof useStore>["dispatch"], target: S
   if (target.threadId) dispatch({ type: "switchGroupTask", groupId: target.groupId, threadId: target.threadId });
 }
 
+/** Scrolls a section into view and flashes it when menu/drop focuses it. */
+function useFocusFlash(leafId: string, ref: React.RefObject<HTMLElement | null>) {
+  const focus = useSplitLeafFocus();
+  useEffect(() => {
+    if (focus.leafId !== leafId || focus.nonce === 0) return;
+    const el = ref.current;
+    if (!el) return;
+    el.scrollIntoView({ block: "nearest", inline: "nearest" });
+    el.dataset.splitFocus = "";
+    const timer = window.setTimeout(() => {
+      delete el.dataset.splitFocus;
+    }, 1200);
+    return () => {
+      window.clearTimeout(timer);
+      delete el.dataset.splitFocus;
+    };
+  }, [focus.leafId, focus.nonce, leafId, ref]);
+}
+
 function SplitNodeView({ node, main }: { node: SplitNode; main: ReactNode }) {
   if (node.type === "leaf") {
     if (node.id === MAIN_LEAF_ID) {
-      return <div data-split-leaf={MAIN_LEAF_ID} className="relative flex h-full min-h-0 min-w-0 flex-1">{main}</div>;
+      return <MainLeaf main={main} />;
     }
     return <SplitPane leaf={node} />;
   }
   return <SplitBranchView node={node} main={main} />;
+}
+
+function MainLeaf({ main }: { main: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useFocusFlash(MAIN_LEAF_ID, ref);
+  return <div ref={ref} data-split-leaf={MAIN_LEAF_ID} className="relative flex h-full min-h-0 min-w-0 flex-1 ring-inset data-[split-focus]:ring-2 data-[split-focus]:ring-accent/70">{main}</div>;
 }
 
 function SplitBranchView({ node, main }: { node: SplitBranch; main: ReactNode }) {
@@ -332,6 +359,8 @@ function SplitHandle({ branch, index, row, containerRef, hideNarrow }: { branch:
 /** One section other than the main chat. */
 function SplitPane({ leaf }: { leaf: SplitLeaf }) {
   const { state } = useStore();
+  const ref = useRef<HTMLDivElement>(null);
+  useFocusFlash(leaf.id, ref);
   const target = leaf.target;
   const close = () => updateSplitLayout((layout) => removeSection(layout, leaf.id));
   const bot = target?.kind === "bot" ? state.bots.find((candidate) => candidate.id === target.botId) : undefined;
@@ -355,7 +384,7 @@ function SplitPane({ leaf }: { leaf: SplitLeaf }) {
     );
   }
   return (
-    <div data-split-leaf={leaf.id} className="relative flex h-full min-h-0 w-full min-w-0 flex-col">
+    <div ref={ref} data-split-leaf={leaf.id} className="relative flex h-full min-h-0 w-full min-w-0 flex-col ring-inset data-[split-focus]:ring-2 data-[split-focus]:ring-accent/70">
       {body}
     </div>
   );

@@ -55,12 +55,12 @@ export function segmentsToReach<T extends StreamTaskFacts>(tasks: readonly T[] |
 /** With threads hidden: the unread threads the one conversation holds
  * besides `shownThreadId`, read with it when it is on screen. Its earlier
  * segments (drawn above it) and the parallel tasks of a segment (their
- * answer is posted in the conversation, #1145). Never a newer segment
- * (another device's topic the person has not seen; the conversation opens
- * there next). Nothing when the thread on screen is not a segment (a
- * confidential or bot-opened thread is shown alone). No thread gets a
- * sidebar row of its own in this mode, so a reply left unread there would
- * keep the bot's badge up for good. */
+ * answer is posted in the conversation, #1145). A thread the bot opened
+ * itself (Team incidents, start_thread, a job) also has no sidebar row in
+ * this mode: left unread it would keep the bot's badge up for good (#1770).
+ * Never a newer segment (another device's topic the person has not seen;
+ * the conversation opens there next). Nothing when the thread on screen is
+ * not a segment (a confidential thread is shown alone). */
 export function streamUnreadReadWith(tasks: StreamTasks, shownThreadId: string): string[] {
   const all = facts(tasks);
   const shown = all.find((task) => task.threadId === shownThreadId);
@@ -70,7 +70,11 @@ export function streamUnreadReadWith(tasks: StreamTasks, shownThreadId: string):
     const source = parallelSource(task);
     return segments.has(task.threadId) || (source !== undefined && segments.has(source));
   };
-  return (tasks ?? []).filter((task) => task.unread === true && task.threadId !== shownThreadId && inStream(task))
+  // openedBy: a bot-opened job or Team incidents thread. With threads
+  // hidden the person cannot open it from the sidebar; reading the
+  // conversation clears it with the rest (#1770).
+  const botOpened = (task: NonNullable<StreamTasks>[number]) => Boolean(task.openedBy);
+  return (tasks ?? []).filter((task) => task.unread === true && task.threadId !== shownThreadId && (inStream(task) || botOpened(task)))
     .map((task) => task.threadId);
 }
 

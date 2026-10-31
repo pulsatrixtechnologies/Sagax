@@ -5,6 +5,10 @@ import {
   currentSplitLayout,
   dragTarget,
   edgeAt,
+  currentSplitLeafFocus,
+  ensureSection,
+  findSection,
+  focusSplitLeaf,
   insertSection,
   MAIN_LEAF,
   MAIN_LEAF_ID,
@@ -88,6 +92,16 @@ describe("the layout tree", () => {
     const { layout } = insertSection(MAIN_LEAF, scout, "top");
     expect(splitLeaves(layout).map((leaf) => leaf.id)[1]).toBe(MAIN_LEAF_ID);
   });
+
+  it("finds the section that already shows a target (#1781)", () => {
+    const first = insertSection(MAIN_LEAF, scout, "right");
+    const second = insertSection(first.layout, room, "bottom", first.leafId);
+    expect(findSection(second.layout, scout)?.id).toBe(first.leafId);
+    expect(findSection(second.layout, room)?.id).toBe(second.leafId);
+    expect(findSection(second.layout, pepper)).toBeUndefined();
+    // A different thread of the same bot is another conversation.
+    expect(findSection(second.layout, { kind: "bot", botId: "scout", threadId: "other" })).toBeUndefined();
+  });
 });
 
 describe("the stored layout", () => {
@@ -131,6 +145,25 @@ describe("the stored layout", () => {
       expect(currentSplitLayout()).toEqual(MAIN_LEAF);
       expect(() => splitBesideMain(scout, "bottom")).not.toThrow();
       expect(shape(currentSplitLayout())).toEqual({ column: ["main", "scout"], sizes: [0.5, 0.5] });
+    });
+
+    it("focuses an existing section instead of opening a copy (#1781)", () => {
+      const first = ensureSection(scout, "right");
+      expect(shape(currentSplitLayout())).toEqual({ row: ["main", "scout"], sizes: [0.5, 0.5] });
+      expect(currentSplitLeafFocus()).toEqual({ leafId: first, nonce: 1 });
+      // Split right / down again, or a drop asking for the same bot: focus only.
+      expect(ensureSection(scout, "bottom")).toBe(first);
+      expect(ensureSection(scout, "right")).toBe(first);
+      expect(shape(currentSplitLayout())).toEqual({ row: ["main", "scout"], sizes: [0.5, 0.5] });
+      expect(currentSplitLeafFocus().nonce).toBe(3);
+      splitBesideMain(scout, "bottom");
+      expect(shape(currentSplitLayout())).toEqual({ row: ["main", "scout"], sizes: [0.5, 0.5] });
+      // A different conversation still opens a new section (beside main).
+      const roomId = ensureSection(room, "bottom");
+      expect(roomId).not.toBe(first);
+      expect(shape(currentSplitLayout())).toEqual({ row: [{ column: ["main", "room"], sizes: [0.5, 0.5] }, "scout"], sizes: [0.5, 0.5] });
+      focusSplitLeaf(first);
+      expect(currentSplitLeafFocus().leafId).toBe(first);
     });
   });
 });

@@ -18387,7 +18387,10 @@ bus.subscribe((event: RuntimeEvent) => {
         // pair channel and chipped into both threads, which is the whole of
         // what the person needs to be able to find it.
         // A person's own job's review answer is the exception: news like a reply.
-        if (!routineReportThread && (!internal || reviewAnswer)) store.patchTask(bot.id, event.threadId, { unread: true });
+        // A Team incidents report was copied into the conversation above: that
+        // copy carries the unread. Marking the incidents thread too would keep
+        // the bot's sidebar dot on forever with threads hidden (#1770).
+        if (!routineReportThread && (!internal || reviewAnswer) && !incidentsCopied) store.patchTask(bot.id, event.threadId, { unread: true });
         // A failed peer turn stays a chip too. The bot that delegated is woken
         // with the failure and answers the person in its own thread — buzzing
         // here as well would ring twice for one piece of news.

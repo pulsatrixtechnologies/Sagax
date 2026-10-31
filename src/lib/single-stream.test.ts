@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isEarlierSegment, segmentsAbove, segmentsToReach, streamHomeThread } from "./single-stream";
+import { isEarlierSegment, segmentsAbove, segmentsToReach, streamHomeThread, streamUnreadReadWith } from "./single-stream";
 
 const tasks = [
   { threadId: "b", createdAt: 20 },
@@ -44,5 +44,18 @@ describe("single stream navigation", () => {
     // archived or closed: out of the timeline
     expect(streamHomeThread([...tasks, { threadId: "gone", createdAt: 50, archivedAt: 51 }])).toBe("c");
     expect(streamHomeThread([...tasks, { threadId: "done", createdAt: 50, closedBy: { botId: "x", name: "X", at: 51 } }])).toBe("c");
+  });
+
+  it("reads earlier topics, parallel work and bot-opened jobs with the conversation (#1770)", () => {
+    const unread = [
+      { threadId: "a", createdAt: 10, unread: true },
+      { threadId: "c", createdAt: 30, unread: true },
+      { threadId: "job", createdAt: 26, unread: true, openedBy: { botId: "x" } },
+      { threadId: "sub", createdAt: 31, unread: true, parallelOf: { threadId: "c" } },
+      { threadId: "conf", createdAt: 25, unread: true, confidential: true as const },
+    ];
+    expect(streamUnreadReadWith(unread, "c")).toEqual(["a", "job", "sub"]);
+    expect(streamUnreadReadWith(unread, "job")).toEqual([]);
+    expect(streamUnreadReadWith(unread, "conf")).toEqual([]);
   });
 });
