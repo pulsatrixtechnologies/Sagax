@@ -117,6 +117,9 @@ export const PAGE_SCROLL_MAX = 10_000_000;
  * the page is and how tall its window, so Download PDF prints all of it.
  * Only two numbers. */
 export const PAGE_SIZE_MESSAGE = "sagax-page-size";
+/** A sandboxed page asks its wrapper to open an http(s) or mailto link in
+ * the system browser. Never allow-popups: the frame posts the URL (#1799). */
+export const PAGE_OPEN_MESSAGE = "sagax-page-open";
 /** The wrapper asks its frame for the size again (its script may start after the page loaded). */
 export const PAGE_SIZE_ASK = "sagax-page-size-ask";
 /** The tallest page Download PDF prints, in CSS pixels. */
@@ -217,12 +220,38 @@ export const PAGE_BANNER_NAME_MAX = 60;
 export const PAGE_FRAME_TICKET_MS = 5 * 60 * 1000;
 
 /** The iframe sandbox of a page, in the wrapper and in the app's preview:
- * scripts only for HTML, nothing for Markdown. Never `allow-same-origin`,
- * `allow-top-navigation*`, `allow-popups*`, `allow-modals` or `allow-forms`:
- * the page can only navigate its own frame, cannot open a window or a
- * prompt() asking for a password, and cannot submit a form. */
-export function pageFrameSandbox(kind: PageKind, options: { annotate?: boolean } = {}): string {
-  return kind === "html" || options.annotate ? "allow-scripts" : "";
+ * scripts only. Never `allow-same-origin`, `allow-top-navigation*`,
+ * `allow-popups*`, `allow-modals` or `allow-forms`: the page can only
+ * navigate its own frame, cannot open a window or a prompt() asking for a
+ * password, and cannot submit a form. Markdown still runs only our nonce'd
+ * scripts (open-link bridge, annotation, place-keeping); HTML keeps
+ * unsafe-inline under the no-network CSP. External links post to the
+ * wrapper instead of a popup (#1799). */
+export function pageFrameSandbox(_kind?: PageKind, _options: { annotate?: boolean } = {}): string {
+  return "allow-scripts";
+}
+
+/** Absolute http(s) or mailto URL a sandboxed page may ask to open. */
+export function parsePageOpenUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.username || url.password) return null;
+  if (url.protocol === "https:" || url.protocol === "http:") return url.hostname ? url.href : null;
+  if (url.protocol === "mailto:") return url.href;
+  return null;
+}
+
+/** Read a PAGE_OPEN_MESSAGE. */
+export function parsePageOpenMessage(data: unknown): string | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const record = data as { type?: unknown; url?: unknown };
+  if (record.type !== PAGE_OPEN_MESSAGE) return null;
+  return parsePageOpenUrl(record.url);
 }
 
 /** The CSP of the page itself (and of its preview as a meta tag, minus the
@@ -231,13 +260,12 @@ export function pageFrameSandbox(kind: PageKind, options: { annotate?: boolean }
  * and `connect-src 'none'` stop every request (no fetch, no beacon, no remote
  * image, script or font). WebRTC, resource hints, speculation rules and
  * nested frames are outside CSP: neutered by the server and the prelude
- * (server/published-pages-render.ts). A Markdown page runs no script. `frameAncestors`
- * names who may frame it: the wrapper's origin. */
+ * (server/published-pages-render.ts). A Markdown page runs only our nonce'd
+ * scripts (open-link bridge and optional annotation / place-keeping).
+ * `frameAncestors` names who may frame it: the wrapper's origin. */
 export function pageCsp(kind: PageKind, options: { meta?: boolean; frameAncestors?: string; annotateNonce?: string } = {}): string {
-  // The app's preview (its person only) adds its own scripts: annotation
-  // mode, and keeping the place across a redraw (2026-10-28). An HTML page
-  // already runs inline scripts; a Markdown page or a presentation runs
-  // those only, by their nonce.
+  // Our own scripts on Markdown/presentation: open-link bridge (#1799),
+  // annotation, place-keeping. An HTML page already runs inline scripts.
   const nonce = kind !== "html" && options.annotateNonce ? options.annotateNonce : null;
   const directives = [
     "default-src 'none'",
@@ -254,7 +282,7 @@ export function pageCsp(kind: PageKind, options: { meta?: boolean; frameAncestor
   ];
   if (!options.meta) {
     directives.push(`frame-ancestors ${options.frameAncestors ?? "'self'"}`);
-    directives.push(`sandbox ${pageFrameSandbox(kind, { annotate: Boolean(nonce) })}`.trim());
+    directives.push(`sandbox ${pageFrameSandbox(kind)}`);
   }
   return directives.join("; ");
 }

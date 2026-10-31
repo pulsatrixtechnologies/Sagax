@@ -119,6 +119,15 @@ const TOOLS = `<div class="card">
 const LEGACY = `<style>.box{background:#1e2a44;color:#e7ecff;border:1px solid #6b5bd6;border-radius:10px;padding:12px;font-family:Arial}.box button{background:#7c5cff;color:white;border:0;border-radius:6px;padding:6px 10px}</style>
 <div class="box"><b>Ancien widget</b> avec ses propres couleurs. <button>Action</button></div>`;
 
+// #1799: <a target=_blank> and window.open post to the parent; no allow-popups
+const EXTERNAL_LINKS = `<div class="card">
+  <div class="card-header"><div><div class="eyebrow">#1799</div><div class="card-title">Liens externes</div><div class="card-description">Le pont ouvre le navigateur systeme, sans allow-popups.</div></div></div>
+  <div class="card-content stack">
+    <p><a href="https://example.com" target="_blank" rel="noopener noreferrer">Lien target=_blank</a></p>
+    <button class="btn" type="button" onclick="window.open('https://example.com','_blank')">window.open</button>
+  </div>
+</div>`;
+
 function Bubble({ children }: { children: ReactNode }) {
   return <div data-chat-bubble className="w-full max-w-[780px] rounded-[18px] bg-card px-3 py-[7px] text-[13px] leading-5 text-ink">{children}</div>;
 }
@@ -149,6 +158,7 @@ function Gallery() {
         <Section title="Feedback"><Bubble><WidgetFrame code={FEEDBACK} /></Bubble></Section>
         <Section title="Layout"><Bubble><WidgetFrame code={LAYOUT} /></Bubble></Section>
         <Section title="Tools"><Bubble><WidgetFrame code={TOOLS} /></Bubble></Section>
+        <Section title="external-links"><Bubble><WidgetFrame code={EXTERNAL_LINKS} /></Bubble></Section>
         <Section title="legacy"><Bubble><p className="mb-1">Un ancien widget garde ses couleurs, sans fond autour :</p><WidgetFrame code={LEGACY} /></Bubble></Section>
       </div>
     </div>

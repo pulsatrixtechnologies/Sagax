@@ -3,21 +3,22 @@
 // in an opaque-origin sandbox under a CSP with no network, so its scripts
 // can only touch their own document. A Markdown page is turned into HTML
 // here by a small renderer that escapes every character first and emits
-// only a fixed set of tags (no raw HTML, links http(s) and mailto only), and
-// it runs no script at all. A link is written as its words and its address
-// in plain text: an anchor would be inert in the sandbox anyway.
+// only a fixed set of tags (no raw HTML, links http(s) and mailto only).
+// Markdown runs only our nonce'd scripts. External http(s)/mailto links
+// post to the wrapper (PAGE_OPEN_MESSAGE); the wrapper opens the system
+// browser. Never allow-popups (#1799).
 //
 // The reader never lands on the page itself: wrapperDocument is a Sagax page
-// with a permanent banner (no script, nothing to dismiss) that embeds the
-// page in a frame sandboxed to scripts only, whose navigation the wrapper's
-// `frame-src` limits to the page's own frame path.
+// with a permanent banner that embeds the page in a frame sandboxed to
+// scripts only, whose navigation the wrapper's `frame-src` limits to the
+// page's own frame path.
 import { pageThemeStyle } from "../src/lib/page-theme.ts";
 import type { WidgetThemeTokens } from "../src/lib/widget-kit.ts";
 import { READER_ACTIONS_ID, READER_BOOT_ID, READER_MASCOT_ID, readerByline, type ReaderBoot } from "../shared/page-reader.ts";
 import { readerBarThemeCss, type PageLook } from "../src/lib/page-look.ts";
 import { STATE_ASK_MESSAGE, STATE_MESSAGE, STATE_RESULT_MESSAGE, STATE_SET_MESSAGE } from "../shared/page-state.ts";
 import { ANNOTATE_FOCUS_MESSAGE, ANNOTATE_FOUND_MESSAGE, ANNOTATE_MARKS_MESSAGE, ANNOTATE_MODE_MESSAGE, ANNOTATE_SELECT_MESSAGE, THREAD_LIMITS } from "../shared/page-threads.ts";
-import { PAGE_ANNOTATION_MESSAGE, PAGE_BANNER_NAME_MAX, PAGE_HEIGHT_MAX, PAGE_LIMITS, PAGE_SCROLL_MAX, PAGE_SCROLL_MESSAGE, PAGE_SIZE_ASK, PAGE_SIZE_MESSAGE, pageCsp, pageFrameSandbox, type PageKind, type PageTheme, type ReaderComment } from "../shared/published-pages.ts";
+import { PAGE_ANNOTATION_MESSAGE, PAGE_BANNER_NAME_MAX, PAGE_HEIGHT_MAX, PAGE_LIMITS, PAGE_OPEN_MESSAGE, PAGE_SCROLL_MAX, PAGE_SCROLL_MESSAGE, PAGE_SIZE_ASK, PAGE_SIZE_MESSAGE, pageCsp, pageFrameSandbox, type PageKind, type PageTheme, type ReaderComment } from "../shared/published-pages.ts";
 
 /** Server side, before every HTML version is served: no element that can
  * reach the network outside CSP. `<link>` (hints such as prerender, which
@@ -142,6 +143,22 @@ export const REPORT_SIZE_SOURCE = String.raw`(function(){"use strict";var last="
   + `window.addEventListener("message",function(e){if(e.source===window.parent&&e.data&&e.data.type==="${PAGE_SIZE_ASK}"){last="";send()}});`
   + "if(window.ResizeObserver){try{var o=new ResizeObserver(soon);o.observe(D.documentElement);if(D.body)o.observe(D.body)}catch(e){}}"
   + "})();";
+
+/** Catch <a href> clicks and window.open inside the sandboxed page; post an
+ * absolute http(s)/mailto URL to the parent. Never allow-popups (#1799).
+ * Hash links (#slide-n) stay in the frame. */
+export const OPEN_BRIDGE_SOURCE = String.raw`(function(){"use strict";
+function ok(u){if(typeof u!=="string"||!u||u.charAt(0)==="#")return null;try{var x=new URL(u);if(x.username||x.password)return null;if(x.protocol==="https:"||x.protocol==="http:")return x.hostname?x.href:null;if(x.protocol==="mailto:")return x.href}catch(e){}return null}
+function ask(u){var href=ok(u);if(!href)return false;try{parent.postMessage({type:"${PAGE_OPEN_MESSAGE}",url:href},"*")}catch(e){}try{if(window.top&&window.top!==window)window.top.postMessage({type:"${PAGE_OPEN_MESSAGE}",url:href},"*")}catch(e){}return true}
+addEventListener("click",function(e){var t=e.target;while(t&&t.nodeType===1&&String(t.localName).toLowerCase()!=="a")t=t.parentElement;if(!t||String(t.localName).toLowerCase()!=="a")return;if(ask(t.getAttribute("href"))){e.preventDefault();e.stopPropagation()}},true);
+try{window.open=function(u){ask(typeof u==="string"?u:"");return null}}catch(e){}
+})();`;
+
+/** The wrapper opens a validated URL the page frame posted (system browser
+ * via window.open; Electron's setWindowOpenHandler routes it out). */
+export const WRAPPER_OPEN_SOURCE = String.raw`(function(){"use strict";
+addEventListener("message",function(e){var f=document.querySelector("iframe");if(!f||e.source!==f.contentWindow)return;var d=e.data;if(!d||d.type!=="${PAGE_OPEN_MESSAGE}"||typeof d.url!=="string")return;try{var u=new URL(d.url);if(u.username||u.password)return;if(u.protocol!=="https:"&&u.protocol!=="http:"&&u.protocol!=="mailto:")return;if((u.protocol==="https:"||u.protocol==="http:")&&!u.hostname)return;window.open(u.href,"_blank","noopener,noreferrer")}catch(x){}});
+})();`;
 
 /** A reading frame's side of Annotate (2026-10-28, shared/page-threads.ts):
  * dormant until the wrapper (its parent, never the page) turns annotation
@@ -285,11 +302,13 @@ function inline(escaped: string): string {
   out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (match, label: string, href: string) => {
     // The href is escaped text: &amp; is the only entity a URL keeps.
     const url = safeHref(href.replace(/&amp;/g, "&"));
-    return url ? `${label} (<span class="url">${escapeHtml(url)}</span>)` : match;
+    // Real anchors: the open-link bridge posts them to the wrapper (no
+    // allow-popups, no target=_blank preconnect). javascript: stays text.
+    return url ? `<a href="${escapeHtml(url)}" rel="noopener noreferrer">${label}</a>` : match;
   });
-  // GFM autolinks: <https://x> and bare http(s) URLs stay visible text (no live link).
-  out = out.replace(/&lt;((?:https?:\/\/|mailto:)[^\s<>"']+?)&gt;/gi, (_m, href: string) => `<span class="url">${href}</span>`);
-  out = out.replace(/(^|[\s(])((?:https?:\/\/)[^\s<>"']+?)(?=[.,;:!?)]*(?:\s|$))/gi, (_m, pre: string, href: string) => `${pre}<span class="url">${href}</span>`);
+  // GFM autolinks: <https://x> and bare http(s) URLs become the same anchors.
+  out = out.replace(/&lt;((?:https?:\/\/|mailto:)[^\s<>"']+?)&gt;/gi, (_m, href: string) => `<a class="url" href="${href}" rel="noopener noreferrer">${href}</a>`);
+  out = out.replace(/(^|[\s(])((?:https?:\/\/)[^\s<>"']+?)(?=[.,;:!?)]*(?:\s|$))/gi, (_m, pre: string, href: string) => `${pre}<a class="url" href="${href}" rel="noopener noreferrer">${href}</a>`);
   out = out.replace(/~~([^~]+)~~/g, "<del>$1</del>");
   out = out.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*\s][^*]*)\*/g, "$1<em>$2</em>");
   return out.replace(/\uE000(\d+)\uE001/g, (_match, index: string) => codes[Number(index)] ?? "");
@@ -415,12 +434,13 @@ export function markdownToHtml(markdown: string): string {
  * over it; a Markdown page or a presentation follows it entirely. Pure. */
 export function pageDocument(input: { kind: PageKind; title: string; content: string; lang?: string }, options: { meta?: boolean; annotateNonce?: string; keepScroll?: number; nonce?: string; theme?: PageTheme; skin?: WidgetThemeTokens; schemes?: Partial<Record<PageTheme, WidgetThemeTokens>>; font?: string; reportSize?: boolean } = {}): string {
   const meta = options.meta ? `<meta http-equiv="Content-Security-Policy" content="${escapeHtml(pageCsp(input.kind, { meta: true }))}">` : "";
-  // The app's own scripts (its preview only: annotation, keeping the place):
-  // by their nonce on a page that otherwise runs no script, inline after the
-  // prelude on an HTML page. Without a nonce a Markdown page runs none.
+  // Our own scripts: open-link bridge on every served frame (#1799);
+  // annotation and place-keeping on the app's preview only. Markdown and
+  // presentation run them by nonce; HTML runs them inline after the prelude.
   const nonce = options.annotateNonce ?? options.nonce;
   const own = (source: string) => input.kind === "html" ? `<script>${source}</script>`
     : nonce !== undefined ? `<script nonce="${escapeHtml(nonce)}">${source}</script>` : "";
+  const openBridge = own(OPEN_BRIDGE_SOURCE);
   const annotate = options.annotateNonce === undefined ? "" : own(ANNOTATE_SOURCE);
   const keep = (options.keepScroll === undefined ? "" : own(keepScrollSource(options.keepScroll)))
     + (options.reportSize ? own(REPORT_SIZE_SOURCE) + own(ANNOTATE_BRIDGE_SOURCE) : "");
@@ -432,12 +452,12 @@ export function pageDocument(input: { kind: PageKind; title: string; content: st
     return `<!doctype html><html lang="${escapeHtml(input.lang ?? "fr")}"><head><meta charset="utf-8">${meta}${scheme}`
       + `<meta name="viewport" content="width=device-width, initial-scale=1"><title>${escapeHtml(input.title)}</title>`
       + `${theme}</head>`
-      + `<body>${presentation ? presentationToHtml(input.content) : markdownToHtml(input.content)}${annotate}${keep}</body></html>`;
+      + `<body>${presentation ? presentationToHtml(input.content) : markdownToHtml(input.content)}${openBridge}${annotate}${keep}</body></html>`;
   }
   // the theme first, so the page's own <style> and <link> come after it
   // (and win anyway: the theme sits in its cascade layer)
   // a reading frame: its shared state is there before the page's own scripts run (#1544)
-  const head = `${meta}${FRAME_PRELUDE}${options.reportSize ? `<script>${STATE_BRIDGE_SOURCE}</script>` : ""}${scheme}${theme}`;
+  const head = `${meta}${FRAME_PRELUDE}${openBridge}${options.reportSize ? `<script>${STATE_BRIDGE_SOURCE}</script>` : ""}${scheme}${theme}`;
   const content = neuterPageHtml(input.content);
   const doctype = /^\s*<!doctype[^>]*>/i.exec(content);
   const page = doctype
@@ -475,6 +495,8 @@ export interface WrapperInput {
   reader?: { boot: ReaderBoot; assets: ReaderAssets | null; look?: PageLook | null; botHex?: string | null };
   /** A presentation's slide count, for its printed sheets. */
   slides?: number;
+  /** Nonce for the wrapper's open-link listener (#1799). */
+  openNonce?: string;
 }
 
 /** The built tags of the reader's bar (dist/page-reader.html): paths under
@@ -577,7 +599,7 @@ export function wrapperDocument(input: WrapperInput): string {
   // Markdown page too: by their nonce only (pageCsp)
   // a reading link's frame runs its size script (Download PDF), by nonce on
   // a Markdown page
-  const sandbox = pageFrameSandbox(input.kind, { annotate: input.annotate === true || input.keep === true || (!input.preview && input.reader !== undefined) });
+  const sandbox = pageFrameSandbox(input.kind);
   // a page that sets no background of its own shows the theme's, not white
   const background = input.theme === "dark" ? "#161616" : "#fff";
   const bare = input.bare === true && input.preview === true;
@@ -595,6 +617,9 @@ export function wrapperDocument(input: WrapperInput): string {
     + "</style>"
     + (reader?.assets ? reader.assets.styles.map((path) => `<link rel="stylesheet" href="${escapeHtml(path)}">`).join("")
       + reader.assets.preloads.map((path) => `<link rel="modulepreload" href="${escapeHtml(path)}">`).join("") : "")
+    + (input.openNonce
+      ? `<script nonce="${escapeHtml(input.openNonce)}">${WRAPPER_OPEN_SOURCE}</script>`
+      : `<script>${WRAPPER_OPEN_SOURCE}</script>`)
     + "</head><body>"
     + (reader ? readerBar({ ...input, botHex: reader.botHex ?? null }) : bare ? "" : `<div class="sagax-banner" role="note">${escapeHtml(wrapperBanner(input))}</div>`)
     + `<iframe src="${escapeHtml(input.frameUrl)}" sandbox="${sandbox}" referrerpolicy="no-referrer" allow="" title="${escapeHtml(input.title)}"></iframe>`

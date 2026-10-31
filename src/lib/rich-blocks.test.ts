@@ -28,6 +28,9 @@ import {
   visibleRowOrder,
   WIDGET_CSP,
   WIDGET_MAX_HEIGHT,
+  WIDGET_OPEN_MESSAGE,
+  parseOpenableExternalUrl,
+  parseWidgetOpenMessage,
   WIDGET_MIN_HEIGHT,
   WIDGET_SANDBOX,
   type ChartSpec,
@@ -110,6 +113,7 @@ describe("widget documents", () => {
   it("allows scripts only: no same-origin, forms, popups or navigation", () => {
     expect(WIDGET_SANDBOX).toBe("allow-scripts");
     expect(WIDGET_SANDBOX).not.toContain("same-origin");
+    expect(WIDGET_SANDBOX).not.toContain("allow-popups");
   });
 
   it("forbids every network request in the CSP", () => {
@@ -127,6 +131,26 @@ describe("widget documents", () => {
     expect(doc.indexOf("<body>")).toBeLessThan(doc.indexOf("evil.test"));
     expect(doc).toContain("color-scheme:light");
     expect(buildWidgetDocument("", "dark")).toContain("color-scheme:dark");
+  });
+
+  it("embeds the open-link bridge without allow-popups (#1799)", () => {
+    const doc = buildWidgetDocument('<a href="https://example.com" target="_blank">Go</a>', "light");
+    expect(doc).toContain(WIDGET_OPEN_MESSAGE);
+    expect(doc).toContain("window.open=");
+    expect(doc).toContain('parent.postMessage');
+    expect(WIDGET_SANDBOX).not.toContain("allow-popups");
+  });
+
+  it("parses only absolute http(s) and mailto open requests", () => {
+    expect(parseOpenableExternalUrl("https://example.com/x")).toBe("https://example.com/x");
+    expect(parseOpenableExternalUrl("http://example.com/x")).toBe("http://example.com/x");
+    expect(parseOpenableExternalUrl("mailto:a@b.c")).toBe("mailto:a@b.c");
+    expect(parseOpenableExternalUrl("javascript:alert(1)")).toBeNull();
+    expect(parseOpenableExternalUrl("https://user:pass@evil.test/")).toBeNull();
+    expect(parseOpenableExternalUrl("/relative")).toBeNull();
+    expect(parseWidgetOpenMessage({ type: WIDGET_OPEN_MESSAGE, url: "https://example.com" })).toBe("https://example.com/");
+    expect(parseWidgetOpenMessage({ type: WIDGET_OPEN_MESSAGE, url: "javascript:1" })).toBeNull();
+    expect(parseWidgetOpenMessage({ type: "other", url: "https://example.com" })).toBeNull();
   });
 
   it("clamps reported heights and ignores garbage", () => {

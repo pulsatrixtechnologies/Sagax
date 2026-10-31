@@ -207,6 +207,10 @@ export const WIDGET_CSP = [
 ].join("; ");
 
 export const WIDGET_MESSAGE = "omb-widget-size";
+/** A sandboxed widget asks the parent to open an http(s) or mailto link in
+ * the system browser. Never allow-popups: the frame posts the URL, the parent
+ * runs the same open-external path as an artifact Open button (#1799). */
+export const WIDGET_OPEN_MESSAGE = "omb-widget-open";
 export const WIDGET_MIN_HEIGHT = 48;
 export const WIDGET_MAX_HEIGHT = 1600;
 
@@ -216,10 +220,39 @@ export function clampWidgetHeight(value: unknown): number | null {
   return Math.round(Math.min(Math.max(value, WIDGET_MIN_HEIGHT), WIDGET_MAX_HEIGHT));
 }
 
+/** An absolute http(s) or mailto URL a sandboxed frame may ask to open.
+ * Userinfo is refused. Relative and javascript: links stay in the frame. */
+export function parseOpenableExternalUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  if (url.username || url.password) return null;
+  if (url.protocol === "https:" || url.protocol === "http:") return url.hostname ? url.href : null;
+  if (url.protocol === "mailto:") return url.href;
+  return null;
+}
+
+/** Read a WIDGET_OPEN_MESSAGE from a sandboxed frame. */
+export function parseWidgetOpenMessage(data: unknown): string | null {
+  if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+  const record = data as { type?: unknown; url?: unknown };
+  if (record.type !== WIDGET_OPEN_MESSAGE) return null;
+  return parseOpenableExternalUrl(record.url);
+}
+
+/** Inside the frame: catch <a href> clicks and window.open, post the URL to
+ * the parent, never navigate the opaque frame or attempt a popup. */
+export const WIDGET_OPEN_BRIDGE = `(function(){function ok(u){if(typeof u!=="string"||!u||u.charAt(0)==="#")return null;try{var x=new URL(u);if(x.username||x.password)return null;if(x.protocol==="https:"||x.protocol==="http:")return x.hostname?x.href:null;if(x.protocol==="mailto:")return x.href}catch(e){}return null}function ask(u){var href=ok(u);if(!href)return false;try{parent.postMessage({type:${JSON.stringify(WIDGET_OPEN_MESSAGE)},url:href},"*")}catch(e){}return true}addEventListener("click",function(e){var t=e.target;while(t&&t.nodeType===1&&String(t.localName).toLowerCase()!=="a")t=t.parentElement;if(!t||String(t.localName).toLowerCase()!=="a")return;var href=t.getAttribute("href");if(ask(href)){e.preventDefault();e.stopPropagation()}},true);try{window.open=function(u){ask(typeof u==="string"?u:"");return null}}catch(e){}})();`;
+
 /** The srcdoc for a widget. The CSP meta comes before any widget byte, so the
  * policy is in force before the first widget script parses; a widget that
  * adds its own CSP can only narrow it further. The size reporter is ours and
- * posts only a number. */
+ * posts only a number. The open bridge posts an http(s)/mailto URL so the
+ * parent can open the system browser without allow-popups (#1799). */
 export function buildWidgetDocument(source: string, theme: WidgetTheme | "light" | "dark", font = ""): string {
   const resolved = typeof theme === "string" ? widgetThemeFromTokens({ "--code-color-scheme": theme }) : theme;
   // the body's own height, not the viewport's: the frame shrinks to a short
@@ -228,7 +261,7 @@ export function buildWidgetDocument(source: string, theme: WidgetTheme | "light"
     + "addEventListener('load',send);if(typeof ResizeObserver!=='undefined'){var o=new ResizeObserver(send);o.observe(document.documentElement);addEventListener('DOMContentLoaded',function(){if(document.body)o.observe(document.body);});}setTimeout(send,50);setTimeout(send,500);})();";
   // theme first, kit second, the widget's own <style> last: a widget that
   // sets its own colors still wins over the kit
-  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${WIDGET_CSP}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style id="sagax-theme">${resolved.css}</style><style id="sagax-kit">${font}${WIDGET_KIT_CSS}</style><script>${reporter}${WIDGET_THEME_LISTENER}</script></head><body>${source}</body></html>`;
+  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${WIDGET_CSP}"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style id="sagax-theme">${resolved.css}</style><style id="sagax-kit">${font}${WIDGET_KIT_CSS}</style><script>${reporter}${WIDGET_THEME_LISTENER}${WIDGET_OPEN_BRIDGE}</script></head><body>${source}</body></html>`;
 }
 
 // ---------------------------------------------------------------------------

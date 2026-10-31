@@ -24,6 +24,7 @@ import {
   WIDGET_MESSAGE,
   WIDGET_SANDBOX,
 } from "@/lib/rich-blocks";
+import { acceptWidgetOpen } from "@/lib/sandboxed-open";
 import { readWidgetTheme, WIDGET_THEME_MESSAGE, widgetFontFace, type WidgetTheme } from "@/lib/widget-kit";
 
 const DEFAULT_HEIGHT = 120;
@@ -86,7 +87,9 @@ function SandboxedFrame({ srcDoc, title, theme, fill = false, onEscaped }: {
   useEffect(() => {
     loads.current = 0;
     const onMessage = (event: MessageEvent) => {
-      if (event.source !== frame.current?.contentWindow) return;
+      const source = frame.current?.contentWindow;
+      if (acceptWidgetOpen(event, source)) return;
+      if (event.source !== source) return;
       const data = event.data as { type?: unknown; height?: unknown } | null;
       if (!data || data.type !== WIDGET_MESSAGE) return;
       const next = clampWidgetHeight(data.height);
