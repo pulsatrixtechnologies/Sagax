@@ -8,9 +8,13 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { auditKnowledgeText, buildKnowledge, KNOWLEDGE_FILE, serializeKnowledge } from "./build.ts";
 import { GUIDES } from "./guides.ts";
+import { slug, splitHeadings } from "./markdown.ts";
 import type { KnowledgeBase, KnowledgeSection } from "../../server/self-knowledge-types.ts";
 import { availableTools } from "../../server/drivers/agents-catalog.ts";
 import { MCP_PERMISSIONS } from "../../server/mcp-permissions.ts";
+
+/** AGENTS.md notes left out of the committed base (see build.ts). */
+const AGENTS_NOTES_LEFT_OUT = new Set(["doc:AGENTS.md#misuse-guardrails-2026-10-12"]);
 
 const root = join(import.meta.dirname, "..", "..");
 const committed = JSON.parse(readFileSync(join(root, KNOWLEDGE_FILE), "utf8")) as KnowledgeBase;
@@ -76,5 +80,43 @@ describe("self-knowledge base", () => {
       expect(section.text.length, section.id).toBeLessThanOrEqual(3000);
       expect(section.source, section.id).toBeTruthy();
     }
+  });
+
+  it("keeps a generated section for every AGENTS.md ## heading", () => {
+    const agents = readFileSync(join(root, "AGENTS.md"), "utf8");
+    const headings = agents.split("\n")
+      .filter((line) => /^##\s/.test(line))
+      .map((line) => line.replace(/^##\s+/, "").replace(/\s+#*$/, ""));
+    // Fence false-positives must not swallow later ## (issue #1738).
+    expect(splitHeadings(agents, 2).parts.map((part) => part.title)).toEqual(headings);
+    const noteIds = fresh.sections.filter((section) => section.source === "AGENTS.md").map((section) => section.id);
+    for (const heading of headings) {
+      const base = `doc:AGENTS.md#${slug(heading) || "intro"}`;
+      if (AGENTS_NOTES_LEFT_OUT.has(base)) continue;
+      expect(
+        noteIds.some((id) => id === base || id.startsWith(`${base}-`)),
+        `missing notes section for ## ${heading}`,
+      ).toBe(true);
+    }
+  });
+
+  it("does not treat a folded list line that cites fences as a code fence", () => {
+    const markdown = [
+      "## Before",
+      "",
+      "Intro.",
+      "",
+      "- Prompt: ```chart, ```csv,",
+      "  ```widget, ```cw, show_widget only when asked",
+      "",
+      "## After the false fence",
+      "",
+      "This heading must still become its own section, not vanish inside a fence.",
+      "",
+    ].join("\n");
+    expect(splitHeadings(markdown, 2).parts.map((part) => part.title)).toEqual([
+      "Before",
+      "After the false fence",
+    ]);
   });
 });
