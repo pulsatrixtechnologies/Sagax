@@ -10,7 +10,7 @@ export type CodexRoute = "plan" | "own" | "other";
 export const CODEX_MISSING_CREDENTIALS = /missing bearer or basic authentication/i;
 
 export function codexNotSignedIn(): string {
-  return `Codex isn't signed in on this computer. Sign in to Codex in Settings → Model providers → Codex.`;
+  return `Codex isn't signed in. Sign in to Codex in Settings → Model providers and accounts.`;
 }
 
 /** Codex's own words name ChatGPT's plans ("Upgrade to Pro"), which read as Sagax's. codex-cli 0.160.1 ends them
@@ -58,7 +58,7 @@ export function codexSignInRefused(error: unknown): boolean {
   return typeof message === "string" && CODEX_SIGN_IN_REFUSED.test(message);
 }
 
-export const CODEX_SIGN_IN_EXPIRED = "Codex's ChatGPT sign-in has expired. Sign in again in Settings → Model providers → Codex.";
+export const CODEX_SIGN_IN_EXPIRED = "Codex's ChatGPT sign-in has expired. Reconnect Codex in Settings → Model providers and accounts.";
 
 export function codexSignInExpired(raw: string): string {
   return `${CODEX_SIGN_IN_EXPIRED} Codex said: ${raw.slice(0, 300)}`;

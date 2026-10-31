@@ -18090,9 +18090,10 @@ bus.subscribe((event: RuntimeEvent) => {
       }) : null;
       // A turn on a person's own key (slice 4) also counts: that key is dropped at once.
       if (keyRefused && keyVia(ranOn?.via) && ranOn?.payerSub && ranOn.provider) perspicaxDirectory?.invalidate(ranOn.payerSub, ranOn.provider);
-      // #1533: the person's own subscription sign-in was refused and could
-      // not be refreshed: their engine card says Reconnect, and the chat
-      // shows the access card with that button, not the engine's raw words.
+      // #1533 / #1759: the person's own subscription sign-in was refused
+      // (Claude, Codex, Grok) and could not be refreshed: their engine card
+      // says Reconnect, and the chat shows the access card with that button,
+      // not the engine's raw words.
       const expiredCard = bot && refusedInstance && !keyRefused ? subscriptionExpiredCard(bot, refusedInstance, ranOn, event.message) : null;
       // The engine refusing is a backup the usage-limit failover picked, not
       // one the person chose: no sign-in card for it. The thread goes back
@@ -31306,9 +31307,10 @@ function perspicaxKeysUrl(): string | undefined {
   // redirects there.
   return IDENTITY.kind === "perspicax" ? `${IDENTITY.issuer.replace(/\/+$/, "")}/console/credentials?kind=model` : undefined;
 }
-/** #1533: the access card of a turn the provider refused because the
- * payer's own subscription sign-in expired, and the note on their engine
- * card (PrincipalEngineLogins.markExpired). Null for any other failure. */
+/** #1533 / #1759: the access card of a turn the provider refused because the
+ * payer's own subscription sign-in expired (Claude, Codex, Grok), and the
+ * note on their engine card (PrincipalEngineLogins.markExpired). Null for
+ * any other failure. */
 function subscriptionExpiredCard(bot: BotRecord, instance: { driverKind: string; displayName?: string }, ran: { via: string; payerPrincipalId?: string; routine?: true } | undefined, message: string) {
   const payer = ran?.payerPrincipalId?.trim().toLowerCase();
   const card = signInExpiredCard({

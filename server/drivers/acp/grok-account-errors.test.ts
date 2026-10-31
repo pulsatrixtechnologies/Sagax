@@ -25,6 +25,8 @@ describe("Grok Build account refusals", () => {
   it("says what refused and what to do", () => {
     const text = describeGrokAccountError("insufficient_funds", "grok-4.5");
     expect(text).toBe("Grok refused this turn (model grok-4.5): the usage balance of the Grok account it runs on is used up (xAI answered 402 Payment Required). Add credit to that Grok account at grok.com, or choose another model for this bot.");
-    expect(describeGrokAccountError("invalid_credentials")).toMatch(/^Grok refused this turn: .*Sign in to Grok again/);
+    expect(describeGrokAccountError("invalid_credentials")).toMatch(/^Grok refused this turn: .*Reconnect Grok in Settings → Model providers and accounts/);
+    expect(describeGrokAccountError("inactive_subscription")).toMatch(/Reconnect Grok in Settings → Model providers and accounts/);
+    expect(describeGrokAccountError("invalid_credentials")).not.toMatch(/engine setup/);
   });
 });
