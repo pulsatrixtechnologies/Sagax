@@ -235,6 +235,58 @@ public enum RoutineResults {
         return NotificationTarget(botId: bot.id, threadId: SingleStream.home(of: bot) ?? bot.threadId)
     }
 
+    /// What Continue in the conversation does (desktop
+    /// `continueRoutineRunInConversation`): open the conversation, quote the
+    /// report in that conversation's composer, and focus the report when this
+    /// window already holds it.
+    public struct ContinuePlan: Sendable {
+        public var target: NotificationTarget
+        /// Draft key for the composer now on screen (home when threads are hidden).
+        public var composerThreadId: String
+        public var citation: CitationAttachment?
+        public var focusMessageId: String?
+    }
+
+    /// Builds the open + cite plan for a bot run. `messages` are the ones
+    /// already loaded for the conversation target (the report card when this
+    /// window holds it); a report not loaded is quoted from `run.output`.
+    public static func continuePlan(
+        for run: RoutineRun, bots: [Bot], messages: [Message] = [], threadsShown: Bool
+    ) -> ContinuePlan? {
+        guard let target = conversationTarget(for: run, bots: bots),
+              let bot = bots.first(where: { $0.id == run.botId })
+        else { return nil }
+        let home = SingleStream.home(of: bot) ?? bot.threadId
+        let composerThreadId = threadsShown ? target.threadId : home
+        let report = messages.first { $0.kind == .routineRun && $0.routineRun?.runId == run.id }
+        let raw = (report?.routineRun?.summary ?? run.output ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let quote: String = {
+            guard !raw.isEmpty else { return "" }
+            let ns = raw as NSString
+            return ns.length > Citations.maxQuoteLength ? ns.substring(to: Citations.maxQuoteLength) : raw
+        }()
+        let messageId = report?.id ?? "routine-run:\(run.id)"
+        var citation: CitationAttachment?
+        if !quote.isEmpty {
+            let selector = CitationTextSelector(
+                text: quote, start: 0, end: Citations.jsLength(quote), prefix: "", suffix: ""
+            )
+            citation = Citations.attachment(
+                source: CitationSource(
+                    ownerType: .bot, ownerId: bot.id, threadId: target.threadId, messageId: messageId
+                ),
+                selector: selector
+            )
+        }
+        return ContinuePlan(
+            target: target,
+            composerThreadId: composerThreadId,
+            citation: citation,
+            focusMessageId: report?.id
+        )
+    }
+
     /// One folder of the "Post results to" picker.
     public struct Group: Hashable, Sendable {
         /// The folder's name; nil for threads outside any folder.

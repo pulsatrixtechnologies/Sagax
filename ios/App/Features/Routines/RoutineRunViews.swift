@@ -351,26 +351,21 @@ struct RoutineRunDetailView: View {
                 .disabled(working)
                 .accessibilityIdentifier("routine-run-again")
             }
-            if let target = executionTarget {
-                Button(run.target == "room-goal" ? String(localized: "Open group thread") : String(localized: "Continue in the conversation"), systemImage: "arrow.up.right.square") {
-                    open(target)
+            if run.target == "room-goal", let target = NotificationTarget(botId: run.botId, threadId: threadId) {
+                Button(String(localized: "Open group thread"), systemImage: "arrow.up.right.square") {
+                    dismiss()
+                    Task { await session.openNotification(target) }
+                }
+                .accessibilityIdentifier("routine-run-open-thread")
+            } else if RoutineResults.conversationTarget(for: run, bots: session.state.bots) != nil {
+                // #1699: cite the report in the composer, as the desktop does.
+                Button(String(localized: "Continue in the conversation"), systemImage: "arrow.up.right.square") {
+                    dismiss()
+                    Task { await session.continueRoutineRunInConversation(run) }
                 }
                 .accessibilityIdentifier("routine-run-open-thread")
             }
         }
-    }
-
-    /// A team goal opens its group's thread; a bot's run, the bot's one
-    /// conversation where its report is (2026-10-29), never its own task.
-    private var executionTarget: NotificationTarget? {
-        run.target == "room-goal"
-            ? NotificationTarget(botId: run.botId, threadId: threadId)
-            : RoutineResults.conversationTarget(for: run, bots: session.state.bots)
-    }
-
-    private func open(_ target: NotificationTarget) {
-        dismiss()
-        Task { await session.openNotification(target) }
     }
 
     private func loadSteps() async {
