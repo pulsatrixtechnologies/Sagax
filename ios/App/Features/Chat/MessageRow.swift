@@ -475,8 +475,8 @@ extension MessageRow: Equatable {
 }
 
 /// A run opened from its card in the chat, with its routine when it still
-/// exists.
-struct OpenedRoutineRun: Identifiable {
+/// exists. Also the destination of a routine-run push (#1700).
+struct OpenedRoutineRun: Identifiable, Equatable {
     let run: RoutineRun
     let routine: Routine?
     var id: String { run.id }
