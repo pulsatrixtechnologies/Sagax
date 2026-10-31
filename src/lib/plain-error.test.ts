@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { isTechnicalError, isTransientFailure, plainErrorLine, readableError, retryTransient } from "./plain-error";
 import { setLocale } from "./i18n";
+import { providerReplyCutMessage } from "../../shared/provider-reply-cut";
 import { requestTooLargeMessage } from "../../shared/request-too-large";
 import { botsSaveFailure } from "../../shared/bots-save-failure";
 
@@ -61,6 +62,33 @@ describe("a provider refusing a message as too large", () => {
     setLocale("fr");
     expect(plainErrorLine(`  ${requestTooLargeMessage("vendor/model-1.5")}\n`)).toBe("Ce message est trop volumineux pour vendor/model-1.5. Commencez une nouvelle conversation ou choisissez un modèle qui en accepte davantage.");
     expect(plainErrorLine("This message is too large for the box.")).toBeUndefined();
+  });
+});
+
+describe("a provider cutting a reply short", () => {
+  afterEach(() => setLocale("en"));
+
+  it("says length and content_filter cuts in the reader's language, including the old technical line", () => {
+    expect(plainErrorLine(providerReplyCutMessage("length"))).toBe(
+      "The reply was cut: maximum length reached. Ask for a continuation.",
+    );
+    expect(plainErrorLine(providerReplyCutMessage("content_filter"))).toBe(
+      "The reply was cut by the provider: content filter.",
+    );
+    expect(plainErrorLine("provider did not finish the response (content_filter)")).toBe(
+      "The reply was cut by the provider: content filter.",
+    );
+    setLocale("fr");
+    expect(plainErrorLine(providerReplyCutMessage("length"))).toBe(
+      "Réponse coupée : longueur maximale atteinte. Demande une suite.",
+    );
+    expect(plainErrorLine(providerReplyCutMessage("content_filter"))).toBe(
+      "Réponse coupée par le fournisseur : filtre de contenu.",
+    );
+    expect(plainErrorLine("provider did not finish the response (length)")).toBe(
+      "Réponse coupée : longueur maximale atteinte. Demande une suite.",
+    );
+    expect(plainErrorLine(providerReplyCutMessage("length"))).not.toMatch(/—|–/);
   });
 });
 

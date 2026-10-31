@@ -918,6 +918,27 @@ describe("structured tool execution boundaries", () => {
   });
 
   it.each([
+    { reason: "content_filter" as const, line: "The reply was cut by the provider: content filter." },
+    { reason: "length" as const, line: "The reply was cut: maximum length reached. Ask for a continuation." },
+  ])("keeps a partial reply cut by $reason and reports a readable line, never the raw finish_reason", async ({ reason, line }) => {
+    const { providerReplyCutMessage } = await import("../../shared/provider-reply-cut.ts");
+    expect(line).toBe(providerReplyCutMessage(reason));
+    const f = await fixture((_request, response) => sse(response, [
+      chunk({ content: "Partial answer that was cut short." }),
+      chunk({}, reason),
+    ]));
+    await f.start({ integrations: undefined });
+    expect(await f.completed()).toMatchObject({ ok: false });
+    expect(f.recorder.events).toContainEqual(expect.objectContaining({
+      type: "item.completed", itemType: "assistant_text", text: "Partial answer that was cut short.",
+    }));
+    expect(f.recorder.events).toContainEqual(expect.objectContaining({ type: "runtime.error", message: line }));
+    expect(f.recorder.events.some((event) =>
+      event.type === "runtime.error" && /provider did not finish|content_filter|\(length\)/.test(event.message),
+    )).toBe(false);
+  });
+
+  it.each([
     { scenario: "missing choices", body: {} },
     { scenario: "empty choices", body: { choices: [] } },
     { scenario: "empty assistant message", body: { choices: [{ message: {}, finish_reason: "stop" }] } },

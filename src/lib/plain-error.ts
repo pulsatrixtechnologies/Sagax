@@ -6,6 +6,7 @@
 // line, and the caller keeps the original under a Details disclosure.
 import { t } from "@/lib/i18n";
 import type { LocaleKey } from "@/locales";
+import { providerReplyCutOf } from "../../shared/provider-reply-cut";
 import { requestTooLargeModel } from "../../shared/request-too-large";
 
 /** The browser's own words when a request never reached the server. */
@@ -73,6 +74,12 @@ export function plainErrorLine(raw: string): string | undefined {
   // A provider refused the message's size even after one smaller resend (server/drivers/chat-size-limit.ts).
   const tooLargeFor = requestTooLargeModel(raw);
   if (tooLargeFor) return t("chat.error.requestTooLarge", { model: tooLargeFor });
+  // OpenAI (or compatible) stopped the reply short: content filter or length
+  // (shared/provider-reply-cut.ts), including the pre-fix technical line.
+  const cut = providerReplyCutOf(raw);
+  if (cut === "length") return t("chat.error.replyCutLength");
+  if (cut === "content_filter") return t("chat.error.replyCutFilter");
+  if (cut === "generic") return t("chat.error.replyCut");
   if (!isTechnicalError(raw)) return undefined;
   const text = raw.trim();
   const rest = text.replace(STATUS_PREFIX, "").trim();
