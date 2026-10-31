@@ -77,6 +77,7 @@ export function RoutineConfiguration({ routine, run, bots, groups = [], viewerPr
             <li>{t("routines.continuityLabel")}: {routine.continuity ? t("routineDetail.on") : t("routineDetail.off")}</li>
             {routine.target === "bot" && <li>{t("routines.postResults.label")}: {routine.postResults === false ? t("routineDetail.off") : t("routineDetail.on")}</li>}
             <li>{t("routines.away.onlyLabel")}: {routine.onlyWhenPresent ? t("routineDetail.on") : t("routineDetail.off")}</li>
+            {routine.deleteWhenFinished && <li data-routine-delete-when-finished="">{t("routines.deleteWhenFinished.willDelete")}</li>}
             <li>{t("routines.autoPause.label")}: {routineAutoPauseOption(routineAutoPauseAfter(routine))}</li>
             {routine.mailAlias && <li>{t("routines.mailAlias.label")}: +{routine.mailAlias}</li>}
             {routine.folder && <li>{t("routineDetail.folder")}: {routine.folder}</li>}

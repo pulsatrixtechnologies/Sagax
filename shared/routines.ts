@@ -179,6 +179,11 @@ export interface Routine {
   /** 2026-10-28 (shared/routine-folders.ts): the folder of its bot it sits
    * in. Absent: no folder. */
   folder?: string;
+  /** Delete this routine once its schedule has no more runs and the last
+   * run has settled (completed, failed, cancelled or missed). Only for a
+   * schedule with a known end (once, or interval with endsAt). Off by
+   * default. Past runs stay in the calendar and the run log. */
+  deleteWhenFinished?: boolean;
   nextRunAt: number | null;
   /** Scheduled slot a flexible routine advances from. Absent for exact timing. */
   nominalRunAt?: number;
@@ -291,4 +296,15 @@ export interface RoutineInput {
   /** 2026-10-28: the bot's folder to put it in; null takes it out of its
    * folder, omission preserves it. */
   folder?: string | null;
+  /** Delete once the schedule ends and the last run settles. Off unless true. */
+  deleteWhenFinished?: boolean;
+}
+
+/** True when the schedule has a known last occurrence: a one-time run, or
+ * an interval with an endsAt cutoff. Cron, daily, webhook and email triggers
+ * do not. */
+export function scheduleHasKnownEnd(schedule: { type: string; endsAt?: number | null } | null | undefined): boolean {
+  if (!schedule) return false;
+  if (schedule.type === "once") return true;
+  return schedule.type === "interval" && typeof schedule.endsAt === "number";
 }

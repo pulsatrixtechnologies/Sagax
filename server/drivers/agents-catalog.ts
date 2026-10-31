@@ -303,6 +303,10 @@ const ROUTINE_FIELDS_SCHEMA = {
     maxLength: 60,
     description: "Folder of this bot's Routines list to file it in, such as Reports or Home. A new name makes the folder; reuse a name from list_routines to group with others. null in an update takes it out of its folder. Do not put the folder in the name as a [Prefix].",
   },
+  delete_when_finished: {
+    type: "boolean",
+    description: "Delete this routine automatically once its schedule has no more runs and the last run has settled (completed, failed, cancelled or missed). Only for a one-time routine or an interval with an end date. Defaults to false. Past runs stay in the calendar and the run log. Set false in an update to keep it listed after it ends.",
+  },
 } as const;
 
 // propose_profile's one sentence about for_bot_id, which a bot that is not a

@@ -2173,6 +2173,8 @@ public struct Routine: Codable, Hashable, Identifiable, Sendable {
     /// Absent inherits the installation default; a quiet run stays silent and
     /// questions, approvals and errors always reach the person.
     public var postResults: Bool? = nil
+    /// Delete once the schedule ends and the last run settles (#1648).
+    public var deleteWhenFinished: Bool? = nil
     /// "Remember the last run": each run starts with the previous report.
     public var continuity: Bool? = nil
     /// The tag after + on the bot's mail address (letters and digits).
@@ -2274,6 +2276,9 @@ public struct RoutineInput: Encodable, Sendable {
     /// Post results in the conversation. Nil leaves the stored value alone on
     /// an edit and inherits the installation default on a create.
     public var postResults: Bool? = nil
+    /// Delete once finished. Nil leaves the stored value alone on an edit
+    /// and means off on a create.
+    public var deleteWhenFinished: Bool? = nil
     /// Failed runs in a row that pause it (0 never). Nil leaves the stored
     /// value alone on an edit and keeps the default (5) on a create.
     public var autoPauseAfter: Int? = nil

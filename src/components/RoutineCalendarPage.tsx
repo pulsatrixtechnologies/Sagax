@@ -420,6 +420,8 @@ function EventEditor({
   const [continuity, setContinuity] = useState(Boolean(template?.continuity));
   // Only when I'm here (server/routine-away.ts): off unless chosen.
   const [onlyWhenPresent, setOnlyWhenPresent] = useState(template?.onlyWhenPresent === true);
+  // #1648: delete once the finite schedule ends (once, or interval with endsAt).
+  const [deleteWhenFinished, setDeleteWhenFinished] = useState(template?.deleteWhenFinished === true);
   // Only when something changes (2026-10-26, shared/routine-watch.ts): off
   // unless chosen. A condition pre-check set elsewhere is left as it is.
   const existingWatch = template?.precheck?.kind === "watch" ? template.precheck : undefined;
@@ -658,6 +660,7 @@ function EventEditor({
           continuity: routineTarget === "bot" && repeatsOnClock && continuity,
           onlyWhenPresent,
           postResults: routineTarget === "bot" ? postResults : undefined,
+          deleteWhenFinished: (recurrence === "none" || (recurrence === "interval" && intervalEndsAt != null)) && deleteWhenFinished,
           mailAlias: routineTarget === "bot" ? (mailAlias.trim() || null) : null,
           // Sent when on, or to remove a watch the routine had.
           ...(watchAllowed && watchBuilt.watch ? { precheck: watchBuilt.watch } : existingWatch ? { precheck: null } : {}),
@@ -756,7 +759,7 @@ function EventEditor({
     timeoutMinutes == null ? t("routineCalendar.noTimeLimit") : t("routineCalendar.stopsAfter", { duration: durationLabel(timeoutMinutes) }),
     repeatsOnClock ? (overlap === "queue" ? t("routines.overlapQueue") : t("routines.overlapSkip")) : null,
   ].filter(Boolean).join(" · ");
-  const editorSnapshot = JSON.stringify([kind, name, description, recurrence, scheduleDraft, date, startTime, weekdays, durationMinutes, timeoutMinutes, overlap, autoPauseAfter, continuity, onlyWhenPresent, watchDraft, postResults, mailAlias, timingMode, earlyMinutes, lateMinutes, intervalMinutes, intervalDays, intervalWeekdays, intervalWindow, intervalWindowStart, intervalWindowEnd, intervalEnd, intervalEndDate, botIds, routineTarget, groupId, runOn, attachments.map((attachment) => attachment.id), runAs]);
+  const editorSnapshot = JSON.stringify([kind, name, description, recurrence, scheduleDraft, date, startTime, weekdays, durationMinutes, timeoutMinutes, overlap, autoPauseAfter, continuity, onlyWhenPresent, deleteWhenFinished, watchDraft, postResults, mailAlias, timingMode, earlyMinutes, lateMinutes, intervalMinutes, intervalDays, intervalWeekdays, intervalWindow, intervalWindowStart, intervalWindowEnd, intervalEnd, intervalEndDate, botIds, routineTarget, groupId, runOn, attachments.map((attachment) => attachment.id), runAs]);
   const openedSnapshot = useRef(editorSnapshot);
   const dirty = editorSnapshot !== openedSnapshot.current;
   const requestClose = () => {
@@ -1158,6 +1161,15 @@ function EventEditor({
               <span>
                 <span className="block text-[12.5px] font-medium text-ink">{t("routines.away.onlyLabel")}</span>
                 <span className="mt-1 block text-[11px] leading-relaxed text-ink-secondary">{t("routines.away.onlyHelp")}</span>
+              </span>
+            </label>
+          )}
+          {kind === "routine" && (recurrence === "none" || (recurrence === "interval" && intervalEnd === "on-date")) && (
+            <label data-routine-delete-when-finished className="flex items-start gap-3 rounded-xl border border-hairline/40 bg-inset/40 px-3.5 py-3">
+              <input type="checkbox" aria-label={t("routines.deleteWhenFinished.label")} checked={deleteWhenFinished} onChange={(event) => setDeleteWhenFinished(event.target.checked)} className="mt-0.5 accent-accent" />
+              <span>
+                <span className="block text-[12.5px] font-medium text-ink">{t("routines.deleteWhenFinished.label")}</span>
+                <span className="mt-1 block text-[11px] leading-relaxed text-ink-secondary">{t("routines.deleteWhenFinished.help")}</span>
               </span>
             </label>
           )}

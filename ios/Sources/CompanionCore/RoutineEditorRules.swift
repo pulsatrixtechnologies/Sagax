@@ -78,6 +78,7 @@ public struct RoutineEditorSnapshot: Equatable, Sendable {
     public var runAs: String?
     public var onlyWhenPresent: Bool
     public var postResults: Bool
+    public var deleteWhenFinished: Bool
     public var autoPauseAfter: Int
     public var continuity: Bool
     public var mailAlias: String
@@ -88,7 +89,7 @@ public struct RoutineEditorSnapshot: Equatable, Sendable {
         name: String, prompt: String, botId: String, target: String, groupId: String, runOn: String,
         form: RoutineScheduleForm, durationMinutes: Int, timeoutMinutes: Int?, overlap: String,
         results: RoutineResultsDestination, attachmentIds: [String], runAs: String?, onlyWhenPresent: Bool,
-        postResults: Bool, autoPauseAfter: Int, continuity: Bool, mailAlias: String, watch: RoutineWatchDraft
+        postResults: Bool, deleteWhenFinished: Bool, autoPauseAfter: Int, continuity: Bool, mailAlias: String, watch: RoutineWatchDraft
     ) {
         self.name = name
         self.prompt = prompt
@@ -105,6 +106,7 @@ public struct RoutineEditorSnapshot: Equatable, Sendable {
         self.runAs = runAs
         self.onlyWhenPresent = onlyWhenPresent
         self.postResults = postResults
+        self.deleteWhenFinished = deleteWhenFinished
         self.autoPauseAfter = autoPauseAfter
         self.continuity = continuity
         self.mailAlias = mailAlias

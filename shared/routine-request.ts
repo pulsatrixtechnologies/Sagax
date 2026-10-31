@@ -68,6 +68,8 @@ export interface RoutineRequestDefinition {
   watch?: RoutineWatchPrecheck;
   /** 2026-10-28: the bot's folder it sits in (shared/routine-folders.ts). */
   folder?: string;
+  /** Delete once the schedule ends and the last run settles (#1648). */
+  deleteWhenFinished?: boolean;
 }
 
 export type RoutineRequestChanges =
