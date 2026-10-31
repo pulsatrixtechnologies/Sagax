@@ -39,7 +39,8 @@ export interface PersonConnectionRouteDeps {
   ownIntegrationsRefusal?: (auth: RequestAuth) => Record<string, unknown> | null;
   sandboxConfigured: () => boolean;
   github: {
-    status: (principalId: string) => GithubStatus;
+    /** May probe GitHub /user so a dead token is never listed as Connected. */
+    status: (principalId: string) => GithubStatus | Promise<GithubStatus>;
     startDevice: (principalId: string) => Promise<unknown>;
     connectToken: (principalId: string, token: string) => Promise<GithubStatus>;
     disconnect: (principalId: string) => Promise<void>;
@@ -87,7 +88,7 @@ export function createPersonConnectionRoutes(deps: PersonConnectionRouteDeps): R
     try {
       if (path === "/api/me/connections") {
         if (method !== "GET") return json(res, 405, { error: "GET only" });
-        return json(res, 200, { github: deps.github.status(principalId), servers: await deps.servers.list(principalId), sandbox: deps.sandboxConfigured() });
+        return json(res, 200, { github: await deps.github.status(principalId), servers: await deps.servers.list(principalId), sandbox: deps.sandboxConfigured() });
       }
       // Everything below changes the person's connections. Signing in again
       // to a server they already have keeps it working.
@@ -106,7 +107,7 @@ export function createPersonConnectionRoutes(deps: PersonConnectionRouteDeps): R
       if (path === "/api/me/github") {
         if (method !== "DELETE") return json(res, 405, { error: "DELETE only" });
         await deps.github.disconnect(principalId);
-        return json(res, 200, { github: deps.github.status(principalId) });
+        return json(res, 200, { github: await deps.github.status(principalId) });
       }
       if (path === "/api/me/mcp/servers") {
         if (method !== "POST") return json(res, 405, { error: "POST only" });

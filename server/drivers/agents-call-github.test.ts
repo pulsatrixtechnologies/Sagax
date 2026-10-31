@@ -34,5 +34,6 @@ describe("connect_github", () => {
     expect(githubConnectText({ state: "admin_only" })).toContain("administrator");
     expect(githubConnectText({ state: "no_device_flow" })).toContain("read:org");
     expect(githubConnectText({ state: "error", message: "GitHub could not be reached from the server." })).toContain("could not be reached");
+    expect(githubConnectText({ state: "error", message: "GitHub refused this token. Connect again.", login: "octo" })).toMatch(/reconnect GitHub|refused/i);
   });
 });

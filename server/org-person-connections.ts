@@ -22,7 +22,7 @@ import type { RequestAuth } from "./request-auth.ts";
 import { PASS, type RouteHandler } from "./routes/table.ts";
 
 export type OrgConnection =
-  | { kind: "github"; state: "connected" | "pending"; login?: string; name?: string; via?: "device" | "token"; scopes?: string[]; createdAt?: number }
+  | { kind: "github"; state: "connected" | "pending" | "error"; login?: string; name?: string; via?: "device" | "token"; scopes?: string[]; createdAt?: number }
   | { kind: "mcp"; name: string; mcpKind: "remote" | "stdio"; detail: string; createdAt: number; enabled: boolean; auth?: string; lastUsedAt?: number }
   | { kind: "plugin"; botId: string; botName: string; key: string; name: string; marketplace: string; createdAt: number; enabled: boolean };
 
@@ -96,6 +96,9 @@ export function orgConnectionListing(input: {
     });
   } else if (input.github.state === "pending") {
     connections.push({ kind: "github", state: "pending" });
+  } else if (input.github.state === "error" && input.github.login) {
+    // Stored but refused: still listed so an admin can revoke it; never "connected".
+    connections.push({ kind: "github", state: "error", login: input.github.login });
   }
   for (const [name, server] of Object.entries(input.servers).sort(([a], [b]) => a.localeCompare(b))) {
     const lastUsedAt = input.lastUsed(name);

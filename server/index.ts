@@ -8794,7 +8794,7 @@ ROUTES.push(createPersonConnectionRoutes({
   ownIntegrationsRefusal,
   sandboxConfigured: () => Boolean(userSandbox),
   github: {
-    status: (principalId) => githubConnect.status(principalId, personGithub(principalId)),
+    status: (principalId) => githubConnect.probeStatus(principalId, personGithub(principalId)),
     startDevice: (principalId) => githubConnect.startDeviceFlow(principalId),
     connectToken: async (principalId, token) => {
       await githubConnect.connectWithToken(principalId, token);
@@ -38636,10 +38636,12 @@ const orgPersonConnectionDeps: OrgPersonConnectionsDeps = {
     return true;
   },
   disconnectGithub: async (id) => {
-    const status = githubConnect.status(id, personGithub(id));
-    if (status.state !== "connected" && status.state !== "pending") return { removed: false };
-    const login = status.state === "connected" ? status.login : undefined;
     const previous = personGithub(id);
+    const status = githubConnect.status(id, previous);
+    if (!previous && status.state !== "pending") return { removed: false };
+    const login = previous?.login
+      ?? (status.state === "connected" ? status.login : undefined)
+      ?? (status.state === "error" ? status.login : undefined);
     githubConnect.disconnect(id);
     await syncGithubToSandbox(id, null, undefined, previous);
     return { removed: true, ...(login ? { login } : {}) };
@@ -47075,11 +47077,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
         // without `apps.ownIntegrations` does not bind a GitHub account here either.
         if (IDENTITY.kind === "perspicax" && !principalCan(principalId, "apps.ownIntegrations")) return json(res, 200, { state: "admin_only" });
         const current = personGithub(principalId);
-        const status = githubConnect.status(principalId, current);
+        const status = await githubConnect.probeStatus(principalId, current);
         const orgAccessUrl = status.state === "connected" ? status.orgAccessUrl : undefined;
         const reconnect = body?.reconnect === true;
-        if (current && !reconnect && githubTokenKind(current.token) !== "fine_grained") {
-          return json(res, 200, { state: "connected", login: current.login, ...(orgAccessUrl ? { orgAccessUrl } : {}) });
+        // A stored token that GitHub still accepts: no new device flow unless reconnect
+        // or a fine-grained token that cannot cover organizations.
+        if (status.state === "connected" && !reconnect && githubTokenKind(current?.token) !== "fine_grained") {
+          return json(res, 200, { state: "connected", login: status.login, ...(orgAccessUrl ? { orgAccessUrl } : {}) });
+        }
+        if (status.state === "error" && status.login && !reconnect && !githubConnect.deviceFlowAvailable()) {
+          return json(res, 200, { state: "error", message: status.error, login: status.login });
         }
         if (!githubConnect.deviceFlowAvailable()) return json(res, 200, { state: "no_device_flow", ...(current ? { login: current.login } : {}) });
         // A sign-in already waiting: the same code again, never a second one

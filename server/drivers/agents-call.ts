@@ -1941,6 +1941,8 @@ export function githubConnectText(r: Record<string, unknown>): string {
       return "This person's Sagax profile does not include managing their own plugins, skills and MCP servers, so they cannot connect GitHub themselves. Tell them to ask an administrator to add it in Perspicax.";
     case "no_device_flow":
       return `This server has no GitHub OAuth App for the device flow yet.${login ? ` GitHub is connected as @${login} with a token that may not cover their organizations.` : ""} Tell the person to connect in the GitHub plugin's page (Capabilities > Sources > GitHub connection) with a classic personal access token with the repo and read:org scopes (a fine-grained token reaches one owner only), and an administrator to add the OAuth App's client id in Settings > Organization.`;
+    case "error":
+      return `GitHub is not usable right now${login ? ` for @${login}` : ""}: ${typeof r.message === "string" ? r.message : "the token was refused"}. Tell the person, in their language, to reconnect GitHub in the GitHub plugin's page (Capabilities > Sources > GitHub connection), or call connect_github with reconnect true. Never ask for gh auth login or a token in chat.`;
     default:
       return typeof r.message === "string" ? r.message : "GitHub sign-in is unavailable right now.";
   }

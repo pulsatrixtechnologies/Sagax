@@ -108,6 +108,9 @@ describe("the GitHub plugin's page", () => {
     expect(none).toBe("GitHub is not connected.");
     const connected = renderToStaticMarkup(createElement(MyGithubSummary, { initial: { github: { state: "connected" as const, deviceFlow: false, login: "octo", via: "token" as const, connectedAt: 1 }, servers: [], sandbox: true } }));
     expect(connected).toBe("Connected as @octo");
+    const refused = renderToStaticMarkup(createElement(MyGithubSummary, { initial: { github: { state: "error" as const, deviceFlow: false, error: "GitHub refused this token. Connect again.", login: "octo" }, servers: [], sandbox: true } }));
+    expect(refused).toBe("Reconnect GitHub (@octo)");
+    expect(refused).not.toContain("Connected as");
   });
 
   it("says it in French", () => {
