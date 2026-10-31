@@ -752,6 +752,30 @@ final class StreamingTests: XCTestCase {
         XCTAssertNil(state.streaming["t1"])
         XCTAssertEqual(state.streaming["t2"], "for two", "one bot finishing must not silence another")
     }
+
+    func testHydrateClearsStaleLiveText() {
+        // A non-resumable reconnect never replays turn.completed. Leaving the
+        // truncated answer in streaming would draw it under the settled
+        // transcript and prepend onto the next turn (#1749).
+        var state = CompanionState()
+        state.apply(delta("cut mid-sentence"))
+        state.apply(delta("thinking…", kind: "reasoning_text"))
+        XCTAssertEqual(state.streaming["t1"], "cut mid-sentence")
+        XCTAssertEqual(state.reasoning["t1"], "thinking…")
+
+        state.hydrate(Fleet(bots: [], groups: []))
+        XCTAssertTrue(state.streaming.isEmpty)
+        XCTAssertTrue(state.reasoning.isEmpty)
+    }
+
+    func testTurnStartedClearsStaleLiveText() {
+        var state = CompanionState()
+        state.apply(delta("stale partial"))
+        state.apply(.runtime(RuntimeEvent(type: "turn.started", threadId: "t1", delta: nil, streamKind: nil)))
+        XCTAssertNil(state.streaming["t1"])
+        state.apply(delta("fresh answer"))
+        XCTAssertEqual(state.streaming["t1"], "fresh answer")
+    }
 }
 
 // MARK: - The computer panel
