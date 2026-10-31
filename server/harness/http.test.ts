@@ -1,8 +1,9 @@
 import type { IncomingMessage } from "node:http";
 import { Readable } from "node:stream";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
-import { readBody } from "./http.ts";
+import { BODY_YIELD_BYTES, estimateJsonBytes, readBody, safeParseYielding } from "./http.ts";
 
 /** A request body that arrives in exactly these chunks. */
 const request = (chunks: Buffer[]) => Readable.from(chunks) as unknown as IncomingMessage;
@@ -34,5 +35,54 @@ describe("readBody", () => {
   it("still refuses a body over the limit", async () => {
     const bytes = Buffer.from(JSON.stringify({ text: "中".repeat(100) }));
     await expect(readBody(request(splitInsideCharacter(bytes, 10)), 64)).rejects.toMatchObject({ status: 413 });
+  });
+
+  it("yields before JSON.parse when the body is large (#1750)", async () => {
+    const text = "x".repeat(BODY_YIELD_BYTES);
+    const bytes = Buffer.from(JSON.stringify({ text }));
+    const immediates: number[] = [];
+    const realImmediate = setImmediate;
+    const spy = vi.spyOn(globalThis, "setImmediate").mockImplementation(((fn: (...args: unknown[]) => void, ...args: unknown[]) => {
+      immediates.push(1);
+      return realImmediate(fn, ...args);
+    }) as typeof setImmediate);
+    try {
+      const body = await readBody(request([bytes]));
+      expect(body.text).toBe(text);
+      expect(immediates.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe("safeParseYielding", () => {
+  it("parses small bodies without forcing a yield", async () => {
+    const schema = z.object({ name: z.string() });
+    const spy = vi.spyOn(globalThis, "setImmediate");
+    const parsed = await safeParseYielding(schema, { name: "ada" });
+    expect(parsed.success).toBe(true);
+    if (parsed.success) expect(parsed.data.name).toBe("ada");
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("yields before zod when the value is large (#1750)", async () => {
+    const schema = z.object({ text: z.string() });
+    const value = { text: "y".repeat(BODY_YIELD_BYTES) };
+    expect(estimateJsonBytes(value)).toBeGreaterThanOrEqual(BODY_YIELD_BYTES);
+    const immediates: number[] = [];
+    const realImmediate = setImmediate;
+    const spy = vi.spyOn(globalThis, "setImmediate").mockImplementation(((fn: (...args: unknown[]) => void, ...args: unknown[]) => {
+      immediates.push(1);
+      return realImmediate(fn, ...args);
+    }) as typeof setImmediate);
+    try {
+      const parsed = await safeParseYielding(schema, value);
+      expect(parsed.success).toBe(true);
+      expect(immediates.length).toBeGreaterThanOrEqual(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

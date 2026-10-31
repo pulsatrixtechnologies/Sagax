@@ -130,4 +130,31 @@ describe("thread event log retention", () => {
     expect(warned).toContain("blocked.ndjson");
     warn.mockRestore();
   });
+
+  it("paced sweep matches the sync one and yields between batches (#1750)", async () => {
+    const { sweepThreadEventLogs, sweepThreadEventLogsPaced } = await freshSweep();
+    const cases = [
+      candidate({ threadId: "old-a", closedAt: now - 40 * DAY_MS }),
+      candidate({ threadId: "old-b", closedAt: now - 40 * DAY_MS }),
+      candidate({ threadId: "recent", closedAt: now - DAY_MS }),
+      candidate({ threadId: "busy", closedAt: now - 40 * DAY_MS, busy: true }),
+    ];
+    for (const each of cases) await writeLogs(each.threadId);
+    const immediates: number[] = [];
+    const realImmediate = setImmediate;
+    const spy = vi.spyOn(globalThis, "setImmediate").mockImplementation(((fn: (...args: unknown[]) => void, ...args: unknown[]) => {
+      immediates.push(1);
+      return realImmediate(fn, ...args);
+    }) as typeof setImmediate);
+
+    expect(await sweepThreadEventLogsPaced(cases, 30, now, 2)).toBe(2);
+    expect(immediates.length).toBeGreaterThanOrEqual(2);
+    spy.mockRestore();
+    expect(await logsExist("old-a")).toBe(false);
+    expect(await logsExist("old-b")).toBe(false);
+    expect(await logsExist("recent")).toBe(true);
+    expect(await logsExist("busy")).toBe(true);
+    // sync helper still available for unit checks
+    expect(sweepThreadEventLogs([], 30, now)).toBe(0);
+  });
 });
