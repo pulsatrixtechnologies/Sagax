@@ -473,6 +473,7 @@ function forgetSealingState(): void {
   migration.cursor = 0;
   migration.phase = "messages";
   migration.dirty = true;
+  migrationBackoffMs = MIGRATION_PAUSE_MS;
 }
 
 /** The key a thread's new rows are sealed with; null writes them plain
@@ -839,17 +840,31 @@ const migration = {
  * sixth of one core while it runs, and never a request's turn. */
 const MIGRATION_SLICE_MS = 4;
 const MIGRATION_PAUSE_MS = 20;
+const MIGRATION_BACKOFF_MAX_MS = 60_000;
+let migrationBackoffMs = MIGRATION_PAUSE_MS;
+/** Test seam: throw inside a migration transaction to prove the cursor stays put. */
+let migrationFault: (() => void) | null = null;
+export function setMigrationFaultForTests(fault: (() => void) | null): void {
+  migrationFault = fault;
+}
 
-function scheduleMigration(): void {
+function scheduleMigration(delay = migrationBackoffMs): void {
   if (configured?.autoMigrate === false || migration.timer) return;
   if (!configured) return; // scripts and tests that never configured: no timers
   migration.timer = setTimeout(() => {
     migration.timer = null;
     let finished = true;
-    try { finished = runContentMigration(MIGRATION_SLICE_MS).done; }
-    catch { finished = true; }
-    if (!finished) scheduleMigration();
-  }, MIGRATION_PAUSE_MS);
+    try {
+      finished = runContentMigration(MIGRATION_SLICE_MS).done;
+      migrationBackoffMs = MIGRATION_PAUSE_MS;
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.error(`content migration slice failed (${migration.phase}@${migration.cursor}): ${detail}`);
+      finished = false;
+      migrationBackoffMs = Math.min(Math.max(migrationBackoffMs * 2, MIGRATION_PAUSE_MS * 2), MIGRATION_BACKOFF_MAX_MS);
+    }
+    if (!finished) scheduleMigration(migrationBackoffMs);
+  }, delay);
   migration.timer.unref?.();
 }
 
@@ -922,41 +937,47 @@ export function runContentMigration(budgetMs = 8): { done: boolean } {
       if (!rows.length) { migration.phase = "memory"; migration.cursor = 0; continue; }
       database.exec("PRAGMA secure_delete = ON");
       try {
+        // Cursor advances only after COMMIT. Advancing inside the transaction
+        // used to skip a whole slice when SQLITE_BUSY (or similar) rolled it back.
+        let advanced = migration.cursor;
         transaction(() => {
           for (const row of rows) {
             // the budget holds per row, not per batch: a slow disk ends the step early
             if (row.rowid !== rows[0]!.rowid && performance.now() - started > budgetMs) break;
-            migration.cursor = row.rowid;
+            migrationFault?.();
             if (on) {
               if (row.sealed && row.key_id && row.key_id === row.bound) {
                 if (row.indexed === null && !pendingIndex.has(row.rowid)) {
                   const message = decodeRow(row, row.thread_id);
                   if (message) afterWrite(row.rowid, row.thread_id, message, bindings.get(row.thread_id) ?? sealingKey(row.thread_id));
                 }
+                advanced = row.rowid;
                 continue;
               }
               let message: Message | null;
-              try { message = decodeRow(row, row.thread_id); } catch { migration.passPlain = migration.passPlain || !row.sealed; continue; }
-              if (!message) continue;
+              try { message = decodeRow(row, row.thread_id); } catch { migration.passPlain = migration.passPlain || !row.sealed; advanced = row.rowid; continue; }
+              if (!message) { advanced = row.rowid; continue; }
               const { values, key } = rowValues(row.thread_id, message);
-              if (!key) { migration.passPlain = true; continue; }
+              if (!key) { migration.passPlain = true; advanced = row.rowid; continue; }
               // verify before it replaces anything: the sealed copy opens to the same message
               const check = openText(key.dek, values.sealed!, messageAad(key.keyId, key.owner, row.thread_id, String(message.id)));
-              if (check !== JSON.stringify(message)) { migration.failed++; continue; }
+              if (check !== JSON.stringify(message)) { migration.failed++; advanced = row.rowid; continue; }
               cached("UPDATE messages SET text = ?, json = ?, sealed = ?, key_id = ? WHERE rowid = ?").run(values.text, values.json, values.sealed, values.keyId, row.rowid);
               afterWrite(row.rowid, row.thread_id, message, key);
               migration.sealed++;
               migration.sealedThisPass++;
             } else if (row.sealed) {
               let message: Message | null;
-              try { message = decodeRow(row, row.thread_id); } catch { migration.failed++; continue; }
-              if (!message) continue;
+              try { message = decodeRow(row, row.thread_id); } catch { migration.failed++; advanced = row.rowid; continue; }
+              if (!message) { advanced = row.rowid; continue; }
               cached("UPDATE messages SET text = ?, json = ?, sealed = NULL, key_id = NULL WHERE rowid = ?").run(message.text ?? null, JSON.stringify(message), row.rowid);
               pendingIndex.delete(row.rowid);
               migration.opened++;
             }
+            advanced = row.rowid;
           }
         });
+        migration.cursor = advanced;
       } finally { database.exec("PRAGMA secure_delete = OFF"); }
       // the tokens of what this step sealed, in what is left of its budget
       if (pendingIndex.size) flushContentIndex(Math.max(1, budgetMs - (performance.now() - started)));
@@ -970,19 +991,20 @@ export function runContentMigration(budgetMs = 8): { done: boolean } {
       if (!rows.length) { migration.phase = "followups"; migration.cursor = 0; continue; }
       database.exec("PRAGMA secure_delete = ON");
       try {
+        let advanced = migration.cursor;
         transaction(() => {
           for (const row of rows) {
-            migration.cursor = row.rowid;
+            migrationFault?.();
             let text: string | null;
-            try { text = openMemoryRow(row); } catch { migration.passPlain = migration.passPlain || !row.key_id; continue; }
+            try { text = openMemoryRow(row); } catch { migration.passPlain = migration.passPlain || !row.key_id; advanced = row.rowid; continue; }
             // erased (its key destroyed): the next sync indexes the file again
-            if (text === null) { cached("DELETE FROM memory_files WHERE rowid = ?").run(row.rowid); continue; }
+            if (text === null) { cached("DELETE FROM memory_files WHERE rowid = ?").run(row.rowid); advanced = row.rowid; continue; }
             if (on) {
               const key = contentKeyForBot(row.bot_id);
-              if (!key) { if (!row.key_id) migration.passPlain = true; continue; }
-              if (row.key_id === key.keyId) continue;
+              if (!key) { if (!row.key_id) migration.passPlain = true; advanced = row.rowid; continue; }
+              if (row.key_id === key.keyId) { advanced = row.rowid; continue; }
               const sealed = seal(key.dek, text, memoryRowAad(key, row.bot_id, row.path));
-              if (openText(key.dek, sealed, memoryRowAad(key, row.bot_id, row.path)) !== text) { migration.failed++; continue; }
+              if (openText(key.dek, sealed, memoryRowAad(key, row.bot_id, row.path)) !== text) { migration.failed++; advanced = row.rowid; continue; }
               cached("UPDATE memory_files SET text = '', sealed = ?, key_id = ? WHERE rowid = ?").run(sealed, key.keyId, row.rowid);
               indexMemoryRow(row.rowid, key, text);
               if (!row.key_id) { migration.sealed++; migration.sealedThisPass++; }
@@ -990,25 +1012,30 @@ export function runContentMigration(budgetMs = 8): { done: boolean } {
               cached("UPDATE memory_files SET text = ?, sealed = NULL, key_id = NULL WHERE rowid = ?").run(text, row.rowid);
               migration.opened++;
             }
+            advanced = row.rowid;
           }
         });
+        migration.cursor = advanced;
       } finally { database.exec("PRAGMA secure_delete = OFF"); }
       continue;
     }
     if (migration.phase === "followups") {
       const rows = database.prepare("SELECT rowid AS rowid, id, thread_id, payload FROM chat_followups WHERE rowid > ? ORDER BY rowid LIMIT 64").all(migration.cursor) as Array<{ rowid: number; id: string; thread_id: string; payload: string }>;
       if (!rows.length) { migration.phase = "receipts"; migration.cursor = 0; continue; }
+      let advanced = migration.cursor;
       writeFollowups((connection) => {
         for (const row of rows) {
-          migration.cursor = row.rowid;
+          migrationFault?.();
           const sealedNow = sealedFieldKeyId(row.payload) !== null;
-          if (sealedNow === on) continue;
+          if (sealedNow === on) { advanced = row.rowid; continue; }
           const plain = openTextField("followup", row.id, row.payload);
-          if (plain === null) continue;
+          if (plain === null) { advanced = row.rowid; continue; }
           const next = on ? sealText(row.thread_id, "followup", row.id, plain) : plain;
           if (next !== row.payload) connection.prepare("UPDATE chat_followups SET payload = ? WHERE rowid = ?").run(next, row.rowid);
+          advanced = row.rowid;
         }
       });
+      migration.cursor = advanced;
       continue;
     }
     if (migration.phase === "receipts") {
@@ -1036,18 +1063,21 @@ export function runContentMigration(budgetMs = 8): { done: boolean } {
         checkpointSoon();
         return { done: !migration.dirty };
       }
+      let advanced = migration.cursor;
       transaction(() => {
         for (const row of rows) {
-          migration.cursor = row.rowid;
+          migrationFault?.();
           const sealedNow = sealedFieldKeyId(row.result) !== null;
-          if (sealedNow === on) continue;
+          if (sealedNow === on) { advanced = row.rowid; continue; }
           const id = `${row.kind}\u0000${row.key}`;
           const plain = openTextField("receipt", id, row.result);
-          if (plain === null) continue;
+          if (plain === null) { advanced = row.rowid; continue; }
           const next = on ? sealText(null, "receipt", id, plain) : plain;
           if (next !== row.result) cached("UPDATE command_receipts SET result = ? WHERE rowid = ?").run(next, row.rowid);
+          advanced = row.rowid;
         }
       });
+      migration.cursor = advanced;
       continue;
     }
     break;
