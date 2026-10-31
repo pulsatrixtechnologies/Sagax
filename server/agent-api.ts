@@ -411,20 +411,52 @@ export function signTurnHandle(secret: Buffer, input: {
   });
 }
 
-export function verifyHandle(secret: Buffer, handle: string, now: number): HandleBody | null {
-  if (typeof handle !== "string" || !handle.startsWith("turn_") || handle.length > 1_200) return null;
+/** Why await_turn refused a handle. verifyHandle yields format, signature or
+ * age; await_turn adds other_agent and other_caller after a valid body. */
+export type BadHandleReason = "signature" | "format" | "age" | "other_agent" | "other_caller";
+
+export type VerifyHandleResult =
+  | { ok: true; body: HandleBody }
+  | { ok: false; reason: Exclude<BadHandleReason, "other_agent" | "other_caller"> };
+
+const BAD_HANDLE_HINT =
+  "Call await_turn without a handle, or read_latest_page with the thread_id send_prompt returned.";
+
+const BAD_HANDLE_MESSAGE: Record<BadHandleReason, string> = {
+  signature: `That handle's signature does not match (it was altered or truncated). ${BAD_HANDLE_HINT}`,
+  format: `That handle is not a turn handle. ${BAD_HANDLE_HINT}`,
+  age: `That handle expired. ${BAD_HANDLE_HINT}`,
+  other_agent: `That handle was issued for a different agent. ${BAD_HANDLE_HINT}`,
+  other_caller: `That handle was issued for a different caller. ${BAD_HANDLE_HINT}`,
+};
+
+export function badHandleRefusal(reason: BadHandleReason): Refusal {
+  return refuse(400, "bad_handle", BAD_HANDLE_MESSAGE[reason], {
+    details: { reason },
+    hint: BAD_HANDLE_HINT,
+  });
+}
+
+export function verifyHandle(secret: Buffer, handle: string, now: number): VerifyHandleResult {
+  if (typeof handle !== "string" || !handle.startsWith("turn_") || handle.length > 1_200) {
+    return { ok: false, reason: "format" };
+  }
   const [payload, mac] = handle.slice(5).split(".");
-  if (!payload || !mac) return null;
+  if (!payload || !mac) return { ok: false, reason: "format" };
   const expected = createHmac("sha256", secret).update(payload).digest("base64url").slice(0, 32);
   const given = Buffer.from(mac);
-  if (given.length !== expected.length || !timingSafeEqual(given, Buffer.from(expected))) return null;
+  if (given.length !== expected.length || !timingSafeEqual(given, Buffer.from(expected))) {
+    return { ok: false, reason: "signature" };
+  }
   try {
     const body = JSON.parse(unb64(payload)) as HandleBody;
-    if (typeof body.a !== "string" || typeof body.t !== "string" || typeof body.i !== "number" || typeof body.c !== "string") return null;
-    if (now - body.i > HANDLE_TTL_MS) return null;
-    return body;
+    if (typeof body.a !== "string" || typeof body.t !== "string" || typeof body.i !== "number" || typeof body.c !== "string") {
+      return { ok: false, reason: "format" };
+    }
+    if (now - body.i > HANDLE_TTL_MS) return { ok: false, reason: "age" };
+    return { ok: true, body };
   } catch {
-    return null;
+    return { ok: false, reason: "format" };
   }
 }
 
@@ -848,11 +880,12 @@ export function createAgentApi(deps: AgentApiDeps): AgentApi {
       const agent = await reachable(caller, agentId);
       if (isRefusal(agent)) return agent;
       if (args.handle !== undefined && args.handle !== null && args.handle !== "") {
-        const body = typeof args.handle === "string" ? verifyHandle(deps.secret, args.handle, now()) : null;
-        if (!body || body.a !== agentId || body.c !== callerKey(caller)) {
-          return refuse(400, "bad_handle", "That handle is not one send_prompt or send_to_bot gave you for this agent, or it expired.");
-        }
-        return ok(resultBody(await waitTurn(body, args.handle as string, timeoutMs!, signal)));
+        if (typeof args.handle !== "string") return badHandleRefusal("format");
+        const verified = verifyHandle(deps.secret, args.handle, now());
+        if (!verified.ok) return badHandleRefusal(verified.reason);
+        if (verified.body.a !== agentId) return badHandleRefusal("other_agent");
+        if (verified.body.c !== callerKey(caller)) return badHandleRefusal("other_caller");
+        return ok(resultBody(await waitTurn(verified.body, args.handle, timeoutMs!, signal)));
       }
       // No handle: the in-flight turn of the caller's newest conversation
       // with this agent, else its last message.

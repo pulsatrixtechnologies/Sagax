@@ -3,9 +3,11 @@ import { ToolGrantStore } from "./tool-grants.ts";
 import { guardDecision } from "./tool-guard.ts";
 import { describe, expect, it } from "vitest";
 
+import { createHmac } from "node:crypto";
+
 import {
   AGENT_TOOL_NAMES, AGENT_TOOL_POLICY, agentPromptWithFiles, COLD_PAGE_SIZE, createAgentApi, ENTRY_TEXT_MAX, decodeCursor, encodeCursor, FIND_LIMIT_MAX,
-  matchScore, SEND_FILES_MAX, signHandle, signTurnHandle, turnLabel, verifyHandle,
+  HANDLE_TTL_MS, matchScore, SEND_FILES_MAX, signHandle, signTurnHandle, turnLabel, verifyHandle,
   type AgentApiDeps, type AgentCaller, type AgentScope, type AgentSummary, type AuditEntry, type FileInput, type StoredMessage, type TurnState,
 } from "./agent-api.ts";
 import { PRIORITY_DOWNGRADED_NOTE, resetPriorityWakeForTests, type PriorityDelivery } from "./priority-wake.ts";
@@ -455,9 +457,60 @@ describe("send_prompt / await_turn", () => {
     const w = world({ reachable: (caller, agent) => caller.id !== "bot-y" || agent.id !== "bot-a" });
     expect((await w.api.call(bot("bot-y"), "send_prompt", { agent_id: "bot-a", prompt: "x" })).status).toBe(404);
     const r = await w.api.call(bot("bot-x"), "send_prompt", { agent_id: "bot-a", prompt: "x" });
-    expect((await w.api.call(bot("bot-z"), "await_turn", { agent_id: "bot-a", handle: r.body.handle })).body.code).toBe("bad_handle");
-    expect((await w.api.call(bot("bot-x"), "await_turn", { agent_id: "bot-b", handle: r.body.handle })).body.code).toBe("bad_handle");
-    expect((await w.api.call(bot("bot-x"), "await_turn", { agent_id: "bot-a", handle: `${String(r.body.handle)}x` })).body.code).toBe("bad_handle");
+    const otherCaller = await w.api.call(bot("bot-z"), "await_turn", { agent_id: "bot-a", handle: r.body.handle });
+    expect(otherCaller.body).toMatchObject({ code: "bad_handle", details: { reason: "other_caller" } });
+    const otherAgent = await w.api.call(bot("bot-x"), "await_turn", { agent_id: "bot-b", handle: r.body.handle });
+    expect(otherAgent.body).toMatchObject({ code: "bad_handle", details: { reason: "other_agent" } });
+    const altered = await w.api.call(bot("bot-x"), "await_turn", { agent_id: "bot-a", handle: `${String(r.body.handle)}x` });
+    expect(altered.body).toMatchObject({ code: "bad_handle", details: { reason: "signature" } });
+  });
+
+  it("await_turn bad_handle names each cause and the safe fallbacks, never the handle (#1636)", async () => {
+    const w = world();
+    const c = bot("bot-x");
+    const sent = await w.api.call(c, "send_prompt", { agent_id: "bot-a", prompt: "x" });
+    const good = String(sent.body.handle);
+    const expectBad = async (handle: unknown, reason: string) => {
+      const readsBefore = w.turnStateCalls.length;
+      const r = await w.api.call(c, "await_turn", { agent_id: "bot-a", handle });
+      expect(r.status).toBe(400);
+      expect(r.body).toMatchObject({ code: "bad_handle", details: { reason }, hint: expect.stringContaining("await_turn") });
+      expect(String(r.body.message)).toContain("read_latest_page");
+      expect(String(r.body.hint)).toContain("read_latest_page");
+      const blob = JSON.stringify(r.body);
+      expect(blob).not.toContain(good);
+      expect(blob).not.toMatch(/bot-a|bot-x|bot:bot-x|"thread_id":"[^"]+"/);
+      // A refused handle never drives a read of the conversation it names.
+      expect(w.turnStateCalls.length).toBe(readsBefore);
+    };
+    await expectBad("not-a-handle", "format");
+    await expectBad("turn_only", "format");
+    await expectBad(42, "format");
+    await expectBad(`${good}x`, "signature");
+    const wrongSecret = signHandle(Buffer.alloc(32, 8), { a: "bot-a", t: "t1", m: null, i: 1, c: "bot:bot-x" });
+    await expectBad(wrongSecret, "signature");
+    // i: 1 is already older than the TTL at the fixture clock; do not advance
+    // the world clock or the valid handle below would expire too.
+    const aged = signHandle(SECRET, { a: "bot-a", t: "t-aged", m: null, i: 1, c: "bot:bot-x" });
+    await expectBad(aged, "age");
+    // Fixture clock starts near 1_791_500_000_000; keep forged handles inside the TTL.
+    const issuedAt = 1_791_500_000_000;
+    let readsBefore = w.turnStateCalls.length;
+    const forOtherAgent = signHandle(SECRET, { a: "bot-b", t: "t-b", m: null, i: issuedAt, c: "bot:bot-x" });
+    const otherAgent = await w.api.call(c, "await_turn", { agent_id: "bot-a", handle: forOtherAgent });
+    expect(otherAgent.body).toMatchObject({ code: "bad_handle", details: { reason: "other_agent" } });
+    expect(String(otherAgent.body.message)).toContain("await_turn");
+    expect(JSON.stringify(otherAgent.body)).not.toContain("bot-b");
+    expect(w.turnStateCalls.length).toBe(readsBefore);
+    readsBefore = w.turnStateCalls.length;
+    const forOtherCaller = signHandle(SECRET, { a: "bot-a", t: "t-c", m: null, i: issuedAt, c: "bot:other" });
+    const otherCaller = await w.api.call(c, "await_turn", { agent_id: "bot-a", handle: forOtherCaller });
+    expect(otherCaller.body).toMatchObject({ code: "bad_handle", details: { reason: "other_caller" } });
+    expect(JSON.stringify(otherCaller.body)).not.toContain("bot:other");
+    expect(w.turnStateCalls.length).toBe(readsBefore);
+    // Valid handle for this caller and agent still works.
+    const ok = await w.api.call(c, "await_turn", { agent_id: "bot-a", handle: good, timeout_ms: 60_000 });
+    expect(ok.body).toMatchObject({ finished: true, reply: "echo: x", handle: good });
   });
 
   it("await_turn without a handle waits for the in-flight turn, else returns the last message", async () => {
@@ -472,12 +525,17 @@ describe("send_prompt / await_turn", () => {
     expect(idle.body).toMatchObject({ finished: true, status: "idle", reply: "echo: ping" });
   });
 
-  it("handles are signed and expire", () => {
+  it("handles are signed and expire with a discriminated reason", () => {
     const body = { a: "bot-a", t: "t1", m: "m1", i: 1000, c: "bot:x" };
     const handle = signHandle(SECRET, body);
-    expect(verifyHandle(SECRET, handle, 2000)).toEqual(body);
-    expect(verifyHandle(Buffer.alloc(32, 8), handle, 2000)).toBeNull();
-    expect(verifyHandle(SECRET, handle, 1000 + 8 * 24 * 3_600_000)).toBeNull();
+    expect(verifyHandle(SECRET, handle, 2000)).toEqual({ ok: true, body });
+    expect(verifyHandle(Buffer.alloc(32, 8), handle, 2000)).toEqual({ ok: false, reason: "signature" });
+    expect(verifyHandle(SECRET, handle, 1000 + HANDLE_TTL_MS + 1)).toEqual({ ok: false, reason: "age" });
+    expect(verifyHandle(SECRET, "turn_nope", 2000)).toEqual({ ok: false, reason: "format" });
+    expect(verifyHandle(SECRET, "plain", 2000)).toEqual({ ok: false, reason: "format" });
+    const payload = Buffer.from(JSON.stringify({ a: 1, t: "t", i: 1, c: "bot:x" }), "utf8").toString("base64url");
+    const mac = createHmac("sha256", SECRET).update(payload).digest("base64url").slice(0, 32);
+    expect(verifyHandle(SECRET, `turn_${payload}.${mac}`, 2000)).toEqual({ ok: false, reason: "format" });
   });
 
   it("priority now wakes an idle agent and does not move a busy one ahead by stopping it", async () => {

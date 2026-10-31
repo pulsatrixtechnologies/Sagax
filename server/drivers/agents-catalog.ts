@@ -1666,10 +1666,10 @@ const AGENT_API_TOOLS = [
   },
   {
     name: "await_turn",
-    description: "Wait for an agent's turn: with the handle send_prompt or send_to_bot gave, that turn; without one, the in-flight turn of your conversation, else its last message. Never re-send the prompt.",
+    description: "Wait for an agent's turn: with the handle send_prompt or send_to_bot gave (copy it exactly), that turn; without one, the in-flight turn of your conversation, else its last message. On bad_handle, call await_turn without a handle, or read_latest_page with the thread_id send_prompt returned. Never re-send the prompt.",
     inputSchema: { type: "object", additionalProperties: false, properties: {
       agent_id: AGENT_ID,
-      handle: { type: "string" },
+      handle: { type: "string", description: "Copy the handle send_prompt returned, exactly." },
       timeout_ms: { type: "integer", minimum: 0, maximum: 600000, description: "Default 120000." },
     }, required: ["agent_id"] },
   },

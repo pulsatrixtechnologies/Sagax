@@ -22,7 +22,7 @@ names, parameters and limits as the reference design's agent tools, plus `get_ag
 | `create_agent` | admin | `agents.create` | one temporary agent per call (see below), `name` (≤ 80 chars, one line), optional `description` and `idle_hours` (1 to 720, default 24); it greets the person itself. Only on the person's explicit ask |
 | `delete_agent` | admin | `agents.create` | `agent_id` of a temporary agent: archives it (see below). A lasting agent answers 409 `not_temporary` |
 | `send_prompt` | write | `agents.send` | `agent_id`, `prompt` (≤ 32,000 chars), `mode` `fire_and_forget` (default) / `blocking` / `async`, `timeout_ms` (1 s to 10 min, default 120 s), `on_busy` `queue` (default since 2026-10-17: waits its turn) / `reject` / `supersede` (stops the running turn this caller started and the approval it waits on; never the person's own turn or another caller's), optional `priority` `now` or `normal` (default `normal`), up to 8 `files` (workspace-relative, 25 MiB each), optional `thread_id` (one of the caller's own conversations, 404 `unknown_thread` otherwise). A bot's send lands in the agent's single chat with the person the caller works for (#1170); a person's AI client's send lands in its own conversation with the agent (2026-10-29, see Guarantees); `thread_id` continues one of the caller's conversations instead. Answers a `handle` and a short `label` (the agent's name and the prompt's first words). `now` wakes an idle agent at once or moves the prompt to the front of its queue, and never interrupts a running turn. Past 10 `now` sends an hour the answer is `priority: "normal"` with `downgraded: true` and `priority_note` |
-| `await_turn` | read | `agents.read` | `agent_id`, `handle`, `timeout_ms`. The handle is the one `send_prompt` returned, or the `{threadId, handle}` a one-way `send_to_bot` included. Never send the prompt again: wait again with the same handle |
+| `await_turn` | read | `agents.read` | `agent_id`, `handle`, `timeout_ms`. The handle is the one `send_prompt` returned, or the `{threadId, handle}` a one-way `send_to_bot` included (copy it exactly). Never send the prompt again: wait again with the same handle. Without a handle, waits the in-flight turn of your conversation, else its last message. A refused handle answers 400 `bad_handle` with `details.reason` (`signature`, `format`, `age`, `other_agent`, `other_caller`) and a `hint` to call `await_turn` without a handle or `read_latest_page` with the `thread_id` `send_prompt` returned; it never follows the conversation named by a refused handle |
 | `read_transcript` | read | `agents.read` | the whole transcript (the newest 2,000 entries; `truncated` says when there were more) |
 | `read_transcript_page` | read | `agents.read` | one bounded page: `limit` (1 to 200) and `before_ms` required, `after_ms` optional (inclusive unix ms), `cursor` for the next older page |
 | `read_latest_page` | read | `agents.read` | the newest page: `limit` ≤ 200 (default 20), `cursor`, optional `thread_id` (one of the caller's conversations, 404 `unknown_thread` otherwise) |
@@ -130,7 +130,19 @@ reads the entries just before it.
   and bound to the caller and the agent. They expire after 7 days. A one-way
   `send_to_bot` answer includes the same kind of handle (`{threadId, handle}`).
   `await_turn` accepts it for that caller and agent. The fresh thread stays
-  visible to the recipient.
+  visible to the recipient. A refused handle keeps code `bad_handle` and sets
+  `details.reason` to one of:
+  - `signature`: the signature does not match (altered or truncated)
+  - `format`: the handle is not a turn handle
+  - `age`: the handle is older than the 7-day TTL
+  - `other_agent`: the handle was issued for a different agent than `agent_id`
+  - `other_caller`: the handle was issued for a different caller
+
+  The refusal never returns the handle, nor the agent, conversation or person
+  it was issued for. The safe fallbacks are `await_turn` without a handle, or
+  `read_latest_page` with the `thread_id` `send_prompt` returned; both check
+  the caller. There is no automatic read of the conversation named by a
+  refused handle.
 - **One hop**: a prompt a bot received from another agent cannot be passed on
   (409 `too_deep`). That bot still keeps its own Sagax tools (memory, files,
   pages, tasks, widgets); only the tools that would start another hop
