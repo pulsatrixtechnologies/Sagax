@@ -87,6 +87,7 @@ describe("what the app may do", () => {
     ["POST", "/api/bots/bot_123/local-computer/screenshot"],
     ["POST", "/api/bots/bot_123/local-computer/join"],
     ["POST", "/api/groups/room-1/messages"],
+    ["POST", "/api/groups/room-1/leave"],
     ["POST", "/api/groups/room-1/interrupt"],
     ["DELETE", "/api/groups/room-1/queue/queue_1"],
     ["POST", "/api/groups/room-1/read"],
@@ -461,7 +462,7 @@ describe("desktop remote-client parity", () => {
       ["POST", "/api/instances/cursor/auth/start"], ["GET", "/api/instances/cursor/auth/status"],
       ["POST", "/api/instances/cursor/auth/cancel"], ["POST", "/api/instances/cursor/auth/complete"],
       // rooms
-      ["POST", "/api/groups/room_1/messages"], ["POST", "/api/groups/room_1/interrupt"], ["POST", "/api/groups/room_1/read"],
+      ["POST", "/api/groups/room_1/messages"], ["POST", "/api/groups/room_1/leave"], ["POST", "/api/groups/room_1/interrupt"], ["POST", "/api/groups/room_1/read"],
       ["DELETE", "/api/groups/room_1/queue/q_1"], ["POST", "/api/groups/room_1/queue/q_1/steer"],
       ["POST", "/api/groups/room_1/tasks"], ["PATCH", "/api/groups/room_1/tasks/th_2"], ["PATCH", "/api/groups/room_1"],
       // Remote agent settings panel, Computer panel

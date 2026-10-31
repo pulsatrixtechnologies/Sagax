@@ -1560,7 +1560,10 @@ const userComputers = createUserComputerRouter([{
   list: (person: string) => sharedComputers.list(person),
   owns: (person: string, computerId: string) => sharedComputers.list(person).some((computer) => computer.id === computerId),
   request: (person: string, operation: z.infer<typeof sharedComputerOperation>, active: () => boolean) => sharedComputers.request(operation, person, active),
-}]);
+}], {
+  // Read when a call is refused, after cfg is loaded (#1805).
+  sharingOffered: () => sharedComputersEnabled(cfg),
+});
 /** What the model reads of a lent computer's answer (tool-output-bound.ts):
  * a command's output or a text file cut to what a conversation can keep; a
  * base64 file stays whole to decode, a screen is no machine dump. */
