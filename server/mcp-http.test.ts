@@ -1,7 +1,7 @@
 // The remote MCP client against a real HTTP server on loopback.
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { McpRpcError, RemoteMcpClient, bypassesProxy, plainHttpProxyFetch } from "./mcp-http.ts";
+import { McpHttpError, McpRpcError, RemoteMcpClient, bypassesProxy, plainHttpProxyFetch } from "./mcp-http.ts";
 import { startFakeHttpMcp, type FakeHttpMcp } from "./testing/fake-http-mcp-server.ts";
 
 let fake: FakeHttpMcp | undefined;
@@ -9,6 +9,36 @@ let client: RemoteMcpClient | undefined;
 afterEach(async () => {
   await client?.close(); client = undefined;
   await fake?.close(); fake = undefined;
+});
+
+describe("legacy SSE reconnect", () => {
+  it("clears the cached endpoint when the stream ends and the next tools/call works", async () => {
+    fake = await startFakeHttpMcp({
+      transport: "sse",
+      tools: [{ name: "echo", inputSchema: { type: "object" } }],
+      callDelayMs: 60_000,
+    });
+    client = new RemoteMcpClient({ type: "sse", url: fake.url, headers: {} });
+    await client.initialize("fixture", AbortSignal.timeout(5_000));
+    expect(fake.initializes).toHaveLength(1);
+
+    // Hold a call open on the live stream, then cut the GET so the client
+    // must drop its cached endpoint (#1732) instead of POSTing into a void.
+    const cut = client.request("tools/call", { name: "echo", arguments: { n: 1 } }, AbortSignal.timeout(5_000));
+    await vi.waitFor(() => expect(fake!.calls.length).toBe(1));
+    fake.dropSseStreams();
+    const failure = await cut.catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(McpHttpError);
+    expect(failure).toMatchObject({ kind: "network", message: "event stream ended" });
+
+    fake.setCallDelayMs(undefined);
+    const result = await client.request("tools/call", { name: "echo", arguments: { n: 2 } }, AbortSignal.timeout(5_000));
+    expect(result).toEqual({ content: [{ type: "text", text: "remote execution recorded" }] });
+    expect(fake.calls).toHaveLength(2);
+    // Fresh SSE session: initialize runs again on the new stream.
+    expect(fake.initializes.length).toBeGreaterThanOrEqual(2);
+    expect(fake.openSseStreams).toBe(1);
+  });
 });
 
 describe("a server's own requests to the client", () => {
