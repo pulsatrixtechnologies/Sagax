@@ -7,11 +7,11 @@ import { BotWizard } from "../components/bot-wizard/BotWizard";
 import { PluginsPanel } from "../components/PluginsPanel";
 import { StoreProvider, useStore } from "../state/store";
 import { applySkin, type SkinId } from "../lib/skins";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import "../styles.css";
 
 const params = new URLSearchParams(location.search);
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 
 function Fixture() {
   const { state, dispatch } = useStore();

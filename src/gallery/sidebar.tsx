@@ -12,7 +12,7 @@
  * (scripts/capture-bulk-edit-bots.mjs). */
 import { StrictMode, useEffect } from "react";
 import { createRoot } from "react-dom/client";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider, useStore, type Bot, type Message, type Task } from "../state/store";
 import { applyPresenceList } from "../lib/presence";
@@ -24,7 +24,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 try {
   localStorage.setItem("sagax.interfaceMode.v1", "advanced");
   localStorage.setItem("sagax-sidebar-shortcuts", "1");

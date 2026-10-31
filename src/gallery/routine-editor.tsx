@@ -10,7 +10,7 @@ import { RoutineConfiguration } from "../components/routines/RoutineConfiguratio
 import { BotWebhooks } from "../components/bot-settings/BotWebhooks";
 import { RoutinesSection } from "../components/bot-settings/RoutinesSection";
 import type { RoutineRun } from "../lib/routines";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import type { Routine } from "../lib/routines";
 import type { WebhookTrigger } from "../lib/webhooks";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
@@ -20,7 +20,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 const view = params.get("view") ?? "editor";
 const trigger = params.get("trigger") ?? "clock";
 

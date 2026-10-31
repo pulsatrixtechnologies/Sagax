@@ -12,7 +12,7 @@ import { SentCitations } from "../components/CitationUI";
 import { PageRefChip } from "../components/PageComposerParts";
 import { ReplyQuote } from "../components/ReplyQuote";
 import { MentionText } from "../components/MentionText";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import type { SkinTintId } from "../lib/skin-families";
 import type { Message } from "../state/store";
@@ -24,7 +24,7 @@ const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 const skin: SkinId = skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin();
 applySkin(skin);
-setLocale(params.get("lang") ?? "en");
+await loadLocale(params.get("lang") ?? "en");
 const before = params.get("mode") === "before";
 
 const quoted: Message = { id: "q", role: "bot", kind: "text", text: "The Q3 report is ready.", at: 1 };

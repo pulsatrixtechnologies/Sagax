@@ -7,7 +7,7 @@ import { StrictMode, type CSSProperties } from "react";
 import { createRoot } from "react-dom/client";
 import { ChatMarkdown } from "../components/ChatMarkdown";
 import { botBubbleVars } from "../lib/bubble-colors";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { MAUS_COLORS, type MausColor } from "../lib/mascot";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import "../styles.css";
@@ -16,7 +16,7 @@ const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 const skin: SkinId = skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin();
 applySkin(skin);
-setLocale("en");
+await loadLocale("en");
 const before = params.get("mode") === "before";
 
 const answer = "Done: **3 tickets** updated. See [the report](https://example.com) and `ticket.close`.";

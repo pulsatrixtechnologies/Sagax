@@ -5,7 +5,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { EventDetails } from "../components/RoutineCalendarPage";
 import { RoutineList } from "../components/routines/RoutineList";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import type { Routine } from "../lib/routines";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider, type Bot } from "../state/store";
@@ -14,7 +14,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 
 const realFetch = window.fetch.bind(window);
 window.fetch = async (input, init) => {

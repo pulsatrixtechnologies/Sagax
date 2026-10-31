@@ -12,7 +12,7 @@ import { createRoot } from "react-dom/client";
 
 import { EventDetails, RoutinesPage } from "../components/RoutineCalendarPage";
 import { RoutinesSection } from "../components/bot-settings/RoutinesSection";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { BotEditorStore, initialState, StoreProvider, useStore, type AppState, type Bot } from "../state/store";
 import type { Routine, RoutineRun } from "../lib/routines";
@@ -21,7 +21,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "en");
+await loadLocale(params.get("lang") ?? "en");
 const view = (params.get("view") ?? "list") as "list" | "calendar" | "logs" | "run" | "routine" | "panel";
 const runCase = (params.get("case") ?? "completed") as "completed" | "waiting" | "failed" | "running";
 const width = Number(params.get("width") ?? 1200);

@@ -6,7 +6,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { TurnPresence } from "../components/TurnPresence";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { liveActivityPhrases } from "../lib/live-activity";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import type { Message } from "../state/store";
@@ -17,7 +17,7 @@ const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
 const lang = params.get("lang") ?? "en";
-setLocale(lang);
+await loadLocale(lang);
 document.documentElement.lang = lang;
 const fr = lang.startsWith("fr");
 

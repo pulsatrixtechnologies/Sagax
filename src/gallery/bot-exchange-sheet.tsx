@@ -6,7 +6,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { ExchangeColumnProvider, ExchangeSheet, useExchangeColumn } from "../components/BotExchangeChip";
 import type { ExchangeRun } from "../lib/bot-exchange";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import type { Bot, Message } from "../state/store";
 import "../styles.css";
@@ -14,7 +14,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "en");
+await loadLocale(params.get("lang") ?? "en");
 
 const bots = [
   { id: "nova", name: "Nova", color: "blue" },

@@ -10,7 +10,7 @@ import { createRoot } from "react-dom/client";
 import { SkinPicker } from "../components/SkinPicker";
 import { CompactRow, PillSelect, SettingsGroup } from "../components/SettingsPrimitives";
 import { SKIN_FAMILIES, schemesOf, variantSkin, writeSkinAuto, type SkinScheme } from "../lib/skin-families";
-import { setLocale, t } from "../lib/i18n";
+import { loadLocale, t } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import "../styles.css";
 
@@ -19,7 +19,7 @@ const skinParam = params.get("skin") as SkinId | null;
 if (params.has("auto")) writeSkinAuto(params.get("auto") === "1");
 if (params.get("unlocked") === "1") localStorage.setItem("omb.retro98.unlocked", "1");
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 const view = params.get("view") ?? "settings";
 
 function SettingsView() {

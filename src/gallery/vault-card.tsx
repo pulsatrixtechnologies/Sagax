@@ -6,7 +6,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { VaultRequestCard } from "../components/VaultRequestCard";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { BotEditorStore, type Message, type useStore } from "../state/store";
 import "../styles.css";
@@ -14,7 +14,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 const allowed = params.get("state") === "allowed";
 const turn = params.get("state") === "turn";
 const empty = params.get("empty") === "1";

@@ -9,7 +9,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { RoutinesPage } from "../components/RoutineCalendarPage";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { BotEditorStore, initialState, type AppState, type Bot } from "../state/store";
 import type { Routine, RoutineRun } from "../lib/routines";
@@ -18,7 +18,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "en");
+await loadLocale(params.get("lang") ?? "en");
 const view = (params.get("view") ?? "calendar") as "calendar" | "list" | "logs";
 const width = Number(params.get("width") ?? 1100);
 const height = Number(params.get("height") ?? 560);

@@ -9,7 +9,7 @@ import { createRoot } from "react-dom/client";
 
 import { VoiceProviderSettings } from "../components/settings/VoiceProviderSettings";
 import { VoiceSettings } from "../components/VoiceSettings";
-import { setLocale, t } from "../lib/i18n";
+import { loadLocale, t } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider, useStore, type Bot } from "../state/store";
 import { VOICE_MODE_STORAGE_KEY } from "../../shared/voice-mode";
@@ -18,7 +18,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 const before = params.get("before") === "1";
 try {
   localStorage.setItem(VOICE_MODE_STORAGE_KEY, JSON.stringify({ voice: "eve", speed: 1, language: "auto", tts: "openai", voices: { openai: "cedar" }, bots: { cryptic: { tts: "elevenlabs", voices: { elevenlabs: "myClonedVoice01" } } } }));

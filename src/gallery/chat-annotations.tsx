@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 
 import { ReplyQuote } from "../components/ReplyQuote";
 import { RoutineChangeLine } from "../components/RoutineToggleLine";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import type { Message } from "../state/store";
 import type { RoutineToggleEvent } from "../../shared/wire";
@@ -16,7 +16,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 const only = params.get("only");
 
 const trigger: Message = { id: "u3", role: "user", kind: "text", text: "passe le mot aussi a katarina sur sagax", at: 3 };

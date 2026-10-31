@@ -9,7 +9,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
-import { setLocale, t } from "../lib/i18n";
+import { loadLocale, t } from "../lib/i18n";
 import { StoreProvider, type Bot, type Group } from "../state/store";
 import { BotProfileAvatarCard } from "../components/BotProfileAvatarCard";
 import { InlineEditableText } from "../components/bot-settings/InlineEditableText";
@@ -20,7 +20,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 
 const bot = (id: string, name: string, color: string, character: string, title = ""): Bot =>
   ({ id, threadId: `t-${id}`, name, title, description: "", notifications: true, color, unread: false, mascotLook: { character }, messages: [], tasks: [] }) as unknown as Bot;

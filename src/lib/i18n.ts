@@ -1,7 +1,17 @@
 // Minimal string catalog — deliberately not a library. The renderer follows
 // the system language; unknown tags and untranslated keys fall back to
 // English, so a partial pack can ship the day it has one string.
-import { en, localeChoices, locales, type LocaleKey, type LocalePack } from "@/locales";
+import { languageChoice } from "@/lib/language-preference";
+import {
+  en,
+  ensureLocale,
+  localeChoices,
+  localeTags,
+  locales,
+  pickerCodeFor,
+  type LocaleKey,
+  type LocalePack,
+} from "@/locales";
 
 /** "zh-Hant-TW" → exact tag, then "zh-hant", then "zh", then "en". Pure, for tests. */
 export function resolveLocale(tag: string | undefined, available: ReadonlySet<string>): string {
@@ -20,11 +30,12 @@ export function resolveLocale(tag: string | undefined, available: ReadonlySet<st
 // (Arabic, Hebrew, Persian, Urdu) flips the page direction with no other edit.
 const RTL_LANGUAGES = new Set(["ar", "fa", "he", "ur"]);
 
-/** Switch the active language (a future settings picker calls this too).
- * Returns the locale that actually took effect after fallback. The registry
- * is read live, so a pack registered after boot is immediately reachable. */
-export function setLocale(tag: string | undefined): string {
-  const resolved = resolveLocale(tag, new Set(Object.keys(locales)));
+function registeredTags(): Set<string> {
+  // Shipped tags plus any temporary pack a test registered on `locales`.
+  return new Set([...localeTags, ...Object.keys(locales)]);
+}
+
+function applyLocale(resolved: string): void {
   activePack = locales[resolved] ?? en;
   active = resolved;
   // Screen readers choose pronunciation from <html lang>; index.html ships
@@ -34,16 +45,40 @@ export function setLocale(tag: string | undefined): string {
     root.lang = documentLanguage(resolved);
     root.dir = RTL_LANGUAGES.has(root.lang.split("-")[0]!) ? "rtl" : "ltr";
   }
+}
+
+/** Switch the active language (a future settings picker calls this too).
+ * Returns the locale that actually took effect after fallback. The registry
+ * is read live, so a pack registered after boot is immediately reachable.
+ * The pack must already be in `locales` (ensureLocale / loadLocale); otherwise
+ * English strings show until the pack arrives. */
+export function setLocale(tag: string | undefined): string {
+  const resolved = resolveLocale(tag, registeredTags());
+  applyLocale(resolved);
   return resolved;
+}
+
+/** Ensure the pack is loaded, then switch. App boot and language changes use
+ * this; setLocale stays sync for tests and already-cached packs. */
+export async function loadLocale(tag: string | undefined): Promise<string> {
+  const resolved = resolveLocale(tag, registeredTags());
+  await ensureLocale(resolved);
+  return setLocale(resolved);
 }
 
 /** The BCP-47 tag for a registry key, for <html lang>. An alias ("pt",
  * "zh-hk") is tagged as the picker language whose pack it shows, then cased
  * the standard way: "pt-br" → "pt-BR", "zh-hant" → "zh-Hant". */
 export function documentLanguage(code: string): string {
+  const shown = pickerCodeFor(code);
+  // Prefer the pack's picker when the pack is loaded (reference equality used
+  // to find it); pickerCodeFor covers the unloaded and alias cases.
   const pack = locales[code];
-  const shown = localeChoices.find((choice) => locales[choice.code] === pack)?.code ?? code;
-  return shown
+  const fromPack = pack
+    ? localeChoices.find((choice) => locales[choice.code] === pack)?.code
+    : undefined;
+  const tag = fromPack ?? shown;
+  return tag
     .split("-")
     .map((part, index) =>
       index === 0 ? part.toLowerCase()
@@ -62,7 +97,26 @@ export function activeLocale(): string {
 
 let active = "en";
 let activePack: LocalePack = en;
-setLocale(globalThis.navigator?.language);
+
+/** Device choice, else ?lang=, else the system language. Empty device choice
+ * means "follow the system". */
+function initialLocaleTag(): string | undefined {
+  try {
+    if (typeof location !== "undefined") {
+      const fromUrl = new URLSearchParams(location.search).get("lang");
+      if (fromUrl) return fromUrl;
+    }
+  } catch {
+    // Workers and tests may lack a real location.
+  }
+  const choice = languageChoice();
+  if (choice === null || choice === "") return globalThis.navigator?.language;
+  return choice;
+}
+
+// Load English + the active language before any importer paints. Other packs
+// stay out of the startup chunk until loadLocale asks for them.
+await loadLocale(initialLocaleTag());
 
 /** Translate a key the server chose rather than the renderer — the note a
  * held approval card shows. A key this build does not know (an older client
@@ -85,10 +139,11 @@ export function t(key: LocaleKey, params?: Record<string, string | number>): str
  * speaks the call's language). Null when that language's pack lacks the
  * key: the caller decides, rather than falling back to English. */
 export function tIn(tag: string, key: LocaleKey, params?: Record<string, string | number>): string | null {
-  const available = new Set(Object.keys(locales));
-  const resolved = resolveLocale(tag, available);
+  const resolved = resolveLocale(tag, registeredTags());
   if (resolved === "en" && !/^en(?:-|$)/i.test(tag)) return null;
-  const template = (locales[resolved] ?? en)[key];
+  const pack = locales[resolved];
+  if (!pack) return null;
+  const template = pack[key];
   if (!template) return null;
   if (!params) return template;
   return interpolate(resolved === "fr" ? elideFrench(template, params) : template, params);

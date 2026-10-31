@@ -6,7 +6,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { CalendarClock, Plus } from "lucide-react";
 import { RoutineList } from "../components/routines/RoutineList";
-import { setLocale, t } from "../lib/i18n";
+import { loadLocale, t } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider } from "../state/store";
 import type { Routine } from "../lib/routines";
@@ -15,7 +15,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "en");
+await loadLocale(params.get("lang") ?? "en");
 
 const NOW = Date.now();
 const H = 3_600_000;

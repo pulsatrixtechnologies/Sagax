@@ -7,7 +7,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { EngineConnect } from "../components/EngineConnect";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import type { MyEngine } from "../lib/perspicax-org";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider } from "../state/store";
@@ -17,7 +17,7 @@ const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
 const lang = params.get("lang") ?? "en";
-setLocale(lang);
+await loadLocale(lang);
 const before = params.get("state") === "before";
 const name = (provider: string) => before ? `${provider === "Grok" ? "xAI" : `${provider} (API key)`}` : lang.startsWith("fr") ? `${provider} (clé de l'organisation)` : `${provider} (organization key)`;
 const engine = (provider: string, driver: string, instanceId: string): MyEngine => ({

@@ -4,7 +4,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { UsageTraces } from "../components/usage/UsageTraces";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import type { UsageJobTrace, UsageTraceList } from "../lib/usage-trace";
 import "../styles.css";
@@ -12,7 +12,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 
 const NAMES = ["Scout", "Atlas", "Comète", "Lynx", "Orion", "Pixel", "Sauge"];
 const jobs: UsageJobTrace[] = Array.from({ length: 37 }, (_, n) => ({

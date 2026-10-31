@@ -9,7 +9,7 @@ import { RoutineRunCard } from "../components/RoutineRunCard";
 import { RoutineList } from "../components/routines/RoutineList";
 import { RoutineLogs } from "../components/routines/RoutineLogs";
 import { RoutineEditor } from "../components/RoutineCalendarPage";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider, type Bot, type Message } from "../state/store";
 import type { Routine, RoutineRun } from "../lib/routines";
@@ -18,7 +18,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "en");
+await loadLocale(params.get("lang") ?? "en");
 const view = params.get("view") ?? "notice";
 
 const NOW = Date.now();

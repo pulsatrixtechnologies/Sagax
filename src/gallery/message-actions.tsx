@@ -7,14 +7,14 @@ import { createRoot } from "react-dom/client";
 import { Code, Pencil, Pin, RefreshCw, Volume2 } from "lucide-react";
 import { MessageBar, MessageMenuItem } from "../components/MessageBar";
 import { HOVER_ICON } from "../components/MessageHoverActions";
-import { setLocale, t } from "../lib/i18n";
+import { loadLocale, t } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import "../styles.css";
 
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "en");
+await loadLocale(params.get("lang") ?? "en");
 const state = params.get("state") ?? "hover";
 const side = params.get("side") === "user" ? "user" : "bot";
 

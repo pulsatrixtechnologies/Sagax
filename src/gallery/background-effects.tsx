@@ -11,14 +11,14 @@ import { BackgroundEffectsPicker } from "../components/settings/BackgroundEffect
 import { SettingsGroup } from "../components/SettingsPrimitives";
 import { isBackgroundEffectId, isIntensity, isPaletteId } from "../lib/background-effects";
 import { readBackgroundEffectPrefs, setBackgroundEffect, setBackgroundIntensity, setBackgroundPalette } from "../lib/background-effect-preferences";
-import { setLocale, t } from "../lib/i18n";
+import { loadLocale, t } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import "../styles.css";
 
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 const effectParam = params.get("effect");
 if (isBackgroundEffectId(effectParam)) setBackgroundEffect(effectParam);
 const paletteParam = params.get("palette");

@@ -8,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import { AccessCard } from "../components/AccessCard";
 import { EngineConnect } from "../components/EngineConnect";
 import { HarnessConnectorsSection } from "../components/HarnessConnectorsSection";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import type { MyEngine } from "../lib/perspicax-org";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { StoreProvider } from "../state/store";
@@ -18,7 +18,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "en");
+await loadLocale(params.get("lang") ?? "en");
 
 export const EXPIRED_CLAUDE: MyEngine = {
   instanceId: "claude", driver: "claudeAgent", displayName: "Claude", installed: true,

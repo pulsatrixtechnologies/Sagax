@@ -7,7 +7,7 @@ import { createRoot } from "react-dom/client";
 import { ApprovalCard } from "../components/ApprovalCard";
 import { ToolActivity } from "../components/ToolActivity";
 import { TurnTimingLine } from "../components/TurnTimingLine";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { BotEditorStore, type Bot, type Message, type useStore } from "../state/store";
 import "../styles.css";
@@ -15,7 +15,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "en");
+await loadLocale(params.get("lang") ?? "en");
 
 const bot = { id: "bot-scout", name: "Scout", color: "violet", approvalMode: "full" } as unknown as Bot;
 const store = { state: { bots: [bot] }, dispatch: () => {}, flushBotPatches: async () => null } as unknown as ReturnType<typeof useStore>;

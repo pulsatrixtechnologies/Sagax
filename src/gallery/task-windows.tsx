@@ -8,7 +8,7 @@ import { createRoot } from "react-dom/client";
 import { ActivityDetailModal } from "../components/bot-settings/ActivityDetailModal";
 import { ActivityListModal } from "../components/bot-settings/ActivityListModal";
 import { SETTINGS_WINDOW } from "../components/SettingsPrimitives";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { BotEditorStore, initialState } from "../state/store";
 import type { BotActivityDetail, BotActivityItem } from "../../shared/bot-activity";
@@ -19,7 +19,7 @@ Object.assign(globalThis, { __APP_VERSION__: "0.5.7", __BASE_VERSION__: "0.26.0"
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 const view = params.get("view") ?? "detail";
 
 const NOW = Date.now();

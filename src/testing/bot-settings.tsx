@@ -5,10 +5,10 @@ import { BotSettingsDialog } from "../components/BotSettingsDialog";
 import { DefaultBotSettings, NewBotDialog } from "../components/NewBotDialog";
 import { StoreProvider, api, useStore, type Bot } from "../state/store";
 import { applySkin } from "../lib/skins";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import "../styles.css";
 
-setLocale("en");
+await loadLocale("en");
 
 let slowReads = false;
 let readDelayMs = 1500;

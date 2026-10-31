@@ -6,14 +6,14 @@
 import { StrictMode, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { GlyphRippleCanvas } from "../components/GlyphRippleLayer";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import "../styles.css";
 
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 const on = params.get("off") !== "1";
 
 const turns = [

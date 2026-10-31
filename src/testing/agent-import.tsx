@@ -5,11 +5,11 @@ import { createRoot } from "react-dom/client";
 import { AgentImportPanel } from "../components/AgentImport";
 import { StoreProvider } from "../state/store";
 import { applySkin, type SkinId } from "../lib/skins";
-import { setLocale, t } from "../lib/i18n";
+import { loadLocale, t } from "../lib/i18n";
 import "../styles.css";
 
 const params = new URLSearchParams(location.search);
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 
 function Fixture() {
   return <main className="flex min-h-screen items-start justify-center bg-app p-8">

@@ -12,7 +12,7 @@ import { UpdateBanner } from "../components/UpdateBanner";
 import { AchievementsScreen } from "../components/achievements/AchievementsScreen";
 import { ACHIEVEMENTS } from "../../shared/achievements-catalog";
 import { resetAchievementsForTests } from "../lib/achievements";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { requestReleaseNotes } from "../lib/release-notes-ui";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import { BotEditorStore } from "../state/store";
@@ -24,7 +24,7 @@ Object.assign(globalThis, { __APP_VERSION__: "0.5.7", __BASE_VERSION__: "0.26.0"
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 const view = params.get("view") ?? "about";
 
 // No server here: loads never answer, so the fixtures stay.

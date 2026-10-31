@@ -9,7 +9,7 @@ import { MoreHorizontal } from "lucide-react";
 import { DevPods, DevPodsToggle } from "../components/dev-pods/DevPods";
 import { DEFAULT_PREFS, resetDevPodPrefsForTest } from "../components/dev-pods/prefs";
 import { CIRCLE_BUTTON } from "../lib/circle-button";
-import { setLocale } from "../lib/i18n";
+import { loadLocale } from "../lib/i18n";
 import { updateMcpServers } from "../lib/mcp-servers";
 import { applySkin, readSkin, SKIN_IDS, type SkinId } from "../lib/skins";
 import type { Bot, Message } from "../state/store";
@@ -18,7 +18,7 @@ import "../styles.css";
 const params = new URLSearchParams(location.search);
 const skinParam = params.get("skin") as SkinId | null;
 applySkin(skinParam && (SKIN_IDS as readonly string[]).includes(skinParam) ? skinParam : readSkin());
-setLocale(params.get("lang") ?? "fr");
+await loadLocale(params.get("lang") ?? "fr");
 resetDevPodPrefsForTest({ ...DEFAULT_PREFS, enabled: params.get("pods") !== "off" });
 const SERVERS = [
   { name: "github", enabled: true },
