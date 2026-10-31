@@ -509,7 +509,6 @@ routines.results.showReport
 routines.scheduleNote.addCloud
 routines.scheduleNote.cloud
 routines.scheduleNote.leave
-routines.scheduleNote.local
 routines.scheduleNote.openCloud
 routines.skippedRuns
 routines.starting
