@@ -58,6 +58,11 @@ import { filesField, writtenFilesFromToolInput } from "../thread-files.ts";
 import { classifyError, computeBackoff, interruptibleDelay, RETRY_MAX_ATTEMPTS, USAGE_LIMIT } from "./retry.ts";
 import { engineFailureMessage, type EngineFailureKind } from "./engine-errors.ts";
 import { claudeAuthFailure, claudeAuthRecovery } from "./claude-auth-recovery.ts";
+import {
+  claudeSubscriptionHomeKey,
+  ensureClaudeSubscriptionFresh,
+  onClaudeSubscriptionRenew,
+} from "../claude-subscription-refresh.ts";
 import { sessionIdlePolicy } from "./session-idle.ts";
 import { contractChanges, PERSPICAX_TOKEN_ENV, switchesCover, turnFiles, turnSwitches, warmCommsEnv, warmPerspicaxEnv, withoutTurnTokens } from "./spawn-contract.ts";
 import { parseVersionTriple, versionAtLeast } from "./acp/core.ts";
@@ -1722,6 +1727,10 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
          * before that never took the prompt (see the close handler). */
         awaitingInit?: boolean;
         authFailed?: boolean;
+        /** Words of a deferred authentication_failed (#1768), emitted only
+         * when the shared-refresh race retry cannot restore the sign-in. */
+        authFailureText?: string;
+        authFailureDeferred?: boolean;
         updateRequired?: boolean;
         /** the window the latest `rate_limit_event` says refuses this
          * account (claudeLimitRefusal), null while requests go through */
@@ -1989,7 +1998,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
     });
     // retry bookkeeping lives PER THREAD, not per sendTurn call: a relaunch
     // is a fresh sendTurn, and the attempt cap must survive across launches
-    const retryState = new Map<string, { attempt: number; cancelled: boolean; rebuilt?: boolean; renewed?: boolean }>();
+    const retryState = new Map<string, { attempt: number; cancelled: boolean; rebuilt?: boolean; renewed?: boolean; authRaced?: boolean }>();
     /** Logical turns already moved to a fresh session once because the
      * context filled up: a second overflow is reported, never looped. */
     const renewedTurns = new Set<string>();
@@ -1999,6 +2008,32 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
     const freshNextTurn = new Set<string>();
     /** Cost of the full sessions a renewed turn left behind, by turn. */
     const carriedCosts = new Map<string, number>();
+    // #1768: when this person's Claude login home is renewed, retire idle
+    // processes that still hold the previous token so they cannot race the
+    // rotated refresh grant.
+    const stopRenewWatch = onClaudeSubscriptionRenew((loginHome) => {
+      for (const [threadId, live] of sessions) {
+        if (live.turn || live.closing || live.child.exitCode !== null) continue;
+        const dir = live.contract && typeof live.contract === "object" && live.contract !== null && "configDir" in live.contract
+          ? (live.contract as { configDir?: string | null }).configDir
+          : null;
+        if (!dir || claudeSubscriptionHomeKey(dir) !== loginHome) continue;
+        closeSession(threadId, "subscription renewed");
+      }
+    });
+
+    /** #1768: keep the shared OAuth grant fresh before a subscription turn
+     * uses the person's login home (and after a concurrent refresh race). */
+    const refreshSubscriptionHome = async (turn: SendTurnInput, force = false) => {
+      const loginDir = turn.access?.via === "subscription" ? turn.access.claudeConfigDir?.trim() : "";
+      if (!loginDir) return { ok: true as const, renewed: false, expiresAt: null };
+      return ensureClaudeSubscriptionFresh({
+        loginDir,
+        cli: config.cli,
+        environment: environment(turn.model, turn.access),
+        ...(force ? { force: true } : {}),
+      });
+    };
 
     const sendTurn = async (turn: SendTurnInput, logicalTurnId?: string) => {
       if (startupModelRefresh) await startupModelRefresh;
@@ -2037,6 +2072,11 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
         if (stopped?.turn?.stopRequested && active.get(threadId)?.turnId === stopped.turn.turnId &&
             await killCliTree(stopped.child)) await stopped.closed;
         if (active.has(threadId)) throw new Error("a turn is already running on this thread");
+      }
+      // #1768: one shared OAuth refresh at a time for this login home, before
+      // any Claude process of this person reads or rotates the grant.
+      if (turn.access?.via === "subscription" && turn.access.claudeConfigDir) {
+        await refreshSubscriptionHome(turn, Boolean(retryState.get(threadId)?.authRaced && relaunch));
       }
       // A bot-level mode is authoritative for this turn. In particular, an
       // old provider instance may still be configured with
@@ -2830,6 +2870,52 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       ) => {
         const t = session.turn;
         if (!t || t.settled) return;
+        // #1768: a concurrent refresh of this person's login home can revoke
+        // the token this process held. Renew once under the shared flight and
+        // relaunch before treating the sign-in as gone.
+        const retry = retryState.get(threadId) ?? { attempt: 0, cancelled: false };
+        const loginDir = t.input.access?.via === "subscription" ? t.input.access.claudeConfigDir?.trim() : "";
+        if (!ok && stopReason === "auth_required" && loginDir && !retry.authRaced && !retry.cancelled && !t.stopRequested) {
+          t.settled = true;
+          session.lastTurnFailed = true;
+          session.broker?.pause();
+          if (session.mcpConfigPath) {
+            try { rmSync(dirname(session.mcpConfigPath), { recursive: true, force: true }); } catch {}
+            session.mcpConfigPath = null;
+          }
+          if (session.systemPromptPath) {
+            if (removePrivateTempDir(session.systemPromptPath)) session.systemPromptPath = null;
+          }
+          const { turnId: racedTurnId, input: racedTurn, retryAbort } = t;
+          session.turn = null;
+          retry.authRaced = true;
+          retryState.set(threadId, retry);
+          active.set(threadId, { stop: () => { retry.cancelled = true; retryAbort.abort(); }, turnId: racedTurnId });
+          closeSession(threadId, "authentication race");
+          void (async () => {
+            const failure = t.authFailureText ?? "authentication_failed";
+            try {
+              const fresh = await refreshSubscriptionHome(racedTurn, true);
+              if (retry.cancelled || !fresh.ok) {
+                if (active.get(threadId)?.turnId === racedTurnId) active.delete(threadId);
+                retryState.delete(threadId);
+                emit({ ...base(threadId, racedTurnId), type: "runtime.error", message: failure, setup: true });
+                emit({ ...base(threadId, racedTurnId), type: "turn.completed", ok: false, stopReason: "auth_required", cost: null });
+                return;
+              }
+              await sendTurn({ ...racedTurn, sessionReset: false }, racedTurnId);
+            } catch (error) {
+              if (active.get(threadId)?.turnId === racedTurnId) active.delete(threadId);
+              retryState.delete(threadId);
+              emit({ ...base(threadId, racedTurnId), type: "runtime.error", message: error instanceof Error ? error.message : String(error), setup: true });
+              emit({ ...base(threadId, racedTurnId), type: "turn.completed", ok: false, stopReason: "auth_required", cost: null });
+            }
+          })();
+          return;
+        }
+        if (!ok && stopReason === "auth_required" && t.authFailureDeferred && t.authFailureText) {
+          emit({ ...base(threadId, t.turnId), type: "runtime.error", message: t.authFailureText, setup: true });
+        }
         t.settled = true;
         session.lastTurnFailed = !ok;
         if (t.continuationGrace) {
@@ -3060,8 +3146,20 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
             // reply strands the user. Every other engine reports this as a
             // setup error; that is what routes them to the sign-in card.
             if (claudeAuthFailure(o, text)) {
-              if (session.turn) session.turn.authFailed = session.turn.explained = true;
-              emit({ ...base(threadId, currentTurnId()), type: "runtime.error", message: text, setup: true });
+              if (session.turn) {
+                session.turn.authFailed = session.turn.explained = true;
+                session.turn.authFailureText = text;
+                // #1768: a subscription turn may still recover through the
+                // shared refresh flight; emit the setup error only when settle
+                // decides the sign-in is truly gone.
+                const mayRace = session.turn.input.access?.via === "subscription"
+                  && Boolean(session.turn.input.access.claudeConfigDir?.trim())
+                  && !retryState.get(threadId)?.authRaced;
+                if (mayRace) session.turn.authFailureDeferred = true;
+                else emit({ ...base(threadId, currentTurnId()), type: "runtime.error", message: text, setup: true });
+              } else {
+                emit({ ...base(threadId, currentTurnId()), type: "runtime.error", message: text, setup: true });
+              }
               break;
             }
             // An account past its usage limit runs nothing until the window
@@ -3935,6 +4033,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeConfig> = {
       reviewPermission: generateReview,
       listCommands,
       dispose: async () => {
+        stopRenewWatch();
         try {
           await login.dispose();
         } finally {

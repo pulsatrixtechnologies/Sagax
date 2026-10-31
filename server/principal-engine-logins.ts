@@ -202,6 +202,14 @@ export class PrincipalEngineLogins {
     writeFileAtomic(join(this.loginDir(principalId, driver as LoginDriver, slot), LOGIN_EXPIRED_MARKER), JSON.stringify({ at: this.now() }), { mode: 0o600 });
   }
 
+  /** #1768: a renew restored the sign-in; drop the expired note so the next
+   * turn uses the subscription again without asking to reconnect. */
+  clearExpired(principalId: string, driver: string, slot: LoginSlot = "primary"): void {
+    if (!isLoginDriver(driver) || !isPrincipalId(principalId)) return;
+    if (slot === "second" && !SECOND_LOGIN_DIR[driver]) return;
+    rmSync(join(this.loginDir(principalId, driver, slot), LOGIN_EXPIRED_MARKER), { force: true });
+  }
+
   /** 2026-10-29: what a Grok sign-in of this person is (personal or team)
    * and its address, from the CLI's own login record; null when not signed
    * in there or unreadable. */

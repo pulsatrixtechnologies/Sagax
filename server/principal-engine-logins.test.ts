@@ -123,6 +123,11 @@ describe("PrincipalEngineLogins", () => {
     // the payer order does not change by itself
     expect(logins.signedIn(A, "claudeAgent")).toBe(true);
     expect(logins.expired(B, "claudeAgent")).toBe(false);
+    // #1768: a renew that restored the grant clears the expired note
+    logins.clearExpired(A, "claudeAgent");
+    expect(logins.expired(A, "claudeAgent")).toBe(false);
+    expect(logins.signedIn(A, "claudeAgent")).toBe(true);
+    logins.markExpired(A, "claudeAgent");
     // signing in again clears it
     await logins.start(A, "claude", "session-a");
     await made.at(-1)!.finish();
