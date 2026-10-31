@@ -125,6 +125,12 @@ export interface FakeHttpMcp {
   readonly delayedToolsLists: number;
   /** tools/list requests answered so far */
   readonly toolsLists: number;
+  /** how many SSE GET streams are open right now */
+  readonly openSseStreams: number;
+  /** end every open SSE stream (server stays up); next client GET reopens */
+  dropSseStreams(): void;
+  /** change tools/call delay for later requests (reconnect tests) */
+  setCallDelayMs(ms: number | undefined): void;
   /** replace the catalog later tools/list requests answer with */
   setTools(tools: FakeHttpMcpTool[]): void;
   /** the client's replies to requests this server sent it */
@@ -151,6 +157,7 @@ export async function startFakeHttpMcp(options: FakeHttpMcpOptions = {}): Promis
   let delayedToolsLists = 0;
   let toolsLists = 0;
   let tools = options.tools;
+  let callDelayMs = options.callDelayMs;
   const replies: unknown[] = [];
   const initializes: unknown[] = [];
   let replied: (() => void) | undefined;
@@ -183,7 +190,6 @@ export async function startFakeHttpMcp(options: FakeHttpMcpOptions = {}): Promis
       return { jsonrpc: "2.0", id: frame.id, result: { tools: all } };
     }
     if (frame.method === "tools/call" && tools) {
-      calls.push(frame.params);
       const refused = options.callError?.(frame.params);
       if (refused) return { jsonrpc: "2.0", id: frame.id, error: refused };
       return { jsonrpc: "2.0", id: frame.id, result: options.callResult?.(frame.params) ?? { content: [{ type: "text", text: "remote execution recorded" }] } };
@@ -240,10 +246,13 @@ export async function startFakeHttpMcp(options: FakeHttpMcpOptions = {}): Promis
           return;
         }
       }
+      // Record tools/call on arrival so a reconnect test can cut the SSE
+      // stream while the handler is still delaying its answer.
+      if (frame.method === "tools/call" && tools) calls.push(frame.params);
       // hold the request open: the client's own timeout has to end it
       if (frame.method === "tools/list" && options.silentTools) return;
-      if (frame.method === "tools/call" && options.callDelayMs) {
-        await new Promise((resolve) => setTimeout(resolve, options.callDelayMs));
+      if (frame.method === "tools/call" && callDelayMs) {
+        await new Promise((resolve) => setTimeout(resolve, callDelayMs));
       }
       if (frame.method === "tools/list" && options.toolsDelayMs) {
         const delayed = new Promise((resolve) => setTimeout(resolve, options.toolsDelayMs));
@@ -303,6 +312,12 @@ export async function startFakeHttpMcp(options: FakeHttpMcpOptions = {}): Promis
     calls,
     get delayedToolsLists() { return delayedToolsLists; },
     get toolsLists() { return toolsLists; },
+    get openSseStreams() { return streams.size; },
+    dropSseStreams: () => {
+      for (const stream of streams) stream.end();
+      streams.clear();
+    },
+    setCallDelayMs: (ms) => { callDelayMs = ms; },
     replies,
     initializes,
     setTools: (next) => { tools = next; },
