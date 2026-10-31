@@ -25292,6 +25292,15 @@ store.reconcileInterruptedGroupGoals((runId, threadId) => {
 calendarCalls = new CalendarCallManager({
   botExists: (botId) => Boolean(store.bot(botId)),
   onDue: deliverCalendarCall,
+  // Same owner timezone as routines (#1714): daily call times in the
+  // first bot's person's zone on an organization server.
+  timeZoneFor: (call) => {
+    if (IDENTITY.kind !== "perspicax") return undefined;
+    const botId = call.botIds[0];
+    if (!botId) return undefined;
+    const person = effectiveRunAs({ botId });
+    return (person && isPrincipalId(person) ? botSettings.person(person).timeZone : null) ?? undefined;
+  },
 });
 const recoveryOwners = routines.routineRequestReceiptOwners();
 if (recoveryOwners.length > 0) {
@@ -32887,6 +32896,10 @@ ROUTES.push(createBotSettingsRoutes({
     routines?.rescheduleWallClock(scope.kind === "server"
       ? () => true
       : (routine) => Boolean(routine.botId) && effectiveRunAs({ botId: routine.botId!, ...(routine.runAs ? { runAs: routine.runAs } : {}) }) === scope.principalId);
+    // Calendar calls keep a stored nextRunAt; recompute it in the new zone (#1714).
+    calendarCalls?.rescheduleWallClock(scope.kind === "server"
+      ? () => true
+      : (call) => Boolean(call.botIds[0]) && effectiveRunAs({ botId: call.botIds[0]! }) === scope.principalId);
   },
 }));
 // Settings > Bot > Auto-review Rules (server/routes/auto-review-rules.ts).

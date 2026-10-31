@@ -52,6 +52,8 @@ export interface CalendarCallManagerOptions {
   now?: () => number;
   botExists: (botId: string) => boolean;
   onDue?: (call: CalendarCall, scheduledFor: number) => void | Promise<void>;
+  /** Wall-clock zone for this call (owner timezone, same as routines). */
+  timeZoneFor?: (call: { botIds: string[] }) => string | undefined;
 }
 
 interface CalendarCallFile {
@@ -176,6 +178,7 @@ export class CalendarCallManager {
   private readonly now: () => number;
   private readonly botExists: CalendarCallManagerOptions["botExists"];
   private readonly onDue: CalendarCallManagerOptions["onDue"];
+  private readonly timeZoneFor: CalendarCallManagerOptions["timeZoneFor"];
   private calls: CalendarCall[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
   private ticking = false;
@@ -189,6 +192,7 @@ export class CalendarCallManager {
     this.now = options.now ?? Date.now;
     this.botExists = options.botExists;
     this.onDue = options.onDue;
+    this.timeZoneFor = options.timeZoneFor;
     let migrated = false;
     try {
       const parsed = fileSchema.safeParse(JSON.parse(readFileSync(this.file, "utf8")));
@@ -198,7 +202,7 @@ export class CalendarCallManager {
         if (!call.success) throw new Error("invalid call entry");
         if (call.data.nextRunAt === undefined) migrated = true;
         const nextRunAt = call.data.nextRunAt === undefined
-          ? this.loadedOccurrence(call.data.schedule)
+          ? this.loadedOccurrence(call.data.schedule, call.data)
           : call.data.nextRunAt;
         return cloneCall({ ...call.data, nextRunAt });
       });
@@ -241,7 +245,7 @@ export class CalendarCallManager {
     const call: CalendarCall = {
       id: randomUUID(),
       ...clean,
-      nextRunAt: this.initialOccurrence(clean.schedule, timestamp),
+      nextRunAt: this.initialOccurrence(clean.schedule, timestamp, clean),
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -267,7 +271,7 @@ export class CalendarCallManager {
       id: previous.id,
       ...clean,
       roomId: patch.botIds && !sameRoster(clean.botIds, previous.botIds) ? undefined : previous.roomId,
-      nextRunAt: this.initialOccurrence(clean.schedule, this.now()),
+      nextRunAt: this.initialOccurrence(clean.schedule, this.now(), clean),
       createdAt: previous.createdAt,
       updatedAt: this.now(),
     };
@@ -354,7 +358,7 @@ export class CalendarCallManager {
         }
         call.nextRunAt = call.schedule.type === "once"
           ? null
-          : nextOccurrence(call.schedule, Math.max(now, scheduledFor));
+          : nextOccurrence(call.schedule, Math.max(now, scheduledFor), this.zoneOf(call));
         this.save();
       }
     } finally {
@@ -362,16 +366,39 @@ export class CalendarCallManager {
     }
   }
 
-  private initialOccurrence(schedule: CalendarCallSchedule, now: number): number | null {
-    return schedule.type === "once" ? schedule.at : nextOccurrence(schedule, now);
+  /** Recompute daily call deadlines after the owner's time zone changed
+   * (Settings > Bot > Time Zone), same as routines.rescheduleWallClock. */
+  rescheduleWallClock(filter: (call: { botIds: string[] }) => boolean = () => true): number {
+    if (this.unreadable) return 0;
+    const now = this.now();
+    let changed = 0;
+    for (const call of this.calls) {
+      if (call.schedule.type === "once") continue;
+      if (call.nextRunAt !== null && call.nextRunAt <= now) continue;
+      if (!filter(call)) continue;
+      const next = nextOccurrence(call.schedule, now, this.zoneOf(call));
+      if (next === call.nextRunAt) continue;
+      call.nextRunAt = next;
+      changed++;
+    }
+    if (changed) this.save();
+    return changed;
+  }
+
+  private zoneOf(call: { botIds: string[] }): string | undefined {
+    return this.timeZoneFor?.(call);
+  }
+
+  private initialOccurrence(schedule: CalendarCallSchedule, now: number, call?: { botIds: string[] }): number | null {
+    return schedule.type === "once" ? schedule.at : nextOccurrence(schedule, now, call ? this.zoneOf(call) : undefined);
   }
 
   /** Old calendar calls were reminders only. Start recurring reminders from
    * the next future slot and never replay an already-past one-time reminder. */
-  private loadedOccurrence(schedule: CalendarCallSchedule): number | null {
+  private loadedOccurrence(schedule: CalendarCallSchedule, call?: { botIds: string[] }): number | null {
     const now = this.now();
     if (schedule.type === "once") return schedule.at > now ? schedule.at : null;
-    return nextOccurrence(schedule, now);
+    return nextOccurrence(schedule, now, call ? this.zoneOf(call) : undefined);
   }
 
   private commit(mutate: () => void): void {

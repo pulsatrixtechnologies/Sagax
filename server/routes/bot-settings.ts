@@ -18,7 +18,7 @@ export const BOT_SETTINGS_PATH = "/api/settings/bot";
 export interface BotSettingsRouteDeps {
   store: BotSettingsStore;
   organization: () => boolean;
-  /** After a save (routine schedules are recomputed in the new zone). */
+  /** After a save (routine and calendar-call schedules are recomputed in the new zone). */
   changed?: (scope: { kind: "server" } | { kind: "person"; principalId: string }, settings: BotSettings) => void;
 }
 

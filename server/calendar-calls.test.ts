@@ -271,4 +271,75 @@ describe("CalendarCallManager", () => {
     expect(() => calls.create(input())).toThrow();
     expect(calls.list()).toEqual([]);
   });
+
+  // 2026-10-01 is a Thursday. Same anchors as routine-time-zone.test.ts (#1714).
+  const THURSDAY_NOON_UTC = Date.UTC(2026, 9, 1, 12, 0);
+
+  it("schedules a daily call in the owner's zone and reschedules when it changes", async () => {
+    const file = tempFile();
+    const zones: Record<string, string | undefined> = { researcher: "Asia/Tokyo" };
+    const due: number[] = [];
+    const calls = new CalendarCallManager({
+      file,
+      now: () => THURSDAY_NOON_UTC,
+      botExists: () => true,
+      timeZoneFor: (call) => (call.botIds[0] ? zones[call.botIds[0]] : undefined),
+      onDue: (_call, scheduledFor) => { due.push(scheduledFor); },
+    });
+    const created = calls.create(input({
+      botIds: ["researcher"],
+      schedule: { type: "daily", time: "09:00", weekdays: [0, 1, 2, 3, 4, 5, 6] },
+      durationMinutes: 30,
+      attachments: [],
+    }));
+    // 09:00 Tokyo already passed at 12:00 UTC → tomorrow 00:00 UTC.
+    expect(created.nextRunAt).toBe(Date.UTC(2026, 9, 2, 0, 0));
+
+    zones.researcher = "America/Toronto";
+    expect(calls.rescheduleWallClock()).toBe(1);
+    expect(calls.get(created.id)?.nextRunAt).toBe(Date.UTC(2026, 9, 1, 13, 0));
+    expect(calls.rescheduleWallClock()).toBe(0);
+
+    // After the Toronto slot fires, the next day stays in that zone.
+    const later = new CalendarCallManager({
+      file,
+      now: () => Date.UTC(2026, 9, 1, 13, 0),
+      botExists: () => true,
+      timeZoneFor: (call) => (call.botIds[0] ? zones[call.botIds[0]] : undefined),
+      onDue: (_call, scheduledFor) => { due.push(scheduledFor); },
+    });
+    await later.tick();
+    expect(due).toEqual([Date.UTC(2026, 9, 1, 13, 0)]);
+    expect(later.get(created.id)?.nextRunAt).toBe(Date.UTC(2026, 9, 2, 13, 0));
+  });
+
+  it("keeps one-time calls and already-due daily calls on a zone change", () => {
+    const file = tempFile();
+    let zone: string | undefined = "Asia/Tokyo";
+    const calls = new CalendarCallManager({
+      file,
+      now: () => THURSDAY_NOON_UTC,
+      botExists: () => true,
+      timeZoneFor: () => zone,
+    });
+    const once = calls.create(input({
+      botIds: ["researcher"],
+      schedule: { type: "once", at: Date.UTC(2026, 9, 1, 18, 0) },
+      attachments: [],
+    }));
+    const dueDaily = calls.create(input({
+      name: "Already due",
+      botIds: ["researcher"],
+      schedule: { type: "daily", time: "09:00", weekdays: [0, 1, 2, 3, 4, 5, 6] },
+      attachments: [],
+    }));
+    // Force a stored deadline that is already due so reschedule leaves it alone.
+    const internal = calls as unknown as { calls: Array<{ id: string; nextRunAt: number | null }> };
+    internal.calls.find((row) => row.id === dueDaily.id)!.nextRunAt = THURSDAY_NOON_UTC - 1;
+
+    zone = "America/Toronto";
+    expect(calls.rescheduleWallClock()).toBe(0);
+    expect(calls.get(once.id)?.nextRunAt).toBe(Date.UTC(2026, 9, 1, 18, 0));
+    expect(calls.get(dueDaily.id)?.nextRunAt).toBe(THURSDAY_NOON_UTC - 1);
+  });
 });
