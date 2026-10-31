@@ -57,6 +57,8 @@ struct RoutineEditorView: View {
     @State private var runAs: String?
     @State private var onlyWhenPresent: Bool
     @State private var postResults: Bool
+    /// #1648: delete once a finite schedule ends.
+    @State private var deleteWhenFinished: Bool
     /// 2026-10-26: failed runs in a row that pause it (0 never).
     @State private var autoPauseAfter: Int
     /// "Remember the last run" and the mail tag (desktop's More options).
@@ -103,6 +105,7 @@ struct RoutineEditorView: View {
         _onlyWhenPresent = State(initialValue: source?.onlyWhenPresent == true)
         // Default silent for a new routine; an existing one keeps its choice.
         _postResults = State(initialValue: source?.postResults == true)
+        _deleteWhenFinished = State(initialValue: source?.deleteWhenFinished == true)
         _autoPauseAfter = State(initialValue: source.map(RoutineAutoPause.after) ?? RoutineAutoPause.defaultAfter)
         _continuity = State(initialValue: source?.continuity == true)
         _mailAlias = State(initialValue: source?.mailAlias ?? "")
@@ -155,7 +158,7 @@ struct RoutineEditorView: View {
             name: name, prompt: prompt, botId: botId, target: target, groupId: groupId, runOn: runOn.rawValue,
             form: form, durationMinutes: duration, timeoutMinutes: timeoutMinutes, overlap: overlap,
             results: results, attachmentIds: attachments.map(\.id), runAs: runAs, onlyWhenPresent: onlyWhenPresent,
-            postResults: postResults, autoPauseAfter: autoPauseAfter, continuity: continuity, mailAlias: mailAlias,
+            postResults: postResults, deleteWhenFinished: deleteWhenFinished, autoPauseAfter: autoPauseAfter, continuity: continuity, mailAlias: mailAlias,
             watch: watchDraft
         )
     }
@@ -691,6 +694,11 @@ struct RoutineEditorView: View {
                     toggle($onlyWhenPresent, "Only when I'm here",
                            "While you are away (computer idle or locked), this routine skips its runs and tells you how many when you are back. A one-time routine waits for you.",
                            id: "routine-editor-only-when-present")
+                    if form.recurrence == .none || (form.recurrence == .interval && form.endsOnDate) {
+                        toggle($deleteWhenFinished, "Delete once finished",
+                               "When this routine has a known end (one time, or until a date), remove it from Automations after its last run settles. Past runs stay in the calendar and the run log.",
+                               id: "routine-editor-delete-when-finished")
+                    }
                     VStack(alignment: .leading, spacing: 4) {
                         LabeledContent("Mail tag") {
                             TextField(String(localized: "reports"), text: Binding(get: { mailAlias }, set: { mailAlias = RoutineMailTag.clean($0) }))
@@ -845,6 +853,8 @@ struct RoutineEditorView: View {
             input.onlyWhenPresent = onlyWhenPresent
             input.postResults = postResults
         }
+        let finite = form.recurrence == .none || (form.recurrence == .interval && form.endsOnDate)
+        input.deleteWhenFinished = finite && deleteWhenFinished
         if form.recurrence.repeatsOnClock { input.autoPauseAfter = autoPauseAfter }
         if !isTeamGoal {
             input.continuity = form.recurrence.repeatsOnClock && continuity

@@ -118,6 +118,8 @@ const routineToolFieldsSchema = z.object({
   /** 2026-10-28: the bot's folder (shared/routine-folders.ts); null in an
    * update takes it out of its folder. */
   folder: z.string().max(200).nullable().optional(),
+  /** Delete once the schedule ends and the last run settles (#1648). */
+  deleteWhenFinished: z.boolean().optional(),
   /** Create only: true starts the routine live, false paused; absent
    * follows `routines.newPaused`. A webhook or email trigger follows the
    * same rule. Pause and resume are actions of their own. */
@@ -277,6 +279,7 @@ const storedDefinitionSchema = z.object({
   overlap: z.enum(["skip", "queue"]).optional(),
   watch: z.custom<RoutineWatchPrecheck>((value) => loadRoutinePrecheck(value)?.kind === "watch").optional(),
   folder: z.string().min(1).max(ROUTINE_FOLDER_MAX).optional(),
+  deleteWhenFinished: z.boolean().optional(),
 }).strict();
 const storedChangesSchema = storedDefinitionSchema
   .omit({ schedule: true, timeoutMinutes: true, watch: true, folder: true })
@@ -764,6 +767,7 @@ function normalizeDefinition(input: RoutineToolDefinitionInput, now: number): Ro
     ...(input.overlap === "queue" ? { overlap: "queue" as const } : {}),
     ...(input.watch != null ? { watch: watchInput(input.watch)! } : {}),
     ...(cleanRoutineFolder(input.folder) ? { folder: cleanRoutineFolder(input.folder)! } : {}),
+    ...(input.deleteWhenFinished === true ? { deleteWhenFinished: true } : {}),
   };
 }
 
@@ -783,6 +787,7 @@ function normalizeChanges(
   if (input.overlap !== undefined) changes.overlap = input.overlap;
   if (input.watch !== undefined) changes.watch = watchInput(input.watch);
   if (input.folder !== undefined) changes.folder = cleanRoutineFolder(input.folder) ?? null;
+  if (input.deleteWhenFinished !== undefined) changes.deleteWhenFinished = input.deleteWhenFinished === true;
   return changes;
 }
 
@@ -1057,6 +1062,7 @@ function effectiveDefinition(operation: RoutineRequestOperation, manager: Routin
     ...(existing.overlap ? { overlap: existing.overlap } : {}),
     ...(existing.precheck?.kind === "watch" ? { watch: structuredClone(existing.precheck) } : {}),
     ...(existing.folder ? { folder: existing.folder } : {}),
+    ...(existing.deleteWhenFinished ? { deleteWhenFinished: true } : {}),
   };
   if (operation.action !== "update") return base;
   const { schedule, timeoutMinutes, watch, folder, ...changes } = operation.changes;
@@ -1168,6 +1174,7 @@ function cardCopy(
       `While busy: ${definition.overlap === "queue" ? "Queue one scheduled run; skip further occurrences until it starts" : "Skip overlapping scheduled occurrences"}`,
       ...(definition.watch ? [watchLine(definition.watch)] : []),
       ...(definition.folder ? [`Folder: ${redactSecretsInText(definition.folder)}`] : []),
+      ...(definition.deleteWhenFinished ? ["Delete once finished: yes"] : []),
       // Last before the instructions: the one sentence that says what
       // confirming actually does, in the reader's terms.
       ...(operation.action === "create" || operation.action === "update"
@@ -1198,6 +1205,7 @@ function inputFromDefinition(definition: RoutineRequestDefinition, botId: string
     ...(definition.overlap === "queue" ? { overlap: "queue" as const } : {}),
     ...(definition.watch ? { precheck: structuredClone(definition.watch) } : {}),
     ...(definition.folder ? { folder: definition.folder } : {}),
+    ...(definition.deleteWhenFinished ? { deleteWhenFinished: true } : {}),
   };
 }
 
@@ -1217,6 +1225,7 @@ function updateFromChanges(
   if (changes.overlap !== undefined) patch.overlap = changes.overlap;
   if (changes.watch !== undefined) patch.precheck = changes.watch === null ? null : structuredClone(changes.watch);
   if (changes.folder !== undefined) patch.folder = changes.folder;
+  if (changes.deleteWhenFinished !== undefined) patch.deleteWhenFinished = changes.deleteWhenFinished;
   return patch;
 }
 
@@ -1295,6 +1304,7 @@ function revalidateOperation(operation: RoutineRequestOperation, manager: Routin
         || routine.timeoutMinutes !== definition.timeoutMinutes
         || Boolean(routine.continuity) !== Boolean(definition.continuity)
         || (routine.overlap ?? "skip") !== (definition.overlap ?? "skip")
+        || Boolean(routine.deleteWhenFinished) !== Boolean(definition.deleteWhenFinished)
         || !isDeepStrictEqual(routine.precheck?.kind === "watch" ? routine.precheck : undefined, definition.watch)
         || (routine.attachments?.length ?? 0) > 0) return false;
       // An omitted start means "every N minutes", not a new phase each time

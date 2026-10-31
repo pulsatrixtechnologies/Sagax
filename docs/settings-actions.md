@@ -239,6 +239,7 @@ Full), élargit les droits, secret, autrui, en lot, suppression, organisation
 | Time limit | Automations > routine > Advanced | `sagax_settings` get, set `routine.timeoutMinutes` | simple |
 | When a run is still going | Automations > routine > Advanced | `sagax_settings` get, set `routine.overlap` | simple |
 | Only when present | Automations > routine > Advanced | `sagax_settings` get, set `routine.onlyWhenPresent` | simple |
+| Delete once finished | Automations > routine > Advanced | `sagax_settings` get, set `routine.deleteWhenFinished` | simple |
 | Pause after this many failures in a row (0 never, null the default 5) | Automations > routine > Advanced | `sagax_settings` get, set `routine.autoPauseAfter` | simple |
 | Folder in the bot's Routines list (null: no folder) | Bot panel > Details > Routines > row menu > Move to folder | `sagax_settings` get, set `routine.folder` | simple |
 | Runs as (a person) | Automations > routine > Runs as | `sagax_settings` get, set `routine.runAs` | autrui |

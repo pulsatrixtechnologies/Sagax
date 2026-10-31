@@ -54,7 +54,7 @@ final class RoutineEditorRedesignTests: XCTestCase {
         RoutineEditorSnapshot(
             name: name, prompt: "p", botId: botId, target: "bot", groupId: "", runOn: "maus", form: form,
             durationMinutes: 30, timeoutMinutes: nil, overlap: "skip", results: .keep, attachmentIds: [], runAs: nil,
-            onlyWhenPresent: false, postResults: false, autoPauseAfter: 5, continuity: false, mailAlias: alias,
+            onlyWhenPresent: false, postResults: false, deleteWhenFinished: false, autoPauseAfter: 5, continuity: false, mailAlias: alias,
             watch: RoutineWatchDraft(precheck: nil)
         )
     }

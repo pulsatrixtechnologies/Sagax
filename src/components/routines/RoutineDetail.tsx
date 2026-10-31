@@ -120,6 +120,7 @@ export function RoutineDetail({ routine, runs, bots, groups = [], now = Date.now
             {onConfigure && <span className="mt-1.5 flex items-center gap-1 text-[11.5px] font-medium text-accent-text"><Settings2 size={12} aria-hidden="true" />{t("routineDetail.openConfiguration")}</span>}
           </button>
           {routine.autoPaused && !routine.enabled && <p data-routine-auto-paused={routine.autoPaused.failures} className="text-[11.5px] text-warning">{t("routineDetail.autoPausedAt", { date: routineDateTime(routine.autoPaused.at) })}</p>}
+          {routine.deleteWhenFinished && <p data-routine-delete-when-finished="" className="text-[11.5px] text-ink-secondary">{t("routines.deleteWhenFinished.willDelete")}</p>}
           {error && <div role="alert" className="rounded-lg bg-danger/10 px-3 py-2 text-[11.5px] text-danger">{error}</div>}
           <h3 className="flex items-center gap-1.5 pt-1 text-[12px] font-medium text-ink-secondary">{t("routineDetail.runs")}{history.length > 0 && <span className="rounded-full bg-raised px-1.5 text-[10.5px]">{history.length}</span>}</h3>
         </header>

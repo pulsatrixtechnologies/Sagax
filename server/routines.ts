@@ -38,7 +38,7 @@ import {
   storedTiming,
   type RoutineWindowTiming,
 } from "../shared/routine-timing.ts";
-import { isRoutineProblemRun, isTriggerSchedule, type RoutineRetryCause } from "../shared/routines.ts";
+import { isRoutineProblemRun, isTriggerSchedule, scheduleHasKnownEnd, type RoutineRetryCause } from "../shared/routines.ts";
 import { cleanRoutineAutoPauseAfter, routineAutoPauseDue, type RoutineAutoPause } from "../shared/routine-auto-pause.ts";
 import { zonedParts, zonedTimeToUtc } from "../shared/zoned-time.ts";
 import {
@@ -200,6 +200,8 @@ export interface Routine {
   /** 2026-10-28 (shared/routine-folders.ts): the folder of its bot it sits
    * in, as the person named it. Absent: no folder. Never part of what runs. */
   folder?: string;
+  /** Delete once the schedule ends and the last run settles (#1648). */
+  deleteWhenFinished?: boolean;
   nextRunAt: number | null;
   /** Scheduled slot a flexible routine advances from. Absent for exact timing. */
   nominalRunAt?: number;
@@ -437,6 +439,8 @@ export interface RoutineInput {
   /** 2026-10-28: the bot's folder to put it in; null takes it out of its
    * folder, omission preserves it. */
   folder?: string | null;
+  /** Delete once the schedule ends and the last run settles. Off unless true. */
+  deleteWhenFinished?: boolean;
 }
 
 interface RoutineFile {
@@ -671,8 +675,11 @@ const WORK_FIELDS = ["prompt", "botId", "groupId", "target", "attachments", "pre
 const ROUTINE_DEFINITION_FIELDS = [
   "name", "prompt", "target", "botId", "groupId", "runOn", "schedule",
   "durationMinutes", "timeoutMinutes", "attachments", "continuity", "overlap",
-  "onlyWhenPresent", "precheck", "autoPauseAfter", "mailAlias",
+  "onlyWhenPresent", "precheck", "autoPauseAfter", "mailAlias", "deleteWhenFinished",
 ] as const;
+
+/** A run still in flight: auto-delete waits until none of these remain. */
+const ACTIVE_RUN_STATUSES = new Set(["queued", "running", "waiting"]);
 
 const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
 /** 2026-10-26: a queued run cancelled because its routine paused itself. */
@@ -1284,6 +1291,8 @@ function sanitizeInput(input: RoutineInput, after: number): Omit<Routine, "id" |
     ...(precheck ? { precheck } : {}),
     ...(autoPauseAfter === undefined ? {} : { autoPauseAfter }),
     ...(folder ? { folder } : {}),
+    // Only meaningful on a schedule with a known end; ignore otherwise.
+    ...(input.deleteWhenFinished === true && scheduleHasKnownEnd(input.schedule) ? { deleteWhenFinished: true } : {}),
   };
 }
 
@@ -1428,6 +1437,7 @@ export class RoutineManager {
               autoPaused: routine.enabled ? undefined : loadAutoPaused(routine.autoPaused),
               failuresClearedAt: Number.isSafeInteger(routine.failuresClearedAt) && routine.failuresClearedAt! >= 0 && routine.failuresClearedAt! <= MAX_DATE_MS ? routine.failuresClearedAt : undefined,
               folder: cleanRoutineFolder(routine.folder),
+              deleteWhenFinished: routine.deleteWhenFinished === true && scheduleHasKnownEnd(schedule) ? true : undefined,
             };
             if (loaded.folder === undefined) delete loaded.folder;
             if (loaded.precheck === undefined) delete loaded.precheck;
@@ -1436,6 +1446,7 @@ export class RoutineManager {
             if (loaded.failuresClearedAt === undefined) delete loaded.failuresClearedAt;
             if (loaded.onlyWhenPresent === undefined) delete loaded.onlyWhenPresent;
             if (loaded.postResults === undefined) delete loaded.postResults;
+            if (loaded.deleteWhenFinished === undefined) delete loaded.deleteWhenFinished;
             if (loaded.mailAlias === undefined) delete loaded.mailAlias;
             if (loaded.awaySkips === undefined) delete loaded.awaySkips;
             if (loaded.timeoutMinutes === undefined) delete loaded.timeoutMinutes;
@@ -1923,6 +1934,9 @@ export class RoutineManager {
       autoPauseAfter: Object.hasOwn(patch, "autoPauseAfter") ? patch.autoPauseAfter : routine.autoPauseAfter,
       // null takes it out of its folder; omission keeps it where it is.
       folder: Object.hasOwn(patch, "folder") ? patch.folder : routine.folder,
+      deleteWhenFinished: Object.hasOwn(patch, "deleteWhenFinished")
+        ? patch.deleteWhenFinished === true
+        : routine.deleteWhenFinished === true,
     }, now);
     if (this.targetState(clean) === "missing") throw new RoutineInputError(this.missingTargetMessage(clean.target));
     if (clean.folder) clean.folder = this.admitFolder(clean.botId, clean.folder);
@@ -1999,6 +2013,7 @@ export class RoutineManager {
       if (!clean.precheck) delete routine.precheck;
       if (clean.autoPauseAfter === undefined) delete routine.autoPauseAfter;
       if (clean.folder === undefined) delete routine.folder;
+      if (!clean.deleteWhenFinished) delete routine.deleteWhenFinished;
       foldersChanged = this.settleFolders(routine.botId);
       if (previousBotId !== routine.botId) this.settleFolders(previousBotId);
       // Turned back on (Resume on the notice, the switch, the editor): the
@@ -2044,7 +2059,13 @@ export class RoutineManager {
     }
     if (definitionChanged) this.noteRoutineChanged("updated", routine, request, meta);
     this.notifyTrigger(routine, previousSchedule);
-    return this.routineWithHealth(routine);
+    const health = this.routineWithHealth(routine);
+    // Opting in after the schedule already ended: delete once no run is active.
+    if (routine.deleteWhenFinished) {
+      const id = routine.id;
+      queueMicrotask(() => this.maybeDeleteWhenFinished(id));
+    }
+    return health;
   }
 
   /** Raise onRoutineChanged when a create/update/delete came from a
@@ -2982,6 +3003,10 @@ export class RoutineManager {
       }
     } finally {
       this.ticking = false;
+      // Interval ended with no further run, or a finished once with the option on.
+      for (const routine of [...this.routines]) {
+        if (routine.deleteWhenFinished) this.maybeDeleteWhenFinished(routine.id);
+      }
       this.armDueWake();
       if (this.passAgain) {
         this.passAgain = false;
@@ -3810,6 +3835,29 @@ export class RoutineManager {
     if (run.status === "completed" || run.status === "failed") {
       const routine = this.routines.find(candidate => candidate.id === run.routineId);
       if (routine) this.emitRoutine(routine);
+    }
+    // #1648: once the last run of a finite schedule settles, drop the routine.
+    if (!ACTIVE_RUN_STATUSES.has(run.status)) this.maybeDeleteWhenFinished(run.routineId);
+  }
+
+  /** Delete a routine that opted in once its schedule is exhausted and no
+   * run is still queued, running or waiting. Past runs stay in the log. */
+  private maybeDeleteWhenFinished(routineId: string): void {
+    const routine = this.routines.find((candidate) => candidate.id === routineId);
+    if (!routine?.deleteWhenFinished || !scheduleHasKnownEnd(routine.schedule)) return;
+    if (this.runs.some((run) => run.routineId === routineId && ACTIVE_RUN_STATUSES.has(run.status))) return;
+    if (routine.schedule.type === "once") {
+      const scheduledSettled = this.runs.some((run) =>
+        run.routineId === routineId
+        && !ACTIVE_RUN_STATUSES.has(run.status)
+        && (run.triggerSource ?? (run.manual ? "manual" : "schedule")) === "schedule");
+      if (!scheduledSettled) return;
+      this.remove(routineId);
+      return;
+    }
+    if (routine.schedule.type === "interval" && routine.schedule.endsAt != null) {
+      if (nextOccurrence(routine.schedule, this.now(), this.zoneOf(routine)) !== null) return;
+      this.remove(routineId);
     }
   }
 

@@ -361,6 +361,13 @@ function routineFields(args: Json): { fields: Json; error?: string } {
   if (args.continuity != null && typeof args.continuity !== "boolean") {
     return { fields, error: "continuity must be true or false." };
   }
+  const deleteWhenFinished = args.delete_when_finished ?? args.deleteWhenFinished;
+  if (args.delete_when_finished != null && args.deleteWhenFinished != null && args.delete_when_finished !== args.deleteWhenFinished) {
+    return { fields, error: "Choose one delete_when_finished value; delete_when_finished and deleteWhenFinished disagree." };
+  }
+  if (deleteWhenFinished != null && typeof deleteWhenFinished !== "boolean") {
+    return { fields, error: "delete_when_finished must be true or false." };
+  }
   if (args.overlap !== undefined && args.overlap !== "skip" && args.overlap !== "queue") {
     return { fields, error: "overlap must be skip or queue." };
   }
@@ -396,6 +403,7 @@ function routineFields(args: Json): { fields: Json; error?: string } {
   if (args.watch !== undefined) fields.watch = args.watch;
   // 2026-10-28: the bot's folder to file it in (null: out of its folder).
   if (args.folder !== undefined) fields.folder = args.folder;
+  if (typeof deleteWhenFinished === "boolean") fields.deleteWhenFinished = deleteWhenFinished;
   return { fields };
 }
 

@@ -50,6 +50,9 @@ public enum RoutinePatch {
         if let postResults = input.postResults, postResults != (original.postResults == true) {
             body["postResults"] = postResults
         }
+        if let deleteWhenFinished = input.deleteWhenFinished, deleteWhenFinished != (original.deleteWhenFinished == true) {
+            body["deleteWhenFinished"] = deleteWhenFinished
+        }
         if let after = input.autoPauseAfter, after != RoutineAutoPause.after(original) {
             body["autoPauseAfter"] = after
         }
@@ -89,6 +92,7 @@ public enum RoutinePatch {
         if let runAs = input.runAs, !runAs.isEmpty { body["runAs"] = runAs }
         if input.onlyWhenPresent == true { body["onlyWhenPresent"] = true }
         if let postResults = input.postResults { body["postResults"] = postResults }
+        if input.deleteWhenFinished == true { body["deleteWhenFinished"] = true }
         if let after = input.autoPauseAfter, after != RoutineAutoPause.defaultAfter { body["autoPauseAfter"] = after }
         if case let .set(watch) = input.watch { body["precheck"] = watch.bodyValue }
         if input.continuity == true { body["continuity"] = true }
